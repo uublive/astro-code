@@ -1,181 +1,94 @@
 # astro-code
 
 A lean, multi-developer, **Claude Code 4.8-native** evolution of [GSD](https://github.com/glittercowboy/get-shit-done).
+It runs a `discuss → plan → execute → verify` loop over milestones and phases, kept
+as plain files in your repo — and adds what GSD lacks: real parallelism and safe
+multi-developer collaboration.
 
-It keeps what makes GSD work — file-based planning, milestones/phases/roadmap, the
-discuss → plan → execute → verify loop — and makes it **fast** and **collaborative**:
+- 🧩 **Tiny core** — one zero-dependency Node CLI (`ac`) for state; the rest is short
+  markdown commands/agents + Workflow scripts. No build step, no monolith.
+- ⚡ **Parallel by default** — phases plan and execute by fanning out agents through
+  the 4.8 **Workflow** tool: wave-based execution, one isolated worktree per task.
+- 👥 **Collision-proof numbering** — milestone/phase numbers come from a shared
+  registry on an orphan branch (pure git). Two devs can never grab the same number.
+- 📐 **Shared canon** — conventions + decisions are team-global and injected into
+  every agent, so parallel work doesn't drift.
 
-- 🧩 **Tiny core.** One zero-dependency Node CLI (`ac`) owns state. Everything else
-  is short markdown commands/agents plus Workflow scripts Claude Code runs. No build
-  step, no 68 KB monolith, no per-runtime installer to maintain.
-- ⚡ **Parallel by default.** Phases plan and execute by fanning out many agents
-  through Claude Code 4.8's **Workflow** tool — wave-based execution, one isolated git
-  worktree per task.
-- 👥 **Collision-proof numbering.** Milestone/phase numbers are allocated from a
-  shared registry on an **orphan branch on origin**, in pure git. Two developers on
-  the same project can never grab the same number — claim phase 8 when it's taken and
-  you get 9, automatically.
-- 🎛️ **Per-role model tiers.** Pick which model (opus/sonnet/haiku) runs each role
-  (planner, researcher, executor, verifier) in `.astrocode/config.json`.
+Requires **Node ≥ 22**.
 
-Requires **Node ≥ 22**. No other dependencies.
-
----
-
-## Install (for you and your team)
+## Install
 
 ```bash
-git clone <astro-code repo url>
+git clone git@github.com:uublive/astro-code.git
 cd astro-code
-npm install -g .     # puts `ac` on your PATH globally
+npm install -g .     # puts `ac` on your PATH
 ac install           # populates ~/.astro/code and links commands/agents into Claude Code
 ```
 
-`ac install` makes **`~/.astro/code`** the home (commands, agents, workflows live
-there) and **symlinks** the commands/agents into `~/.claude/{commands,agents}` —
-the only place Claude Code discovers them. The home stays the single source of
-truth; `ac path workflows` resolves there from any project. It's idempotent;
-`ac uninstall` removes the symlinks and deletes the home.
+`ac install` makes `~/.astro/code` the home and symlinks the commands/agents into
+`~/.claude/` (the only place Claude Code discovers them). It's idempotent;
+`ac uninstall` reverses it. To update: `git pull && npm install -g . && ac install`.
 
-> No npm registry needed — `npm install -g .` installs straight from the clone. To
-> update: `git pull && npm install -g . && ac install`.
+## Use it
 
-> No npm registry needed — `npm install -g .` installs straight from the clone. To
-> update: `git pull && npm install -g . && ac install`.
-
----
-
-## The loop
-
-Run these inside the project repo you're building (it should have an `origin` remote
-so numbering is coordinated across the team).
+Work inside the project repo you're building (give it an `origin` remote so numbering
+is coordinated across the team). Drive the loop from Claude Code:
 
 ```
-/astro-new-project        scaffold .astrocode/, shape PROJECT.md + the initial roadmap
-/astro-phase <name>       add a phase (claims its number from the registry)
+/astro-new-project        scaffold .astrocode/, shape PROJECT.md + the roadmap
+/astro-phase <name>       add a phase (claims its number)
 /astro-plan <phase>       parallel research → executable PLAN.md
-/astro-execute <phase>    wave-based parallel execution in isolated worktrees, then verify
-/astro-verify <phase>     confirm the phase goal is actually met (goal-backward)
-/astro-milestone          start the next milestone cycle (claims the milestone number)
-/astro-complete-milestone archive the finished milestone + retire its numbers
-/astro-config             pick the model (opus/sonnet/haiku) for each role
-/astro-decision           record an architectural decision (ADR-lite) into the canon
-/astro-status             where am I, and what's the best next move?
+/astro-execute <phase>    wave-based parallel execution, then verify
+/astro-verify <phase>     confirm the phase goal is met (goal-backward)
+/astro-milestone          start the next milestone cycle
+/astro-complete-milestone archive the finished milestone
+/astro-config             pick the model (opus/sonnet/haiku) per role
+/astro-decision           record an architectural decision into the canon
+/astro-status             where am I, and what's next?
 ```
 
-You can also drive the state layer directly with the CLI:
+Or use the CLI directly (`ac help` lists everything):
 
 ```bash
 ac init --name my-project --vision "what we're building"
 ac phase add "Foundation"      # claim + add a phase
 ac status                      # project / milestone / phases
-ac roadmap list                # the structured roadmap
 ac registry show               # the shared numbering registry
 ac milestone complete          # archive the current milestone
 ```
 
-`ac help` lists everything.
+## How it works
 
----
+Everything lives in **`.astrocode/`** in your repo (human-readable, git-committed):
+`PROJECT.md`, `ROADMAP.md`, per-phase `PLAN.md`/`SUMMARY.md`, plus the canon.
 
-## How numbering stays collision-proof
+**Numbering.** `ac phase add` / `ac milestone new` claim the next free number from
+`registry.json` on an orphan branch (`astro-registry`) via a git compare-and-swap: if
+someone else pushed first your push is rejected and `ac` retries with the next number.
+No server, no `gh`. Without a remote it falls back to local numbering (and warns).
 
-The registry is a single `registry.json` on an orphan branch (`astro-registry` by
-default) on the project's `origin`. A claim is an atomic compare-and-swap done
-entirely with git plumbing — no server, no lock files, no `gh`:
+**Models.** `.astrocode/config.json → models` sets a tier per role (`opus`/`sonnet`/
+`haiku`); unset a role to inherit the session model. `ac config set models.executor opus`,
+or `/astro-config`. The plan/execute workflows apply the tier per agent.
 
-```
-read   git fetch astro-registry → git show FETCH_HEAD:registry.json   (tip = T)
-build  next = max(active claims of this type [+ milestone]) + 1
-write  hash-object → mktree → commit-tree -p T → push commit:refs/heads/astro-registry
-```
+**Canon.** `CONVENTIONS.md` (rules) + `DECISIONS.md` (append-only ADR log) are shared
+on the same orphan branch and injected into every plan/execute agent. `ac decision add`
+appends to the shared log (ADR ids never collide across devs); `ac canon pull` refreshes
+your local mirror.
 
-The push is a normal (non-force) fast-forward. If another developer claimed a number
-meanwhile, the remote tip moved past `T`, the push is **rejected**, and `ac` re-reads
-and recomputes the next free number. That rejection *is* the mutual exclusion.
-
-Numbering is enforced **through the CLI** (`ac phase add` / `ac milestone new`), not
-by hand-editing `ROADMAP.md` (which is generated). When there's no remote, `ac` falls
-back to local numbering and warns that it isn't team-coordinated.
-
----
-
-## Choosing models
-
-`.astrocode/config.json` carries per-role model tiers. Unset a role to inherit the
-session model.
-
-```jsonc
-"models": {
-  "planner":   "opus",    // synthesizes the plan — quality matters most
-  "researcher":"sonnet",  // parallel investigation
-  "executor":  "sonnet",  // implements one task each
-  "verifier":  "opus",    // goal-backward verification — be strict
-  "discover":  "haiku"    // cheap mechanical task/dependency parsing
-}
-```
-
-Set them interactively from Claude Code with **`/astro-config`** (profile pick or
-per-role), or from the shell — change one without clobbering the rest:
-
-```bash
-ac config get models
-ac config set models.executor opus      # max quality for execution
-ac config set models.researcher haiku   # cheaper/faster research
-ac config unset models.researcher       # fall back to the session model (inherit)
-```
-
-The plan/execute commands read this map and pass it to the Workflow, which applies
-the tier per agent. See **Which models?** in [`ARCHITECTURE.md`](./ARCHITECTURE.md).
-
----
-
-## Keeping the architecture consistent (canon)
-
-astro-code runs many agents in parallel, across multiple developers. Without shared
-rules, that's a drift machine — five executors invent five naming styles. So the
-project carries an always-on **canon**:
-
-- **`.astrocode/CONVENTIONS.md`** — stack, naming, patterns, testing style (prescriptive).
-- **`.astrocode/DECISIONS.md`** — append-only ADR-lite log (decision · why · rejected).
-
-`/astro-plan` and `/astro-execute` inject the canon (`ac canon`) into **every** agent,
-so plans and code conform to it and past decisions aren't relitigated.
-
-**Canon is team-global.** It's shared on the same orphan branch as the registry, so a
-decision one developer records is instantly visible to everyone — no merge required.
-`ac decision add` does a compare-and-swap *append* to the shared `DECISIONS.md`, so
-ADR numbers never collide across developers (same guarantee as phase numbering). The
-local `.astrocode/` copies are fast-read mirrors.
-
-```bash
-ac canon                                              # what every agent sees (local mirror)
-ac decision add "Use pure git" --why "no deps" --rejected "gh API"   # shared, append-only
-ac canon pull                                         # refresh local mirror from the team
-ac canon push                                         # publish local CONVENTIONS.md to the team
-```
-
-> Canon is permanent and prescriptive (always on). A codebase *map* is disposable and
-> descriptive (on demand) — deliberately **not** part of the core loop. See
-> `ARCHITECTURE.md` for that trade-off.
+See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the design and the rationale behind
+these choices (and why there's no codebase-map or MCP server).
 
 ## Layout
 
 ```
-bin/ac.mjs       the CLI
-lib/             engine (registry, state, roadmap, milestone, config, canon, install) — unit-tested
-commands/        Claude Code slash commands (the loop)
-agents/          subagent role definitions
-workflows/       Workflow 4.8 scripts (parallel plan + wave execution)
-templates/       .astrocode/ scaffolding
-tests/           node:test — engine units + a real git registry integration test
+bin/ac.mjs   the CLI            commands/   slash commands (the loop)
+lib/         engine (tested)    agents/     subagent roles
+templates/   .astrocode/ seed   workflows/  Workflow 4.8 scripts
 ```
 
 ## Development
 
 ```bash
-npm test     # engine units + a real bare-remote registry integration test
+npm test     # engine units + a real bare-remote registry/canon integration test
 ```
-
-See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full design, the speed rationale,
-and the MCP/model decisions.
