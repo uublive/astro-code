@@ -10,7 +10,7 @@ import { initPlanning } from '../lib/planning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus } from '../lib/roadmap.mjs';
 import { gitIdentity } from '../lib/git.mjs';
-import { claim, readRegistry, registryBranch, markComplete } from '../lib/registry.mjs';
+import { claim, readRegistry, registryBranch, markComplete, findNameMatches } from '../lib/registry.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
@@ -39,6 +39,17 @@ const die = (msg) => {
 const root = () => findRoot() || die('no .astrocode/ found — run `ac init` first');
 const json = (obj) => console.log(JSON.stringify(obj, null, 2));
 
+// Warn about other developers' claims with the same / similar name.
+function warnNameMatches(matches, me) {
+  const others = (matches || []).filter((m) => m.owner !== me);
+  if (!others.length) return;
+  console.log('  ⚠ possible duplicate work — already claimed by another developer:');
+  for (const m of others) {
+    const where = m.type === 'phase' ? `phase ${m.number} (milestone ${m.milestone})` : `milestone ${m.number}`;
+    console.log(`    - ${m.match}: "${m.name}" — ${where} by ${m.owner} on ${m.branch}`);
+  }
+}
+
 const FRAMEWORK_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // After `ac install`, the Claude-facing framework (esp. workflows) lives in the
 // home; prefer it so `ac path workflows` resolves there from any project.
@@ -55,9 +66,11 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac state set <key> <value>          atomically update a state field
   ac roadmap list                     list phases
   ac roadmap render                   regenerate .astrocode/ROADMAP.md
-  ac milestone new                    claim the next milestone number
+  ac milestone new [--name "…"]       claim the next milestone number (+ dup-name check)
+  ac milestone check "<name>"         see if a milestone with a similar name exists
   ac milestone complete               archive the current milestone + retire its claims
-  ac phase add <name> [--milestone N] claim the next phase number + add it
+  ac phase add <name> [--milestone N] claim the next phase number + add it (+ dup-name check)
+  ac phase check "<name>"             see if a phase with a similar name exists
   ac phase verify <phase>             mark a phase verified (AI gate passed)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
@@ -144,13 +157,29 @@ async function main() {
     case 'milestone': {
       const r = root();
       if (pos[0] === 'new') {
-        const res = claim({ root: r, type: 'milestone' });
+        const name = typeof flags.name === 'string' ? flags.name : pos.slice(1).join(' ').trim();
+        const res = claim({ root: r, type: 'milestone', name });
         if (res.source === 'error') die(`claim failed: ${res.error}`);
         await updateState(r, (s) => ({ ...s, active_milestone: res.number, status: 'planning' }));
         const rm = loadRoadmap(r);
         rm.milestone = res.number;
         renderRoadmap(r);
-        console.log(`✓ milestone ${res.number} [${res.source}] — ${res.message ?? ''}`);
+        console.log(`✓ milestone ${res.number}${name ? ` "${name}"` : ''} [${res.source}] — ${res.message ?? ''}`);
+        warnNameMatches(res.matches, gitIdentity(r).owner);
+      } else if (pos[0] === 'check') {
+        const name = pos.slice(1).join(' ').trim();
+        if (!name) die('usage: ac milestone check "<name>"');
+        const mres = findNameMatches(r, { type: 'milestone', name });
+        if (!mres.available) console.error('• no coordinated remote — cannot check across the team');
+        else if (!mres.matches.length) console.log(`✓ no milestone named like "${name}" in the registry`);
+        else {
+          const me = gitIdentity(r).owner;
+          console.log(`possible matches for "${name}":`);
+          for (const m of mres.matches) {
+            const who = m.owner === me ? `${m.owner} (you)` : m.owner;
+            console.log(`  - ${m.match}: "${m.name}" — milestone ${m.number} by ${who} on ${m.branch}`);
+          }
+        }
       } else if (pos[0] === 'complete') {
         const arch = await completeMilestone(r);
         const released = markComplete({ root: r, milestone: arch.milestone });
@@ -159,7 +188,7 @@ async function main() {
         if (released.ok && released.source === 'remote') console.log(`  retired ${released.changed} registry claim(s)`);
         console.log('  start the next cycle with `ac milestone new`');
       } else {
-        die('usage: ac milestone <new|complete>');
+        die('usage: ac milestone <new [--name …]|check "<name>"|complete>');
       }
       return;
     }
@@ -174,12 +203,30 @@ async function main() {
         const st = loadState(r) || {};
         const rm = loadRoadmap(r);
         const milestone = Number(flags.milestone) || st.active_milestone || rm.milestone || 1;
-        const res = claim({ root: r, type: 'phase', milestone });
+        const res = claim({ root: r, type: 'phase', milestone, name });
         if (res.source === 'error') die(`claim failed: ${res.error}`);
         const phase = await addPhase(r, { number: res.number, name, milestone });
         const tag = res.source === 'remote' ? `[registry: ${res.branch}]` : '[local]';
         console.log(`✓ phase ${phase.number} "${name}" (milestone ${milestone}) ${tag}`);
         if (res.source === 'local') console.log('  ⚠ not team-coordinated (no remote) — numbers may collide on merge');
+        warnNameMatches(res.matches, gitIdentity(r).owner);
+        return;
+      }
+
+      if (sub === 'check') {
+        const name = pos.slice(1).join(' ').trim();
+        if (!name) die('usage: ac phase check "<name>"');
+        const res = findNameMatches(r, { type: 'phase', name });
+        if (!res.available) console.error('• no coordinated remote — cannot check across the team');
+        else if (!res.matches.length) console.log(`✓ no phase named like "${name}" in the registry`);
+        else {
+          const me = gitIdentity(r).owner;
+          console.log(`possible matches for "${name}":`);
+          for (const m of res.matches) {
+            const who = m.owner === me ? `${m.owner} (you)` : m.owner;
+            console.log(`  - ${m.match}: "${m.name}" — phase ${m.number} (milestone ${m.milestone}) by ${who} on ${m.branch}`);
+          }
+        }
         return;
       }
 

@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { git } from '../lib/git.mjs';
 import { initPlanning } from '../lib/planning.mjs';
 import { paths } from '../lib/paths.mjs';
-import { claim, readRegistry, markComplete } from '../lib/registry.mjs';
+import { claim, readRegistry, markComplete, findNameMatches } from '../lib/registry.mjs';
 import { addDecision, canonPull } from '../lib/canon.mjs';
 
 function mkBareRemote() {
@@ -114,6 +114,34 @@ test('registry claims preserve shared canon (no tree wipe)', async () => {
   const pull = canonPull(dir);
   assert.ok(pull.pulled.includes('DECISIONS.md'));
   assert.match(readFileSync(paths(dir).decisions, 'utf8'), /ADR-001 — Keep me/);
+});
+
+test('name tracking flags duplicate work across devs', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  claim({ root: alice, type: 'milestone' }); // m1 + phase 1
+  const a = claim({ root: alice, type: 'phase', milestone: 1, name: 'User Authentication' });
+  assert.equal(a.source, 'remote', a.error || '');
+
+  // exact match (case-insensitive) by another dev
+  const exact = findNameMatches(bob, { type: 'phase', name: 'user authentication' });
+  assert.equal(exact.available, true);
+  assert.equal(exact.matches.length, 1);
+  assert.equal(exact.matches[0].match, 'exact');
+  assert.equal(exact.matches[0].owner, 'alice@example.com');
+
+  // a similar (token-overlap) name is flagged too
+  const similar = findNameMatches(bob, { type: 'phase', name: 'Authentication' });
+  assert.equal(similar.matches[0]?.match, 'similar');
+
+  // an unrelated name is not flagged
+  assert.equal(findNameMatches(bob, { type: 'phase', name: 'Billing' }).matches.length, 0);
+
+  // claim() also surfaces the matches it saw
+  const b = claim({ root: bob, type: 'phase', milestone: 1, name: 'User Authentication' });
+  assert.ok(b.matches.some((m) => m.owner === 'alice@example.com' && m.match === 'exact'));
 });
 
 test('markComplete retires a milestone\'s claims', () => {

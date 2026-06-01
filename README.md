@@ -72,10 +72,13 @@ Everything lives in **`.astrocode/`** in your repo (human-readable, git-committe
 is the human gate (UAT against the acceptance checklist written at plan time). The AI
 never auto-closes its own work; `ac phase accept` requires a prior `verified`.
 
-**Numbering.** `ac phase add` / `ac milestone new` claim the next free number from
-`registry.json` on an orphan branch (`astro-registry`) via a git compare-and-swap: if
-someone else pushed first your push is rejected and `ac` retries with the next number.
-No server, no `gh`. Without a remote it falls back to local numbering (and warns).
+**Numbering & duplicate detection.** `ac phase add` / `ac milestone new` claim the next
+free number from `registry.json` on an orphan branch (`astro-registry`) via a git
+compare-and-swap: if someone else pushed first your push is rejected and `ac` retries
+with the next number. No server, no `gh`. Claims also record the **name**, so adding a
+phase (or `ac phase check "<name>"`) warns when another dev is already building
+something with the same or similar name — catching duplicate work early. Without a
+remote it falls back to local numbering (and warns).
 
 **Models.** `.astrocode/config.json → models` sets a tier per role (`opus`/`sonnet`/
 `haiku`); unset a role to inherit the session model. `ac config set models.executor opus`,
