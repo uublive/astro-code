@@ -162,7 +162,7 @@ tests/           node:test — engine units + a real git registry integration te
 ## Development
 
 ```bash
-npm test     # 15 tests: engine units + a real bare-remote registry integration test
+npm test     # engine units + a real bare-remote registry integration test
 ```
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full design, the speed rationale,
