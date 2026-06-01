@@ -1,0 +1,26 @@
+{
+  "name": "astro-code",
+  "version": "0.1.0",
+  "description": "A lean, multi-developer, Claude-Code-4.8-native evolution of GSD.",
+  "type": "module",
+  "bin": {
+    "ac": "bin/ac.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "test": "node --test",
+    "ac": "node bin/ac.mjs"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "commands",
+    "agents",
+    "workflows",
+    "hooks",
+    "templates"
+  ],
+  "license": "MIT"
+}

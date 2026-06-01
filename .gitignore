@@ -1,0 +1,9 @@
+node_modules/
+*.log
+.DS_Store
+# bin/ holds our CLI — override the global gitignore that excludes bin/
+!bin/
+!bin/**
+# transient state — never commit locks or temp writes
+.planning/.lock/
+**/*.tmp-*
