@@ -13,8 +13,9 @@ You are starting a new astro-code project in the current repository.
    forks. Write the result into `.astrocode/PROJECT.md`.
    Then seed `.astrocode/CONVENTIONS.md` with the agreed **stack, naming, patterns,
    and testing style** — this canon is injected into every future planning and
-   execution agent, so getting it right now keeps the whole team consistent. Record
-   any notable up-front choices with `ac decision add`.
+   execution agent, so getting it right now keeps the whole team consistent. Share it
+   with `ac canon push`, and record any notable up-front choices with `ac decision add`
+   (these go to the shared orphan branch so the whole team sees them immediately).
 3. Propose an initial set of phases (small, sequenced, each a vertical slice).
    Confirm with the user, then create each with `ac phase add "<name>"`. Each call
    claims the next phase number from the shared registry (collision-proof across

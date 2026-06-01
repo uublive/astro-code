@@ -10,9 +10,10 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    `.astrocode/` lives — find it from the cwd). Resolve the phase slug from
    `ac roadmap list` (e.g. `03` → `03-payments`). Read the phase goal from
    `.astrocode/PROJECT.md` / the roadmap entry.
-2. Gather inputs: workflow path (`ac path workflows`), model tiers
-   (`ac config get models`), and the **project canon** (`ac canon` — conventions +
-   decisions every agent must obey).
+2. Refresh the team canon (`ac canon pull` — best-effort; pulls the shared
+   DECISIONS/CONVENTIONS from the orphan branch). Then gather inputs: workflow path
+   (`ac path workflows`), model tiers (`ac config get models`), and the **project
+   canon** (`ac canon` — conventions + decisions every agent must obey).
 3. Invoke the **Workflow** tool:
    ```
    Workflow({

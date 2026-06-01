@@ -10,8 +10,9 @@ Capture a decision into the project canon.
 2. Ask the user (briefly) for the **why** and what was **rejected** (the alternatives
    and why not). Keep it to a sentence or two each.
 3. Record it: `ac decision add "<title>" --why "<why>" --rejected "<rejected>"`.
-4. Confirm the ADR id and remind the user it will now be injected into every
-   `/astro-plan` and `/astro-execute` run.
+4. Confirm the ADR id (and whether it landed `[shared]` on the orphan branch or
+   `[local]`). It's now part of the canon injected into every `/astro-plan` and
+   `/astro-execute` run, and — when shared — instantly visible to the whole team.
 
 Use this whenever a real architectural choice is made — stack, pattern, naming rule,
 boundary. Small, frequent entries keep the canon honest.

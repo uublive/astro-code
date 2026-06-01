@@ -10,8 +10,9 @@ Execute phase `$ARGUMENTS`.
    `ac roadmap list`. Confirm `.astrocode/phases/<slug>/PLAN.md` exists — if not,
    tell the user to run `/astro-plan <phase>` first.
 2. Mark the phase active: `ac state set active_phase <slug>`.
-3. Gather inputs: workflow path (`ac path workflows`), model tiers
-   (`ac config get models`), and the **project canon** (`ac canon`).
+3. Refresh the team canon (`ac canon pull` — best-effort). Then gather inputs:
+   workflow path (`ac path workflows`), model tiers (`ac config get models`), and the
+   **project canon** (`ac canon`).
 4. Invoke the **Workflow** tool:
    ```
    Workflow({

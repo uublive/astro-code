@@ -142,10 +142,17 @@ project carries an always-on **canon**:
 `/astro-plan` and `/astro-execute` inject the canon (`ac canon`) into **every** agent,
 so plans and code conform to it and past decisions aren't relitigated.
 
+**Canon is team-global.** It's shared on the same orphan branch as the registry, so a
+decision one developer records is instantly visible to everyone — no merge required.
+`ac decision add` does a compare-and-swap *append* to the shared `DECISIONS.md`, so
+ADR numbers never collide across developers (same guarantee as phase numbering). The
+local `.astrocode/` copies are fast-read mirrors.
+
 ```bash
-ac canon                                              # what every agent sees
-ac decision add "Use pure git" --why "no deps" --rejected "gh API"
-ac decision list
+ac canon                                              # what every agent sees (local mirror)
+ac decision add "Use pure git" --why "no deps" --rejected "gh API"   # shared, append-only
+ac canon pull                                         # refresh local mirror from the team
+ac canon push                                         # publish local CONVENTIONS.md to the team
 ```
 
 > Canon is permanent and prescriptive (always on). A codebase *map* is disposable and

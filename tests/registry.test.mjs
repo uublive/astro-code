@@ -9,9 +9,12 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { readFileSync } from 'node:fs';
 import { git } from '../lib/git.mjs';
 import { initPlanning } from '../lib/planning.mjs';
+import { paths } from '../lib/paths.mjs';
 import { claim, readRegistry, markComplete } from '../lib/registry.mjs';
+import { addDecision, canonPull } from '../lib/canon.mjs';
 
 function mkBareRemote() {
   const bare = mkdtempSync(join(tmpdir(), 'ac-origin-')) + '/origin.git';
@@ -75,6 +78,42 @@ test('two independent working copies on one remote never collide', () => {
   const pa = claim({ root: alice, type: 'phase', milestone: 1 });
   const pb = claim({ root: bob, type: 'phase', milestone: 1 });
   assert.notEqual(pa.number, pb.number);
+});
+
+test('decisions are shared on the orphan branch without ADR collisions', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  const a = await addDecision(alice, { title: 'Pure git registry', why: 'no deps' });
+  assert.equal(a.source, 'remote', a.error || '');
+  assert.equal(a.id, 'ADR-001');
+
+  // bob computes the next ADR from the SHARED state → no collision
+  const b = await addDecision(bob, { title: 'Markdown commands' });
+  assert.equal(b.id, 'ADR-002');
+
+  // alice pulls and sees bob's decision too
+  const pull = canonPull(alice);
+  assert.ok(pull.pulled.includes('DECISIONS.md'));
+  const local = readFileSync(paths(alice).decisions, 'utf8');
+  assert.match(local, /ADR-001 — Pure git registry/);
+  assert.match(local, /ADR-002 — Markdown commands/);
+});
+
+test('registry claims preserve shared canon (no tree wipe)', async () => {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare, 'alice');
+
+  await addDecision(dir, { title: 'Keep me' });
+  const c = claim({ root: dir, type: 'milestone' }); // writes registry.json on the same branch
+  assert.equal(c.source, 'remote');
+
+  // both files coexist on the branch
+  assert.equal(readRegistry(dir).registry.claims.length >= 1, true);
+  const pull = canonPull(dir);
+  assert.ok(pull.pulled.includes('DECISIONS.md'));
+  assert.match(readFileSync(paths(dir).decisions, 'utf8'), /ADR-001 — Keep me/);
 });
 
 test('markComplete retires a milestone\'s claims', () => {

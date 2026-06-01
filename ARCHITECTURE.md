@@ -56,6 +56,22 @@ server, no race. If you reach for phase 8 and it's taken, you get 9.
 When there is no coordinated remote, `ac` falls back to **local** numbering from
 the roadmap and warns that numbers are not team-coordinated.
 
+### The shared store generalizes (canon lives here too)
+
+The orphan branch is really a small **shared store**, and `lib/shared.mjs` exposes it
+as a transaction: `transact(fn)` reads the current tip, lets `fn` compute file
+updates, and commits a new tree that **preserves every other file** before pushing as
+a fast-forward (retrying on rejection). Numbering is one transaction over
+`registry.json`; the team canon is another over `DECISIONS.md` / `CONVENTIONS.md` on
+the *same* branch.
+
+This is why `DECISIONS.md` is shared: it's append-only and project-global, so
+`ac decision add` is a CAS append (ADR numbers can't collide across developers) and
+every teammate sees new decisions immediately. `CONVENTIONS.md` is editable, so it's
+last-writer-wins via `ac canon push` (rare, by agreement). Per-phase plans/summaries
+stay on the working branch with the code (see *Canon vs. codebase map*). Local
+`.astrocode/` copies are fast-read mirrors refreshed by `ac canon pull`.
+
 > Note: unlike GSD's external locksmith hook (which grepped numbers out of
 > ROADMAP.md on write), astro-code enforces numbering through the CLI itself
 > (`ac phase add` / `ac milestone new`). ROADMAP.md is *generated*, never the

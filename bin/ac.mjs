@@ -11,7 +11,7 @@ import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap } from '../lib/roadmap.mjs';
 import { claim, readRegistry, registryBranch, markComplete } from '../lib/registry.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
-import { canonText, loadCanon, addDecision } from '../lib/canon.mjs';
+import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
 import { installClaude, uninstallClaude, ASTRO_HOME } from '../lib/install.mjs';
 
@@ -59,8 +59,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase add <name> [--milestone N] claim the next phase number + add it
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
-  ac canon                            print the project canon (conventions + decisions)
-  ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision
+  ac canon [pull | push]              print canon; pull/push shares it on the orphan branch
+  ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision (shared)
   ac decision list                    list recorded decisions
   ac registry show                    print the shared numbering registry
   ac install | uninstall              (un)install commands + agents into ~/.claude
@@ -248,8 +248,18 @@ async function main() {
 
     case 'canon': {
       const r = root();
-      const text = canonText(r);
-      process.stdout.write((text || '(no canon yet — fill in .astrocode/CONVENTIONS.md)') + '\n');
+      if (pos[0] === 'pull') {
+        const res = canonPull(r);
+        if (!res.ok) console.error('• no coordinated remote — canon is local-only');
+        else console.log(`✓ pulled ${res.pulled.length ? res.pulled.join(', ') : 'nothing'} from ${res.branch}`);
+      } else if (pos[0] === 'push') {
+        const res = canonPush(r);
+        if (!res.ok) die(res.error || 'no coordinated remote — cannot push canon');
+        else console.log(`✓ published ${res.pushed.join(', ')} to ${res.branch}`);
+      } else {
+        const text = canonText(r);
+        process.stdout.write((text || '(no canon yet — fill in .astrocode/CONVENTIONS.md)') + '\n');
+      }
       return;
     }
 
@@ -263,7 +273,8 @@ async function main() {
           why: typeof flags.why === 'string' ? flags.why : '',
           rejected: typeof flags.rejected === 'string' ? flags.rejected : '',
         });
-        console.log(`✓ ${res.id} — ${res.title} (${res.date})`);
+        const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
+        console.log(`✓ ${res.id} — ${res.title} (${res.date}) ${tag}`);
       } else if (pos[0] === 'list') {
         const { decisions } = loadCanon(r);
         process.stdout.write((decisions || '(no decisions yet)') + '\n');
