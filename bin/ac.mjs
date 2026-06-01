@@ -374,9 +374,10 @@ async function main() {
       if (isRepo(FRAMEWORK_ROOT)) {
         try { mkdirSync(ASTRO_HOME, { recursive: true }); writeFileSync(join(ASTRO_HOME, 'source'), FRAMEWORK_ROOT + '\n'); } catch { /* best-effort */ }
       }
-      console.log(`✓ home: ${res.home}  (${res.commands} commands, ${res.agents} agents, ${res.workflows} workflows)`);
+      console.log(`✓ home: ${res.home}  (${res.commands} commands, ${res.agents} agents, ${res.workflows} workflows, ${res.hooks} hooks)`);
       for (const t of res.targets) {
-        console.log(`✓ linked → ${t.dir}  [${t.label}]  (${t.commands} cmds, ${t.agents} agents)`);
+        const hk = t.hooks ? ', update banner+statusline' : '';
+        console.log(`✓ linked → ${t.dir}  [${t.label}]  (${t.commands} cmds, ${t.agents} agents${hk})`);
       }
       console.log('  after pulling updates, refresh the global CLI: npm install -g .');
       return;
@@ -442,7 +443,7 @@ async function main() {
       }
 
       const res = installClaude(clone);
-      console.log(`✓ installed → ${res.home} (${res.commands} cmds, ${res.agents} agents, ${res.workflows} workflows) across ${res.targets.length} config dir(s)`);
+      console.log(`✓ installed → ${res.home} (${res.commands} cmds, ${res.agents} agents, ${res.workflows} workflows, ${res.hooks} hooks) across ${res.targets.length} config dir(s)`);
       let version = '?';
       try { version = (JSON.parse(readFileSync(join(clone, 'package.json'), 'utf8')) || {}).version || '?'; } catch { /* ignore */ }
       console.log(`✓ astro-code is now at v${version} — restart Claude Code if the command list doesn't refresh`);
