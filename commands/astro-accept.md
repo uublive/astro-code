@@ -21,5 +21,9 @@ human accepts. This is the **human gate** after `/astro-verify` (the AI gate).
      marks the phase **complete**). Suggest the next phase, or `/astro-complete-milestone`.
    - **Something fails** → `ac phase reject <slug> --reason "<what's wrong>"` (records a
      blocker, marks it **rejected**). Summarize the gap so it can be re-planned/executed.
+5. On accept, close with an optional context nudge: the phase is **complete** and all
+   state is saved to `.astrocode/`, so running `/clear` before the next phase keeps the
+   context lean and loses nothing (each command re-grounds from disk). Phrase it as a
+   suggestion, not a requirement.
 
 Keep it real — UAT is about "is this what I actually wanted?", not re-running unit tests.

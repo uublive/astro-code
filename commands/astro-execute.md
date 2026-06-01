@@ -42,10 +42,12 @@ Execute phase `$ARGUMENTS`.
      canon + CONTEXT.md.
    - **No subagents at all:** execute the tasks inline, in dependency order, one
      atomic commit each, then verify yourself.
-5. Report the verdict.
+5. Report the verdict (the workflow has returned by now — safe to suggest `/clear`).
    - **PASS** → run `ac phase verify <slug>` (marks it **verified** — the AI gate),
      then tell the user to run **`/astro-accept <slug>`** for UAT sign-off, which is
-     what actually closes the phase.
+     what actually closes the phase. Optionally add: state is saved to `.astrocode/`,
+     so `/clear` before `/astro-accept` (or the next phase) keeps context lean and
+     loses nothing — a suggestion, not a requirement.
    - **FAIL** → surface the reasons and stop; leave the phase unverified.
 
 Execution + the in-workflow verifier produce a **verified** phase at best — never

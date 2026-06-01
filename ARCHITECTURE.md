@@ -18,6 +18,21 @@ the discuss → plan → execute → verify loop — and drops ~80% of the surfa
    no `gh`, no external dependency). See below.
 4. **File-based state.** Everything lives in `.astrocode/`, human-readable and
    git-committable. State mutations are atomic and lock-guarded.
+5. **The main thread is an orchestrator.** Token-heavy or dirty work (reading/
+   searching/reasoning over many files, multi-task execution, goal-backward
+   verification) runs in an *isolated context* and returns only its conclusion — so
+   the session stays lean (principle #2). Work sorts into three buckets:
+   - **Heavy *and* parallelizable → Workflow** (deterministic fan-out). Fall back to
+     Agent subagents, then inline, if the tool is unavailable (`astro-plan`,
+     `astro-execute`).
+   - **Heavy but serial / single-shot → one Agent subagent** (`astro-verify` →
+     `astro-verifier`; `astro-adopt` → `astro-mapper`).
+   - **Interactive *or* trivial → inline in the main thread.** Anything that talks to
+     the human (`astro-discuss`, `astro-new-project`, `astro-accept`) *must* stay
+     inline — a subagent can't run `AskUserQuestion` against the user, and the
+     conversation is the deliverable. So must one-shot CLI calls (`astro-status`,
+     `astro-phase`, `astro-decision`) — wrapping a single `ac` call in a subagent just
+     burns a turn. The rule is context isolation, **not** "always delegate."
 
 ## Repository layout
 
@@ -116,6 +131,24 @@ GSD's four always-maintained documents.
 Phase status is two-gated: `executing → verified → complete`. The AI verifier can
 only reach `verified`; closing a phase requires human UAT sign-off
 (`ac phase accept`, which refuses unless the phase is already `verified`).
+
+### Context hygiene (`/clear`-safe by design)
+
+Because all state lives in `.astrocode/` files + the registry — and because heavy
+work runs in workflows/subagents with their own contexts (principle #5) — the main
+thread barely accumulates, and every command re-grounds from disk (`ac status`,
+roadmap, `CONTEXT.md`, `PLAN.md`). So astro-code needs `/clear` *less often* than
+GSD (which does its heavy lifting inline) and `/clear` is *safe*: nothing is lost.
+
+The guidance, therefore:
+- **Clear at phase boundaries**, not between every command — after a phase reaches a
+  durable resting point (`astro-accept` closes it, or after `astro-execute`/
+  `astro-verify` before the next phase's `discuss`/`plan`). Commands emit a one-line,
+  *optional* nudge at those handoffs ("state is saved; `/clear` to keep context lean").
+- **Don't** clear mid-interactive-flow (mid-`discuss`, or `discuss → plan` while the
+  human is still in the thread) — that conversation carries intent not yet on disk.
+- **Never** clear while a background Workflow/Agent is in flight — you'd risk losing
+  its completion notification. The nudge fires only *after* the work returns.
 
 ## Why this is faster than GSD
 
