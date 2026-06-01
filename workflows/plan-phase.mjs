@@ -46,6 +46,9 @@ const summary = await agent(
     `Write ${root}/.astrocode/phases/${phase}/PLAN.md as numbered tasks. Each task MUST declare:\n` +
     `  id, title, the files it touches, and depends_on (ids of tasks that must finish first).\n` +
     `Keep tasks small and independently committable so execution can parallelize. ` +
+    `Also write ${root}/.astrocode/phases/${phase}/ACCEPTANCE.md — a short, user-facing ` +
+    `UAT checklist of "the user can …" statements a human will confirm before the phase ` +
+    `closes (acceptance, not unit tests). ` +
     `The plan MUST conform to the project canon below (stack, naming, patterns, prior decisions). ` +
     `Return a one-line summary of the plan.` +
     CANON,

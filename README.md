@@ -39,7 +39,8 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-phase <name>       add a phase (claims its number)
 /astro-plan <phase>       parallel research → executable PLAN.md
 /astro-execute <phase>    wave-based parallel execution, then verify
-/astro-verify <phase>     confirm the phase goal is met (goal-backward)
+/astro-verify <phase>     AI gate: confirm the phase goal is met (goal-backward)
+/astro-accept <phase>     human gate: UAT sign-off, then close the phase
 /astro-milestone          start the next milestone cycle
 /astro-complete-milestone archive the finished milestone
 /astro-config             pick the model (opus/sonnet/haiku) per role
@@ -61,6 +62,11 @@ ac milestone complete          # archive the current milestone
 
 Everything lives in **`.astrocode/`** in your repo (human-readable, git-committed):
 `PROJECT.md`, `ROADMAP.md`, per-phase `PLAN.md`/`SUMMARY.md`, plus the canon.
+
+**Two gates close a phase.** It moves `executing → verified → complete`: the
+`astro-verifier` agent is the machine gate (goal-backward, tests), and `/astro-accept`
+is the human gate (UAT against the acceptance checklist written at plan time). The AI
+never auto-closes its own work; `ac phase accept` requires a prior `verified`.
 
 **Numbering.** `ac phase add` / `ac milestone new` claim the next free number from
 `registry.json` on an orphan branch (`astro-registry`) via a git compare-and-swap: if

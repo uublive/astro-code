@@ -15,6 +15,11 @@ declare:
 - `file` — the file(s) it touches
 - `depends_on` — ids of tasks that must finish first (empty if independent)
 
+Also write `.astrocode/phases/<slug>/ACCEPTANCE.md`: a short, user-facing UAT
+checklist of "the user can …" statements that a human will confirm before the phase
+closes (acceptance criteria, not unit tests). Keep it to the handful that prove the
+phase goal is really met.
+
 Principles:
 - **Small, independently committable tasks.** Maximize tasks with no dependencies
   so the executor can run them in parallel waves.

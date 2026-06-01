@@ -8,7 +8,8 @@ import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
 import { initPlanning } from '../lib/planning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
-import { loadRoadmap, addPhase, renderRoadmap } from '../lib/roadmap.mjs';
+import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus } from '../lib/roadmap.mjs';
+import { gitIdentity } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete } from '../lib/registry.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
@@ -57,6 +58,9 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac milestone new                    claim the next milestone number
   ac milestone complete               archive the current milestone + retire its claims
   ac phase add <name> [--milestone N] claim the next phase number + add it
+  ac phase verify <phase>             mark a phase verified (AI gate passed)
+  ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
+  ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
   ac canon [pull | push]              print canon; pull/push shares it on the orphan branch
@@ -161,19 +165,47 @@ async function main() {
     }
 
     case 'phase': {
-      if (pos[0] !== 'add') die('usage: ac phase add <name> [--milestone N]');
       const r = root();
-      const name = pos.slice(1).join(' ').trim();
-      if (!name) die('phase name required: ac phase add <name>');
-      const st = loadState(r) || {};
-      const rm = loadRoadmap(r);
-      const milestone = Number(flags.milestone) || st.active_milestone || rm.milestone || 1;
-      const res = claim({ root: r, type: 'phase', milestone });
-      if (res.source === 'error') die(`claim failed: ${res.error}`);
-      const phase = await addPhase(r, { number: res.number, name, milestone });
-      const tag = res.source === 'remote' ? `[registry: ${res.branch}]` : '[local]';
-      console.log(`✓ phase ${phase.number} "${name}" (milestone ${milestone}) ${tag}`);
-      if (res.source === 'local') console.log('  ⚠ not team-coordinated (no remote) — numbers may collide on merge');
+      const sub = pos[0];
+
+      if (sub === 'add') {
+        const name = pos.slice(1).join(' ').trim();
+        if (!name) die('phase name required: ac phase add <name>');
+        const st = loadState(r) || {};
+        const rm = loadRoadmap(r);
+        const milestone = Number(flags.milestone) || st.active_milestone || rm.milestone || 1;
+        const res = claim({ root: r, type: 'phase', milestone });
+        if (res.source === 'error') die(`claim failed: ${res.error}`);
+        const phase = await addPhase(r, { number: res.number, name, milestone });
+        const tag = res.source === 'remote' ? `[registry: ${res.branch}]` : '[local]';
+        console.log(`✓ phase ${phase.number} "${name}" (milestone ${milestone}) ${tag}`);
+        if (res.source === 'local') console.log('  ⚠ not team-coordinated (no remote) — numbers may collide on merge');
+        return;
+      }
+
+      const ph = findPhase(r, pos[1]);
+      if (sub === 'verify') {
+        if (!ph) die('usage: ac phase verify <phase>');
+        await setPhaseStatus(r, ph.slug, 'verified');
+        console.log(`✓ phase ${ph.number} "${ph.name}" → verified (run /astro-accept for UAT to close)`);
+      } else if (sub === 'accept') {
+        if (!ph) die('usage: ac phase accept <phase> [--by name] [--force]');
+        if (ph.status !== 'verified' && !flags.force) {
+          die(`phase ${ph.number} is "${ph.status}", not verified — run /astro-verify first (or pass --force)`);
+        }
+        const by = typeof flags.by === 'string' ? flags.by : gitIdentity(r).owner;
+        await setPhaseStatus(r, ph.slug, 'complete', { accepted_by: by, accepted_at: new Date().toISOString() });
+        await updateState(r, (s) => ({ ...s, active_phase: s.active_phase === ph.slug ? null : s.active_phase }));
+        console.log(`✓ phase ${ph.number} "${ph.name}" accepted by ${by} → complete`);
+      } else if (sub === 'reject') {
+        if (!ph) die('usage: ac phase reject <phase> --reason "…"');
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        await setPhaseStatus(r, ph.slug, 'rejected');
+        await updateState(r, (s) => ({ ...s, blockers: [...(s.blockers || []), { phase: ph.slug, reason, at: new Date().toISOString() }] }));
+        console.log(`✗ phase ${ph.number} "${ph.name}" → rejected${reason ? `: ${reason}` : ''}`);
+      } else {
+        die('usage: ac phase <add|verify|accept|reject> …');
+      }
       return;
     }
 

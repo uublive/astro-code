@@ -24,8 +24,11 @@ Execute phase `$ARGUMENTS`.
    It discovers the plan's tasks + dependencies, groups them into waves, runs each
    wave's tasks **in parallel inside isolated git worktrees** (atomic commit per
    task), then verifies the phase goal.
-5. Report the verdict. If PASS, suggest `/astro-verify` then the next phase. If
-   FAIL, surface the reasons and stop.
+5. Report the verdict.
+   - **PASS** → run `ac phase verify <slug>` (marks it **verified** — the AI gate),
+     then tell the user to run **`/astro-accept <slug>`** for UAT sign-off, which is
+     what actually closes the phase.
+   - **FAIL** → surface the reasons and stop; leave the phase unverified.
 
-After a green phase, mark it: `ac state set active_phase null` and update the
-roadmap status as appropriate.
+Execution + the in-workflow verifier produce a **verified** phase at best — never
+**complete**. Only human UAT (`/astro-accept`) closes a phase.

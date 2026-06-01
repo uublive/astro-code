@@ -107,9 +107,14 @@ GSD's four always-maintained documents.
 ## The loop
 
 `ac init` → `astro-new-project` → per phase: `astro-phase` (claim) →
-`astro-plan` (parallel research + synthesis) → `astro-execute` (wave-based
-parallel executors) → `astro-verify` → `astro-complete-milestone` →
-`astro-milestone` (next cycle).
+`astro-plan` (parallel research + synthesis + acceptance checklist) →
+`astro-execute` (wave-based parallel executors) → `astro-verify` (AI gate →
+`verified`) → `astro-accept` (human UAT gate → `complete`) →
+`astro-complete-milestone` → `astro-milestone` (next cycle).
+
+Phase status is two-gated: `executing → verified → complete`. The AI verifier can
+only reach `verified`; closing a phase requires human UAT sign-off
+(`ac phase accept`, which refuses unless the phase is already `verified`).
 
 ## Why this is faster than GSD
 

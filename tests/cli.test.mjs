@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { initPlanning } from '../lib/planning.mjs';
 import { paths } from '../lib/paths.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
-import { addPhase, loadRoadmap, renderRoadmapMd, slugify } from '../lib/roadmap.mjs';
+import { addPhase, loadRoadmap, renderRoadmapMd, slugify, findPhase, setPhaseStatus } from '../lib/roadmap.mjs';
 import { claim } from '../lib/registry.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { loadCanon, canonText, addDecision } from '../lib/canon.mjs';
@@ -100,6 +100,26 @@ test('addDecision appends incrementing ADR ids and shows up in canon', async () 
   assert.match(decisions, /ADR-002 — Markdown commands/);
   // canonText merges conventions + decisions for prompt injection
   assert.match(canonText(root), /ADR-002/);
+});
+
+test('phase lifecycle: findPhase resolves refs and setPhaseStatus transitions', async () => {
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  await addPhase(root, { number: 3, name: 'Payments', milestone: 1 });
+  // resolvable by slug, padded number, bare number, and name
+  assert.equal(findPhase(root, '03-payments').number, 3);
+  assert.equal(findPhase(root, '03').number, 3);
+  assert.equal(findPhase(root, '3').number, 3);
+  assert.equal(findPhase(root, 'Payments').number, 3);
+
+  await setPhaseStatus(root, '03-payments', 'verified');
+  assert.equal(findPhase(root, '03').status, 'verified');
+  await setPhaseStatus(root, '03-payments', 'complete', { accepted_by: 'matteo', accepted_at: 'now' });
+  const ph = findPhase(root, '03');
+  assert.equal(ph.status, 'complete');
+  assert.equal(ph.accepted_by, 'matteo');
+  // ROADMAP.md renders the completed box only when complete
+  assert.match(readFileSync(paths(root).roadmapMd, 'utf8'), /\[x\] Phase 3 — Payments/);
 });
 
 test('config ships model tiers and is updatable', async () => {
