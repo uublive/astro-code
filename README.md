@@ -25,13 +25,12 @@ npm install -g .     # puts `ac` on your PATH
 ac install           # populates ~/.astro/code and links commands/agents into Claude Code
 ```
 
-`ac install` makes `~/.astro/code` the home and symlinks the commands/agents into
-Claude Code's config dir (`$CLAUDE_CONFIG_DIR` if set — e.g. profile managers like
-jean-claude — otherwise `~/.claude`). It's idempotent; `ac uninstall` reverses it.
-To update: `git pull && npm install -g . && ac install`.
-
-> Multiple profiles? Run `ac install` once per profile (with that profile's
-> `CLAUDE_CONFIG_DIR` active) — or symlink `commands` in the profile to `~/.claude`.
+`ac install` keeps the files in `~/.astro/code` and symlinks the commands/agents into
+**every** Claude config dir Claude Code reads: the base `~/.claude` **and every
+[jean-claude](https://github.com/) profile** (auto-detected from
+`~/.claude/.jean-claude/profiles.json`). So the commands show up in all your profiles
+at once — no per-profile reruns. It's idempotent; `ac uninstall` reverses it across
+all of them. To update: `git pull && npm install -g . && ac install`.
 
 ## Use it
 

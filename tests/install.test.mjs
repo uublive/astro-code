@@ -4,7 +4,7 @@
 // touches the real user/profile directories.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, existsSync, lstatSync, readlinkSync } from 'node:fs';
+import { mkdtempSync, existsSync, lstatSync, readlinkSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,15 +43,44 @@ test('install → ~/.astro/code + symlinks into ~/.claude (default); uninstall r
   });
 });
 
-test('install honors CLAUDE_CONFIG_DIR (profile manager) for command discovery', async () => {
+test('install honors a bare CLAUDE_CONFIG_DIR (no jean-claude)', async () => {
   const fakeHome = mkdtempSync(join(tmpdir(), 'ac-home-'));
   const profile = join(fakeHome, '.claude-myprofile');
   await withEnv({ home: fakeHome, configDir: profile }, async () => {
     const { installClaude } = await import(`../lib/install.mjs?p=${encodeURIComponent(profile)}`);
     installClaude(FRAMEWORK);
-    // commands must land in the ACTIVE profile dir, not ~/.claude
-    const link = join(profile, 'commands', 'astro-status.md');
-    assert.ok(lstatSync(link).isSymbolicLink(), 'command should be linked into CLAUDE_CONFIG_DIR');
-    assert.ok(!existsSync(join(fakeHome, '.claude', 'commands', 'astro-status.md')), 'should NOT use ~/.claude when a profile is set');
+    assert.ok(lstatSync(join(profile, 'commands', 'astro-status.md')).isSymbolicLink());
+  });
+});
+
+test('install fans out to the base AND every jean-claude profile', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-home-'));
+  const base = join(fakeHome, '.claude');
+  const p1 = join(fakeHome, '.claude-alpha');
+  const p2 = join(fakeHome, '.claude-beta');
+  // write a jean-claude registry under the base
+  mkdirSync(join(base, '.jean-claude'), { recursive: true });
+  writeFileSync(join(base, '.jean-claude', 'meta.json'), JSON.stringify({ claudeConfigPath: base }));
+  writeFileSync(
+    join(base, '.jean-claude', 'profiles.json'),
+    JSON.stringify({ profiles: { alpha: { configDir: p1 }, beta: { configDir: p2 } } }),
+  );
+
+  await withEnv({ home: fakeHome, configDir: undefined }, async () => {
+    const { installClaude, uninstallClaude } = await import(`../lib/install.mjs?j=${encodeURIComponent(fakeHome)}`);
+    installClaude(FRAMEWORK);
+
+    // commands linked into the base and BOTH profiles
+    for (const dir of [base, p1, p2]) {
+      const link = join(dir, 'commands', 'astro-status.md');
+      assert.ok(lstatSync(link).isSymbolicLink(), `expected command link in ${dir}`);
+      assert.ok(readlinkSync(link).startsWith(join(fakeHome, '.astro', 'code')));
+    }
+
+    const un = uninstallClaude();
+    assert.ok(un.removed >= 3); // at least one per target
+    for (const dir of [base, p1, p2]) {
+      assert.ok(!existsSync(join(dir, 'commands', 'astro-status.md')));
+    }
   });
 });

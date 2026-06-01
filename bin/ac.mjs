@@ -319,15 +319,16 @@ async function main() {
     case 'install': {
       const res = installClaude(FRAMEWORK_ROOT);
       console.log(`✓ home: ${res.home}  (${res.commands} commands, ${res.agents} agents, ${res.workflows} workflows)`);
-      console.log(`✓ linked ${res.linkedCommands} command(s) → ${res.commandsDir}`);
-      console.log(`✓ linked ${res.linkedAgents} agent(s)   → ${res.agentsDir}`);
-      console.log('  ensure `ac` is on PATH: run `npm install -g .` in the astro-code repo');
+      for (const t of res.targets) {
+        console.log(`✓ linked → ${t.dir}  [${t.label}]  (${t.commands} cmds, ${t.agents} agents)`);
+      }
+      console.log('  after pulling updates, refresh the global CLI: npm install -g .');
       return;
     }
 
     case 'uninstall': {
       const res = uninstallClaude();
-      console.log(`✓ removed ${res.removed} symlink(s) from ~/.claude and deleted ${res.home}`);
+      console.log(`✓ removed ${res.removed} symlink(s) across all config dirs and deleted ${res.home}`);
       return;
     }
 
