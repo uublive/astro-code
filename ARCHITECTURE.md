@@ -66,7 +66,27 @@ the roadmap and warns that numbers are not team-coordinated.
 - `.planning/PROJECT.md` — prose vision/requirements (human/model authored).
 - `.planning/state.json` — active milestone/phase, status, decisions, blockers.
 - `.planning/roadmap.json` — canonical phase list; `.planning/ROADMAP.md` rendered.
+- `.planning/CONVENTIONS.md` — prescriptive canon (stack, naming, patterns, testing).
+- `.planning/DECISIONS.md` — append-only ADR-lite log (decision · why · rejected).
 - `.planning/phases/NN-slug/` — PLAN.md, task files, SUMMARY.md (agent authored).
+
+## Canon vs. codebase map (why we have one, not the other)
+
+GSD ships `map-codebase` (parallel agents write 4 snapshot docs of the code). We
+deliberately don't, and instead invest in **canon**:
+
+- **Canon is prescriptive and permanent** — the rules new code must obey. It's the
+  cheap, high-leverage way to keep many parallel agents and multiple developers
+  consistent on stack/naming/patterns/decisions. It's injected into every planning
+  and execution agent (`ac canon`), so consistency is *enforced*, not hoped for.
+- **A codebase map is descriptive and disposable** — a photo of the code as it is.
+  Genuinely useful for onboarding to an *existing/large/legacy* codebase, but for
+  greenfield code grown under good canon it adds little, and a **stale map is worse
+  than none** (agents trust outdated info). So it doesn't belong in the core loop.
+
+If a map is ever needed, the right shape is one lightweight, *timestamped*,
+on-demand `CODEBASE.md` (the existing `astro-mapper` agent can produce it) — not
+GSD's four always-maintained documents.
 
 ## The loop
 

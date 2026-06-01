@@ -13,9 +13,11 @@ export const meta = {
   ],
 }
 
-const { root, phase, goal = '(see PROJECT.md)', models = {} } = args || {}
+const { root, phase, goal = '(see PROJECT.md)', models = {}, canon = '' } = args || {}
 if (!root || !phase) throw new Error('plan-phase requires args { root, phase, goal }')
 // models: per-role tier from .planning/config.json (opus|sonnet|haiku); undefined = inherit
+// canon: project conventions + decisions (from `ac canon`) — every agent must obey it
+const CANON = canon ? `\n\nPROJECT CANON — obey it (conventions + past decisions):\n${canon}` : ''
 
 phase('Research')
 const ANGLES = [
@@ -30,7 +32,8 @@ const findings = await parallel(
         `Phase goal: ${goal}\n` +
         `Your angle: ${angle}\n` +
         `Read the relevant files under ${root} and ${root}/.planning/. ` +
-        `Return concise, concrete findings (no preamble).`,
+        `Return concise, concrete findings (no preamble).` +
+        CANON,
       { label: `research:${i + 1}`, phase: 'Research', agentType: 'Explore', model: models.researcher },
     ),
   ),
@@ -43,7 +46,9 @@ const summary = await agent(
     `Write ${root}/.planning/phases/${phase}/PLAN.md as numbered tasks. Each task MUST declare:\n` +
     `  id, title, the files it touches, and depends_on (ids of tasks that must finish first).\n` +
     `Keep tasks small and independently committable so execution can parallelize. ` +
-    `Return a one-line summary of the plan.`,
+    `The plan MUST conform to the project canon below (stack, naming, patterns, prior decisions). ` +
+    `Return a one-line summary of the plan.` +
+    CANON,
   { phase: 'Synthesize', agentType: 'astro-planner', model: models.planner },
 )
 

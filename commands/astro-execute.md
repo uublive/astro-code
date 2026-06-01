@@ -10,13 +10,14 @@ Execute phase `$ARGUMENTS`.
    `ac roadmap list`. Confirm `.planning/phases/<slug>/PLAN.md` exists — if not,
    tell the user to run `/astro-plan <phase>` first.
 2. Mark the phase active: `ac state set active_phase <slug>`.
-3. Get the workflow path (`ac path workflows`) and model tiers
-   (`ac config get models`).
+3. Gather inputs: workflow path (`ac path workflows`), model tiers
+   (`ac config get models`), and the **project canon** (`ac canon`).
 4. Invoke the **Workflow** tool:
    ```
    Workflow({
      scriptPath: "<ac path workflows>/execute-phase.mjs",
-     args: { root: "<project root>", phase: "<phase slug>", models: <ac config get models> }
+     args: { root: "<project root>", phase: "<phase slug>",
+             models: <ac config get models>, canon: "<ac canon>" }
    })
    ```
    It discovers the plan's tasks + dependencies, groups them into waves, runs each

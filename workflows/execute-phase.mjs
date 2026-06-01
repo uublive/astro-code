@@ -15,9 +15,11 @@ export const meta = {
   ],
 }
 
-const { root, phase, models = {} } = args || {}
+const { root, phase, models = {}, canon = '' } = args || {}
 if (!root || !phase) throw new Error('execute-phase requires args { root, phase }')
 // models: per-role tier from .planning/config.json (opus|sonnet|haiku); undefined = inherit
+// canon: project conventions + decisions (from `ac canon`) — executors/verifier must obey it
+const CANON = canon ? `\n\nPROJECT CANON — obey it (conventions + past decisions):\n${canon}` : ''
 
 const TASK_SCHEMA = {
   type: 'object',
@@ -78,7 +80,9 @@ for (let w = 0; w < waves.length; w++) {
         `Implement task ${t.id} — "${t.title}" — of phase ${phase} in project ${root}.\n` +
           `Plan/task file: ${t.file || `${root}/.planning/phases/${phase}/PLAN.md`}\n` +
           `Make the change test-first where it adds behavior, run the tests, and make ONE atomic ` +
-          `commit with a clear message. Return a short summary of what you changed.`,
+          `commit with a clear message. Match the project canon exactly (stack, naming, patterns). ` +
+          `Return a short summary of what you changed.` +
+          CANON,
         { label: `exec:${t.id}`, phase: 'Execute', isolation: 'worktree', agentType: 'astro-executor', model: models.executor },
       ),
     ),
@@ -90,7 +94,9 @@ phase('Verify')
 const verdict = await agent(
   `Verify phase "${phase}" of the project at ${root}. Read its goal in ` +
     `${root}/.planning/phases/${phase}/ and confirm the implemented code actually delivers it ` +
-    `(goal-backward, not just "tasks ran"). Run the test suite. Report PASS or FAIL with reasons.`,
+    `(goal-backward, not just "tasks ran"). Run the test suite. Also flag any violation of the ` +
+    `project canon (naming, patterns, prior decisions). Report PASS or FAIL with reasons.` +
+    CANON,
   { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier },
 )
 

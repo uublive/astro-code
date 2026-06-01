@@ -54,6 +54,7 @@ so numbering is coordinated across the team).
 /astro-milestone          start the next milestone cycle (claims the milestone number)
 /astro-complete-milestone archive the finished milestone + retire its numbers
 /astro-config             pick the model (opus/sonnet/haiku) for each role
+/astro-decision           record an architectural decision (ADR-lite) into the canon
 /astro-status             where am I, and what's the best next move?
 ```
 
@@ -123,6 +124,28 @@ The plan/execute commands read this map and pass it to the Workflow, which appli
 the tier per agent. See **Which models?** in [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 
 ---
+
+## Keeping the architecture consistent (canon)
+
+astro-code runs many agents in parallel, across multiple developers. Without shared
+rules, that's a drift machine — five executors invent five naming styles. So the
+project carries an always-on **canon**:
+
+- **`.planning/CONVENTIONS.md`** — stack, naming, patterns, testing style (prescriptive).
+- **`.planning/DECISIONS.md`** — append-only ADR-lite log (decision · why · rejected).
+
+`/astro-plan` and `/astro-execute` inject the canon (`ac canon`) into **every** agent,
+so plans and code conform to it and past decisions aren't relitigated.
+
+```bash
+ac canon                                              # what every agent sees
+ac decision add "Use pure git" --why "no deps" --rejected "gh API"
+ac decision list
+```
+
+> Canon is permanent and prescriptive (always on). A codebase *map* is disposable and
+> descriptive (on demand) — deliberately **not** part of the core loop. See
+> `ARCHITECTURE.md` for that trade-off.
 
 ## Layout
 

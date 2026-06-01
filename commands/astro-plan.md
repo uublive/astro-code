@@ -10,14 +10,15 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    `.planning/` lives — find it from the cwd). Resolve the phase slug from
    `ac roadmap list` (e.g. `03` → `03-payments`). Read the phase goal from
    `.planning/PROJECT.md` / the roadmap entry.
-2. Get the workflow path (`ac path workflows`) and the model tiers
-   (`ac config get models`).
+2. Gather inputs: workflow path (`ac path workflows`), model tiers
+   (`ac config get models`), and the **project canon** (`ac canon` — conventions +
+   decisions every agent must obey).
 3. Invoke the **Workflow** tool:
    ```
    Workflow({
      scriptPath: "<ac path workflows>/plan-phase.mjs",
      args: { root: "<project root>", phase: "<phase slug>", goal: "<phase goal>",
-             models: <ac config get models> }
+             models: <ac config get models>, canon: "<ac canon>" }
    })
    ```
    This spawns researchers in parallel (codebase patterns, external best practices,

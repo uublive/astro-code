@@ -10,6 +10,7 @@ import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap } from '../lib/roadmap.mjs';
 import { claim, readRegistry, registryBranch, markComplete } from '../lib/registry.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
+import { canonText, loadCanon, addDecision } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
 import { installClaude, uninstallClaude } from '../lib/install.mjs';
 
@@ -54,6 +55,9 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase add <name> [--milestone N] claim the next phase number + add it
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .planning/config.json (incl. models)
+  ac canon                            print the project canon (conventions + decisions)
+  ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision
+  ac decision list                    list recorded decisions
   ac registry show                    print the shared numbering registry
   ac install | uninstall              (un)install commands + agents into ~/.claude
   ac path [sub]                       print the framework dir (e.g. ac path workflows)
@@ -234,6 +238,33 @@ async function main() {
         json(pos[1] ? (getPath(cfg, pos[1]) ?? null) : cfg);
       } else {
         json(loadConfig(r));
+      }
+      return;
+    }
+
+    case 'canon': {
+      const r = root();
+      const text = canonText(r);
+      process.stdout.write((text || '(no canon yet — fill in .planning/CONVENTIONS.md)') + '\n');
+      return;
+    }
+
+    case 'decision': {
+      const r = root();
+      if (pos[0] === 'add') {
+        const title = pos.slice(1).join(' ').trim();
+        if (!title) die('usage: ac decision add "<title>" [--why "…"] [--rejected "…"]');
+        const res = await addDecision(r, {
+          title,
+          why: typeof flags.why === 'string' ? flags.why : '',
+          rejected: typeof flags.rejected === 'string' ? flags.rejected : '',
+        });
+        console.log(`✓ ${res.id} — ${res.title} (${res.date})`);
+      } else if (pos[0] === 'list') {
+        const { decisions } = loadCanon(r);
+        process.stdout.write((decisions || '(no decisions yet)') + '\n');
+      } else {
+        die('usage: ac decision <add|list>');
       }
       return;
     }

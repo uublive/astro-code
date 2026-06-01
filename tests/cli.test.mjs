@@ -12,6 +12,7 @@ import { loadState, updateState } from '../lib/state.mjs';
 import { addPhase, loadRoadmap, renderRoadmapMd, slugify } from '../lib/roadmap.mjs';
 import { claim } from '../lib/registry.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
+import { loadCanon, canonText, addDecision } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
 
 const fresh = () => mkdtempSync(join(tmpdir(), 'ac-cli-'));
@@ -76,6 +77,29 @@ test('slugify normalizes names', () => {
 
 test('renderRoadmapMd handles the empty roadmap', () => {
   assert.match(renderRoadmapMd({ milestone: 1, phases: [] }), /No phases yet/);
+});
+
+test('init scaffolds the canon files', () => {
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  const p = paths(root);
+  assert.ok(existsSync(p.conventions) && existsSync(p.decisions));
+  assert.match(readFileSync(p.conventions, 'utf8'), /Conventions — demo/);
+});
+
+test('addDecision appends incrementing ADR ids and shows up in canon', async () => {
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  const a = await addDecision(root, { title: 'Use pure git', why: 'no gh dep', rejected: 'gh API' });
+  const b = await addDecision(root, { title: 'Markdown commands' });
+  assert.equal(a.id, 'ADR-001');
+  assert.equal(b.id, 'ADR-002');
+  const { decisions } = loadCanon(root);
+  assert.match(decisions, /ADR-001 — Use pure git/);
+  assert.match(decisions, /\*\*Rejected:\*\* gh API/);
+  assert.match(decisions, /ADR-002 — Markdown commands/);
+  // canonText merges conventions + decisions for prompt injection
+  assert.match(canonText(root), /ADR-002/);
 });
 
 test('config ships model tiers and is updatable', async () => {
