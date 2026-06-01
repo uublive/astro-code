@@ -1,7 +1,8 @@
 // astro-code · execute-phase workflow (Claude Code 4.8 Workflow tool)
 //
-// Execute a phase wave-by-wave: discover tasks + dependencies, run each wave's
-// tasks in parallel inside isolated git worktrees, then verify the phase goal.
+// Execute a phase wave-by-wave: discover tasks + dependencies, integrate each wave
+// onto the working branch (sequential on-branch, or parallel worktrees + an
+// integrator agent for wide phases), then verify the phase goal against that branch.
 // Invoked by the /astro-execute command via:
 //   Workflow({ scriptPath: "<astro-code>/workflows/execute-phase.mjs",
 //              args: { root, phase, models } })
@@ -11,11 +12,11 @@
 // slug is read as `phaseSlug`.
 export const meta = {
   name: 'astro-execute-phase',
-  description: 'Execute a phase wave-by-wave: parallel executors in isolated worktrees, then verify',
+  description: 'Execute a phase wave-by-wave on the working branch (sequential, or parallel worktrees+integrator), then verify',
   phases: [
     { title: 'Discover', detail: 'parse plan tasks + dependencies into waves' },
-    { title: 'Execute', detail: 'run each dependency wave in parallel' },
-    { title: 'Verify', detail: 'confirm the phase goal is met' },
+    { title: 'Execute', detail: 'integrate each wave onto the branch (sequential or parallel+integrator)' },
+    { title: 'Verify', detail: 'confirm the phase goal is met on the integrated branch' },
   ],
 }
 
@@ -78,35 +79,133 @@ while (remaining.length) {
 }
 log(`${tasks.length} task(s) in ${waves.length} wave(s)`)
 
+// ---- pick an execution strategy ---------------------------------------------
+// A "sequential": run tasks one at a time directly on the working branch. Each
+//   commit is visible to the next task (so depends_on holds by construction) and
+//   to the verifier. Correct and simple; no intra-wave parallelism.
+// B "parallel": keep worktree isolation within a wave for speed, then an integrator
+//   agent merges that wave's commits onto the working branch and advances HEAD, so
+//   the NEXT wave's worktrees fork from the integrated tip.
+// Auto-rule: stay on A while it's "fast enough" — few tasks, or no wave wide enough
+//   for B to pay off — and switch to B otherwise. Override with args.strategy
+//   ('sequential' | 'parallel'); tune the A/B cutover with args.seqBudget.
+const SEQ_BUDGET = Number(input.seqBudget) || 8
+const maxWidth = waves.length ? Math.max(...waves.map((w) => w.length)) : 0
+const strategy =
+  input.strategy === 'sequential' || input.strategy === 'parallel'
+    ? input.strategy
+    : tasks.length <= SEQ_BUDGET || maxWidth < 2
+      ? 'sequential'
+      : 'parallel'
+log(`strategy: ${strategy} (${tasks.length} task(s), widest wave ${maxWidth}, budget ${SEQ_BUDGET})`)
+
+const execPrompt = (t) =>
+  `Implement task ${t.id} — "${t.title}" — of phase ${phaseSlug} in project ${root}.\n` +
+  `Plan/task file: ${t.file || `${root}/.astrocode/phases/${phaseSlug}/PLAN.md`}\n` +
+  `Make the change test-first where it adds behavior, run the tests, and make ONE atomic ` +
+  `commit with a clear message. Match the project canon exactly (stack, naming, patterns). ` +
+  `Return a short summary of what you changed.` +
+  OBEY
+
+const runOnBranch = (t) =>
+  agent(execPrompt(t), { label: `exec:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
+
+const INTEGRATE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    integrated: { type: 'boolean' },
+    branches: { type: 'array', items: { type: 'string' } },
+    conflicts: { type: 'array', items: { type: 'string' } },
+    note: { type: 'string' },
+  },
+  required: ['integrated'],
+}
+
+// The integrator is the only actor that can run git (Workflow scripts cannot). It
+// folds a wave's isolated worktree commits onto the working branch and tears the
+// worktrees down so the next wave forks from the integrated tip.
+const integrateWave = (w) =>
+  agent(
+    `You are the WAVE INTEGRATOR for phase ${phaseSlug}, running in the MAIN working tree of ${root} ` +
+      `(you have NO worktree of your own). The parallel executors for wave ${w + 1} each committed on a ` +
+      `separate \`worktree-*\` branch forked from the current HEAD. Fold them onto the CURRENTLY ` +
+      `checked-out branch so the next wave and the verifier see one combined tree. Do exactly this, in ${root}:\n` +
+      `1. List candidates: \`git for-each-ref --format='%(refname:short)' refs/heads/ | grep '^worktree-'\`. ` +
+      `Keep only branches with commits not yet on HEAD (\`git rev-list HEAD..<branch>\` non-empty).\n` +
+      `2. Wave tasks are independent, so order does not matter. Cherry-pick each such branch's commits onto ` +
+      `the current branch (\`git cherry-pick <range>\`). On ANY conflict: \`git cherry-pick --abort\`, stop, ` +
+      `and return integrated=false with the conflicting branch in conflicts[] — do NOT force or hand-resolve.\n` +
+      `3. After a clean integration, tear down each merged worktree so it is not reprocessed: ` +
+      `\`git worktree remove --force <path>\` (paths from \`git worktree list\`), \`git branch -D <branch>\`, ` +
+      `then \`git worktree prune\`.\n` +
+      `4. Confirm the current branch now contains every integrated commit (\`git log --oneline -n 20\`).\n` +
+      `Return integrated=true with the branches[] you merged, or integrated=false with conflicts[] and a note.` +
+      OBEY,
+    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: INTEGRATE_SCHEMA },
+  )
+
 phase('Execute')
 const results = []
-for (let w = 0; w < waves.length; w++) {
+let integrationFailed = null
+for (let w = 0; w < waves.length && !integrationFailed; w++) {
   const wave = waves[w]
   log(`wave ${w + 1}/${waves.length}: ${wave.map((t) => t.id).join(', ')}`)
+  // A, or a single-task wave (nothing to parallelize): commit straight on the branch.
+  if (strategy === 'sequential' || wave.length === 1) {
+    for (const t of wave) {
+      const out = await runOnBranch(t)
+      if (out) results.push(out)
+    }
+    continue
+  }
+  // B: isolated parallel executors, then fold the wave onto the working branch.
   const out = await parallel(
     wave.map((t) => () =>
-      agent(
-        `Implement task ${t.id} — "${t.title}" — of phase ${phaseSlug} in project ${root}.\n` +
-          `Plan/task file: ${t.file || `${root}/.astrocode/phases/${phaseSlug}/PLAN.md`}\n` +
-          `Make the change test-first where it adds behavior, run the tests, and make ONE atomic ` +
-          `commit with a clear message. Match the project canon exactly (stack, naming, patterns). ` +
-          `Return a short summary of what you changed.` +
-          OBEY,
-        { label: `exec:${t.id}`, phase: 'Execute', isolation: 'worktree', agentType: 'astro-executor', model: models.executor },
-      ),
+      agent(execPrompt(t), {
+        label: `exec:${t.id}`,
+        phase: 'Execute',
+        isolation: 'worktree',
+        agentType: 'astro-executor',
+        model: models.executor,
+      }),
     ),
   )
   results.push(...out.filter(Boolean))
+  const integ = await integrateWave(w)
+  if (!integ || integ.integrated !== true) {
+    integrationFailed = {
+      wave: w + 1,
+      conflicts: integ?.conflicts || [],
+      note: integ?.note || 'integrator did not confirm success',
+    }
+    log(`✖ wave ${w + 1} integration failed — stopping before verify`)
+  }
 }
 
 phase('Verify')
-const verdict = await agent(
-  `Verify phase "${phaseSlug}" of the project at ${root}. Read its goal in ` +
-    `${root}/.astrocode/phases/${phaseSlug}/ and confirm the implemented code actually delivers it ` +
-    `(goal-backward, not just "tasks ran"). Run the test suite. Also flag any violation of the ` +
-    `project canon (naming, patterns, prior decisions). Report PASS or FAIL with reasons.` +
-    OBEY,
-  { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier },
-)
+let verdict
+if (integrationFailed) {
+  // Don't verify a tree the work never reached — fail loudly with a cleanup hint
+  // (the guard the issue asked for) instead of a misleading "goal absent" verdict.
+  verdict =
+    `FAIL — wave ${integrationFailed.wave} did not integrate onto the working branch ` +
+    `(conflicts: ${integrationFailed.conflicts.join(', ') || 'see note'}; ${integrationFailed.note}). ` +
+    `Executor commits may remain on \`worktree-*\` branches — resolve the conflict and re-run before verifying.`
+  log('skipped goal verification — integration failed')
+} else {
+  verdict = await agent(
+    `Verify phase "${phaseSlug}" of the project at ${root}. The phase's work is committed on the ` +
+      `CURRENT branch — verify against HEAD/the working tree, NOT a fresh checkout of main. Read its goal ` +
+      `in ${root}/.astrocode/phases/${phaseSlug}/ and confirm the implemented code actually delivers it ` +
+      `(goal-backward, not just "tasks ran"). First confirm the phase's commits are present ` +
+      `(\`git log --oneline\`) and that no \`worktree-*\` branch still holds un-integrated commits ` +
+      `(\`git for-each-ref refs/heads/worktree-*\`, then \`git rev-list HEAD..<branch>\` must be empty). ` +
+      `Run the test suite. Also flag any violation of the project canon (naming, patterns, prior decisions). ` +
+      `Report PASS or FAIL with reasons.` +
+      OBEY,
+    { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier },
+  )
+}
 
-return { phase: phaseSlug, tasks: tasks.length, waves: waves.length, executed: results.length, verdict }
+return { phase: phaseSlug, tasks: tasks.length, waves: waves.length, strategy, executed: results.length, integrationFailed, verdict }

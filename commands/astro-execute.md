@@ -1,5 +1,5 @@
 ---
-description: Execute a phase wave-by-wave — parallel executors in isolated worktrees, then verify
+description: Execute a phase wave-by-wave on the working branch — sequential, or parallel worktrees+integrator, then verify
 argument-hint: <phase number or slug>
 allowed-tools: Bash, Read, Write, Workflow
 ---
@@ -22,10 +22,19 @@ Execute phase `$ARGUMENTS`.
                models: <the JSON object from `ac config get models`> }
      })
      ```
-     It discovers the plan's tasks + dependencies, groups them into waves, runs each
-     wave's tasks **in parallel inside isolated git worktrees** (atomic commit per
-     task), then verifies. It runs in the background — tell the user to **watch
-     `/workflows`** for live wave-by-wave progress; you'll be notified on completion.
+     It discovers the plan's tasks + dependencies, groups them into waves, and
+     executes them **on the current working branch**, picking a strategy automatically:
+     small phases (or any with no parallelizable wave) run **sequentially on-branch**
+     — each atomic commit is visible to the next task and to the verifier; larger,
+     wide phases run each wave's tasks **in parallel inside isolated worktrees** and
+     then an **integrator agent folds the wave back onto the branch** before the next
+     wave (so dependencies see prior changes and nothing is stranded). Override with
+     `args.strategy: "sequential" | "parallel"`, or tune the cutover with
+     `args.seqBudget` (default 8 tasks). The verifier runs against the integrated
+     branch, never a pristine `main`. It runs in the background — tell the user to
+     **watch `/workflows`** for live wave-by-wave progress; you'll be notified on
+     completion. If the result has `integrationFailed`, surface its conflict/cleanup
+     hint and stop (do not mark the phase verified).
    - **No Workflow tool, but the Agent tool is available:** read the plan's tasks +
      `depends_on`, group them into dependency waves yourself, and for each wave spawn
      the ready tasks as parallel `astro-executor` calls in a single message (each
