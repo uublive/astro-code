@@ -2,6 +2,7 @@
 // `ac` — the astro-code CLI. A thin, atomic state layer; the heavy thinking lives
 // in the markdown commands/agents and the Workflow scripts that Claude Code runs.
 import process from 'node:process';
+import { existsSync } from 'node:fs';
 import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
@@ -12,7 +13,7 @@ import { claim, readRegistry, registryBranch, markComplete } from '../lib/regist
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
-import { installClaude, uninstallClaude } from '../lib/install.mjs';
+import { installClaude, uninstallClaude, ASTRO_HOME } from '../lib/install.mjs';
 
 function parseArgs(args) {
   const flags = {};
@@ -34,27 +35,30 @@ const die = (msg) => {
   console.error(`✖ ${msg}`);
   process.exit(1);
 };
-const root = () => findRoot() || die('no .planning/ found — run `ac init` first');
+const root = () => findRoot() || die('no .astrocode/ found — run `ac init` first');
 const json = (obj) => console.log(JSON.stringify(obj, null, 2));
 
 const FRAMEWORK_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+// After `ac install`, the Claude-facing framework (esp. workflows) lives in the
+// home; prefer it so `ac path workflows` resolves there from any project.
+const HOME_ROOT = existsSync(ASTRO_HOME) ? ASTRO_HOME : FRAMEWORK_ROOT;
 
 const [cmd, ...tail] = process.argv.slice(2);
 const { flags, pos } = parseArgs(tail);
 
 const HELP = `astro-code — lean, multi-developer planning for Claude Code
 
-  ac init [--name N] [--vision "…"]   scaffold .planning/ in the current dir
+  ac init [--name N] [--vision "…"]   scaffold .astrocode/ in the current dir
   ac status                           show project / milestone / phases
   ac state get [key]                  print state (or one field)
   ac state set <key> <value>          atomically update a state field
   ac roadmap list                     list phases
-  ac roadmap render                   regenerate .planning/ROADMAP.md
+  ac roadmap render                   regenerate .astrocode/ROADMAP.md
   ac milestone new                    claim the next milestone number
   ac milestone complete               archive the current milestone + retire its claims
   ac phase add <name> [--milestone N] claim the next phase number + add it
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
-  ac config [get [k] | set k v | unset k]  read/update .planning/config.json (incl. models)
+  ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
   ac canon                            print the project canon (conventions + decisions)
   ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision
   ac decision list                    list recorded decisions
@@ -245,7 +249,7 @@ async function main() {
     case 'canon': {
       const r = root();
       const text = canonText(r);
-      process.stdout.write((text || '(no canon yet — fill in .planning/CONVENTIONS.md)') + '\n');
+      process.stdout.write((text || '(no canon yet — fill in .astrocode/CONVENTIONS.md)') + '\n');
       return;
     }
 
@@ -271,20 +275,21 @@ async function main() {
 
     case 'install': {
       const res = installClaude(FRAMEWORK_ROOT);
-      console.log(`✓ installed ${res.commands} command(s) → ${res.commandsDir}`);
-      console.log(`✓ installed ${res.agents} agent(s)   → ${res.agentsDir}`);
+      console.log(`✓ home: ${res.home}  (${res.commands} commands, ${res.agents} agents, ${res.workflows} workflows)`);
+      console.log(`✓ linked ${res.linkedCommands} command(s) → ${res.commandsDir}`);
+      console.log(`✓ linked ${res.linkedAgents} agent(s)   → ${res.agentsDir}`);
       console.log('  ensure `ac` is on PATH: run `npm install -g .` in the astro-code repo');
       return;
     }
 
     case 'uninstall': {
-      const res = uninstallClaude(FRAMEWORK_ROOT);
-      console.log(`✓ removed ${res.removed} astro-code file(s) from ~/.claude`);
+      const res = uninstallClaude();
+      console.log(`✓ removed ${res.removed} symlink(s) from ~/.claude and deleted ${res.home}`);
       return;
     }
 
     case 'path': {
-      console.log(pos[0] ? join(FRAMEWORK_ROOT, pos[0]) : FRAMEWORK_ROOT);
+      console.log(pos[0] ? join(HOME_ROOT, pos[0]) : HOME_ROOT);
       return;
     }
 

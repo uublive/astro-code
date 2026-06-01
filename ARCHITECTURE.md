@@ -16,7 +16,7 @@ the discuss → plan → execute → verify loop — and drops ~80% of the surfa
    allocated from a shared registry on an **orphan branch on origin** — so two
    developers can never collide. Implemented natively in pure git (no server,
    no `gh`, no external dependency). See below.
-4. **File-based state.** Everything lives in `.planning/`, human-readable and
+4. **File-based state.** Everything lives in `.astrocode/`, human-readable and
    git-committable. State mutations are atomic and lock-guarded.
 
 ## Repository layout
@@ -27,12 +27,12 @@ lib/                engine modules (pure, unit-tested)
   registry.mjs      ← the orphan-branch numbering registry (pure git CAS)
   roadmap.mjs       roadmap.json model + ROADMAP.md renderer
   state.mjs         atomic state.json read/modify/write
-  planning.mjs      .planning/ scaffolding
+  planning.mjs      .astrocode/ scaffolding
   git.mjs / util.mjs / paths.mjs   primitives
 commands/           Claude Code slash commands (the workflow loop)
 agents/             specialized subagent role definitions
 workflows/          Workflow 4.8 scripts (parallel plan + wave execution)
-templates/          .planning/ scaffolding templates
+templates/          .astrocode/ scaffolding templates
 tests/              node:test suite (engine + a real git registry integration test)
 ```
 
@@ -63,12 +63,12 @@ the roadmap and warns that numbers are not team-coordinated.
 
 ## State model
 
-- `.planning/PROJECT.md` — prose vision/requirements (human/model authored).
-- `.planning/state.json` — active milestone/phase, status, decisions, blockers.
-- `.planning/roadmap.json` — canonical phase list; `.planning/ROADMAP.md` rendered.
-- `.planning/CONVENTIONS.md` — prescriptive canon (stack, naming, patterns, testing).
-- `.planning/DECISIONS.md` — append-only ADR-lite log (decision · why · rejected).
-- `.planning/phases/NN-slug/` — PLAN.md, task files, SUMMARY.md (agent authored).
+- `.astrocode/PROJECT.md` — prose vision/requirements (human/model authored).
+- `.astrocode/state.json` — active milestone/phase, status, decisions, blockers.
+- `.astrocode/roadmap.json` — canonical phase list; `.astrocode/ROADMAP.md` rendered.
+- `.astrocode/CONVENTIONS.md` — prescriptive canon (stack, naming, patterns, testing).
+- `.astrocode/DECISIONS.md` — append-only ADR-lite log (decision · why · rejected).
+- `.astrocode/phases/NN-slug/` — PLAN.md, task files, SUMMARY.md (agent authored).
 
 ## Canon vs. codebase map (why we have one, not the other)
 
@@ -139,7 +139,7 @@ not assumed — that's a good early benchmark to run.
 ## Which models?
 
 Workflow agents inherit the **session model** by default (currently Opus 4.8). For
-cost/speed, `.planning/config.json` → `models` assigns a tier per role:
+cost/speed, `.astrocode/config.json` → `models` assigns a tier per role:
 
 | Role       | Default  | Model id (4.x)              | Why |
 |------------|----------|-----------------------------|-----|

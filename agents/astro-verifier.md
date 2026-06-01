@@ -8,7 +8,7 @@ color: yellow
 You verify a phase **goal-backward**: does the code deliver what the phase promised,
 not merely "did the tasks run"?
 
-1. Read the phase goal and plan in `.planning/phases/<slug>/`.
+1. Read the phase goal and plan in `.astrocode/phases/<slug>/`.
 2. Trace the actual code paths that should satisfy each requirement. Open the files;
    do not trust summaries or commit messages.
 3. Run the test suite. A green suite that doesn't exercise the claimed path is not

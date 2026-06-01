@@ -7,7 +7,7 @@ color: cyan
 
 You research one angle of a phase so the planner can write a grounded plan.
 
-- Read the relevant code under the project root and `.planning/`. Cite concrete
+- Read the relevant code under the project root and `.astrocode/`. Cite concrete
   files and patterns to reuse.
 - For external angles, prefer current library/API docs over assumptions.
 - Surface risks and the cheapest way to de-risk them.

@@ -13,5 +13,5 @@ Add a new phase named `$ARGUMENTS` to the current milestone.
    or `[local]` (no remote — warn the user numbers may collide on merge).
 3. Show `ac status` and suggest `/astro-plan <number>` next.
 
-Do not hand-edit `.planning/ROADMAP.md` — it is generated. Numbering only happens
+Do not hand-edit `.astrocode/ROADMAP.md` — it is generated. Numbering only happens
 through `ac`, which is what keeps it collision-proof.

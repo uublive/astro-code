@@ -5,5 +5,5 @@ node_modules/
 !bin/
 !bin/**
 # transient state — never commit locks or temp writes
-.planning/.lock/
+.astrocode/.lock/
 **/*.tmp-*

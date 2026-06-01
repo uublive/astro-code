@@ -8,7 +8,7 @@ Complete and archive the current milestone.
 1. Confirm with the user that the milestone is truly done (all phases verified). If
    any phase is unverified, list it and stop.
 2. Run `ac milestone complete`. This:
-   - moves the milestone's phase directories to `.planning/milestones/<n>/`,
+   - moves the milestone's phase directories to `.astrocode/milestones/<n>/`,
    - snapshots the roadmap,
    - clears the active roadmap for the next cycle,
    - and flips this milestone's claims to `complete` in the shared registry (so the

@@ -16,7 +16,7 @@ discuss → plan → execute → verify loop — and makes it **fast** and **col
   the same project can never grab the same number — claim phase 8 when it's taken and
   you get 9, automatically.
 - 🎛️ **Per-role model tiers.** Pick which model (opus/sonnet/haiku) runs each role
-  (planner, researcher, executor, verifier) in `.planning/config.json`.
+  (planner, researcher, executor, verifier) in `.astrocode/config.json`.
 
 Requires **Node ≥ 22**. No other dependencies.
 
@@ -28,12 +28,17 @@ Requires **Node ≥ 22**. No other dependencies.
 git clone <astro-code repo url>
 cd astro-code
 npm install -g .     # puts `ac` on your PATH globally
-ac install           # copies the slash commands + agents into ~/.claude
+ac install           # populates ~/.astro/code and links commands/agents into Claude Code
 ```
 
-`ac install` is idempotent; re-run it after pulling updates. `ac uninstall` removes
-the installed files. Because `ac` resolves its own framework directory, the workflow
-scripts are found automatically from any project (`ac path workflows`).
+`ac install` makes **`~/.astro/code`** the home (commands, agents, workflows live
+there) and **symlinks** the commands/agents into `~/.claude/{commands,agents}` —
+the only place Claude Code discovers them. The home stays the single source of
+truth; `ac path workflows` resolves there from any project. It's idempotent;
+`ac uninstall` removes the symlinks and deletes the home.
+
+> No npm registry needed — `npm install -g .` installs straight from the clone. To
+> update: `git pull && npm install -g . && ac install`.
 
 > No npm registry needed — `npm install -g .` installs straight from the clone. To
 > update: `git pull && npm install -g . && ac install`.
@@ -46,7 +51,7 @@ Run these inside the project repo you're building (it should have an `origin` re
 so numbering is coordinated across the team).
 
 ```
-/astro-new-project        scaffold .planning/, shape PROJECT.md + the initial roadmap
+/astro-new-project        scaffold .astrocode/, shape PROJECT.md + the initial roadmap
 /astro-phase <name>       add a phase (claims its number from the registry)
 /astro-plan <phase>       parallel research → executable PLAN.md
 /astro-execute <phase>    wave-based parallel execution in isolated worktrees, then verify
@@ -97,7 +102,7 @@ back to local numbering and warns that it isn't team-coordinated.
 
 ## Choosing models
 
-`.planning/config.json` carries per-role model tiers. Unset a role to inherit the
+`.astrocode/config.json` carries per-role model tiers. Unset a role to inherit the
 session model.
 
 ```jsonc
@@ -131,8 +136,8 @@ astro-code runs many agents in parallel, across multiple developers. Without sha
 rules, that's a drift machine — five executors invent five naming styles. So the
 project carries an always-on **canon**:
 
-- **`.planning/CONVENTIONS.md`** — stack, naming, patterns, testing style (prescriptive).
-- **`.planning/DECISIONS.md`** — append-only ADR-lite log (decision · why · rejected).
+- **`.astrocode/CONVENTIONS.md`** — stack, naming, patterns, testing style (prescriptive).
+- **`.astrocode/DECISIONS.md`** — append-only ADR-lite log (decision · why · rejected).
 
 `/astro-plan` and `/astro-execute` inject the canon (`ac canon`) into **every** agent,
 so plans and code conform to it and past decisions aren't relitigated.
@@ -151,11 +156,11 @@ ac decision list
 
 ```
 bin/ac.mjs       the CLI
-lib/             engine (registry, state, roadmap, milestone, config, install) — unit-tested
+lib/             engine (registry, state, roadmap, milestone, config, canon, install) — unit-tested
 commands/        Claude Code slash commands (the loop)
 agents/          subagent role definitions
 workflows/       Workflow 4.8 scripts (parallel plan + wave execution)
-templates/       .planning/ scaffolding
+templates/       .astrocode/ scaffolding
 tests/           node:test — engine units + a real git registry integration test
 ```
 

@@ -1,5 +1,5 @@
 ---
-description: Initialize an astro-code project — scaffold .planning/ and shape PROJECT.md + the initial roadmap
+description: Initialize an astro-code project — scaffold .astrocode/ and shape PROJECT.md + the initial roadmap
 argument-hint: [project name]
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 ---
@@ -7,11 +7,11 @@ allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 You are starting a new astro-code project in the current repository.
 
 1. Run `ac init --name "$ARGUMENTS"` (omit `--name` to use the directory name). If
-   `.planning/` already exists, tell the user and stop.
+   `.astrocode/` already exists, tell the user and stop.
 2. Interview the user briefly to fill in **vision**, **requirements** (stable
    `REQ-001` ids), and **constraints**. Use `AskUserQuestion` only for genuine
-   forks. Write the result into `.planning/PROJECT.md`.
-   Then seed `.planning/CONVENTIONS.md` with the agreed **stack, naming, patterns,
+   forks. Write the result into `.astrocode/PROJECT.md`.
+   Then seed `.astrocode/CONVENTIONS.md` with the agreed **stack, naming, patterns,
    and testing style** — this canon is injected into every future planning and
    execution agent, so getting it right now keeps the whole team consistent. Record
    any notable up-front choices with `ac decision add`.

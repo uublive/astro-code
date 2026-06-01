@@ -15,7 +15,7 @@ export const meta = {
 
 const { root, phase, goal = '(see PROJECT.md)', models = {}, canon = '' } = args || {}
 if (!root || !phase) throw new Error('plan-phase requires args { root, phase, goal }')
-// models: per-role tier from .planning/config.json (opus|sonnet|haiku); undefined = inherit
+// models: per-role tier from .astrocode/config.json (opus|sonnet|haiku); undefined = inherit
 // canon: project conventions + decisions (from `ac canon`) — every agent must obey it
 const CANON = canon ? `\n\nPROJECT CANON — obey it (conventions + past decisions):\n${canon}` : ''
 
@@ -31,7 +31,7 @@ const findings = await parallel(
       `You are researcher ${i + 1} for phase "${phase}" of the project at ${root}.\n` +
         `Phase goal: ${goal}\n` +
         `Your angle: ${angle}\n` +
-        `Read the relevant files under ${root} and ${root}/.planning/. ` +
+        `Read the relevant files under ${root} and ${root}/.astrocode/. ` +
         `Return concise, concrete findings (no preamble).` +
         CANON,
       { label: `research:${i + 1}`, phase: 'Research', agentType: 'Explore', model: models.researcher },
@@ -43,7 +43,7 @@ phase('Synthesize')
 const summary = await agent(
   `Synthesize an executable plan for phase "${phase}" (goal: ${goal}).\n\n` +
     `Researcher findings:\n${findings.filter(Boolean).join('\n\n---\n\n')}\n\n` +
-    `Write ${root}/.planning/phases/${phase}/PLAN.md as numbered tasks. Each task MUST declare:\n` +
+    `Write ${root}/.astrocode/phases/${phase}/PLAN.md as numbered tasks. Each task MUST declare:\n` +
     `  id, title, the files it touches, and depends_on (ids of tasks that must finish first).\n` +
     `Keep tasks small and independently committable so execution can parallelize. ` +
     `The plan MUST conform to the project canon below (stack, naming, patterns, prior decisions). ` +

@@ -6,8 +6,8 @@ allowed-tools: Bash, Read, Write, Workflow
 
 Execute phase `$ARGUMENTS`.
 
-1. Resolve the project root (where `.planning/` lives) and the phase slug from
-   `ac roadmap list`. Confirm `.planning/phases/<slug>/PLAN.md` exists — if not,
+1. Resolve the project root (where `.astrocode/` lives) and the phase slug from
+   `ac roadmap list`. Confirm `.astrocode/phases/<slug>/PLAN.md` exists — if not,
    tell the user to run `/astro-plan <phase>` first.
 2. Mark the phase active: `ac state set active_phase <slug>`.
 3. Gather inputs: workflow path (`ac path workflows`), model tiers

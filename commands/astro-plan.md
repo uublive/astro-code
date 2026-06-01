@@ -7,9 +7,9 @@ allowed-tools: Bash, Read, Write, Workflow
 Plan phase `$ARGUMENTS` by running the parallel planning workflow.
 
 1. Resolve the project root (`ac path` is the framework; the project root is where
-   `.planning/` lives — find it from the cwd). Resolve the phase slug from
+   `.astrocode/` lives — find it from the cwd). Resolve the phase slug from
    `ac roadmap list` (e.g. `03` → `03-payments`). Read the phase goal from
-   `.planning/PROJECT.md` / the roadmap entry.
+   `.astrocode/PROJECT.md` / the roadmap entry.
 2. Gather inputs: workflow path (`ac path workflows`), model tiers
    (`ac config get models`), and the **project canon** (`ac canon` — conventions +
    decisions every agent must obey).
@@ -22,7 +22,7 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    })
    ```
    This spawns researchers in parallel (codebase patterns, external best practices,
-   risks) and synthesizes `.planning/phases/<slug>/PLAN.md` with numbered,
+   risks) and synthesizes `.astrocode/phases/<slug>/PLAN.md` with numbered,
    dependency-aware tasks.
 4. Summarize the plan and suggest `/astro-execute <phase>`.
 

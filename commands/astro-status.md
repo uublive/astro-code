@@ -5,7 +5,7 @@ allowed-tools: Bash, Read
 
 Show where the project stands and what to do next.
 
-1. Run `ac status`. If there is no `.planning/`, tell the user to run
+1. Run `ac status`. If there is no `.astrocode/`, tell the user to run
    `/astro-new-project`.
 2. Run `ac registry show` if a remote is configured, to confirm team-coordinated
    numbering is live.

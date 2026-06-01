@@ -17,7 +17,7 @@ import { completeMilestone } from '../lib/milestone.mjs';
 
 const fresh = () => mkdtempSync(join(tmpdir(), 'ac-cli-'));
 
-test('init scaffolds .planning with state, roadmap, config, PROJECT.md', () => {
+test('init scaffolds .astrocode with state, roadmap, config, PROJECT.md', () => {
   const root = fresh();
   const res = initPlanning(root, { name: 'demo', vision: 'do things' });
   assert.equal(res.created, true);
@@ -120,6 +120,6 @@ test('completeMilestone archives phases and clears the active roadmap', async ()
   assert.equal(res.milestone, 1);
   assert.equal(res.archived, 2);
   assert.equal(loadRoadmap(root).phases.length, 0);
-  assert.ok(existsSync(join(paths(root).planning, 'milestones', '1', 'phases', '01-alpha')));
-  assert.ok(existsSync(join(paths(root).planning, 'milestones', '1', 'ROADMAP.md')));
+  assert.ok(existsSync(join(paths(root).dir, 'milestones', '1', 'phases', '01-alpha')));
+  assert.ok(existsSync(join(paths(root).dir, 'milestones', '1', 'ROADMAP.md')));
 });

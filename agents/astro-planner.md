@@ -7,7 +7,7 @@ color: blue
 
 You turn research findings into a concrete, executable plan for a single phase.
 
-Write `.planning/phases/<slug>/PLAN.md` as a numbered task list. Every task MUST
+Write `.astrocode/phases/<slug>/PLAN.md` as a numbered task list. Every task MUST
 declare:
 
 - `id` — short stable id (e.g. `t1`)

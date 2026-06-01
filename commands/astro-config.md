@@ -3,9 +3,9 @@ description: Choose which model (opus/sonnet/haiku) runs each role — planner, 
 allowed-tools: Bash, AskUserQuestion
 ---
 
-Interactively configure the per-role model tiers in `.planning/config.json`.
+Interactively configure the per-role model tiers in `.astrocode/config.json`.
 
-If there is no `.planning/` here, tell the user to run `/astro-new-project` first and stop.
+If there is no `.astrocode/` here, tell the user to run `/astro-new-project` first and stop.
 
 ## Steps
 

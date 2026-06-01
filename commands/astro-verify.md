@@ -6,7 +6,7 @@ allowed-tools: Bash, Read, Agent
 
 Verify phase `$ARGUMENTS`.
 
-1. Resolve the phase slug and read its goal from `.planning/phases/<slug>/` and the
+1. Resolve the phase slug and read its goal from `.astrocode/phases/<slug>/` and the
    roadmap.
 2. Spawn the **astro-verifier** agent to check, goal-backward, that the implemented
    code delivers the phase's promise — not merely that tasks completed. It must run
