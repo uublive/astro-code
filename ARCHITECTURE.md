@@ -107,7 +107,8 @@ GSD's four always-maintained documents.
 ## The loop
 
 `ac init` → `astro-new-project` → per phase: `astro-phase` (claim) →
-`astro-plan` (parallel research + synthesis + acceptance checklist) →
+`astro-discuss` (adaptive questions → CONTEXT.md) →
+`astro-plan` (parallel research + synthesis + acceptance checklist, reads CONTEXT.md) →
 `astro-execute` (wave-based parallel executors) → `astro-verify` (AI gate →
 `verified`) → `astro-accept` (human UAT gate → `complete`) →
 `astro-complete-milestone` → `astro-milestone` (next cycle).

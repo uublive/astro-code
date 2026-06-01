@@ -43,7 +43,8 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-new-project        scaffold .astrocode/, shape PROJECT.md + the roadmap
 /astro-adopt              adopt an EXISTING codebase: map it → draft canon → plan next
 /astro-phase <name>       add a phase (claims its number)
-/astro-plan <phase>       parallel research → executable PLAN.md
+/astro-discuss <phase>    talk through decisions/edge cases → CONTEXT.md (before planning)
+/astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)
 /astro-execute <phase>    wave-based parallel execution, then verify
 /astro-verify <phase>     AI gate: confirm the phase goal is met (goal-backward)
 /astro-accept <phase>     human gate: UAT sign-off, then close the phase

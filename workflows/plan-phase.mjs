@@ -17,10 +17,12 @@ export const meta = {
   ],
 }
 
-const { root, phase: phaseSlug, goal = '(see PROJECT.md)', models = {}, canon = '' } = args || {}
+const { root, phase: phaseSlug, goal = '(see PROJECT.md)', models = {}, canon = '', context = '' } = args || {}
 if (!root || !phaseSlug) throw new Error('plan-phase requires args { root, phase, goal }')
 // canon: project conventions + decisions (from `ac canon`) — every agent must obey it
 const CANON = canon ? `\n\nPROJECT CANON — obey it (conventions + past decisions):\n${canon}` : ''
+// context: answers captured by /astro-discuss (CONTEXT.md) — decisions for THIS phase
+const CONTEXT = context ? `\n\nDISCUSSION CONTEXT for this phase (honor these decisions):\n${context}` : ''
 
 phase('Research')
 const ANGLES = [
@@ -37,6 +39,7 @@ const findings = await parallel(
         `Your angle: ${angle}\n` +
         `Read the relevant files under ${root} and ${root}/.astrocode/. ` +
         `Return concise, concrete findings (no preamble).` +
+        CONTEXT +
         CANON,
       { label: `research:${i + 1}`, phase: 'Research', agentType: 'Explore', model: models.researcher },
     ),
@@ -54,8 +57,10 @@ const summary = await agent(
     `Also write ${root}/.astrocode/phases/${phaseSlug}/ACCEPTANCE.md — a short, user-facing ` +
     `UAT checklist of "the user can …" statements a human will confirm before the phase ` +
     `closes (acceptance, not unit tests). ` +
-    `The plan MUST conform to the project canon below (stack, naming, patterns, prior decisions). ` +
+    `The plan MUST conform to the project canon AND the discussion context below ` +
+    `(stack, naming, patterns, prior decisions, and the decisions made for this phase). ` +
     `Return a one-line summary of the plan.` +
+    CONTEXT +
     CANON,
   { phase: 'Synthesize', agentType: 'astro-planner', model: models.planner },
 )
