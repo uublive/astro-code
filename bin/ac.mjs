@@ -2,14 +2,15 @@
 // `ac` — the astro-code CLI. A thin, atomic state layer; the heavy thinking lives
 // in the markdown commands/agents and the Workflow scripts that Claude Code runs.
 import process from 'node:process';
-import { existsSync } from 'node:fs';
-import { basename, join, dirname } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { basename, join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
 import { initPlanning } from '../lib/planning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, isPhasePlanned } from '../lib/roadmap.mjs';
-import { gitIdentity } from '../lib/git.mjs';
+import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches } from '../lib/registry.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
@@ -83,6 +84,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac stats [--since ISO|--session ID] token usage (fresh vs cache) + wall-clock from transcripts
   ac registry show                    print the shared numbering registry
   ac install | uninstall              (un)install commands + agents into ~/.claude
+  ac update [clone-path]              git pull + refresh the global CLI and commands
   ac path [sub]                       print the framework dir (e.g. ac path workflows)
   ac help                             this help
 `;
@@ -368,6 +370,10 @@ async function main() {
 
     case 'install': {
       const res = installClaude(FRAMEWORK_ROOT);
+      // remember the clone path when installing from a git checkout, so `ac update` works later
+      if (isRepo(FRAMEWORK_ROOT)) {
+        try { mkdirSync(ASTRO_HOME, { recursive: true }); writeFileSync(join(ASTRO_HOME, 'source'), FRAMEWORK_ROOT + '\n'); } catch { /* best-effort */ }
+      }
       console.log(`✓ home: ${res.home}  (${res.commands} commands, ${res.agents} agents, ${res.workflows} workflows)`);
       for (const t of res.targets) {
         console.log(`✓ linked → ${t.dir}  [${t.label}]  (${t.commands} cmds, ${t.agents} agents)`);
@@ -408,6 +414,38 @@ async function main() {
       console.log('');
       console.log('note: whole session history for this project, not astro-code-only.');
       console.log('      scope one run with --since "<ISO timestamp>" (or --session <id>).');
+      return;
+    }
+
+    case 'update': {
+      const sourceFile = join(ASTRO_HOME, 'source');
+      // locate the clone: explicit arg → running from a checkout → remembered source
+      let clone = pos[0] ? resolve(pos[0]) : null;
+      if (!clone && isRepo(FRAMEWORK_ROOT)) clone = FRAMEWORK_ROOT;
+      if (!clone && existsSync(sourceFile)) clone = readFileSync(sourceFile, 'utf8').trim();
+      if (!clone || !existsSync(clone)) die('cannot locate the astro-code clone — run `ac update <path-to-clone>` once to register it');
+      if (!isRepo(clone)) die(`${clone} is not a git repository`);
+      mkdirSync(ASTRO_HOME, { recursive: true });
+      writeFileSync(sourceFile, clone + '\n');
+
+      console.log(`updating from ${clone} …`);
+      const pull = git(['pull', '--ff-only'], { cwd: clone });
+      process.stdout.write(pull.stdout);
+      if (pull.status !== 0) die(`git pull failed:\n${(pull.stderr || '').trim()}`);
+
+      // if the global CLI is a copy (not running from the clone), reinstall it
+      if (resolve(FRAMEWORK_ROOT) !== resolve(clone)) {
+        console.log('refreshing global `ac` (npm install -g) …');
+        const npm = spawnSync('npm', ['install', '-g', clone], { encoding: 'utf8' });
+        if (npm.status !== 0) console.error(`⚠ npm install -g failed — run it manually in ${clone}:\n${(npm.stderr || '').trim()}`);
+        else console.log('✓ global `ac` refreshed');
+      }
+
+      const res = installClaude(clone);
+      console.log(`✓ installed → ${res.home} (${res.commands} cmds, ${res.agents} agents, ${res.workflows} workflows) across ${res.targets.length} config dir(s)`);
+      let version = '?';
+      try { version = (JSON.parse(readFileSync(join(clone, 'package.json'), 'utf8')) || {}).version || '?'; } catch { /* ignore */ }
+      console.log(`✓ astro-code is now at v${version} — restart Claude Code if the command list doesn't refresh`);
       return;
     }
 

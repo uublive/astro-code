@@ -31,8 +31,11 @@ ac install           # populates ~/.astro/code and links commands/agents into Cl
 **every** Claude config dir Claude Code reads: the base `~/.claude` **and every
 jean-claude profile** (auto-detected from `~/.claude/.jean-claude/profiles.json`). So
 the commands show up in all your profiles at once — no per-profile reruns. It's
-idempotent; `ac uninstall` reverses it across all of them. To update:
-`git pull && npm install -g . && ac install`.
+idempotent; `ac uninstall` reverses it across all of them.
+
+**Updating** is one command: `/astro-update` (or `ac update`) — it pulls the latest,
+refreshes the global CLI, and re-links across every profile. The first time, if it
+can't find your clone, run `ac update <path-to-clone>` once and it remembers it.
 
 ## Use it
 
