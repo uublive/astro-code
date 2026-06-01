@@ -16,7 +16,9 @@ test('workflow scripts never bind an args name that shadows a Workflow hook', ()
   assert.ok(files.length > 0, 'expected workflow scripts');
   for (const f of files) {
     const src = readFileSync(join(WF, f), 'utf8');
-    const m = src.match(/const\s*\{([^}]*)\}\s*=\s*args/);
+    // non-greedy [\s\S]*? so a `models = {}` default inside the destructure doesn't
+    // truncate the match at its `}` — we want the `} = args` boundary.
+    const m = src.match(/const\s*\{([\s\S]*?)\}\s*=\s*args/);
     assert.ok(m, `${f}: expected a destructure from args`);
     const localNames = m[1].split(',').map((entry) => {
       const noDefault = entry.split('=')[0].trim(); // drop "= default"
