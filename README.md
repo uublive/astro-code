@@ -53,6 +53,7 @@ so numbering is coordinated across the team).
 /astro-verify <phase>     confirm the phase goal is actually met (goal-backward)
 /astro-milestone          start the next milestone cycle (claims the milestone number)
 /astro-complete-milestone archive the finished milestone + retire its numbers
+/astro-config             pick the model (opus/sonnet/haiku) for each role
 /astro-status             where am I, and what's the best next move?
 ```
 
@@ -108,12 +109,14 @@ session model.
 }
 ```
 
-Change one without clobbering the rest:
+Set them interactively from Claude Code with **`/astro-config`** (profile pick or
+per-role), or from the shell — change one without clobbering the rest:
 
 ```bash
 ac config get models
-ac config set models.executor opus      # max quality everywhere
+ac config set models.executor opus      # max quality for execution
 ac config set models.researcher haiku   # cheaper/faster research
+ac config unset models.researcher       # fall back to the session model (inherit)
 ```
 
 The plan/execute commands read this map and pass it to the Workflow, which applies

@@ -53,7 +53,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac milestone complete               archive the current milestone + retire its claims
   ac phase add <name> [--milestone N] claim the next phase number + add it
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
-  ac config [get [key] | set k v]     read/update .planning/config.json (incl. models)
+  ac config [get [k] | set k v | unset k]  read/update .planning/config.json (incl. models)
   ac registry show                    print the shared numbering registry
   ac install | uninstall              (un)install commands + agents into ~/.claude
   ac path [sub]                       print the framework dir (e.g. ac path workflows)
@@ -215,6 +215,20 @@ async function main() {
           return c;
         });
         json({ [key]: getPath(next, key) });
+      } else if (pos[0] === 'unset') {
+        const key = pos[1];
+        if (!key) die('usage: ac config unset <key[.subkey]>');
+        const segs = key.split('.');
+        await updateConfig(r, (c) => {
+          let node = c;
+          for (let i = 0; i < segs.length - 1; i++) {
+            if (node[segs[i]] == null || typeof node[segs[i]] !== 'object') return c;
+            node = node[segs[i]];
+          }
+          delete node[segs[segs.length - 1]];
+          return c;
+        });
+        json({ unset: key });
       } else if (pos[0] === 'get') {
         const cfg = loadConfig(r);
         json(pos[1] ? (getPath(cfg, pos[1]) ?? null) : cfg);
