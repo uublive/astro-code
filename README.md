@@ -9,6 +9,8 @@ multi-developer collaboration.
   markdown commands/agents + Workflow scripts. No build step, no monolith.
 - ⚡ **Parallel by default** — phases plan and execute by fanning out agents through
   the 4.8 **Workflow** tool: wave-based execution, one isolated worktree per task.
+  Watch live progress with **`/workflows`**; it degrades gracefully to inline
+  subagents when the Workflow tool isn't available.
 - 👥 **Collision-proof numbering** — milestone/phase numbers come from a shared
   registry on an orphan branch (pure git). Two devs can never grab the same number.
 - 📐 **Shared canon** — conventions + decisions are team-global and injected into

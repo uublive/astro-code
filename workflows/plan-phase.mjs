@@ -28,6 +28,7 @@ const ANGLES = [
   'external best practices and library/API choices',
   'risks, edge cases, and the cheapest way to de-risk them',
 ]
+log(`planning "${phaseSlug}" — ${ANGLES.length} researchers in parallel`)
 const findings = await parallel(
   ANGLES.map((angle, i) => () =>
     agent(
@@ -43,6 +44,7 @@ const findings = await parallel(
 )
 
 phase('Synthesize')
+log(`research done (${findings.filter(Boolean).length}/${ANGLES.length}) — synthesizing PLAN.md + ACCEPTANCE.md`)
 const summary = await agent(
   `Synthesize an executable plan for phase "${phaseSlug}" (goal: ${goal}).\n\n` +
     `Researcher findings:\n${findings.filter(Boolean).join('\n\n---\n\n')}\n\n` +
