@@ -10,16 +10,16 @@ Execute phase `$ARGUMENTS`.
    `ac roadmap list`. Confirm `.astrocode/phases/<slug>/PLAN.md` exists — if not,
    tell the user to run `/astro-plan <phase>` first.
 2. Mark the phase active: `ac state set active_phase <slug>`.
-3. Refresh the team canon (`ac canon pull` — best-effort). Then gather inputs:
-   workflow path (`ac path workflows`), model tiers (`ac config get models`), and the
-   **project canon** (`ac canon`).
+3. Refresh the team canon best-effort (`ac canon pull`). The workflow's agents read
+   the canon + CONTEXT.md from disk — you do NOT pass them as args.
 4. Run the execution fan-out. Use the **best available** mechanism (graceful fallback):
-   - **Workflow tool available (preferred):**
+   - **Workflow tool available (preferred):** keep `args` to small scalars only — pass
+     it as a real JSON object, never a string:
      ```
      Workflow({
-       scriptPath: "<ac path workflows>/execute-phase.mjs",
+       scriptPath: "<ac path workflows>/execute-phase.mjs",   // from `ac path workflows`
        args: { root: "<project root>", phase: "<phase slug>",
-               models: <ac config get models>, canon: "<ac canon>" }
+               models: <the JSON object from `ac config get models`> }
      })
      ```
      It discovers the plan's tasks + dependencies, groups them into waves, runs each
@@ -29,7 +29,8 @@ Execute phase `$ARGUMENTS`.
    - **No Workflow tool, but the Agent tool is available:** read the plan's tasks +
      `depends_on`, group them into dependency waves yourself, and for each wave spawn
      the ready tasks as parallel `astro-executor` calls in a single message (each
-     makes one atomic commit). Then spawn `astro-verifier`. Pass the canon in prompts.
+     makes one atomic commit). Then spawn `astro-verifier`. Tell each agent to read the
+     canon + CONTEXT.md.
    - **No subagents at all:** execute the tasks inline, in dependency order, one
      atomic commit each, then verify yourself.
 5. Report the verdict.

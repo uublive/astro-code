@@ -4,10 +4,11 @@
 // tasks in parallel inside isolated git worktrees, then verify the phase goal.
 // Invoked by the /astro-execute command via:
 //   Workflow({ scriptPath: "<astro-code>/workflows/execute-phase.mjs",
-//              args: { root, phase, models, canon } })
+//              args: { root, phase, models } })
 //
-// NOTE: `phase` is a Workflow HOOK (phase('Execute') starts a phase group), so we
-// read the phase slug as `phaseSlug` to avoid shadowing it.
+// Args stay SMALL (scalars + a tiny models map) so they're always valid JSON; the
+// spawned agents read canon/CONTEXT from disk. `phase` is a Workflow HOOK, so the
+// slug is read as `phaseSlug`.
 export const meta = {
   name: 'astro-execute-phase',
   description: 'Execute a phase wave-by-wave: parallel executors in isolated worktrees, then verify',
@@ -18,10 +19,16 @@ export const meta = {
   ],
 }
 
-const { root, phase: phaseSlug, models = {}, canon = '' } = args || {}
+// Defensive: accept args as an object, or as a JSON string if the caller stringified it.
+const input = typeof args === 'string' ? JSON.parse(args) : args || {}
+const { root, phase: phaseSlug, models = {} } = input
 if (!root || !phaseSlug) throw new Error('execute-phase requires args { root, phase }')
-// canon: project conventions + decisions (from `ac canon`) — executors/verifier must obey it
-const CANON = canon ? `\n\nPROJECT CANON — obey it (conventions + past decisions):\n${canon}` : ''
+
+// Agents read the canon + discussion brief from disk (absolute paths into the main
+// repo, so worktree executors see them regardless of git state).
+const OBEY =
+  `\n\nRead and OBEY: ${root}/.astrocode/CONVENTIONS.md and ${root}/.astrocode/DECISIONS.md (project canon), ` +
+  `plus ${root}/.astrocode/phases/${phaseSlug}/CONTEXT.md (this phase's decisions, if present).`
 
 const TASK_SCHEMA = {
   type: 'object',
@@ -84,7 +91,7 @@ for (let w = 0; w < waves.length; w++) {
           `Make the change test-first where it adds behavior, run the tests, and make ONE atomic ` +
           `commit with a clear message. Match the project canon exactly (stack, naming, patterns). ` +
           `Return a short summary of what you changed.` +
-          CANON,
+          OBEY,
         { label: `exec:${t.id}`, phase: 'Execute', isolation: 'worktree', agentType: 'astro-executor', model: models.executor },
       ),
     ),
@@ -98,7 +105,7 @@ const verdict = await agent(
     `${root}/.astrocode/phases/${phaseSlug}/ and confirm the implemented code actually delivers it ` +
     `(goal-backward, not just "tasks ran"). Run the test suite. Also flag any violation of the ` +
     `project canon (naming, patterns, prior decisions). Report PASS or FAIL with reasons.` +
-    CANON,
+    OBEY,
   { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier },
 )
 

@@ -3,11 +3,13 @@
 // Fan out parallel researchers over a phase, then synthesize one executable
 // PLAN.md (+ ACCEPTANCE.md). Invoked by the /astro-plan command via:
 //   Workflow({ scriptPath: "<astro-code>/workflows/plan-phase.mjs",
-//              args: { root, phase, goal, models, canon } })
+//              args: { root, phase, goal, models } })
 //
-// NOTE: `phase` is a Workflow HOOK (phase('Research') starts a phase group), so we
-// must NOT destructure an arg named `phase` — it would shadow the hook. We read the
-// phase slug as `phaseSlug`.
+// Args stay SMALL (scalars + a tiny models map) so they're always valid JSON — we do
+// NOT pass canon/CONTEXT text here; the spawned agents read those from disk, which
+// also keeps the args from being accidentally serialized to a string.
+//
+// `phase` is a Workflow HOOK (phase('Research')), so we read the slug as `phaseSlug`.
 export const meta = {
   name: 'astro-plan-phase',
   description: 'Research a phase from several angles in parallel, then synthesize an executable PLAN.md',
@@ -17,12 +19,16 @@ export const meta = {
   ],
 }
 
-const { root, phase: phaseSlug, goal = '(see PROJECT.md)', models = {}, canon = '', context = '' } = args || {}
-if (!root || !phaseSlug) throw new Error('plan-phase requires args { root, phase, goal }')
-// canon: project conventions + decisions (from `ac canon`) — every agent must obey it
-const CANON = canon ? `\n\nPROJECT CANON — obey it (conventions + past decisions):\n${canon}` : ''
-// context: answers captured by /astro-discuss (CONTEXT.md) — decisions for THIS phase
-const CONTEXT = context ? `\n\nDISCUSSION CONTEXT for this phase (honor these decisions):\n${context}` : ''
+// Defensive: accept args as an object, or as a JSON string if the caller stringified it.
+const input = typeof args === 'string' ? JSON.parse(args) : args || {}
+const { root, phase: phaseSlug, goal = '(see PROJECT.md)', models = {} } = input
+if (!root || !phaseSlug) throw new Error('plan-phase requires args { root, phase }')
+
+// Agents read the canon + discussion brief from disk themselves.
+const OBEY =
+  `\n\nRead and OBEY before answering:\n` +
+  `  - ${root}/.astrocode/CONVENTIONS.md and ${root}/.astrocode/DECISIONS.md (project canon)\n` +
+  `  - ${root}/.astrocode/phases/${phaseSlug}/CONTEXT.md (this phase's /astro-discuss decisions, if present)`
 
 phase('Research')
 const ANGLES = [
@@ -39,8 +45,7 @@ const findings = await parallel(
         `Your angle: ${angle}\n` +
         `Read the relevant files under ${root} and ${root}/.astrocode/. ` +
         `Return concise, concrete findings (no preamble).` +
-        CONTEXT +
-        CANON,
+        OBEY,
       { label: `research:${i + 1}`, phase: 'Research', agentType: 'Explore', model: models.researcher },
     ),
   ),
@@ -57,11 +62,9 @@ const summary = await agent(
     `Also write ${root}/.astrocode/phases/${phaseSlug}/ACCEPTANCE.md — a short, user-facing ` +
     `UAT checklist of "the user can …" statements a human will confirm before the phase ` +
     `closes (acceptance, not unit tests). ` +
-    `The plan MUST conform to the project canon AND the discussion context below ` +
-    `(stack, naming, patterns, prior decisions, and the decisions made for this phase). ` +
+    `The plan MUST conform to the canon and this phase's CONTEXT.md. ` +
     `Return a one-line summary of the plan.` +
-    CONTEXT +
-    CANON,
+    OBEY,
   { phase: 'Synthesize', agentType: 'astro-planner', model: models.planner },
 )
 
