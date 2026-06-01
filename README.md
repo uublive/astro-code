@@ -27,10 +27,10 @@ ac install           # populates ~/.astro/code and links commands/agents into Cl
 
 `ac install` keeps the files in `~/.astro/code` and symlinks the commands/agents into
 **every** Claude config dir Claude Code reads: the base `~/.claude` **and every
-[jean-claude](https://github.com/) profile** (auto-detected from
-`~/.claude/.jean-claude/profiles.json`). So the commands show up in all your profiles
-at once — no per-profile reruns. It's idempotent; `ac uninstall` reverses it across
-all of them. To update: `git pull && npm install -g . && ac install`.
+jean-claude profile** (auto-detected from `~/.claude/.jean-claude/profiles.json`). So
+the commands show up in all your profiles at once — no per-profile reruns. It's
+idempotent; `ac uninstall` reverses it across all of them. To update:
+`git pull && npm install -g . && ac install`.
 
 ## Use it
 
@@ -86,8 +86,12 @@ on the same orphan branch and injected into every plan/execute agent. `ac decisi
 appends to the shared log (ADR ids never collide across devs); `ac canon pull` refreshes
 your local mirror.
 
+**Existing project?** `/astro-adopt` maps the repo once and drafts `PROJECT.md` +
+`CONVENTIONS.md` from the real code, then plans what's next — a one-time bootstrap, not
+an always-synced codebase map.
+
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the design and the rationale behind
-these choices (and why there's no codebase-map or MCP server).
+these choices (lean core, canon-over-map, no MCP server, model tiers).
 
 ## Layout
 
