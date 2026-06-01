@@ -36,6 +36,7 @@ is coordinated across the team). Drive the loop from Claude Code:
 
 ```
 /astro-new-project        scaffold .astrocode/, shape PROJECT.md + the roadmap
+/astro-adopt              adopt an EXISTING codebase: map it → draft canon → plan next
 /astro-phase <name>       add a phase (claims its number)
 /astro-plan <phase>       parallel research → executable PLAN.md
 /astro-execute <phase>    wave-based parallel execution, then verify
