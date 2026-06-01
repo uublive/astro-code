@@ -63,7 +63,14 @@ ac phase add "Foundation"      # claim + add a phase
 ac status                      # project / milestone / phases
 ac registry show               # the shared numbering registry
 ac milestone complete          # archive the current milestone
+ac stats                       # token usage (fresh vs cheap cache reads) + wall-clock
 ```
+
+`ac stats` reads Claude Code's session transcripts and reports the honest breakdown —
+**fresh** input/output (the real cost) vs **cache reads** (cheap), the cache-hit ratio,
+and wall-clock. It's the whole project session by default; scope a single run with
+`--since "<ISO timestamp>"` (or `--session <id>`). For a real astro-code-vs-X
+comparison, run the same task in a fresh session and compare.
 
 ## How it works
 

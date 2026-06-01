@@ -15,6 +15,7 @@ import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
 import { installClaude, uninstallClaude, ASTRO_HOME } from '../lib/install.mjs';
+import { collectStats } from '../lib/stats.mjs';
 
 function parseArgs(args) {
   const flags = {};
@@ -79,6 +80,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac canon [pull | push]              print canon; pull/push shares it on the orphan branch
   ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision (shared)
   ac decision list                    list recorded decisions
+  ac stats [--since ISO|--session ID] token usage (fresh vs cache) + wall-clock from transcripts
   ac registry show                    print the shared numbering registry
   ac install | uninstall              (un)install commands + agents into ~/.claude
   ac path [sub]                       print the framework dir (e.g. ac path workflows)
@@ -377,6 +379,35 @@ async function main() {
     case 'uninstall': {
       const res = uninstallClaude();
       console.log(`✓ removed ${res.removed} symlink(s) across all config dirs and deleted ${res.home}`);
+      return;
+    }
+
+    case 'stats': {
+      // Transcripts are keyed by the project dir, not by .astrocode — so stats works
+      // in any repo. Try the .astrocode root, then the cwd.
+      const since = typeof flags.since === 'string' ? flags.since : undefined;
+      const session = typeof flags.session === 'string' ? flags.session : undefined;
+      const candidates = [...new Set([findRoot(), process.cwd()].filter(Boolean))];
+      let s = null;
+      for (const c of candidates) {
+        const x = collectStats(c, { since, session });
+        if (x.available) { s = x; break; }
+        s = s || x;
+      }
+      if (!s || !s.available) die(`no transcripts found (looked in ${s ? s.dir : 'the project dir'})`);
+      if (flags.json) { json(s); return; }
+      const fmt = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      const secs = Math.round(s.wallMs / 1000);
+      const dur = secs >= 3600 ? `${(secs / 3600).toFixed(1)}h` : secs >= 60 ? `${(secs / 60).toFixed(1)}m` : `${secs}s`;
+      console.log(`Transcripts: ${s.files} file(s)${since ? ` since ${since}` : ''}${session ? ` (session ${session})` : ''}`);
+      console.log(`Turns:       ${fmt(s.turns)}`);
+      console.log(`Output:      ${fmt(s.output)} tokens`);
+      console.log(`Fresh input: ${fmt(s.fresh)} tokens  (input ${fmt(s.input)} + cache-creation ${fmt(s.cacheCreate)})`);
+      console.log(`Cache reads: ${fmt(s.cacheRead)} tokens  (cheap — ${(s.cacheHitRatio * 100).toFixed(1)}% cache-hit)`);
+      console.log(`Wall clock:  ${dur}  (first → last message)`);
+      console.log('');
+      console.log('note: whole session history for this project, not astro-code-only.');
+      console.log('      scope one run with --since "<ISO timestamp>" (or --session <id>).');
       return;
     }
 
