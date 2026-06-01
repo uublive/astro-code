@@ -70,6 +70,11 @@ ac milestone complete          # archive the current milestone
 Everything lives in **`.astrocode/`** in your repo (human-readable, git-committed):
 `PROJECT.md`, `ROADMAP.md`, per-phase `PLAN.md`/`SUMMARY.md`, plus the canon.
 
+**Discuss before planning.** `/astro-discuss` asks adaptive, pick-an-answer questions
+about scope, approach, and edge cases, then writes the decisions to the phase's
+`CONTEXT.md` — which `/astro-plan` reads and obeys. Optional but recommended; trivial
+phases can skip it.
+
 **Two gates close a phase.** It moves `executing → verified → complete`: the
 `astro-verifier` agent is the machine gate (goal-backward, tests), and `/astro-accept`
 is the human gate (UAT against the acceptance checklist written at plan time). The AI
