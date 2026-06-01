@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
 import { initPlanning } from '../lib/planning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
-import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus } from '../lib/roadmap.mjs';
+import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, isPhasePlanned } from '../lib/roadmap.mjs';
 import { gitIdentity } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches } from '../lib/registry.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
@@ -116,7 +116,8 @@ async function main() {
       console.log('Phases:');
       if (!rm.phases.length) console.log('  (none)');
       for (const ph of rm.phases) {
-        console.log(`  ${String(ph.number).padStart(2, '0')}  ${ph.status.padEnd(9)} ${ph.name} (${ph.plans} plans)`);
+        const planned = isPhasePlanned(r, ph.slug) ? 'planned' : 'not planned';
+        console.log(`  ${String(ph.number).padStart(2, '0')}  ${ph.status.padEnd(9)} ${ph.name}  (${planned})`);
       }
       if (st.blockers?.length) console.log(`Blockers:  ${st.blockers.length}`);
       return;

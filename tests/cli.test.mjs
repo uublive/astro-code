@@ -2,14 +2,14 @@
 // and the local numbering fallback used when there is no coordinated remote.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { initPlanning } from '../lib/planning.mjs';
 import { paths } from '../lib/paths.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
-import { addPhase, loadRoadmap, renderRoadmapMd, slugify, findPhase, setPhaseStatus } from '../lib/roadmap.mjs';
+import { addPhase, loadRoadmap, renderRoadmapMd, renderRoadmap, slugify, findPhase, setPhaseStatus, isPhasePlanned } from '../lib/roadmap.mjs';
 import { claim } from '../lib/registry.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { loadCanon, canonText, addDecision } from '../lib/canon.mjs';
@@ -51,6 +51,20 @@ test('addPhase appends, sorts, and renders a hook-greppable ROADMAP.md', async (
   assert.match(md, /Phase 1 — Foundation/);
   // phase dir created
   assert.ok(existsSync(join(paths(root).phases, '01-foundation')));
+});
+
+test('planned state is derived from disk, not a stored counter', async () => {
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  await addPhase(root, { number: 1, name: 'Foundation', milestone: 1 });
+  assert.equal(isPhasePlanned(root, '01-foundation'), false);
+  renderRoadmap(root);
+  assert.ok(!/planned/.test(readFileSync(paths(root).roadmapMd, 'utf8')));
+
+  writeFileSync(join(paths(root).phases, '01-foundation', 'PLAN.md'), '# plan');
+  assert.equal(isPhasePlanned(root, '01-foundation'), true);
+  renderRoadmap(root);
+  assert.match(readFileSync(paths(root).roadmapMd, 'utf8'), /Phase 1 — Foundation `pending` · planned/);
 });
 
 test('duplicate phase number is rejected', async () => {
