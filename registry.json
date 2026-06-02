@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "claims": [
+    {
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-06-02T09:41:02.225Z",
+      "name": "",
+      "type": "milestone",
+      "number": 1,
+      "status": "active"
+    }
+  ]
+}
