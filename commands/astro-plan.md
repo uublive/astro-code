@@ -11,11 +11,12 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    `ac roadmap list` (e.g. `03` → `03-payments`). Read the phase goal from
    `.astrocode/PROJECT.md` / the roadmap entry.
 2. If `.astrocode/phases/<slug>/CONTEXT.md` is **missing**, suggest running
-   `/astro-discuss <phase>` first to surface decisions/edge cases — but proceed if the
+   `/astro-discuss <number>` first to surface decisions/edge cases — but proceed if the
    user declines. Refresh the team canon best-effort (`ac canon pull`) so the agents
    read the latest. The workflow's agents read the canon + CONTEXT.md from disk — you
    do NOT pass them as args.
-3. Run the planning fan-out. Use the **best available** mechanism (graceful fallback):
+3. Mark the live status so the statusline/banner show it: `ac activity '⚙ researching · plan'`.
+   Run the planning fan-out. Use the **best available** mechanism (graceful fallback):
    - **Workflow tool available (preferred):** keep `args` to small scalars only — pass
      it as a real JSON object, never a string:
      ```
@@ -35,7 +36,9 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
      yourself, then write the plan. Slower, no parallelism, but it works.
    Either way the result is `.astrocode/phases/<slug>/PLAN.md` (+ `ACCEPTANCE.md`)
    with numbered, dependency-aware tasks conforming to the canon.
-4. Summarize the plan and suggest `/astro-execute <phase>`.
+4. Clear the live status (`ac activity clear`), then summarize the plan and suggest
+   `/astro-execute <number>` (reference the phase by its number, e.g. `/astro-execute 1`).
+   Clear it too if planning fails or you stop early.
 
 Only fan out when the phase is worth parallel research — for a trivial phase, just
 write PLAN.md directly.

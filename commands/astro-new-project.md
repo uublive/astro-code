@@ -16,10 +16,17 @@ You are starting a new astro-code project in the current repository.
    execution agent, so getting it right now keeps the whole team consistent. Share it
    with `ac canon push`, and record any notable up-front choices with `ac decision add`
    (these go to the shared orphan branch so the whole team sees them immediately).
-3. Propose an initial set of phases (small, sequenced, each a vertical slice).
+3. Initialize the numbering registry: run `ac registry init`. This creates the
+   orphan registry branch on `origin` and seeds milestone 1, so numbering is
+   team-coordinated from day one (and can never drift the way local-then-remote
+   numbering does). It needs an `origin` remote — if there isn't one yet, tell the
+   user to add it (`git remote add origin <url>`) and run `ac registry init` before
+   the first `ac phase add`. (Phase/milestone claims fail fast until this is done.)
+4. Propose an initial set of phases (small, sequenced, each a vertical slice).
    Confirm with the user, then create each with `ac phase add "<name>"`. Each call
    claims the next phase number from the shared registry (collision-proof across
-   the team).
-4. Show `ac status` and tell the user the next step is `/astro-plan <phase>`.
+   the team; phases number from 1).
+5. Show `ac status` and tell the user the next step is `/astro-plan <number>` — always
+   reference a phase by its **number** (e.g. `/astro-plan 1`), never its name.
 
 Keep PROJECT.md tight — vision + requirements + constraints, no fluff.

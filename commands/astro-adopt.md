@@ -26,7 +26,8 @@ already there — then plan only what's *next*, not what already exists.
    conventions/decisions immediately.
 6. **Plan what's next.** Propose a short roadmap of upcoming work (NOT a re-description
    of existing code). On the user's OK, create each with `ac phase add "<name>"`.
-7. Show `ac status` and point to `/astro-plan <first phase>`.
+7. Show `ac status` and point to `/astro-plan <number>` for the first phase — always
+   reference a phase by its **number** (e.g. `/astro-plan 1`), never its name.
 
 This is the one place a codebase *map* is worth it (onboarding existing code). It's a
 one-time bootstrap — the always-on consistency comes from the canon it produces, not

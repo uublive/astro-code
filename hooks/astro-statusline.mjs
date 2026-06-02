@@ -4,12 +4,14 @@
 // astro-code must not clobber a statusline the user already runs (e.g. GSD's). At
 // install time we save the original `statusLine.command` for each config dir into
 // ~/.astro/code/statusline-chain.json; here we run it first (feeding it the same
-// stdin Claude gave us), then append a short astro segment when the clone is behind
-// origin. Uninstall restores the original command from that same map.
+// stdin Claude gave us), then append astro segments: the live project state
+// (milestone/phase/status/activity) and, when the clone is behind origin, an
+// update nudge. Uninstall restores the original command from that same map.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { findAstroRoot, readContext, renderSegment } from './_astro-ctx.mjs';
 
 const HOME = join(homedir(), '.astro', 'code');
 const configDir = process.argv[2] || '';
@@ -31,12 +33,22 @@ if (prev && typeof prev.command === 'string' && prev.command) {
   base = (r.stdout || '').replace(/\n+$/, '');
 }
 
-// (2) the astro update segment
+// (2) the astro project segment — current milestone/phase/status + live activity.
+// The cwd comes from Claude's stdin blob; from it we walk up to the `.astrocode/`.
+let project = '';
+try {
+  const data = JSON.parse(input);
+  const cwd = data?.workspace?.current_dir || data?.cwd || process.cwd();
+  const projRoot = findAstroRoot(cwd);
+  if (projRoot) project = renderSegment(readContext(projRoot, Math.floor(Date.now() / 1000)));
+} catch { /* no/!json stdin, or not inside an astro-code project */ }
+
+// (3) the astro update segment
 let segment = '';
 const cache = readJson(join(HOME, 'update-check.json'));
 if (cache && cache.update_available) {
   segment = `⬆ astro-code ${cache.behind} behind — /astro-update`;
 }
 
-const parts = [base, segment].filter(Boolean);
+const parts = [base, project, segment].filter(Boolean);
 process.stdout.write(parts.join('  ·  '));

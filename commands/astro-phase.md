@@ -11,12 +11,12 @@ Add a new phase named `$ARGUMENTS` to the current milestone.
    use `AskUserQuestion` to let the user choose: proceed anyway, rename, or stop and
    coordinate with that dev. (A match by *you* is just informational.)
 2. Run `ac phase add "<final name>"`. This **claims the next free phase number** from
-   the orphan-branch registry — if another dev took that number you automatically get
-   the next one — and records the name so future duplicate checks work. If it prints a
-   `⚠ possible duplicate work` warning, relay it.
-3. Note whether it was `[registry: …]` (team-coordinated) or `[local]` (no remote —
-   numbers/names aren't shared).
-4. Show `ac status` and suggest `/astro-plan <number>` next.
+   the orphan-branch registry (phases number from 1 within a milestone) — if another
+   dev took that number you automatically get the next one — and records the name so
+   future duplicate checks work. If it prints a `⚠ possible duplicate work` warning,
+   relay it. If it errors with `run `ac registry init``, run that first (needs an
+   `origin` remote), then retry.
+3. Show `ac status` and suggest `/astro-plan <number>` next.
 
 Don't hand-edit `.astrocode/ROADMAP.md` — it's generated. Numbering and name tracking
 only work through `ac`.

@@ -8,9 +8,10 @@ Discuss phase `$ARGUMENTS` with the developer before any plan is written. The go
 to surface the decisions, scope boundaries, and edge cases they may not have thought
 about — and to capture the answers so planning is grounded, not guessed.
 
-1. **Get grounded.** Read `.astrocode/PROJECT.md`, the phase's roadmap entry/goal, the
-   canon (`ac canon`), and skim the relevant code (Grep/Glob/Read) so your questions
-   are specific to THIS project, not generic.
+1. **Get grounded.** Surface the live status (`ac activity '✎ discussing'`), then read
+   `.astrocode/PROJECT.md`, the phase's roadmap entry/goal, the canon (`ac canon`), and
+   skim the relevant code (Grep/Glob/Read) so your questions are specific to THIS
+   project, not generic.
 2. **Ask adaptively.** Use `AskUserQuestion` to ask the **2–4 questions that actually
    matter** for this phase — real forks, not box-ticking. Good targets:
    - scope boundaries (what's explicitly in vs. out),
@@ -26,7 +27,9 @@ about — and to capture the answers so planning is grounded, not guessed.
 4. **Promote firm choices.** If a decision is architectural (affects more than this
    phase), record it with `ac decision add "<choice>" --why "<why>"` so it joins the
    shared canon.
-5. Suggest `/astro-plan <phase>` next — it will read CONTEXT.md and plan against it.
+5. Clear the live status (`ac activity clear`) and suggest `/astro-plan <number>` next
+   (reference the phase by its number, e.g. `/astro-plan 1`) — it will read CONTEXT.md
+   and plan against it.
 
 Keep it conversational and high-signal. A trivial phase may need no questions at all —
 say so and skip rather than manufacturing them.

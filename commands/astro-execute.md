@@ -8,8 +8,10 @@ Execute phase `$ARGUMENTS`.
 
 1. Resolve the project root (where `.astrocode/` lives) and the phase slug from
    `ac roadmap list`. Confirm `.astrocode/phases/<slug>/PLAN.md` exists — if not,
-   tell the user to run `/astro-plan <phase>` first.
-2. Mark the phase active: `ac state set active_phase <slug>`.
+   tell the user to run `/astro-plan <number>` first (reference the phase by its
+   number, e.g. `/astro-plan 3`).
+2. Mark the phase active and surface the live status: `ac state set active_phase <slug>`
+   then `ac activity '⚙ executing'` (the statusline/banner pick it up).
 3. Refresh the team canon best-effort (`ac canon pull`). The workflow's agents read
    the canon + CONTEXT.md from disk — you do NOT pass them as args.
 4. Run the execution fan-out. Use the **best available** mechanism (graceful fallback):
@@ -42,9 +44,10 @@ Execute phase `$ARGUMENTS`.
      canon + CONTEXT.md.
    - **No subagents at all:** execute the tasks inline, in dependency order, one
      atomic commit each, then verify yourself.
-5. Report the verdict (the workflow has returned by now — safe to suggest `/clear`).
+5. Clear the live status (`ac activity clear` — also clear it on any early stop or
+   `integrationFailed`), then report the verdict (the workflow has returned by now — safe to suggest `/clear`).
    - **PASS** → run `ac phase verify <slug>` (marks it **verified** — the AI gate),
-     then tell the user to run **`/astro-accept <slug>`** for UAT sign-off, which is
+     then tell the user to run **`/astro-accept <number>`** (by number, e.g. `/astro-accept 3`) for UAT sign-off, which is
      what actually closes the phase. Optionally add: state is saved to `.astrocode/`,
      so `/clear` before `/astro-accept` (or the next phase) keeps context lean and
      loses nothing — a suggestion, not a requirement.
