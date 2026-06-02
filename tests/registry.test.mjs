@@ -9,11 +9,11 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { git } from '../lib/git.mjs';
 import { initPlanning } from '../lib/planning.mjs';
 import { paths } from '../lib/paths.mjs';
-import { claim, readRegistry, markComplete, findNameMatches } from '../lib/registry.mjs';
+import { claim, readRegistry, markComplete, findNameMatches, initRegistry } from '../lib/registry.mjs';
 import { addDecision, canonPull } from '../lib/canon.mjs';
 
 function mkBareRemote() {
@@ -35,24 +35,24 @@ function mkWorkdir(bare, name) {
 test('claims land on the orphan branch and increment per milestone', () => {
   const bare = mkBareRemote();
   const dir = mkWorkdir(bare, 'alice');
+  // `ac registry init` creates the orphan branch and backfills milestone 1 from
+  // the init-time roadmap. The first milestone exists from project creation.
+  const init = initRegistry({ root: dir });
+  assert.equal(init.ok, true, init.error || '');
 
-  const m1 = claim({ root: dir, type: 'milestone' });
-  assert.equal(m1.source, 'remote', m1.error || '');
-  assert.equal(m1.number, 1);
+  // milestone 1's phases number from 1 — no phantom auto-reserved phase 1
+  const p1 = claim({ root: dir, type: 'phase', milestone: 1 });
+  assert.equal(p1.source, 'remote', p1.error || '');
+  assert.equal(p1.number, 1);
 
-  // milestone claim auto-reserves phase 1, so the next phase is 2
   const p2 = claim({ root: dir, type: 'phase', milestone: 1 });
-  assert.equal(p2.source, 'remote');
   assert.equal(p2.number, 2);
 
-  const p3 = claim({ root: dir, type: 'phase', milestone: 1 });
-  assert.equal(p3.number, 3);
-
-  // a second milestone is independent
+  // the next milestone is 2, and its phases also start at 1
   const m2 = claim({ root: dir, type: 'milestone' });
   assert.equal(m2.number, 2);
-  const p2m2 = claim({ root: dir, type: 'phase', milestone: 2 });
-  assert.equal(p2m2.number, 2); // milestone 2 already has its auto phase 1
+  const p1m2 = claim({ root: dir, type: 'phase', milestone: 2 });
+  assert.equal(p1m2.number, 1);
 
   // registry is readable and well-formed
   const reg = readRegistry(dir);
@@ -65,16 +65,17 @@ test('two independent working copies on one remote never collide', () => {
   const bare = mkBareRemote();
   const alice = mkWorkdir(bare, 'alice');
   const bob = mkWorkdir(bare, 'bob');
+  initRegistry({ root: alice }); // seeds milestone 1 once, on the shared branch
 
-  // Both start a milestone; whoever pushes second is rejected and recomputes.
+  // Both start a NEW milestone; whoever pushes second is rejected and recomputes.
   const a = claim({ root: alice, type: 'milestone' });
   const b = claim({ root: bob, type: 'milestone' });
-  assert.equal(a.source, 'remote');
-  assert.equal(b.source, 'remote');
+  assert.equal(a.source, 'remote', a.error || '');
+  assert.equal(b.source, 'remote', b.error || '');
   assert.notEqual(a.number, b.number);
-  assert.deepEqual([a.number, b.number].sort(), [1, 2]);
+  assert.deepEqual([a.number, b.number].sort(), [2, 3]);
 
-  // Both add a phase to milestone 1 (claimed by alice); numbers stay distinct.
+  // Both add a phase to milestone 1; numbers stay distinct.
   const pa = claim({ root: alice, type: 'phase', milestone: 1 });
   const pb = claim({ root: bob, type: 'phase', milestone: 1 });
   assert.notEqual(pa.number, pb.number);
@@ -121,7 +122,7 @@ test('name tracking flags duplicate work across devs', async () => {
   const alice = mkWorkdir(bare, 'alice');
   const bob = mkWorkdir(bare, 'bob');
 
-  claim({ root: alice, type: 'milestone' }); // m1 + phase 1
+  initRegistry({ root: alice }); // creates the branch + seeds milestone 1
   const a = claim({ root: alice, type: 'phase', milestone: 1, name: 'User Authentication' });
   assert.equal(a.source, 'remote', a.error || '');
 
@@ -148,12 +149,56 @@ test('markComplete retires a milestone\'s claims', () => {
   const bare = mkBareRemote();
   const dir = mkWorkdir(bare, 'alice');
 
-  claim({ root: dir, type: 'milestone' }); // milestone 1 + phase 1
-  claim({ root: dir, type: 'phase', milestone: 1 }); // phase 2
+  initRegistry({ root: dir }); // milestone 1
+  claim({ root: dir, type: 'phase', milestone: 1 }); // phase 1
   const res = markComplete({ root: dir, milestone: 1 });
   assert.equal(res.ok, true);
-  assert.ok(res.changed >= 3);
+  assert.ok(res.changed >= 2);
 
   const active = readRegistry(dir).registry.claims.filter((c) => c.status === 'active');
   assert.equal(active.length, 0);
+});
+
+test('numbers are never reused after a milestone completes (monotonic)', () => {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare, 'alice');
+
+  initRegistry({ root: dir }); // milestone 1 (active)
+  markComplete({ root: dir, milestone: 1 }); // retire it
+  const m = claim({ root: dir, type: 'milestone' });
+  assert.equal(m.number, 2); // NOT reused as 1, even though no active milestone remains
+});
+
+test('claims refuse to run before `ac registry init`', () => {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare, 'alice'); // origin present, but registry never initialized
+  const res = claim({ root: dir, type: 'milestone' });
+  assert.equal(res.source, 'error');
+  assert.equal(res.needsInit, true);
+  assert.match(res.error, /registry init/);
+});
+
+test('`ac registry init` backfills archived milestones as complete and continues numbering', () => {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare, 'alice');
+
+  // simulate a milestone 1 that was archived locally (before any registry existed)
+  const arch = join(paths(dir).dir, 'milestones', '1');
+  mkdirSync(arch, { recursive: true });
+  writeFileSync(join(arch, 'roadmap.json'), JSON.stringify({
+    milestone: 1,
+    phases: [{ number: 1, slug: '01-a', name: 'A' }, { number: 2, slug: '02-b', name: 'B' }],
+  }));
+
+  const res = initRegistry({ root: dir });
+  assert.equal(res.created, true);
+
+  const claims = readRegistry(dir).registry.claims;
+  const m1 = claims.find((c) => c.type === 'milestone' && c.number === 1);
+  assert.equal(m1.status, 'complete'); // archive wins over the live roadmap's active milestone 1
+  assert.equal(claims.filter((c) => c.type === 'phase' && c.milestone === 1).length, 2);
+
+  // the next milestone skips the archived number instead of resetting to 1
+  const m = claim({ root: dir, type: 'milestone' });
+  assert.equal(m.number, 2);
 });

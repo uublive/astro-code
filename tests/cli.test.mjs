@@ -74,15 +74,12 @@ test('duplicate phase number is rejected', async () => {
   await assert.rejects(() => addPhase(root, { number: 1, name: 'b', milestone: 1 }), /already exists/);
 });
 
-test('local claim fallback numbers sequentially from the roadmap', async () => {
-  const root = fresh(); // not a git repo → no remote → local numbering
+test('claims refuse a silent local fallback — an initialized registry is required', async () => {
+  const root = fresh(); // not a git repo → no coordinated registry
   initPlanning(root, { name: 'demo' });
-  const c1 = claim({ root, type: 'phase', milestone: 1 });
-  assert.equal(c1.source, 'local');
-  assert.equal(c1.number, 1);
-  await addPhase(root, { number: c1.number, name: 'first', milestone: 1 });
-  const c2 = claim({ root, type: 'phase', milestone: 1 });
-  assert.equal(c2.number, 2);
+  const c = claim({ root, type: 'phase', milestone: 1 });
+  assert.equal(c.source, 'error');
+  assert.match(c.error, /git repository|remote|registry init/);
 });
 
 test('slugify normalizes names', () => {

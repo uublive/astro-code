@@ -11,7 +11,7 @@ import { initPlanning } from '../lib/planning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, isPhasePlanned } from '../lib/roadmap.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
-import { claim, readRegistry, registryBranch, markComplete, findNameMatches } from '../lib/registry.mjs';
+import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry } from '../lib/registry.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
@@ -66,6 +66,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac status                           show project / milestone / phases
   ac state get [key]                  print state (or one field)
   ac state set <key> <value>          atomically update a state field
+  ac activity <text> | clear          set/clear the live statusline + banner verb
   ac roadmap list                     list phases
   ac roadmap render                   regenerate .astrocode/ROADMAP.md
   ac milestone new [--name "…"]       claim the next milestone number (+ dup-name check)
@@ -82,6 +83,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision (shared)
   ac decision list                    list recorded decisions
   ac stats [--since ISO|--session ID] token usage (fresh vs cache) + wall-clock from transcripts
+  ac registry init [--force]          create the orphan registry branch + backfill from roadmaps
   ac registry show                    print the shared numbering registry
   ac install | uninstall              (un)install commands + agents into ~/.claude
   ac update [clone-path]              git pull + refresh the global CLI and commands
@@ -116,7 +118,10 @@ async function main() {
       console.log(`Project:   ${st.project ?? '?'}`);
       console.log(`Status:    ${st.status ?? '?'}`);
       console.log(`Milestone: ${rm.milestone}   (active phase: ${st.active_phase ?? '—'})`);
-      console.log(`Registry:  ${reg.available ? `${registryBranch(r)} @ origin (team-coordinated)` : 'local only (no remote)'}`);
+      const regState = !reg.available ? 'no origin remote — add one, then `ac registry init`'
+        : reg.registry.claims.length ? `${registryBranch(r)} @ origin (team-coordinated)`
+        : 'origin present, not initialized — run `ac registry init`';
+      console.log(`Registry:  ${regState}`);
       console.log('Phases:');
       if (!rm.phases.length) console.log('  (none)');
       for (const ph of rm.phases) {
@@ -147,6 +152,21 @@ async function main() {
       return;
     }
 
+    // The live "what's happening" verb the statusline + SessionStart banner surface.
+    // Stored as { text, at } so the renderers can expire a stale verb (a command that
+    // crashed before clearing). Silent on success — it's called from command steps.
+    case 'activity': {
+      const r = root();
+      if (pos[0] === 'clear' || pos[0] === 'off') {
+        await updateState(r, (s) => ({ ...s, activity: null }));
+      } else {
+        const text = pos.join(' ').trim();
+        if (!text) die('usage: ac activity <text> | clear');
+        await updateState(r, (s) => ({ ...s, activity: { text, at: Math.floor(Date.now() / 1000) } }));
+      }
+      return;
+    }
+
     case 'roadmap': {
       const r = root();
       if (pos[0] === 'render') {
@@ -164,7 +184,7 @@ async function main() {
       if (pos[0] === 'new') {
         const name = typeof flags.name === 'string' ? flags.name : pos.slice(1).join(' ').trim();
         const res = claim({ root: r, type: 'milestone', name });
-        if (res.source === 'error') die(`claim failed: ${res.error}`);
+        if (res.source === 'error') die(res.error);
         await updateState(r, (s) => ({ ...s, active_milestone: res.number, status: 'planning' }));
         const rm = loadRoadmap(r);
         rm.milestone = res.number;
@@ -209,11 +229,9 @@ async function main() {
         const rm = loadRoadmap(r);
         const milestone = Number(flags.milestone) || st.active_milestone || rm.milestone || 1;
         const res = claim({ root: r, type: 'phase', milestone, name });
-        if (res.source === 'error') die(`claim failed: ${res.error}`);
+        if (res.source === 'error') die(res.error);
         const phase = await addPhase(r, { number: res.number, name, milestone });
-        const tag = res.source === 'remote' ? `[registry: ${res.branch}]` : '[local]';
-        console.log(`✓ phase ${phase.number} "${name}" (milestone ${milestone}) ${tag}`);
-        if (res.source === 'local') console.log('  ⚠ not team-coordinated (no remote) — numbers may collide on merge');
+        console.log(`✓ phase ${phase.number} "${name}" (milestone ${milestone}) [registry: ${res.branch}]`);
         warnNameMatches(res.matches, gitIdentity(r).owner);
         return;
       }
@@ -268,7 +286,7 @@ async function main() {
       const milestone = type === 'phase' ? Number(pos[1]) : undefined;
       if (type === 'phase' && !Number.isInteger(milestone)) die('usage: ac claim phase <milestone-number>');
       const res = claim({ root: r, type, milestone });
-      if (res.source === 'error') die(`claim failed: ${res.error}`);
+      if (res.source === 'error') die(res.error);
       console.log(res.number); // machine-readable: just the number on stdout
       console.error(`[${res.source}] ${res.message ?? ''}`);
       return;
@@ -276,10 +294,17 @@ async function main() {
 
     case 'registry': {
       const r = root();
-      if (pos[0] !== 'show') die('usage: ac registry show');
+      if (pos[0] === 'init') {
+        const res = initRegistry({ root: r, force: !!flags.force });
+        if (!res.ok) die(res.error);
+        if (res.created) console.log(`✓ registry initialized on ${res.branch} — backfilled ${res.claims} claim(s)`);
+        else console.log(`• registry already initialized (${res.claims} claim(s)) — pass --force to rebuild from roadmaps`);
+        return;
+      }
+      if (pos[0] !== 'show') die('usage: ac registry <show|init [--force]>');
       const reg = readRegistry(r);
       if (!reg.available) {
-        console.error('no coordinated remote — registry is local-only');
+        console.error('no coordinated remote — add an origin, then `ac registry init`');
         json({ available: false });
       } else {
         json(reg.registry);
