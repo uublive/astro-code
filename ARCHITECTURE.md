@@ -59,7 +59,7 @@ entirely with git plumbing:
 
 ```
 read   git fetch <branch>           → git show FETCH_HEAD:registry.json   (tip = T)
-build  next = max(active claims of this type [+ milestone]) + 1
+build  next = max(claims of this type) + 1   ← phases span all milestones (global)
 write  hash-object → mktree → commit-tree -p T → push commit:refs/heads/<branch>
 ```
 

@@ -1,7 +1,7 @@
 // Integration test for the inviolable numbering principle.
 // We stand up a real bare git repo as "origin" and prove that:
 //   1. claims land on the orphan registry branch (pure git, no server),
-//   2. numbers increment monotonically per type/milestone,
+//   2. numbers increment monotonically per type (phases are global, not per-milestone),
 //   3. two independent working copies sharing one remote never collide.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -32,7 +32,7 @@ function mkWorkdir(bare, name) {
   return dir;
 }
 
-test('claims land on the orphan branch and increment per milestone', () => {
+test('claims land on the orphan branch; phases number globally (never restart per milestone)', () => {
   const bare = mkBareRemote();
   const dir = mkWorkdir(bare, 'alice');
   // `ac registry init` creates the orphan branch and backfills milestone 1 from
@@ -48,11 +48,12 @@ test('claims land on the orphan branch and increment per milestone', () => {
   const p2 = claim({ root: dir, type: 'phase', milestone: 1 });
   assert.equal(p2.number, 2);
 
-  // the next milestone is 2, and its phases also start at 1
+  // the next milestone is 2, but its first phase continues the GLOBAL phase
+  // sequence — it is 3 (after m1's phases 1 and 2), not a reset to 1.
   const m2 = claim({ root: dir, type: 'milestone' });
   assert.equal(m2.number, 2);
   const p1m2 = claim({ root: dir, type: 'phase', milestone: 2 });
-  assert.equal(p1m2.number, 1);
+  assert.equal(p1m2.number, 3);
 
   // registry is readable and well-formed
   const reg = readRegistry(dir);

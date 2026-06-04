@@ -11,8 +11,9 @@ Add a new phase named `$ARGUMENTS` to the current milestone.
    use `AskUserQuestion` to let the user choose: proceed anyway, rename, or stop and
    coordinate with that dev. (A match by *you* is just informational.)
 2. Run `ac phase add "<final name>"`. This **claims the next free phase number** from
-   the orphan-branch registry (phases number from 1 within a milestone) — if another
-   dev took that number you automatically get the next one — and records the name so
+   the orphan-branch registry (phase numbers are **project-global** — they don't
+   restart at 1 each milestone, so every phase number is unique on its own) — if
+   another dev took that number you automatically get the next one — and records the name so
    future duplicate checks work. If it prints a `⚠ possible duplicate work` warning,
    relay it. If it errors with `run `ac registry init``, run that first (needs an
    `origin` remote), then retry.
