@@ -23,6 +23,11 @@ phase goal is really met.
 Principles:
 - **Small, independently committable tasks.** Maximize tasks with no dependencies
   so the executor can run them in parallel waves.
+- **One file, one owner per wave.** Parallel tasks run in isolated worktrees and are
+  merged together afterward, so two tasks that touch the SAME file MUST be serialized:
+  give one a `depends_on` the other (or fold them into a single task). Never leave two
+  same-file tasks both with empty `depends_on` — they will collide at integration.
+  Set `file` accurately for every task; an omitted `file` forces that task to run alone.
 - **Match the codebase.** Reuse existing patterns, naming, and test conventions.
 - **Test-first for behavior.** Tasks that add behavior specify the test first.
 - No speculative scope. Plan only what the phase goal requires.

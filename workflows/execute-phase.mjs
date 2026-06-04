@@ -61,10 +61,26 @@ const disc = await agent(
   { schema: TASK_SCHEMA, phase: 'Discover', model: models.discover },
 )
 
-// Kahn-style layering into dependency waves.
+// Kahn-style layering into dependency waves, with a file-disjointness guard:
+// two tasks that touch the SAME file are never co-scheduled in one parallel wave,
+// even if the plan forgot to declare the dependency between them. Same-file tasks
+// run in isolated worktrees and would collide when the integrator folds the wave
+// back onto the branch, so the overflow is deferred to a later wave. The planner
+// SHOULD encode this as depends_on (see astro-planner.md); this is the safety net
+// that keeps the parallel path correct regardless of plan quality.
+const claimedFiles = (t) => {
+  const raw = (t.file || '').trim()
+  // No declared file → can't be proven disjoint from anything; claim the wildcard
+  // so it runs alone (safe over fast).
+  if (!raw) return new Set(['*'])
+  return new Set(raw.split(/[\s,;]+/).filter(Boolean))
+}
+const filesCollide = (a, b) => a.has('*') || b.has('*') || [...a].some((f) => b.has(f))
+
 const tasks = disc.tasks
 const completed = new Set()
 const waves = []
+let deferredForFiles = 0
 let remaining = tasks.slice()
 while (remaining.length) {
   const ready = remaining.filter((t) => t.depends_on.every((d) => completed.has(d)))
@@ -73,11 +89,28 @@ while (remaining.length) {
     waves.push(remaining)
     break
   }
-  waves.push(ready)
-  ready.forEach((t) => completed.add(t.id))
-  remaining = remaining.filter((t) => !ready.includes(t))
+  // Greedily admit ready tasks whose files don't overlap anything already in this
+  // wave; defer the rest (their deps stay satisfied, so they're ready again next
+  // iteration). The first ready task is always admitted, so progress is guaranteed.
+  const wave = []
+  const waveFiles = new Set()
+  for (const t of ready) {
+    const tf = claimedFiles(t)
+    if (wave.length && filesCollide(tf, waveFiles)) {
+      deferredForFiles++
+      continue
+    }
+    wave.push(t)
+    tf.forEach((f) => waveFiles.add(f))
+  }
+  waves.push(wave)
+  wave.forEach((t) => completed.add(t.id))
+  remaining = remaining.filter((t) => !wave.includes(t))
 }
-log(`${tasks.length} task(s) in ${waves.length} wave(s)`)
+log(
+  `${tasks.length} task(s) in ${waves.length} wave(s)` +
+    (deferredForFiles ? ` (${deferredForFiles} same-file deferral(s) to avoid collisions)` : ''),
+)
 
 // ---- pick an execution strategy ---------------------------------------------
 // A "sequential": run tasks one at a time directly on the working branch. Each
