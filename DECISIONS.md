@@ -11,3 +11,10 @@ _2026-06-05_
 
 **Rejected:** TypeScript + build step; runtime deps for CLI/arg parsing
 
+## ADR-002 — Orphan-branch git compare-and-swap for all shared state
+_2026-06-05_
+
+**Why:** lib/shared.mjs transact() makes numbering, decisions, and canon collision-proof across developers using a non-force push whose rejection is the mutual exclusion — no server, no gh, works on any remote
+
+**Rejected:** server-side coordination; local-only numbering; gh API
+
