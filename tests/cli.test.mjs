@@ -142,6 +142,21 @@ test('config ships model tiers and is updatable', async () => {
   assert.equal(loadConfig(root).models.executor, 'opus');
 });
 
+test('config template scaffolds gitflow block disabled by default', () => {
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  const cfg = loadConfig(root);
+  // gitflow block must be present and disabled so new projects are opt-in only
+  assert.ok(cfg.gitflow, 'gitflow block missing from scaffolded config');
+  assert.equal(cfg.gitflow.enabled, false, 'gitflow.enabled must default to false');
+  assert.equal(cfg.gitflow.main, 'main');
+  assert.equal(cfg.gitflow.develop, 'develop');
+  assert.equal(cfg.gitflow.prefixes.feature, 'feature');
+  assert.equal(cfg.gitflow.prefixes.release, 'release');
+  assert.equal(cfg.gitflow.prefixes.hotfix, 'hotfix');
+  assert.equal(cfg.gitflow.pr, 'none');
+});
+
 test('completeMilestone archives phases and clears the active roadmap', async () => {
   const root = fresh();
   initPlanning(root, { name: 'demo' });

@@ -11,5 +11,12 @@
     "executor": "sonnet",
     "verifier": "opus",
     "discover": "haiku"
+  },
+  "gitflow": {
+    "enabled": false,
+    "main": "main",
+    "develop": "develop",
+    "prefixes": { "feature": "feature", "release": "release", "hotfix": "hotfix" },
+    "pr": "none"
   }
 }
