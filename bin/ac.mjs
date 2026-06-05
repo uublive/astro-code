@@ -250,6 +250,10 @@ async function main() {
         if (!res.created) {
           console.log('  (branch already existed — switched without recreating)');
         }
+        // Worktree-base reminder (PLAN t5 / ACCEPTANCE #7, todo #6): /astro-execute
+        // forks one worktree per task from HEAD, so the user must be ON the feature
+        // branch when they execute — say so explicitly, not just in a code comment.
+        console.log(`• you are now on "${res.branch}" — run /astro-execute from here`);
       } else {
         die(`unknown ac flow subcommand "${sub}" — usage: ac flow [init]`);
       }

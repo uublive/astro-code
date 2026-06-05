@@ -391,6 +391,14 @@ test('ac flow creates feature branch off develop and exits 0', () => {
 
   // Output should report the branch name
   assert.match(r.stdout + r.stderr, /feature\/m\d+/, 'output should include the branch name')
+
+  // ...and the worktree-base reminder (PLAN t5 / ACCEPTANCE #7, todo #6): the user
+  // must be told to run /astro-execute from here, since worktrees fork from HEAD.
+  assert.match(
+    r.stdout + r.stderr,
+    /\/astro-execute/,
+    'ac flow must remind the user to run /astro-execute from the feature branch',
+  )
 })
 
 test('ac flow exits non-zero and prints a clear error when gitflow is disabled', () => {
