@@ -44,3 +44,10 @@ _2026-06-05_
 
 **Rejected:** AI auto-closing phases
 
+## ADR-007 — GitFlow mapping: milestone = feature branch (Option A)
+_2026-06-05_
+
+**Why:** User-chosen model: each milestone is one feature/m<N> branch off develop, phases commit on it, milestone complete = PR to develop. Simplest and matches the original proposal
+
+**Rejected:** Option B (phase = feature, milestone = release/<N>); long-lived milestone branches must be kept small to avoid develop drift
+
