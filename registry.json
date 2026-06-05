@@ -29,6 +29,16 @@
       "branch": "main",
       "claimed_at": "2026-06-05T08:00:04.932Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 3,
+      "milestone": 1,
+      "name": "GitFlow branch automation (Option A)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-06-05T08:00:11.895Z",
+      "status": "active"
     }
   ]
 }
