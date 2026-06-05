@@ -58,3 +58,10 @@ _2026-06-05_
 
 **Rejected:** re-implementing the worktree+integrator orchestration in markdown prose (fragile); hybrid auto-strategy in the fallback
 
+## ADR-009 — GitFlow exposed as separate 'ac flow' commands, not by extending lifecycle commands
+_2026-06-05_
+
+**Why:** Branching stays decoupled from the planning lifecycle (milestone new / phase add untouched); GitFlow is opt-in per action via explicit ac flow subcommands and gitflow.enabled config. Keeps each command a thin, inspectable git wrapper
+
+**Rejected:** auto-creating branches inside ac milestone new / ac phase add (couples lifecycle to branching)
+
