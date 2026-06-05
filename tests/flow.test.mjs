@@ -17,7 +17,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
 
 import { git } from '../lib/git.mjs'
 import { initPlanning } from '../lib/planning.mjs'
@@ -25,6 +27,8 @@ import { paths } from '../lib/paths.mjs'
 import { readJSON, atomicWriteJSON } from '../lib/util.mjs'
 import { initRegistry } from '../lib/registry.mjs'
 import { flowInit, flowBranch, loadFlowConfig } from '../lib/flow.mjs'
+
+const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -326,4 +330,85 @@ test('milestone name with unicode/special chars produces a git-valid branch name
   // git check-ref-format --branch validates the branch name against git rules
   const check = git(['check-ref-format', '--branch', res.branch])
   assert.equal(check.status, 0, `branch name "${res.branch}" is not git-valid: ${check.stderr}`)
+})
+
+// ---------------------------------------------------------------------------
+// CLI dispatch tests — Case 12-13: `ac flow init` and `ac flow` wire correctly
+// into bin/ac.mjs's switch (cmd) and delegate to lib/flow.mjs
+// ---------------------------------------------------------------------------
+
+// Helper: spawn bin/ac.mjs with given args, returns { status, stdout, stderr }
+function ac(args, cwd) {
+  return spawnSync(process.execPath, [join(FRAMEWORK, 'bin', 'ac.mjs'), ...args], {
+    cwd,
+    encoding: 'utf8',
+  })
+}
+
+test('ac flow init creates develop branch and exits 0', () => {
+  // Need a real git repo + initPlanning + gitflow enabled so flowInit can run.
+  // withRegistry is not required for flowInit — local-only operation.
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+
+  const r = ac(['flow', 'init'], dir)
+  assert.equal(r.status, 0, `ac flow init exited ${r.status}:\n${r.stderr}`)
+
+  // Verify develop was created
+  const branches = git(['branch', '--list', 'develop'], { cwd: dir }).stdout
+  assert.match(branches, /develop/, 'develop branch was not created by ac flow init')
+
+  // Output should contain a ✓ success glyph or mention develop
+  assert.match(r.stdout + r.stderr, /develop/, 'output should mention develop')
+})
+
+test('ac flow init is idempotent — second call exits 0 without moving develop', () => {
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+
+  ac(['flow', 'init'], dir) // first call
+  const tipBefore = git(['rev-parse', 'develop'], { cwd: dir }).stdout.trim()
+
+  const r2 = ac(['flow', 'init'], dir) // second call — must be a no-op success
+  assert.equal(r2.status, 0, `second ac flow init exited ${r2.status}:\n${r2.stderr}`)
+
+  const tipAfter = git(['rev-parse', 'develop'], { cwd: dir }).stdout.trim()
+  assert.equal(tipAfter, tipBefore, 'second ac flow init moved develop tip')
+})
+
+test('ac flow creates feature branch off develop and exits 0', () => {
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  withRegistry(dir) // need registry so milestone claim resolves
+  flowInit(dir)     // ensure develop exists
+
+  const r = ac(['flow'], dir)
+  assert.equal(r.status, 0, `ac flow exited ${r.status}:\n${r.stderr}`)
+
+  // HEAD must be on a feature/m<N>-<slug> branch
+  const head = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir }).stdout.trim()
+  assert.match(head, /^feature\/m\d+-.+/, `HEAD "${head}" does not look like a feature branch`)
+
+  // Output should report the branch name
+  assert.match(r.stdout + r.stderr, /feature\/m\d+/, 'output should include the branch name')
+})
+
+test('ac flow exits non-zero and prints a clear error when gitflow is disabled', () => {
+  const dir = scaffold(mkRepo())
+  // do NOT enableFlow — gitflow.enabled stays false
+
+  const r = ac(['flow', 'init'], dir)
+  assert.notEqual(r.status, 0, 'ac flow init should exit non-zero when gitflow disabled')
+  assert.match(r.stderr + r.stdout, /disabled|enabled/, 'error should mention gitflow.enabled')
+})
+
+test('ac flow exits non-zero and hints at ac flow init when develop is missing', () => {
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  withRegistry(dir)
+  // intentionally do NOT run flowInit
+
+  const r = ac(['flow'], dir)
+  assert.notEqual(r.status, 0, 'ac flow should exit non-zero when develop is missing')
+  assert.match(r.stderr + r.stdout, /develop|flow init/i, 'error should hint about ac flow init')
 })

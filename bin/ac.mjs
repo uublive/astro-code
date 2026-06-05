@@ -15,6 +15,7 @@ import { claim, readRegistry, registryBranch, markComplete, findNameMatches, ini
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
+import { flowInit, flowBranch } from '../lib/flow.mjs';
 import { installClaude, uninstallClaude, ASTRO_HOME } from '../lib/install.mjs';
 import { collectStats } from '../lib/stats.mjs';
 
@@ -77,6 +78,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase verify <phase>             mark a phase verified (AI gate passed)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
+  ac flow [init]                      GitFlow: init develop branch, or create+switch to milestone feature branch
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
   ac canon [pull | push]              print canon; pull/push shares it on the orphan branch
@@ -214,6 +216,41 @@ async function main() {
         console.log('  start the next cycle with `ac milestone new`');
       } else {
         die('usage: ac milestone <new [--name …]|check "<name>"|complete>');
+      }
+      return;
+    }
+
+    // GitFlow branch automation (ADR-007, ADR-009, ADR-010).
+    // `ac flow init` — ensure main + develop exist; idempotent.
+    // `ac flow`      — create+switch to the milestone feature branch off develop.
+    // Both commands delegate to lib/flow.mjs (thin git wrappers). Any thrown
+    // Error is converted to die(msg) so the ✖ glyph + non-zero exit are guaranteed.
+    // OPT-IN ONLY: lib/flow.mjs gates on gitflow.enabled — disabling it in config
+    // blocks these commands with a clear actionable message.
+    case 'flow': {
+      const r = root();
+      const sub = pos[0];
+      if (sub === 'init') {
+        // ac flow init — ensure develop exists off main; idempotent.
+        const res = flowInit(r);
+        if (res.warn) {
+          console.log(res.message);
+        } else {
+          console.log(res.message);
+        }
+      } else if (sub == null) {
+        // ac flow — create+switch to feature/m<N>-<slug> off develop.
+        // The worktree base note: you must be on the feature branch before
+        // running /astro-execute; ac flow lands you there. See lib/flow.mjs
+        // WORKTREE BASE NOTE for details.
+        const res = flowBranch(r);
+        const verb = res.created ? 'created and switched to' : 'switched to';
+        console.log(`✓ ${verb} "${res.branch}"`);
+        if (!res.created) {
+          console.log('  (branch already existed — switched without recreating)');
+        }
+      } else {
+        die(`unknown ac flow subcommand "${sub}" — usage: ac flow [init]`);
       }
       return;
     }
