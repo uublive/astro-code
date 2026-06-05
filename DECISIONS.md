@@ -65,3 +65,10 @@ _2026-06-05_
 
 **Rejected:** auto-creating branches inside ac milestone new / ac phase add (couples lifecycle to branching)
 
+## ADR-010 — GitFlow Option A: .astrocode state stays on the milestone feature branch (defer orphan-roadmap migration)
+_2026-06-05_
+
+**Why:** Phase 3 is pure branch automation; .astrocode roadmap/state lives on the milestone feature branch and merges to develop at close. Moving the roadmap to the shared orphan branch is a separate, later phase (todo.md phasing)
+
+**Rejected:** moving the roadmap onto the astro-registry orphan branch now (too big for branch-automation phase)
+
