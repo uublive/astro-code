@@ -18,3 +18,10 @@ _2026-06-05_
 
 **Rejected:** server-side coordination; local-only numbering; gh API
 
+## ADR-003 — Project-global phase numbering (never restart per milestone)
+_2026-06-05_
+
+**Why:** registry claims allocate max+1 across the whole project to prevent the milestone-1-twice counter-reset drift
+
+**Rejected:** per-milestone phase counters
+
