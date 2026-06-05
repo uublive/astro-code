@@ -9,6 +9,16 @@
       "type": "milestone",
       "number": 1,
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 1,
+      "milestone": 1,
+      "name": "Test the wave file-disjointness layering",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-06-05T07:59:55.928Z",
+      "status": "active"
     }
   ]
 }
