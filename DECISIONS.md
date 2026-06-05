@@ -30,3 +30,10 @@ _2026-06-05_
 
 **Why:** all .astrocode JSON is mutated only through lock-guarded lib helpers; the human-readable roadmap is rendered, never the source of truth
 
+## ADR-005 — Workflow-tool execution: dependency waves + worktree isolation + sole integrator
+_2026-06-05_
+
+**Why:** parallel executors run in isolated worktrees; the integrator is the only git actor (Workflow scripts can't run git) and folds waves onto the branch; same-file tasks are never co-scheduled
+
+**Rejected:** parallel agents committing to one working tree (caused integration collisions)
+
