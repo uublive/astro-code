@@ -67,6 +67,11 @@ ac status                      # project / milestone / phases
 ac registry show               # the shared numbering registry
 ac milestone complete          # archive the current milestone
 ac stats                       # token usage (fresh vs cheap cache reads) + wall-clock
+
+# GitFlow (opt-in — off by default):
+ac config set gitflow.enabled true   # turn it on for this project
+ac flow init                   # ensure main + develop exist (creates develop off main)
+ac flow                        # create+switch to feature/m<N> off develop
 ```
 
 `ac stats` reads Claude Code's session transcripts and reports the honest breakdown —
@@ -101,6 +106,17 @@ remote it falls back to local numbering (and warns).
 **Models.** `.astrocode/config.json → models` sets a tier per role (`opus`/`sonnet`/
 `haiku`); unset a role to inherit the session model. `ac config set models.executor opus`,
 or `/astro-config`. The plan/execute workflows apply the tier per agent.
+
+**GitFlow branching (opt-in).** Off by default — planning stays orthogonal to branching,
+so teams that don't want GitFlow pay zero cost. Turn it on per project with
+`ac config set gitflow.enabled true`, then drive it with two explicit commands (lifecycle
+commands like `ac milestone new` are never touched). `ac flow init` ensures the long-lived
+branches exist, creating `develop` off `main` if missing (idempotent). `ac flow` derives the
+active milestone's branch — `feature/m<N>-<slug>` — and creates+switches to it off `develop`;
+phases then land as commits on that branch. **Run `ac flow` before `/astro-execute`:**
+execution forks one git worktree per task from `HEAD`, so you must be on the feature branch
+first — `ac flow` lands you there and prints a reminder. It's pure local git (no `gh`/`glab`,
+works against any remote or none), and it refuses to touch the orphan `astro-registry` branch.
 
 **Canon.** `CONVENTIONS.md` (rules) + `DECISIONS.md` (append-only ADR log) are shared
 on the same orphan branch and injected into every plan/execute agent. `ac decision add`
