@@ -19,6 +19,16 @@
       "branch": "main",
       "claimed_at": "2026-06-05T07:59:55.928Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 2,
+      "milestone": 1,
+      "name": "Harden the parallel-execution fallback path",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-06-05T08:00:04.932Z",
+      "status": "active"
     }
   ]
 }
