@@ -37,3 +37,10 @@ _2026-06-05_
 
 **Rejected:** parallel agents committing to one working tree (caused integration collisions)
 
+## ADR-006 — Two-gate phase closure: AI verifies, only humans accept
+_2026-06-05_
+
+**Why:** the AI verifier reaches verified at best; ac phase accept refuses unless verified, so a human UAT gate is required to reach complete
+
+**Rejected:** AI auto-closing phases
+
