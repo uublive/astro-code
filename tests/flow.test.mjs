@@ -412,3 +412,19 @@ test('ac flow exits non-zero and hints at ac flow init when develop is missing',
   assert.notEqual(r.status, 0, 'ac flow should exit non-zero when develop is missing')
   assert.match(r.stderr + r.stdout, /develop|flow init/i, 'error should hint about ac flow init')
 })
+
+// ---------------------------------------------------------------------------
+// Case t6: HELP text documents both `ac flow init` and `ac flow` separately
+// ---------------------------------------------------------------------------
+
+test('ac help documents ac flow init and ac flow as separate entries', () => {
+  // HELP text must expose both subcommands so users know the two-step workflow.
+  // The `ac` helper works without a real .astrocode repo — help prints unconditionally.
+  const dir = mkdtempSync(join(tmpdir(), 'ac-flow-help-'))
+  const r = ac(['help'], dir)
+  assert.equal(r.status, 0, `ac help exited ${r.status}:\n${r.stderr}`)
+  assert.match(r.stdout, /ac flow init/, '`ac flow init` must appear in the HELP text')
+  assert.match(r.stdout, /ensure main \+ develop exist/, 'ac flow init description must mention "ensure main + develop exist"')
+  assert.match(r.stdout, /ac flow\b/, '`ac flow` (no subcommand) must appear in the HELP text')
+  assert.match(r.stdout, /create\+switch.*feature\/m/, 'ac flow description must mention create+switch to feature/m<N>')
+})

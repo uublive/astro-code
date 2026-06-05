@@ -78,7 +78,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase verify <phase>             mark a phase verified (AI gate passed)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
-  ac flow [init]                      GitFlow: init develop branch, or create+switch to milestone feature branch
+  ac flow init                        ensure main + develop exist (gitflow, opt-in)
+  ac flow                             create+switch to feature/m<N> off develop
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
   ac canon [pull | push]              print canon; pull/push shares it on the orphan branch
