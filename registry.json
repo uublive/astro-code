@@ -39,6 +39,16 @@
       "branch": "main",
       "claimed_at": "2026-06-05T08:00:11.895Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 4,
+      "milestone": 1,
+      "name": "GitFlow PRs, release and hotfix flows",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-06-05T08:00:19.425Z",
+      "status": "active"
     }
   ]
 }
