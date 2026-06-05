@@ -61,52 +61,100 @@ const disc = await agent(
   { schema: TASK_SCHEMA, phase: 'Discover', model: models.discover },
 )
 
-// Kahn-style layering into dependency waves, with a file-disjointness guard:
-// two tasks that touch the SAME file are never co-scheduled in one parallel wave,
-// even if the plan forgot to declare the dependency between them. Same-file tasks
-// run in isolated worktrees and would collide when the integrator folds the wave
-// back onto the branch, so the overflow is deferred to a later wave. The planner
-// SHOULD encode this as depends_on (see astro-planner.md); this is the safety net
-// that keeps the parallel path correct regardless of plan quality.
-const claimedFiles = (t) => {
-  const raw = (t.file || '').trim()
-  // No declared file → can't be proven disjoint from anything; claim the wildcard
-  // so it runs alone (safe over fast).
+// >>> MIRROR of lib/waves.mjs — keep in sync (Workflow sandbox can't import) >>>
+/**
+ * Return the set of files a task claims, for collision detection.
+ *
+ * Why the wildcard '*':  a task with no declared `file` can't be proven
+ * disjoint from anything — we don't know what it touches.  Claiming '*'
+ * forces it to run alone (safe over fast).  The planner SHOULD declare files;
+ * this is the fallback when it doesn't.
+ *
+ * @param {{ file?: string }} task
+ * @returns {Set<string>}
+ */
+function claimedFiles(task) {
+  const raw = (task.file || '').trim()
   if (!raw) return new Set(['*'])
   return new Set(raw.split(/[\s,;]+/).filter(Boolean))
 }
-const filesCollide = (a, b) => a.has('*') || b.has('*') || [...a].some((f) => b.has(f))
+
+/**
+ * Return true when two file-claim sets overlap and therefore must NOT share a
+ * parallel wave.  The wildcard '*' collides with everything, including another
+ * '*', because we never know what a no-file task writes.
+ *
+ * @param {Set<string>} a
+ * @param {Set<string>} b
+ * @returns {boolean}
+ */
+function filesCollide(a, b) {
+  return a.has('*') || b.has('*') || [...a].some((f) => b.has(f))
+}
+
+/**
+ * Partition tasks into dependency-respecting waves, further constrained so
+ * that no two tasks in the same wave claim an overlapping file.
+ *
+ * Algorithm — Kahn layering with a file-disjointness guard:
+ *   1. Find all tasks whose dependencies are already in `completed`.
+ *   2. Greedily admit ready tasks into the current wave, skipping any whose
+ *      file-set would collide with a file already claimed in this wave.
+ *      The first ready task is ALWAYS admitted, so progress is guaranteed.
+ *   3. Mark the admitted tasks complete and repeat until none remain.
+ *   4. If no task is ready (cycle or unknown id) put the remainder together
+ *      in one final wave — the least-bad fallback that still terminates.
+ *
+ * Why greedy admission is correct: the skipped tasks are "ready" (deps done)
+ * but deferred only for file-safety; their deps stay satisfied, so they will
+ * be admitted to the very next wave.  No task is starved indefinitely.
+ *
+ * @param {Array<{ id: string, file?: string, depends_on: string[] }>} tasks
+ * @returns {{ waves: Array<typeof tasks>, deferredForFiles: number }}
+ */
+function buildWaves(tasks) {
+  const completed = new Set()
+  const waves = []
+  let deferredForFiles = 0
+  let remaining = tasks.slice()
+
+  while (remaining.length) {
+    const ready = remaining.filter((t) => t.depends_on.every((d) => completed.has(d)))
+    if (!ready.length) {
+      // Dependency cycle or a depends_on referencing an id that does not exist
+      // in this task list.  Running the remainder together is wrong in the
+      // general case but it terminates and doesn't lose tasks, which beats an
+      // infinite loop or a hard error that leaves the phase stuck.
+      waves.push(remaining)
+      break
+    }
+
+    // Greedy file-disjoint admission into this wave.
+    const wave = []
+    const waveFiles = new Set()
+    for (const t of ready) {
+      const tf = claimedFiles(t)
+      if (wave.length && filesCollide(tf, waveFiles)) {
+        // File collision with something already admitted this wave — defer to
+        // the next iteration.  deps remain satisfied; t will be first-in-line.
+        deferredForFiles++
+        continue
+      }
+      wave.push(t)
+      tf.forEach((f) => waveFiles.add(f))
+    }
+
+    waves.push(wave)
+    wave.forEach((t) => completed.add(t.id))
+    remaining = remaining.filter((t) => !wave.includes(t))
+  }
+
+  return { waves, deferredForFiles }
+}
+// <<< MIRROR <<<
 
 const tasks = disc.tasks
-const completed = new Set()
-const waves = []
-let deferredForFiles = 0
-let remaining = tasks.slice()
-while (remaining.length) {
-  const ready = remaining.filter((t) => t.depends_on.every((d) => completed.has(d)))
-  if (!ready.length) {
-    log(`⚠ dependency cycle or unknown id — running ${remaining.length} remaining task(s) together`)
-    waves.push(remaining)
-    break
-  }
-  // Greedily admit ready tasks whose files don't overlap anything already in this
-  // wave; defer the rest (their deps stay satisfied, so they're ready again next
-  // iteration). The first ready task is always admitted, so progress is guaranteed.
-  const wave = []
-  const waveFiles = new Set()
-  for (const t of ready) {
-    const tf = claimedFiles(t)
-    if (wave.length && filesCollide(tf, waveFiles)) {
-      deferredForFiles++
-      continue
-    }
-    wave.push(t)
-    tf.forEach((f) => waveFiles.add(f))
-  }
-  waves.push(wave)
-  wave.forEach((t) => completed.add(t.id))
-  remaining = remaining.filter((t) => !wave.includes(t))
-}
+const { waves, deferredForFiles } = buildWaves(tasks)
 log(
   `${tasks.length} task(s) in ${waves.length} wave(s)` +
     (deferredForFiles ? ` (${deferredForFiles} same-file deferral(s) to avoid collisions)` : ''),
