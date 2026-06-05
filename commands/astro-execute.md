@@ -37,11 +37,14 @@ Execute phase `$ARGUMENTS`.
      **watch `/workflows`** for live wave-by-wave progress; you'll be notified on
      completion. If the result has `integrationFailed`, surface its conflict/cleanup
      hint and stop (do not mark the phase verified).
-   - **No Workflow tool, but the Agent tool is available:** read the plan's tasks +
-     `depends_on`, group them into dependency waves yourself, and for each wave spawn
-     the ready tasks as parallel `astro-executor` calls in a single message (each
-     makes one atomic commit). Then spawn `astro-verifier`. Tell each agent to read the
-     canon + CONTEXT.md.
+   - **No Workflow tool, but the Agent tool is available:** without the Workflow tool
+     there is no worktree isolation or integrator, so tasks run sequentially — never
+     spawn parallel executors that commit to the same working tree (ADR-008). Read the
+     plan's tasks + `depends_on`, produce a valid topological order, then spawn one
+     `astro-executor` call at a time (NOT parallel, NOT batched in a single message) —
+     each makes one atomic commit so the next task and the verifier can see prior
+     changes. After all tasks complete, spawn `astro-verifier`. Tell each agent to read
+     the canon + CONTEXT.md.
    - **No subagents at all:** execute the tasks inline, in dependency order, one
      atomic commit each, then verify yourself.
 5. Clear the live status (`ac activity clear` — also clear it on any early stop or
