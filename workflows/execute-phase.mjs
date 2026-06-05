@@ -151,6 +151,30 @@ function buildWaves(tasks) {
 
   return { waves, deferredForFiles }
 }
+
+/**
+ * Identify which tasks of a parallel wave failed to come back.
+ *
+ * `parallel()` resolves positionally: results[i] corresponds to wave[i], and a
+ * failed or skipped executor resolves to `null` — the Workflow tool never
+ * rejects the whole call.  An isolation failure (e.g. "Cannot create agent
+ * worktree: not in a git repository" when the harness can't make a worktree)
+ * therefore shows up as a null HOLE, not an exception.  Blindly `.filter(Boolean)`
+ * over the results drops those deliverables silently — the bug that let a whole
+ * wave vanish and only surface as a downstream "goal absent" verdict.
+ *
+ * This returns exactly the subset of `wave` whose executor returned falsy, so
+ * the caller can re-run those tasks on-branch (sequential) and degrade
+ * gracefully instead of losing work.  A `results` array shorter than `wave`
+ * (defensive: should never happen) treats the missing tail as failed.
+ *
+ * @param {Array<object>} wave      the tasks dispatched into parallel(), in order
+ * @param {Array<unknown>} results  the positional parallel() return (nulls = failed)
+ * @returns {Array<object>} the subset of `wave` whose executor returned falsy
+ */
+function missingFromWave(wave, results) {
+  return wave.filter((_, i) => !results[i])
+}
 // <<< MIRROR <<<
 
 const tasks = disc.tasks
@@ -253,6 +277,26 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
     ),
   )
   results.push(...out.filter(Boolean))
+  // Graceful degradation (the worktree-isolation gap): a parallel executor that
+  // can't create its worktree — e.g. "Cannot create agent worktree: not in a git
+  // repository" in a harness that doesn't expose git to that layer — resolves to
+  // `null`, NOT an exception. Don't let `.filter(Boolean)` swallow those tasks:
+  // re-run exactly the missing ones on-branch (sequential), which needs no
+  // worktree and matches the README's "degrades gracefully" promise. If EVERY
+  // executor failed, this re-runs the whole wave on-branch; the integrator then
+  // finds no `worktree-*` branches and is a clean no-op.
+  const missing = missingFromWave(wave, out)
+  if (missing.length) {
+    log(
+      `⚠ ${missing.length}/${wave.length} parallel executor(s) returned nothing ` +
+        `(worktree isolation likely unavailable here) — re-running on-branch sequentially: ` +
+        missing.map((t) => t.id).join(', '),
+    )
+    for (const t of missing) {
+      const r2 = await runOnBranch(t)
+      if (r2) results.push(r2)
+    }
+  }
   const integ = await integrateWave(w)
   if (!integ || integ.integrated !== true) {
     integrationFailed = {

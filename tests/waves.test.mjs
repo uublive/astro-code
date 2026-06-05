@@ -6,7 +6,7 @@
 // Phase 01 plan.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWaves } from '../lib/waves.mjs';
+import { buildWaves, missingFromWave } from '../lib/waves.mjs';
 
 // ── helper: flatten waves → ordered task-id list ──────────────────────────
 function ids(waves) {
@@ -128,4 +128,47 @@ test('every task appears in exactly one wave and topological order is valid', ()
       }
     }
   }
+});
+
+// ── 7. missingFromWave: the worktree-isolation degradation seam ────────────
+//
+// parallel() resolves positionally; a failed/skipped executor is `null`, NOT an
+// exception. These tests lock in that the workflow can tell exactly which tasks
+// to re-run on-branch instead of silently dropping them via .filter(Boolean) —
+// the regression that let a whole wave vanish ("three deliverables got silently
+// dropped"). Each result index maps to the same-index task in the wave.
+const WAVE = [
+  { id: 't1', file: 'lib/a.mjs', depends_on: [] },
+  { id: 't2', file: 'lib/b.mjs', depends_on: [] },
+  { id: 't3', file: 'lib/c.mjs', depends_on: [] },
+];
+
+test('missingFromWave: all executors succeed → nothing to re-run', () => {
+  const missing = missingFromWave(WAVE, ['ok1', 'ok2', 'ok3']);
+  assert.equal(missing.length, 0, 'no nulls means no missing tasks');
+});
+
+test('missingFromWave: every executor failed → the whole wave is returned in order', () => {
+  // The screenshot case: worktree isolation unavailable, all three come back null.
+  const missing = missingFromWave(WAVE, [null, null, null]);
+  assert.deepEqual(missing.map((t) => t.id), ['t1', 't2', 't3'], 'all three must be flagged for on-branch re-run');
+});
+
+test('missingFromWave: partial failure returns only the failed tasks, positionally', () => {
+  // t1 succeeded, t2 failed (null), t3 succeeded → only t2 needs re-running.
+  const missing = missingFromWave(WAVE, ['ok1', null, 'ok3']);
+  assert.deepEqual(missing.map((t) => t.id), ['t2'], 'only the null-index task is missing');
+});
+
+test('missingFromWave: undefined / falsy holes also count as missing', () => {
+  // parallel() uses null, but be robust to undefined / empty-string holes too.
+  const missing = missingFromWave(WAVE, ['ok1', undefined, '']);
+  assert.deepEqual(missing.map((t) => t.id), ['t2', 't3'], 'undefined and "" are both treated as failures');
+});
+
+test('missingFromWave: a results array shorter than the wave treats the tail as failed', () => {
+  // Defensive: should never happen (parallel preserves length), but losing the
+  // tail silently would be the exact bug class we are guarding against.
+  const missing = missingFromWave(WAVE, ['ok1']);
+  assert.deepEqual(missing.map((t) => t.id), ['t2', 't3'], 'missing tail entries count as failed');
 });
