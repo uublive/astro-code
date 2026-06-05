@@ -25,3 +25,8 @@ _2026-06-05_
 
 **Rejected:** per-milestone phase counters
 
+## ADR-004 — Plain-file state owned by the CLI; ROADMAP.md generated
+_2026-06-05_
+
+**Why:** all .astrocode JSON is mutated only through lock-guarded lib helpers; the human-readable roadmap is rendered, never the source of truth
+
