@@ -35,7 +35,10 @@ about — and to capture the answers so planning is grounded, not guessed.
    - Treat scope-creep ideas as deferred notes and steer back — don't grow the phase.
 4. **Capture.** Write `.astrocode/phases/<slug>/CONTEXT.md`: the decisions reached,
    the chosen scope, and any open questions/assumptions. Keep it tight — it's the brief
-   the planner will obey.
+   the planner will obey. The **first line MUST be** the provenance marker
+   `<!-- astro-discuss: captured -->` (an invisible HTML comment) — this is how
+   `/astro-plan` knows the phase was actually discussed, not just that a file exists.
+   Do not omit it; do not add it to a file you didn't genuinely discuss.
 5. **Promote firm choices.** If a decision is architectural (affects more than this
    phase), record it with `ac decision add "<choice>" --why "<why>"` so it joins the
    shared canon.

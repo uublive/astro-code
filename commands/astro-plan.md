@@ -10,11 +10,16 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    `.astrocode/` lives — find it from the cwd). Resolve the phase slug from
    `ac roadmap list` (e.g. `03` → `03-payments`). Read the phase goal from
    `.astrocode/PROJECT.md` / the roadmap entry.
-2. If `.astrocode/phases/<slug>/CONTEXT.md` is **missing**, suggest running
-   `/astro-discuss <number>` first to surface decisions/edge cases — but proceed if the
-   user declines. Refresh the team canon best-effort (`ac canon pull`) so the agents
-   read the latest. The workflow's agents read the canon + CONTEXT.md from disk — you
-   do NOT pass them as args.
+2. **Discuss gate (substance, not mere presence).** Run `ac phase context <number>` —
+   it prints `missing | stub | ready`. A `ready` CONTEXT.md was genuinely produced by
+   `/astro-discuss` (it carries the provenance marker); `stub` means a CONTEXT.md exists
+   but was never discussed (a placeholder, or pre-marker). On **`missing` or `stub`**,
+   strongly suggest running `/astro-discuss <number>` first to surface decisions/edge
+   cases — but proceed if the user declines (trivial phases can skip). **Never create or
+   seed `CONTEXT.md` yourself** — only `/astro-discuss` writes it; seeding a stub here is
+   exactly what defeats this gate. Refresh the team canon best-effort (`ac canon pull`) so
+   the agents read the latest. The workflow's agents read the canon + CONTEXT.md from disk
+   — you do NOT pass them as args.
 3. Mark the live status so the statusline/banner show it: `ac activity '⚙ researching · plan'`.
    Run the planning fan-out. Use the **best available** mechanism (graceful fallback):
    - **Workflow tool available (preferred):** keep `args` to small scalars only — pass

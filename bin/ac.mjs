@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { basename, join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
-import { initPlanning } from '../lib/planning.mjs';
+import { initPlanning, phaseContextStatus } from '../lib/planning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, isPhasePlanned } from '../lib/roadmap.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
@@ -75,6 +75,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac milestone complete               archive the current milestone + retire its claims
   ac phase add <name> [--milestone N] claim the next phase number + add it (+ dup-name check)
   ac phase check "<name>"             see if a phase with a similar name exists
+  ac phase context <phase>            discuss-gate status: missing | stub | ready
   ac phase verify <phase>             mark a phase verified (AI gate passed)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
@@ -296,7 +297,14 @@ async function main() {
       }
 
       const ph = findPhase(r, pos[1]);
-      if (sub === 'verify') {
+      if (sub === 'context') {
+        // Deterministic discuss-gate signal for /astro-plan: did this phase
+        // actually get discussed, or does a CONTEXT.md merely exist? Prints
+        // missing|stub|ready (exit 0); the command keys its nudge off this
+        // instead of mere file presence. See lib/planning.mjs phaseContextStatus.
+        if (!ph) die('usage: ac phase context <phase>');
+        console.log(phaseContextStatus(r, ph.slug));
+      } else if (sub === 'verify') {
         if (!ph) die('usage: ac phase verify <phase>');
         await setPhaseStatus(r, ph.slug, 'verified');
         console.log(`✓ phase ${ph.number} "${ph.name}" → verified (run /astro-accept for UAT to close)`);
@@ -316,7 +324,7 @@ async function main() {
         await updateState(r, (s) => ({ ...s, blockers: [...(s.blockers || []), { phase: ph.slug, reason, at: new Date().toISOString() }] }));
         console.log(`✗ phase ${ph.number} "${ph.name}" → rejected${reason ? `: ${reason}` : ''}`);
       } else {
-        die('usage: ac phase <add|verify|accept|reject> …');
+        die('usage: ac phase <add|check|context|verify|accept|reject> …');
       }
       return;
     }
