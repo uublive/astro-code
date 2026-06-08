@@ -118,6 +118,12 @@ Per-run without persisting: `/astro-plan <n> --fast` / `/astro-execute <n> --fas
 a single role with `ac config set models.executor opus`, or use `/astro-config`. The
 plan/execute workflows apply the resolved tier per agent.
 
+**Resilience.** astro-code runs *inside* a Claude Code session (it never shells out to the
+`claude` binary), so model fallback is a session-launch concern, not a config knob: start
+Claude Code with `claude --fallback-model sonnet` and a transient opus outage degrades the
+session to sonnet for the rest of the run instead of failing every request mid-phase — worth
+it for long autonomous runs.
+
 **GitFlow branching (opt-in).** Off by default — planning stays orthogonal to branching,
 so teams that don't want GitFlow pay zero cost. Turn it on per project with
 `ac config set gitflow.enabled true`, then drive it with two explicit commands (lifecycle
