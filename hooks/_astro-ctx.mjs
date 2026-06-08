@@ -120,6 +120,26 @@ export function renderSegment(ctx) {
   return parts.join(' · ');
 }
 
+// A terse, PLAIN-text continuity note for the PreCompact hook. Context compaction
+// summarizes the conversation; this note is emitted right before it so the model's
+// astro-code position (milestone/phase/status/next action) survives INTO the summary
+// verbatim — the statusline carries it visually, but a summarized transcript may not.
+// Points at the on-disk source of truth so re-orientation is one command. Empty when
+// there's nothing to say (no milestone and no phase), so non-astro sessions stay quiet.
+export function renderResumeNote(ctx) {
+  if (!ctx || (ctx.milestone == null && !ctx.phase)) return '';
+  const bits = [];
+  if (ctx.project) bits.push(ctx.project);
+  if (ctx.milestone != null) bits.push(`M${ctx.milestone}`);
+  if (ctx.phase) bits.push(`P${ctx.phase.number} ${phaseLabel(ctx.phase)} (${ctx.phase.status})`);
+  if (ctx.total) bits.push(`${ctx.done}/${ctx.total} phases`);
+  if (ctx.blockers) bits.push(`${ctx.blockers} blocker(s)`);
+  return (
+    `astro-code — keep this after compaction: ${bits.join(' · ')}. ` +
+    `Next: ${nextAction(ctx)}. Full state is on disk in .astrocode/; run /astro-status to re-orient.`
+  );
+}
+
 // The multi-line SessionStart banner (PLAIN text — it rides in a systemMessage,
 // which is not ANSI-rendered, so the art is flat monochrome: no colour, no real
 // image, just Unicode block glyphs). The creature is the astro-code mascot; the

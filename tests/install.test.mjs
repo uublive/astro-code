@@ -4,7 +4,7 @@
 // touches the real user/profile directories.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, existsSync, lstatSync, readlinkSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, lstatSync, readlinkSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,10 +36,19 @@ test('install → ~/.astro/code + symlinks into ~/.claude (default); uninstall r
     assert.ok(lstatSync(link).isSymbolicLink());
     assert.ok(readlinkSync(link).startsWith(join(fakeHome, '.astro', 'code')));
 
+    // the PreCompact continuity hook is wired into settings.json (additive)
+    const settingsFile = join(fakeHome, '.claude', 'settings.json');
+    const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+    const preCompact = JSON.stringify(settings.hooks?.PreCompact || []);
+    assert.match(preCompact, /astro-precompact\.mjs/, 'PreCompact hook registered');
+
     const un = uninstallClaude();
     assert.ok(un.removed > 0);
     assert.ok(!existsSync(link));
     assert.ok(!existsSync(join(fakeHome, '.astro', 'code')));
+    // uninstall removed our PreCompact entry, reversibly
+    const after = JSON.parse(readFileSync(settingsFile, 'utf8'));
+    assert.doesNotMatch(JSON.stringify(after.hooks?.PreCompact || []), /astro-precompact/, 'PreCompact hook removed on uninstall');
   });
 });
 

@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 import {
-  findAstroRoot, readContext, renderSegment, renderBanner, nextAction, ACTIVITY_TTL_SECONDS,
+  findAstroRoot, readContext, renderSegment, renderBanner, nextAction, renderResumeNote, ACTIVITY_TTL_SECONDS,
 } from '../hooks/_astro-ctx.mjs';
 
 const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -75,6 +75,24 @@ test('renderSegment shows ⊡, milestone, phase, progress, blockers', () => {
   assert.match(seg, /▸ pending/);
   assert.match(seg, /2\/4/);
   assert.match(seg, /⚠1/);
+});
+
+test('renderResumeNote (PreCompact) carries project/phase/status + next action + on-disk pointer', () => {
+  const root = project({ state: { project: 'demo', blockers: [1] }, roadmap: ROADMAP });
+  const note = renderResumeNote(readContext(root, NOW));
+  assert.match(note, /after compaction/, 'flags itself as continuity context');
+  assert.match(note, /demo/, 'names the project');
+  assert.match(note, /M1/);
+  assert.match(note, /P3 close-ci-gates \(pending\)/, 'phase + status');
+  assert.match(note, /2\/4 phases/);
+  assert.match(note, /1 blocker/);
+  assert.match(note, /Next: \/astro-plan 3/, 'derives the next action');
+  assert.match(note, /\.astrocode\/.*\/astro-status/s, 'points at on-disk state + how to re-orient');
+});
+
+test('renderResumeNote is empty outside a project (no milestone/phase) so non-astro sessions stay quiet', () => {
+  const empty = project({ state: {}, roadmap: {} });
+  assert.equal(renderResumeNote(readContext(empty, NOW)), '');
 });
 
 test('a fresh activity verb wins over the static status; a stale one is dropped', () => {
