@@ -31,6 +31,9 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
                models: <the JSON object from `ac config get models`> }
      })
      ```
+     **Speed override:** if the user passed `--fast`, use the JSON from
+     `ac models fast --preview` as the `models` arg instead (a one-off fast preset,
+     not persisted). `ac models fast` makes it the project default.
      It runs in the background — tell the user to **watch `/workflows`** for live
      progress; you'll be notified on completion.
    - **No Workflow tool, but the Agent tool is available:** spawn the researchers

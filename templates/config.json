@@ -5,12 +5,12 @@
   "registry_branch": "astro-registry",
   "registry_remote": "origin",
   "models": {
-    "_comment": "Per-role model tier: opus | sonnet | haiku. Remove a role to inherit the session model.",
+    "_comment": "Per-role model tier: opus | sonnet. Switch all at once with `ac models max|balanced|fast`. Remove a role to inherit the session model.",
     "planner": "opus",
     "researcher": "sonnet",
     "executor": "sonnet",
     "verifier": "opus",
-    "discover": "haiku"
+    "discover": "sonnet"
   },
   "gitflow": {
     "enabled": false,

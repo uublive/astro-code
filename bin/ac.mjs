@@ -8,6 +8,7 @@ import { basename, join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
 import { initPlanning, phaseContextStatus } from '../lib/planning.mjs';
+import { profileModels, PROFILE_NAMES } from '../lib/models.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, isPhasePlanned } from '../lib/roadmap.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
@@ -83,6 +84,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac flow                             create+switch to feature/m<N> off develop
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
+  ac models [max|balanced|fast] [--preview]  apply a per-role model preset (speed switch)
   ac canon [pull | push]              print canon; pull/push shares it on the orphan branch
   ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision (shared)
   ac decision list                    list recorded decisions
@@ -402,6 +404,37 @@ async function main() {
       } else {
         json(loadConfig(r));
       }
+      return;
+    }
+
+    case 'models': {
+      // Speed switch: apply a whole per-role tier preset in one shot, instead of
+      // five `ac config set models.<role>` calls. The ladder is opus→sonnet only
+      // (no haiku). See lib/models.mjs for the profiles.
+      //   ac models                  print the current effective tiers
+      //   ac models <profile>        apply the preset (persist to config.models)
+      //   ac models <profile> --preview   print the preset JSON without writing
+      //                                   (used by /astro-execute --fast for a
+      //                                    one-off run that doesn't persist)
+      const r = root();
+      const name = pos[0];
+      if (!name) {
+        json(loadConfig(r).models || {});
+        return;
+      }
+      let preset;
+      try {
+        preset = profileModels(name);
+      } catch (e) {
+        die(`${e.message} (usage: ac models [${PROFILE_NAMES.join('|')}] [--preview])`);
+      }
+      if (flags.preview) {
+        json(preset);
+        return;
+      }
+      const next = await updateConfig(r, (c) => ({ ...c, models: preset }));
+      console.log(`✓ models → ${name} profile`);
+      json(next.models);
       return;
     }
 

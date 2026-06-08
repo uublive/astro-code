@@ -103,9 +103,19 @@ phase (or `ac phase check "<name>"`) warns when another dev is already building
 something with the same or similar name — catching duplicate work early. Without a
 remote it falls back to local numbering (and warns).
 
-**Models.** `.astrocode/config.json → models` sets a tier per role (`opus`/`sonnet`/
-`haiku`); unset a role to inherit the session model. `ac config set models.executor opus`,
-or `/astro-config`. The plan/execute workflows apply the tier per agent.
+**Models & speed.** `.astrocode/config.json → models` sets a tier per role
+(`opus`/`sonnet`); unset a role to inherit the session model. The fastest lever is the
+**one-command speed switch** — `ac models max|balanced|fast` applies a whole per-role
+preset at once (the ladder is opus→sonnet, no haiku):
+- **balanced** (default) — opus for `planner`+`verifier`, sonnet for the rest.
+- **fast** — sonnet everywhere **except** the `verifier` (kept opus), so going fast can
+  never silently cost correctness: the verify gate still runs the full test suite at full
+  quality. Big phases dominated by execution shrink the most.
+- **max** — every role on opus.
+
+Per-run without persisting: `/astro-plan <n> --fast` / `/astro-execute <n> --fast`. Fine-tune
+a single role with `ac config set models.executor opus`, or use `/astro-config`. The
+plan/execute workflows apply the resolved tier per agent.
 
 **GitFlow branching (opt-in).** Off by default — planning stays orthogonal to branching,
 so teams that don't want GitFlow pay zero cost. Turn it on per project with

@@ -24,6 +24,10 @@ Execute phase `$ARGUMENTS`.
                models: <the JSON object from `ac config get models`> }
      })
      ```
+     **Speed override:** if the user passed `--fast`, use the JSON from
+     `ac models fast --preview` as the `models` arg instead (a one-off fast preset —
+     sonnet everywhere except the opus verify gate — that is NOT persisted to config).
+     To make it the project default instead, they'd run `ac models fast` once.
      It discovers the plan's tasks + dependencies, groups them into waves, and
      executes them **on the current working branch**, picking a strategy automatically:
      small phases (or any with no parallelizable wave) run **sequentially on-branch**
