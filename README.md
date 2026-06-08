@@ -102,8 +102,10 @@ free number from `registry.json` on an orphan branch (`astro-registry`) via a gi
 compare-and-swap: if someone else pushed first your push is rejected and `ac` retries
 with the next number. No server, no `gh`. Claims also record the **name**, so adding a
 phase (or `ac phase check "<name>"`) warns when another dev is already building
-something with the same or similar name — catching duplicate work early. Without a
-remote it falls back to local numbering (and warns).
+something with the same or similar name — catching duplicate work early. The registry
+is the single source of truth: with no remote (or before `ac registry init`), a claim
+**refuses with an actionable hint** rather than allocating a local number that could
+later collide — set up an `origin` and run `ac registry init` first.
 
 **Models & speed.** `.astrocode/config.json → models` sets a tier per role
 (`opus`/`sonnet`); unset a role to inherit the session model. The fastest lever is the
