@@ -49,6 +49,7 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-discuss <phase>    talk through decisions/edge cases → CONTEXT.md (before planning)
 /astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)
 /astro-execute <phase>    wave-based parallel execution, then verify
+/astro-autonomous <phase> run a whole phase end-to-end (discuss→plan→execute→verify), then stop
 /astro-verify <phase>     AI gate: confirm the phase goal is met (goal-backward)
 /astro-accept <phase>     human gate: UAT sign-off, then close the phase
 /astro-milestone          start the next milestone cycle
