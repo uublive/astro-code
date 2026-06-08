@@ -57,6 +57,7 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-config             pick the model (opus/sonnet/haiku) per role
 /astro-decision           record an architectural decision into the canon
 /astro-status             where am I, and what's next?
+/astro-help               short guide: the loop, the commands, and how to go fast
 ```
 
 Or use the CLI directly (`ac help` lists everything):
