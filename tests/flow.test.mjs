@@ -26,7 +26,7 @@ import { initPlanning } from '../lib/planning.mjs'
 import { paths } from '../lib/paths.mjs'
 import { readJSON, atomicWriteJSON } from '../lib/util.mjs'
 import { initRegistry } from '../lib/registry.mjs'
-import { flowInit, flowBranch, loadFlowConfig } from '../lib/flow.mjs'
+import { flowInit, flowBranch, loadFlowConfig, parseCompareUrl } from '../lib/flow.mjs'
 
 const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -435,4 +435,110 @@ test('ac help documents ac flow init and ac flow as separate entries', () => {
   assert.match(r.stdout, /ensure main \+ develop exist/, 'ac flow init description must mention "ensure main + develop exist"')
   assert.match(r.stdout, /ac flow\b/, '`ac flow` (no subcommand) must appear in the HELP text')
   assert.match(r.stdout, /create\+switch.*feature\/m/, 'ac flow description must mention create+switch to feature/m<N>')
+})
+
+// ---------------------------------------------------------------------------
+// t1 — parseCompareUrl(remoteUrl, base, head): pure URL construction
+//
+// These tests intentionally fail until t2 adds the exported function to
+// lib/flow.mjs. The function must handle all six remote forms (HTTPS/SSH/
+// ssh:// for github.com and gitlab.com), GitLab subgroups, no-.git-suffix
+// variants, GHES (*.github.com), self-hosted gitlab.*, and unrecognized
+// host → null. No real git, no real network — this is pure string logic.
+// ---------------------------------------------------------------------------
+
+// --- GitHub HTTPS (git suffix present) ---
+test('parseCompareUrl: GitHub HTTPS with .git suffix → /compare/base...head URL', () => {
+  const url = parseCompareUrl('https://github.com/acme/myrepo.git', 'develop', 'feature/m1-foo')
+  assert.equal(url, 'https://github.com/acme/myrepo/compare/develop...feature%2Fm1-foo')
+})
+
+// --- GitHub HTTPS (no .git suffix) ---
+test('parseCompareUrl: GitHub HTTPS without .git suffix → /compare/base...head URL', () => {
+  const url = parseCompareUrl('https://github.com/acme/myrepo', 'develop', 'feature/m1-foo')
+  assert.equal(url, 'https://github.com/acme/myrepo/compare/develop...feature%2Fm1-foo')
+})
+
+// --- GitHub SSH (git@github.com style) ---
+test('parseCompareUrl: GitHub SSH (git@github.com) → /compare/base...head URL', () => {
+  const url = parseCompareUrl('git@github.com:acme/myrepo.git', 'develop', 'feature/m2-bar')
+  assert.equal(url, 'https://github.com/acme/myrepo/compare/develop...feature%2Fm2-bar')
+})
+
+// --- GitHub ssh:// URL form ---
+test('parseCompareUrl: GitHub ssh:// URL form → /compare/base...head URL', () => {
+  const url = parseCompareUrl('ssh://git@github.com/acme/myrepo.git', 'develop', 'feature/m3-baz')
+  assert.equal(url, 'https://github.com/acme/myrepo/compare/develop...feature%2Fm3-baz')
+})
+
+// --- GitLab HTTPS (git suffix present) ---
+test('parseCompareUrl: GitLab HTTPS with .git suffix → /-/compare/base...head URL', () => {
+  const url = parseCompareUrl('https://gitlab.com/acme/myrepo.git', 'develop', 'feature/m1-foo')
+  assert.equal(url, 'https://gitlab.com/acme/myrepo/-/compare/develop...feature%2Fm1-foo')
+})
+
+// --- GitLab HTTPS (no .git suffix) ---
+test('parseCompareUrl: GitLab HTTPS without .git suffix → /-/compare/base...head URL', () => {
+  const url = parseCompareUrl('https://gitlab.com/acme/myrepo', 'develop', 'feature/m1-foo')
+  assert.equal(url, 'https://gitlab.com/acme/myrepo/-/compare/develop...feature%2Fm1-foo')
+})
+
+// --- GitLab SSH (git@gitlab.com style) ---
+test('parseCompareUrl: GitLab SSH (git@gitlab.com) → /-/compare/base...head URL', () => {
+  const url = parseCompareUrl('git@gitlab.com:acme/myrepo.git', 'develop', 'feature/m2-bar')
+  assert.equal(url, 'https://gitlab.com/acme/myrepo/-/compare/develop...feature%2Fm2-bar')
+})
+
+// --- GitLab ssh:// URL form ---
+test('parseCompareUrl: GitLab ssh:// URL form → /-/compare/base...head URL', () => {
+  const url = parseCompareUrl('ssh://git@gitlab.com/acme/myrepo.git', 'develop', 'feature/m3-baz')
+  assert.equal(url, 'https://gitlab.com/acme/myrepo/-/compare/develop...feature%2Fm3-baz')
+})
+
+// --- GitLab subgroups (nested path) ---
+test('parseCompareUrl: GitLab HTTPS with subgroup path → /-/compare preserves full path', () => {
+  const url = parseCompareUrl('https://gitlab.com/org/team/subgroup/myrepo.git', 'develop', 'feature/m1-foo')
+  assert.equal(url, 'https://gitlab.com/org/team/subgroup/myrepo/-/compare/develop...feature%2Fm1-foo')
+})
+
+// --- GHES (*.github.com custom host) ---
+test('parseCompareUrl: GHES subdomain (*.github.com) HTTPS → /compare/base...head URL', () => {
+  const url = parseCompareUrl('https://github.example.com/acme/myrepo.git', 'develop', 'feature/m1-foo')
+  assert.equal(url, 'https://github.example.com/acme/myrepo/compare/develop...feature%2Fm1-foo')
+})
+
+// --- GHES SSH (git@github.example.com style) ---
+test('parseCompareUrl: GHES SSH (git@github.example.com) → /compare/base...head URL', () => {
+  const url = parseCompareUrl('git@github.example.com:acme/myrepo.git', 'develop', 'feature/m2-bar')
+  assert.equal(url, 'https://github.example.com/acme/myrepo/compare/develop...feature%2Fm2-bar')
+})
+
+// --- Self-hosted GitLab (gitlab.* host) ---
+test('parseCompareUrl: self-hosted GitLab (gitlab.*) HTTPS → /-/compare/base...head URL', () => {
+  const url = parseCompareUrl('https://gitlab.acme.com/team/myrepo.git', 'develop', 'feature/m1-foo')
+  assert.equal(url, 'https://gitlab.acme.com/team/myrepo/-/compare/develop...feature%2Fm1-foo')
+})
+
+// --- Self-hosted GitLab SSH ---
+test('parseCompareUrl: self-hosted GitLab SSH (git@gitlab.acme.com) → /-/compare/base...head URL', () => {
+  const url = parseCompareUrl('git@gitlab.acme.com:team/myrepo.git', 'develop', 'feature/m1-foo')
+  assert.equal(url, 'https://gitlab.acme.com/team/myrepo/-/compare/develop...feature%2Fm1-foo')
+})
+
+// --- Unrecognized host → null ---
+test('parseCompareUrl: unrecognized host (bitbucket.org) → null', () => {
+  const url = parseCompareUrl('https://bitbucket.org/acme/myrepo.git', 'develop', 'feature/m1-foo')
+  assert.equal(url, null)
+})
+
+// --- Unrecognized host SSH → null ---
+test('parseCompareUrl: unrecognized SSH host → null', () => {
+  const url = parseCompareUrl('git@bitbucket.org:acme/myrepo.git', 'develop', 'feature/m1-foo')
+  assert.equal(url, null)
+})
+
+// --- Branch names with slashes are percent-encoded in the URL ---
+test('parseCompareUrl: branch names with slashes are percent-encoded', () => {
+  const url = parseCompareUrl('https://github.com/acme/repo.git', 'main', 'hotfix/fix-auth')
+  assert.equal(url, 'https://github.com/acme/repo/compare/main...hotfix%2Ffix-auth')
 })
