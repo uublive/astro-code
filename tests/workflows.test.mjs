@@ -707,3 +707,102 @@ test('FAIL verdict text reads richer integrationFailed (task id + branch) not ju
     'FAIL verdict in Verify phase must reference integrationFailed.taskId or integrationFailed.branch (richer failure report)',
   )
 })
+
+// ── t8: static-source contract guards (string/regex only, no eval/import) ────
+//
+// These four guards enforce phase-05 contracts via pure string/regex matching
+// against the workflow source — no runInNewContext, no dynamic import.
+// The pattern mirrors the existing hook-shadowing and MIRROR drift-guard style:
+// read the file once, apply regex/includes checks, assert.ok with a diagnostic.
+//
+// (1) INTEGRATE_SCHEMA.conflicts items must NOT be bare strings.  The schema
+//     source text must contain `type: 'object'` inside the conflicts.items
+//     definition — the presence of `type: 'string'` as an items type would
+//     silently lose the branch→task mapping (the phase-04 wave-2 lesson).
+//
+// (2) The integrator prompt must reference the wave task list injection.
+//     `wave.map(` is the literal interpolation that inlines the task scalar;
+//     without it the integrator cannot map branch→taskId and returns null for
+//     every conflict (wasteful wide-wave re-runs).
+//
+// (3) The return statement must carry a `healed` field so the outer command
+//     can report how many tasks were auto-healed (the ADR-014 observability
+//     surface).
+//
+// (4) Both the heal-executor label (`heal:`) AND the test-suite gate call
+//     (`runTestSuite`) must be present.  Missing either silently removes the
+//     ADR-014 "healed waves are test-gated before the next wave proceeds" safety.
+
+test('static guard (t8-1): INTEGRATE_SCHEMA conflicts items source contains type:object, not bare type:string', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Locate the INTEGRATE_SCHEMA constant in the source.
+  const schemaStart = wfSrc.indexOf('const INTEGRATE_SCHEMA')
+  assert.ok(schemaStart !== -1, 'INTEGRATE_SCHEMA not found in execute-phase.mjs')
+  // Take a window large enough to cover the full schema literal (≤ 600 chars).
+  const schemaWindow = wfSrc.slice(schemaStart, schemaStart + 600)
+
+  // Must contain type:'object' inside the conflicts section.
+  // The `branches` array legitimately has items:{type:'string'} — we target
+  // the conflicts sub-tree which appears after the word "conflicts" in the source.
+  const conflictsStart = schemaWindow.indexOf('conflicts')
+  assert.ok(conflictsStart !== -1, 'INTEGRATE_SCHEMA.conflicts property not found in schema source')
+  const conflictsRegion = schemaWindow.slice(conflictsStart)
+
+  // The conflicts.items block must declare type:'object'.
+  assert.ok(
+    /type:\s*['"]object['"]/.test(conflictsRegion),
+    "INTEGRATE_SCHEMA conflicts.items source must declare type:'object' — bare type:'string' items would lose branch→task mapping",
+  )
+
+  // Must NOT begin with a bare items:{type:'string'} — the old broken shape.
+  // (taskId's type:['string','null'] array is fine; `items: { type: 'string' }`
+  // directly under conflicts is the regression we guard against.)
+  assert.ok(
+    !/items\s*:\s*\{\s*type\s*:\s*['"]string['"]/.test(conflictsRegion),
+    "INTEGRATE_SCHEMA conflicts.items must NOT be { type: 'string' } — objects with branch+taskId required",
+  )
+})
+
+test('static guard (t8-2): integrator prompt source references wave.map( (task-list injection)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The call that inlines the wave task list into the prompt is `wave.map(`.
+  // Its absence means the integrator receives no task list and cannot map
+  // conflicted worktree-* branches to task ids (every conflict → taskId:null,
+  // forcing wasteful full-wave re-runs).
+  assert.ok(
+    wfSrc.includes('wave.map('),
+    'execute-phase.mjs must contain `wave.map(` to inject the wave task list into the integrator prompt',
+  )
+})
+
+test('static guard (t8-3): return statement source includes healed field', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The final return must carry healed: so the outer command can report
+  // auto-healed task ids (ADR-014 observability surface).
+  assert.ok(
+    /return\s*\{[^}]*healed\s*:/.test(wfSrc) || /healed\s*:\s*healedTaskIds/.test(wfSrc),
+    'execute-phase.mjs return statement must include a `healed:` field (for ADR-014 observability)',
+  )
+})
+
+test('static guard (t8-4): heal: agent label AND runTestSuite gate call are both present in source', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // `heal:` label — present in runHealOnBranch's agent() call.  Absence means
+  // the heal executor loses its identity in the Workflow event log.
+  assert.ok(
+    wfSrc.includes('heal:'),
+    'execute-phase.mjs must contain a `heal:` agent label (ADR-014 heal-executor identity)',
+  )
+
+  // `runTestSuite` — the healed-wave test gate.  Absence silently removes the
+  // ADR-014 "healed waves are test-gated before the next wave proceeds" safety
+  // and would reproduce the phase-04 wave-2 bad-merge-gone-undetected incident.
+  assert.ok(
+    wfSrc.includes('runTestSuite'),
+    'execute-phase.mjs must call runTestSuite (healed-wave test gate, ADR-014)',
+  )
+})
