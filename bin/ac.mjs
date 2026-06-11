@@ -16,7 +16,7 @@ import { claim, readRegistry, registryBranch, markComplete, findNameMatches, ini
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
-import { flowInit, flowBranch } from '../lib/flow.mjs';
+import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
 import { installClaude, uninstallClaude, ASTRO_HOME } from '../lib/install.mjs';
 import { collectStats } from '../lib/stats.mjs';
 
@@ -82,6 +82,11 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac flow init                        ensure main + develop exist (gitflow, opt-in)
   ac flow                             create+switch to feature/m<N> off develop
+  ac flow pr                          push the feature branch and print the develop PR URL
+  ac flow release                     push develop and print the develop→main PR URL
+  ac flow tag [version]               tag origin/main as v<N> after the develop→main PR merges
+  ac flow hotfix start <name>         branch hotfix/<name> off main (offline-safe)
+  ac flow hotfix finish               merge hotfix into main+develop, tag v<N>.<k>, push
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
   ac models [max|balanced|fast] [--preview]  apply a per-role model preset (speed switch)
@@ -262,8 +267,71 @@ async function main() {
         // forks one worktree per task from HEAD, so the user must be ON the feature
         // branch when they execute — say so explicitly, not just in a code comment.
         console.log(`• you are now on "${res.branch}" — run /astro-execute from here`);
+      } else if (sub === 'pr') {
+        // ac flow pr — push the current milestone feature branch and print (or
+        // open) a PR targeting develop. Throws on gate/guard failures — die()
+        // converts the Error to ✖ + non-zero exit so the caller sees a clean message.
+        const res = flowPR(r);
+        if (res.url) {
+          console.log(`✓ pushed "${res.branch}" → open PR at:`);
+          console.log(`  ${res.url}`);
+        } else {
+          console.log(`✓ pushed "${res.branch}" to origin`);
+          console.log(`• open a PR from "${res.branch}" → "${res.base}" manually`);
+        }
+        if (res.advisory) console.log(`  ${res.advisory}`);
+      } else if (sub === 'release') {
+        // ac flow release — push develop and print the develop→main PR URL.
+        // Never tags here (OQ2/ADR-012): tagging happens after the PR merges via
+        // `ac flow tag`. Throws on gate/guard failures — die() handles the ✖ line.
+        const res = flowRelease(r);
+        if (res.url) {
+          console.log(`✓ pushed "${res.head}" → open PR at:`);
+          console.log(`  ${res.url}`);
+        } else {
+          console.log(`✓ pushed "${res.head}" to origin`);
+          console.log(`• open a PR from "${res.head}" → "${res.base}" manually`);
+        }
+        if (res.advisory) console.log(`  ${res.advisory}`);
+      } else if (sub === 'tag') {
+        // ac flow tag [version] — verify develop is in origin/main, then tag and
+        // push. An optional version arg (pos[1]) passes a specific semver so the
+        // hotfix pr-mode can call `ac flow tag v<N>.<k>` after the main PR merges.
+        const version = pos[1] != null ? pos[1] : undefined;
+        const res = flowTag(r, version);
+        console.log(`✓ tagged "${res.tag}" on origin/main (${res.commit.slice(0, 8)})`);
+      } else if (sub === 'hotfix') {
+        // ac flow hotfix start <name>   — branch hotfix/<name> off main (local, offline-safe)
+        // ac flow hotfix finish          — dual-land into main+develop, tag v<N>.<k>, push
+        // pos[1] is the hotfix sub-subcommand; pos[2] is the name (for start).
+        const hotfixSub = pos[1];
+        if (hotfixSub === 'start') {
+          const name = pos[2];
+          if (!name) die('usage: ac flow hotfix start <name>');
+          const res = flowHotfixStart(r, name);
+          const verb = res.created ? 'created and switched to' : 'switched to';
+          console.log(`✓ ${verb} "${res.branch}"`);
+          if (res.advisory) console.log(`  ${res.advisory}`);
+        } else if (hotfixSub === 'finish') {
+          const res = flowHotfixFinish(r);
+          if (res.prs) {
+            // PR mode: forge PRs opened (or URLs printed) — no local merge, no auto-tag.
+            console.log(`✓ pushed hotfix branch; PRs opened:`);
+            for (const pr of res.prs) {
+              if (pr.url) console.log(`  • ${pr.base} ← ${pr.url}`);
+              else console.log(`  • open a PR from hotfix → "${pr.base}" manually`);
+            }
+            console.log(`⚠ run \`ac flow tag ${res.tag}\` after the main PR merges`);
+          } else {
+            // pr:none path: local dual-merge + tag + push all completed.
+            console.log(`✓ hotfix merged into main and develop`);
+            console.log(`✓ tagged "${res.tag}" on main and pushed`);
+          }
+        } else {
+          die(`usage: ac flow hotfix <start <name> | finish>`);
+        }
       } else {
-        die(`unknown ac flow subcommand "${sub}" — usage: ac flow [init]`);
+        die(`unknown ac flow subcommand "${sub}" — usage: ac flow [init | pr | release | tag | hotfix start <name> | hotfix finish]`);
       }
       return;
     }
