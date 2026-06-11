@@ -554,30 +554,47 @@ const INTEGRATE_SCHEMA = {
 // this the integrator would always return taskId:null and force re-running the whole
 // wave remainder (wasteful in wide waves).  The scalar is small (id + title + file
 // only) to respect the Workflow-arg-size rule.
+//
+// Phase-06 t4 (ADR-015 cause #1 stale base; ADR-016 cause #2 overflow):
+//   The check order per branch is: staleness FIRST, then overflow classification,
+//   then cherry-pick.  Staleness is the cheaper check (one merge-base query) and
+//   completely gates the overflow check — a stale branch is NEVER classified for
+//   overflow, it is always routed to heal regardless of whether the cherry-pick
+//   would apply cleanly.  Phase-04 proved textual cleanliness proves nothing.
 const integrateWave = (wave) =>
   agent(
     `You are the WAVE INTEGRATOR for phase ${phaseSlug}, running in the MAIN working tree of ${root} ` +
       `(you have NO worktree of your own). The parallel executors each committed on a separate ` +
       `\`worktree-*\` branch forked from the current HEAD. Fold them onto the CURRENTLY checked-out ` +
       `branch so the next wave and the verifier see one combined tree.\n` +
-      `Wave task list (for branch→taskId mapping): ${JSON.stringify(wave.map((t) => ({ id: t.id, title: t.title, file: t.file || '' })))}\n` +
-      `Do exactly this, in ${root}:\n` +
+      `Wave task list (for branch→taskId mapping and declared-file comparison): ` +
+      `${JSON.stringify(wave.map((t) => ({ id: t.id, title: t.title, file: t.file || '' })))}\n` +
+      `Do exactly this, in ${root}. Each branch is reported under exactly ONE outcome:\n` +
       `1. List candidates: \`git for-each-ref --format='%(refname:short)' refs/heads/ | grep '^worktree-'\`. ` +
-      `Keep only branches with commits not yet on HEAD (\`git rev-list HEAD..<branch>\` non-empty).\n` +
-      `2. Wave tasks are independent, so order does not matter. For each candidate branch, cherry-pick ` +
-      `its commits onto the current branch (\`git cherry-pick <range>\`). For each branch, map it to a ` +
-      `taskId by matching the commit message and changed files against the wave task list above — return ` +
-      `taskId:null only when you cannot map confidently.\n` +
-      `On ANY conflict: immediately run \`git cherry-pick --abort\`, then verify \`git status\` shows ` +
-      `a clean working tree (nothing to commit) before continuing. PRESERVE that branch and its worktree — ` +
-      `do NOT run \`git worktree remove\` or \`git branch -D\` on a conflicting branch. Add it to ` +
-      `conflicts[] with its mapped taskId (or null). Stop after the first conflict; return integrated=false.\n` +
-      `3. After a CLEAN (conflict-free) cherry-pick, tear down that branch's worktree: ` +
-      `\`git worktree remove --force <path>\` (paths from \`git worktree list\`), \`git branch -D <branch>\`, ` +
-      `then \`git worktree prune\`. Only clean-merged branches are torn down.\n` +
-      `4. Confirm the current branch now contains every integrated commit (\`git log --oneline -n 20\`).\n` +
-      `Return integrated=true with the branches[] you merged, or integrated=false with conflicts[] ` +
-      `(each item: { branch, taskId }) and a note.` +
+      `Keep only branches where \`git rev-list HEAD..<branch>\` is non-empty.\n` +
+      `2. For each candidate — checks IN ORDER (staleness first, then overflow, then cherry-pick):\n` +
+      `  2a. STALENESS (ADR-015 cause #1): \`git merge-base HEAD <branch>\` vs \`git rev-parse HEAD\`. ` +
+      `If SHAs differ: STALE — do NOT cherry-pick (a clean pick proves nothing; phase-04 stacked ` +
+      `duplicate helpers with zero conflict markers). PRESERVE branch/worktree. Map to taskId. ` +
+      `Add \`{branch,taskId}\` to staleBranches[]. Skip to next candidate.\n` +
+      `  2b. OVERFLOW (ADR-016 cause #2): \`git diff --name-only <merge-base>..<branch>\` vs ` +
+      `declared file(s) from the wave task list. Extra files (changed but not declared):\n` +
+      `    - Any extra file claimed by ANOTHER wave task → COLLISION: do NOT cherry-pick, ` +
+      `PRESERVE branch, add \`{branch,taskId}\` to conflicts[], return integrated=false.\n` +
+      `    - All extra files unclaimed by any wave peer → cherry-pick AND add ` +
+      `\`{branch,taskId,extraFiles}\` to advisories[] (⚠ advisory; do NOT reject — the phase-04 ` +
+      `t14 hooksPath fix was legitimate out-of-file work).\n` +
+      `    - No extra files → proceed to cherry-pick.\n` +
+      `  2c. CHERRY-PICK: \`git cherry-pick <range>\`. On ANY conflict: run ` +
+      `\`git cherry-pick --abort\`, verify \`git status\` shows a clean working tree ` +
+      `(nothing to commit) before continuing. PRESERVE that branch and its worktree — ` +
+      `do NOT run \`git worktree remove\` or \`git branch -D\` on a conflicting branch. ` +
+      `Add it to conflicts[] with taskId (or null if unmappable). Return integrated=false.\n` +
+      `3. After a clean (non-stale, non-collision, conflict-free) cherry-pick, tear down: ` +
+      `\`git worktree remove --force <path>\`, \`git branch -D <branch>\`, \`git worktree prune\`.\n` +
+      `4. Confirm: \`git log --oneline -n 20\`.\n` +
+      `Return integrated=true with branches[] merged (and advisories[] for any ⚠ overflow), ` +
+      `or integrated=false with conflicts[]/staleBranches[] (each: {branch,taskId}) and a note.` +
       OBEY,
     { label: `integrate:w${wave.length}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: INTEGRATE_SCHEMA },
   )
