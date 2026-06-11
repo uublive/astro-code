@@ -107,3 +107,10 @@ _2026-06-11_
 
 **Rejected:** cherry-pick stale branches behind a test gate; warn-only advisories; threading expected-base SHAs through the script
 
+## ADR-016 — File-ownership enforcement is hard only on intra-wave collision
+_2026-06-11_
+
+**Why:** Overflow into a file claimed by another task in the same wave is the real co-scheduling hazard and routes to the heal ladder; overflow into unclaimed files integrates with a named warning advisory plus the wave test gate (legitimate out-of-file fixes like phase-04 t14 must not be rejected)
+
+**Rejected:** blanket-hard enforcement (rejects legitimate fixes); warn-only (leaves the phase-04 t5 hazard open)
+
