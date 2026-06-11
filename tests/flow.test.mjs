@@ -15,7 +15,7 @@
 // so readRegistry + registryBranch resolve correctly against state.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1137,5 +1137,259 @@ test('flowHotfixStart throws matching /disabled|enabled/ when gitflow is not ena
       return true
     },
     'flowHotfixStart must throw when gitflow is disabled',
+  )
+})
+
+// ---------------------------------------------------------------------------
+// t13: flowHotfixFinish — dual-land (main + develop) + v<N>.<k> tag + push (pr:none)
+//
+// WHY dynamic import: flowHotfixFinish is not exported from lib/flow.mjs until
+// t14 lands. A static `import { flowHotfixFinish }` at module load time would
+// crash the ENTIRE file with an ESM binding error, breaking all 50 currently-
+// green tests. Dynamic import inside each async test body means ONLY the new
+// t13 tests fail until t14 ships — zero collateral damage.
+//
+// OQ1 CONTRACT (binding): pr:none → local --no-ff dual-merge into main then
+// develop, tag the MAIN merge commit v<N>.<k>, push main + develop + tag refspec.
+// On push rejection (branch protection / pre-receive hook), throw an actionable
+// recovery message that names what the operator must do manually. NEVER leave a
+// half-applied hotfix silently.
+//
+// OQ3 (patch-suffix): next free v<N>.<k> is derived from `git tag -l "v<N>.*"`
+// after a `git fetch --tags`, using parseInt / Math.max (not lexicographic sort)
+// so v1.10 correctly yields v1.11. Tested here by pre-seeding v1.1 on the remote
+// and asserting the result is v1.2.
+//
+// MILESTONE N: initPlanning sets active_milestone=1 (confirmed: planning.mjs
+// line 56), so the expected tags are "v1.1" (no prior patches) and "v1.2" (after
+// pre-seeding v1.1) for all withRegistry-style test repos in this file.
+//
+// SETUP PATTERN: we need both main and develop to exist as remote refs before
+// flowHotfixFinish tries to push them. Push both branches to the bare remote
+// after flowInit and before calling flowHotfixFinish. This mirrors what a real
+// project would have (both long-lived branches already tracked on origin).
+// ---------------------------------------------------------------------------
+
+test('flowHotfixFinish merges --no-ff into both main and develop, tags v1.1 on main, and pushes', async () => {
+  // Import dynamically so a missing export fails only this test, not the
+  // entire 50-test suite (ESM static imports crash the module at load time).
+  const { flowHotfixFinish } = await import('../lib/flow.mjs')
+  const { flowHotfixStart } = await import('../lib/flow.mjs')
+
+  // Full withRegistry-style setup: bare remote, gitflow enabled, registry
+  // initialized so active_milestone=1 resolves, develop created via flowInit.
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  const bare = mkBareRemote()
+  git(['remote', 'add', 'origin', bare], { cwd: dir })
+  git(['push', '-u', 'origin', 'main'], { cwd: dir })
+  const reg = initRegistry({ root: dir })
+  assert.equal(reg.ok, true, `initRegistry failed: ${reg.error}`)
+  flowInit(dir)
+
+  // Push develop to the bare remote so the remote ref exists before finish
+  // tries to push it. A first push of develop is required; otherwise git would
+  // refuse to push a branch that origin has never seen without explicit --set-upstream.
+  git(['push', '-u', 'origin', 'develop'], { cwd: dir })
+
+  // Start the hotfix branch and commit a change so the hotfix diverges from main.
+  // Both HEAD and the working-tree change confirm the branch is real content.
+  const startRes = flowHotfixStart(dir, 'fix-x')
+  assert.equal(startRes.ok, true, `flowHotfixStart failed: ${JSON.stringify(startRes)}`)
+  commitOnBranch(dir, 'hotfix: fix critical bug in fix-x')
+
+  // --- call the function under test ---
+  const res = flowHotfixFinish(dir)
+
+  assert.equal(res.ok, true, `flowHotfixFinish failed: ${JSON.stringify(res)}`)
+
+  // Merge commit on main: `git log --merges --oneline main` must contain an
+  // entry mentioning the hotfix branch. --no-ff guarantees a merge commit even
+  // when fast-forward would be possible; without it `git log --merges` would
+  // return nothing because the history is a straight line.
+  const mainMerges = git(['log', '--merges', '--oneline', 'main'], { cwd: dir }).stdout
+  assert.match(
+    mainMerges,
+    /hotfix\/fix-x/,
+    `main must have a --no-ff merge commit from hotfix/fix-x; log: "${mainMerges}"`,
+  )
+
+  // Merge commit on develop: same assertion — hotfix must also land on develop.
+  const developMerges = git(['log', '--merges', '--oneline', 'develop'], { cwd: dir }).stdout
+  assert.match(
+    developMerges,
+    /hotfix\/fix-x/,
+    `develop must have a --no-ff merge commit from hotfix/fix-x; log: "${developMerges}"`,
+  )
+
+  // Tag v1.1 must exist and point at main's tip (the main merge commit, NOT the
+  // develop merge commit). `git rev-list -n1 v1.1` resolves the tagged commit;
+  // `git rev-parse main` gives main's current tip after the merge.
+  const taggedSha = git(['rev-list', '-n1', 'v1.1'], { cwd: dir }).stdout.trim()
+  const mainTip = git(['rev-parse', 'main'], { cwd: dir }).stdout.trim()
+  assert.equal(taggedSha, mainTip, `v1.1 must point at main's merge commit; tagged=${taggedSha}, mainTip=${mainTip}`)
+
+  // All three refs must have been pushed to the bare remote. `git ls-remote`
+  // against the bare filesystem path is the canonical cross-environment check.
+  const lsRemote = git(['ls-remote', bare]).stdout
+  assert.match(lsRemote, /refs\/heads\/main/, `main must be pushed to remote; ls-remote: "${lsRemote}"`)
+  assert.match(lsRemote, /refs\/heads\/develop/, `develop must be pushed to remote; ls-remote: "${lsRemote}"`)
+  assert.match(lsRemote, /refs\/tags\/v1\.1/, `tag v1.1 must be pushed to remote; ls-remote: "${lsRemote}"`)
+})
+
+test('flowHotfixFinish uses v1.2 when v1.1 already exists on the remote (OQ3 patch-increment)', async () => {
+  // OQ3 BINDING: next free v<N>.<k> is derived purely from existing remote tags
+  // via `git fetch --tags` + nextPatchTag (parseInt/Math.max, no lexicographic
+  // sort). Pre-seeding v1.1 on the remote proves that the fetch + derivation
+  // path works end-to-end — if flowHotfixFinish relied on lexicographic order
+  // or local-only tag discovery it would either crash (duplicate tag) or produce
+  // the wrong version at v1.10.
+  const { flowHotfixFinish } = await import('../lib/flow.mjs')
+  const { flowHotfixStart } = await import('../lib/flow.mjs')
+
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  const bare = mkBareRemote()
+  git(['remote', 'add', 'origin', bare], { cwd: dir })
+  git(['push', '-u', 'origin', 'main'], { cwd: dir })
+  const reg = initRegistry({ root: dir })
+  assert.equal(reg.ok, true, `initRegistry failed: ${reg.error}`)
+  flowInit(dir)
+  git(['push', '-u', 'origin', 'develop'], { cwd: dir })
+
+  // Pre-seed tag v1.1 on the remote: create it locally on the current main
+  // commit then push it. flowHotfixFinish must fetch these tags and derive v1.2.
+  git(['tag', '-a', 'v1.1', '-m', 'prior hotfix patch', 'main'], { cwd: dir })
+  git(['push', 'origin', 'refs/tags/v1.1:refs/tags/v1.1'], { cwd: dir })
+  // Delete the local tag so the only copy is on the remote — proves the fetch
+  // path is what discovers it, not a local git tag -l call.
+  git(['tag', '-d', 'v1.1'], { cwd: dir })
+
+  // Start hotfix, commit, and finish.
+  const startRes = flowHotfixStart(dir, 'fix-y')
+  assert.equal(startRes.ok, true, `flowHotfixStart failed: ${JSON.stringify(startRes)}`)
+  commitOnBranch(dir, 'hotfix: patch fix-y')
+
+  const res = flowHotfixFinish(dir)
+
+  assert.equal(res.ok, true, `flowHotfixFinish failed: ${JSON.stringify(res)}`)
+
+  // The new tag must be v1.2 (next free after v1.1), not v1.1 (which would
+  // error as a duplicate) and not something derived by lexicographic sort.
+  assert.equal(res.tag, 'v1.2', `expected tag "v1.2" after v1.1 already existed; got "${res.tag}"`)
+
+  // Verify v1.2 was pushed to the remote (v1.1 was already there from setup).
+  const lsRemote = git(['ls-remote', '--tags', bare]).stdout
+  assert.match(lsRemote, /refs\/tags\/v1\.2/, `tag v1.2 must be pushed to remote; ls-remote: "${lsRemote}"`)
+})
+
+test('flowHotfixFinish throws an actionable recovery message when push is rejected (OQ1 no-silent-half-apply)', async () => {
+  // OQ1 CONTRACT (push rejection): when the remote rejects one or more refs,
+  // flowHotfixFinish must throw an Error whose message is actionable — naming
+  // what the operator must do to complete the hotfix manually. The error must
+  // NOT silently succeed (ok:true) leaving a half-merged hotfix, and it must NOT
+  // produce an unhelpful internal message like "exit code 1".
+  //
+  // We simulate branch protection by writing a POSIX sh pre-receive hook in the
+  // bare repo that rejects any push to refs/heads/develop. This is the minimal
+  // realistic scenario: main lands fine, the develop push is rejected. The engine
+  // must detect the non-zero push exit and surface a recovery message.
+  //
+  // WHY pre-receive hook (not a protected-branch API): hooks are filesystem-
+  // level, portable, and require no forge. They produce the exact same push
+  // rejection git sends over the wire for branch-protected repos.
+  const { flowHotfixFinish } = await import('../lib/flow.mjs')
+  const { flowHotfixStart } = await import('../lib/flow.mjs')
+
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  const bare = mkBareRemote()
+  git(['remote', 'add', 'origin', bare], { cwd: dir })
+  git(['push', '-u', 'origin', 'main'], { cwd: dir })
+  const reg = initRegistry({ root: dir })
+  assert.equal(reg.ok, true, `initRegistry failed: ${reg.error}`)
+  flowInit(dir)
+  git(['push', '-u', 'origin', 'develop'], { cwd: dir })
+
+  // Install a POSIX sh pre-receive hook in the bare repo that rejects any push
+  // targeting refs/heads/develop. The hook reads stdin lines (one per ref being
+  // updated: "<old-sha> <new-sha> <refname>") and exits 1 if any refname is
+  // refs/heads/develop. A non-zero hook exit causes git to reject the entire push.
+  //
+  // POSIX sh only — no bashisms. chmod 0o755 is required for git to execute it.
+  const hookPath = join(bare, 'hooks', 'pre-receive')
+  writeFileSync(
+    hookPath,
+    [
+      '#!/bin/sh',
+      '# Reject any push that updates refs/heads/develop (simulates branch protection)',
+      'while read old new ref; do',
+      '  if [ "$ref" = "refs/heads/develop" ]; then',
+      '    echo "rejected: refs/heads/develop is protected" >&2',
+      '    exit 1',
+      '  fi',
+      'done',
+    ].join('\n') + '\n',
+  )
+  // 0o755: owner rwx, group rx, other rx — git needs execute permission to run
+  // the hook. Without it git silently skips the hook and the push succeeds,
+  // which would make this test pass for the wrong reason.
+  chmodSync(hookPath, 0o755)
+
+  // Start hotfix and commit so there is real content to push.
+  const startRes = flowHotfixStart(dir, 'fix-z')
+  assert.equal(startRes.ok, true, `flowHotfixStart failed: ${JSON.stringify(startRes)}`)
+  commitOnBranch(dir, 'hotfix: fix-z patch')
+
+  // flowHotfixFinish must throw — the develop push will be rejected by the hook.
+  assert.throws(
+    () => flowHotfixFinish(dir),
+    (err) => {
+      // The error message must be actionable: it should name the problem
+      // (rejection) and tell the operator what manual step to take (e.g. push
+      // manually, open a PR, etc.). Matching one of the expected signal words
+      // covers reasonable implementation choices without over-specifying the wording.
+      assert.match(
+        err.message,
+        /reject|recover|manual|push/i,
+        `error must be actionable (reject/recover/manual/push); got: "${err.message}"`,
+      )
+      return true
+    },
+    'flowHotfixFinish must throw an actionable error when the push is rejected',
+  )
+})
+
+test('flowHotfixFinish throws "no remote" when repo has no remote configured (OQ4)', async () => {
+  // OQ4 BINDING: push-requiring commands fail fast with a clear, actionable
+  // message when no remote is configured. flowHotfixFinish needs a remote to push
+  // both branches and the tag; without one it must throw before any git mutation
+  // so the working tree is never left in a half-applied state.
+  const { flowHotfixFinish } = await import('../lib/flow.mjs')
+  const { flowHotfixStart } = await import('../lib/flow.mjs')
+
+  // Fully local repo: no remote add, no withRegistry. flowHotfixStart is local-
+  // only (ADR-013) so it succeeds; flowHotfixFinish needs a remote and must throw.
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  // flowInit works locally (no remote needed for branch create).
+  flowInit(dir)
+
+  // flowHotfixStart is offline-safe (ADR-013) — succeeds without a remote.
+  const startRes = flowHotfixStart(dir, 'fix-w')
+  assert.equal(startRes.ok, true, `flowHotfixStart failed: ${JSON.stringify(startRes)}`)
+  commitOnBranch(dir, 'hotfix: fix-w local work')
+
+  assert.throws(
+    () => flowHotfixFinish(dir),
+    (err) => {
+      assert.match(
+        err.message,
+        /no remote|remote.*origin|no.*remote/i,
+        `error should mention missing remote; got: "${err.message}"`,
+      )
+      return true
+    },
+    'flowHotfixFinish must throw when no remote is configured',
   )
 })
