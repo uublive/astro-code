@@ -867,3 +867,133 @@ test('flowRelease throws "no remote" when repo has no remote configured', async 
     'flowRelease must throw when no remote is configured',
   )
 })
+
+// ---------------------------------------------------------------------------
+// t9: flowTag — post-merge tag of v<N> on main (OQ2 verify-then-tag contract)
+//
+// WHY dynamic import: flowTag is not exported from lib/flow.mjs until t10
+// lands. A static `import { flowTag }` at module load time would make ESM
+// throw a SyntaxError / module resolution error that crashes the ENTIRE file,
+// breaking all 43 pre-existing tests. Instead, we use `await import(...)` inside
+// each async test body — if the export is missing, ONLY the test that tried to
+// call it fails (ReferenceError on destructure), and every other test runs
+// normally. Once t10 adds the export the dynamic import resolves correctly
+// and these tests turn green without touching this file.
+//
+// WHY real bare remote + manual merge: the verify-then-tag contract (OQ2) is
+// inherently about git history — specifically whether the develop tip is an
+// ancestor of origin/main. Only a real git repo with a real bare remote lets
+// us test this accurately. Faking it with mocks would only prove the mock.
+// We simulate the forge merge by running `git switch main; git merge develop`
+// locally, then pushing main to the bare remote before calling flowTag.
+//
+// MILESTONE N: initPlanning sets active_milestone=1 (confirmed in planning.mjs
+// line 56), so the expected tag is "v1" for all withRegistry-style test repos.
+// ---------------------------------------------------------------------------
+
+test('flowTag creates annotated v1 tag on origin/main after develop is merged in', async () => {
+  // Import flowTag dynamically so a missing export fails only this test,
+  // not the entire 43-test suite (ESM static imports crash at load time).
+  const { flowTag } = await import('../lib/flow.mjs')
+
+  // Set up: withRegistry-style repo (bare remote, gitflow enabled, develop created
+  // via flowInit, milestone 1 active via initPlanning). Simulate what the forge
+  // does after the develop→main PR merges: switch to main, merge develop in
+  // (--no-ff to always produce a merge commit), then push main to the bare remote
+  // so origin/main contains the develop tip.
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  const bare = mkBareRemote()
+  git(['remote', 'add', 'origin', bare], { cwd: dir })
+  git(['push', '-u', 'origin', 'main'], { cwd: dir })
+  const reg = initRegistry({ root: dir })
+  assert.equal(reg.ok, true, `initRegistry failed: ${reg.error}`)
+  flowInit(dir)
+
+  // Make a commit on develop so it actually diverges from main (otherwise the
+  // merge is a trivial fast-forward and the develop tip IS main — same SHA).
+  git(['switch', 'develop'], { cwd: dir })
+  commitOnBranch(dir, 'feature work on develop')
+  const developTip = git(['rev-parse', 'develop'], { cwd: dir }).stdout.trim()
+
+  // Simulate the forge merge: switch to main, merge develop, push main.
+  // --no-ff ensures a merge commit is created even when fast-forward is possible,
+  // matching what GitHub/GitLab produce when they merge a PR.
+  git(['switch', 'main'], { cwd: dir })
+  git(['merge', '--no-ff', '-m', 'Merge develop into main for release', 'develop'], { cwd: dir })
+  git(['push', 'origin', 'main'], { cwd: dir })
+
+  const res = flowTag(dir)
+
+  assert.equal(res.ok, true, `flowTag failed: ${JSON.stringify(res)}`)
+
+  // The tag name must be v<N> where N = active_milestone = 1 for this repo.
+  assert.equal(res.tag, 'v1', `expected tag "v1"; got "${res.tag}"`)
+
+  // The tag must have been pushed to the bare remote — verify via ls-remote.
+  // `git ls-remote --tags <remote>` lists all tag refs; we assert v1 appears.
+  const lsRemote = git(['ls-remote', '--tags', bare])
+  assert.equal(lsRemote.status, 0, `ls-remote --tags failed: ${lsRemote.stderr}`)
+  assert.match(lsRemote.stdout, /refs\/tags\/v1/, `tag v1 not found on bare remote; ls-remote output: "${lsRemote.stdout}"`)
+
+  // Sanity: the develop tip must be an ancestor of the tagged commit (the whole
+  // point of the verify-then-tag contract is that we ONLY tag when this is true).
+  const isAncestor = git(['merge-base', '--is-ancestor', developTip, 'v1'], { cwd: dir })
+  assert.equal(isAncestor.status, 0, 'develop tip must be an ancestor of the v1 tag')
+})
+
+test('flowTag refuses and throws when main does not yet contain the develop tip', async () => {
+  // OQ2 refusal path: if the develop→main PR has not been merged yet, origin/main
+  // does NOT contain the develop tip. flowTag must detect this via
+  // `git merge-base --is-ancestor` and throw a clear error — never create a tag
+  // on a stale main tip. This is the entire point of the verify-then-tag step.
+  //
+  // WHY we must NOT tag: tagging a stale main before the merge would produce a
+  // v<N> tag that does NOT represent the release content. The forge merge commit
+  // would then be untagged forever (no mechanism to retroactively tag it without
+  // breaking the monotonic tag history assumption). The refusal is a hard guard,
+  // not a warning.
+  const { flowTag } = await import('../lib/flow.mjs')
+
+  // Set up: withRegistry-style repo, develop has a commit that main does NOT
+  // contain. We do NOT merge develop into main — this simulates `ac flow tag`
+  // being run before the develop→main PR is merged.
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  const bare = mkBareRemote()
+  git(['remote', 'add', 'origin', bare], { cwd: dir })
+  git(['push', '-u', 'origin', 'main'], { cwd: dir })
+  const reg = initRegistry({ root: dir })
+  assert.equal(reg.ok, true, `initRegistry failed: ${reg.error}`)
+  flowInit(dir)
+
+  // Commit on develop so it diverges from main.
+  git(['switch', 'develop'], { cwd: dir })
+  commitOnBranch(dir, 'unreleased feature work')
+
+  // Push develop to origin so the remote exists, but do NOT merge into main
+  // and do NOT push main — origin/main is still at the pre-develop tip.
+  git(['push', '-u', 'origin', 'develop'], { cwd: dir })
+
+  // flowTag must throw: develop tip is not yet an ancestor of origin/main.
+  assert.throws(
+    () => flowTag(dir),
+    (err) => {
+      assert.match(
+        err.message,
+        /does not yet contain|not.*contain|ancestor/i,
+        `error should mention ancestor/not-contain; got: "${err.message}"`,
+      )
+      return true
+    },
+    'flowTag must throw when origin/main does not yet contain the develop tip',
+  )
+
+  // Belt-and-suspenders: no local tag must have been created either.
+  const tagList = git(['tag', '-l', 'v*'], { cwd: dir }).stdout.trim()
+  assert.equal(tagList, '', `flowTag must not create any local tag on refusal; found: "${tagList}"`)
+
+  // And nothing pushed to the remote.
+  const remoteTags = git(['ls-remote', '--tags', bare]).stdout.trim()
+  assert.equal(remoteTags, '', `flowTag must not push any tag to remote on refusal; found: "${remoteTags}"`)
+})
