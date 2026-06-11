@@ -997,3 +997,145 @@ test('flowTag refuses and throws when main does not yet contain the develop tip'
   const remoteTags = git(['ls-remote', '--tags', bare]).stdout.trim()
   assert.equal(remoteTags, '', `flowTag must not push any tag to remote on refusal; found: "${remoteTags}"`)
 })
+
+// ---------------------------------------------------------------------------
+// t11: flowHotfixStart — branch hotfix/<name> off main (ADR-013 offline path)
+//
+// WHY dynamic import: flowHotfixStart is not exported from lib/flow.mjs until
+// t12 lands. A static `import { flowHotfixStart }` at load time would crash the
+// ENTIRE file with an ESM binding error, breaking all 45 currently-green tests.
+// Importing inside the async test body means ONLY the new t11 tests fail until
+// t12 ships — no collateral damage.
+//
+// WHY no remote / no withRegistry: ADR-013 establishes that hotfixes consume NO
+// registry numbers and the emergency path works fully offline. `flowHotfixStart`
+// is a local-only operation (branch create + switch off main). These tests use a
+// plain scaffold(mkRepo()) + enableFlow(dir) to prove the offline contract holds.
+//
+// COLLISION ADVISORY: because the user supplies the hotfix name directly (not
+// allocated from a shared registry), two developers could independently create
+// `hotfix/fix-auth` and the first push to the remote wins. The advisory surfaces
+// this so the operator knows to check before pushing — it is informational, not
+// an error.
+// ---------------------------------------------------------------------------
+
+test('flowHotfixStart creates and switches to hotfix/fix-auth off main', async () => {
+  // Import flowHotfixStart dynamically so a missing export fails only this test,
+  // not the entire 45-test suite (ESM static imports crash at load time).
+  const { flowHotfixStart } = await import('../lib/flow.mjs')
+
+  // Plain scaffold + enableFlow — NO withRegistry/remote. This proves the offline
+  // emergency path works without any network access (ADR-013).
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+
+  // Capture main's tip before the hotfix branch is created so we can verify the
+  // fork point. The hotfix branch must start from main's current commit.
+  const mainTipBefore = git(['rev-parse', 'main'], { cwd: dir }).stdout.trim()
+
+  const res = flowHotfixStart(dir, 'fix-auth')
+
+  assert.equal(res.ok, true, `flowHotfixStart failed: ${JSON.stringify(res)}`)
+  assert.equal(res.branch, 'hotfix/fix-auth', `expected branch name "hotfix/fix-auth"; got "${res.branch}"`)
+  assert.equal(res.created, true, 'first call must report created:true')
+
+  // HEAD must now be on the hotfix branch.
+  const head = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir }).stdout.trim()
+  assert.equal(head, 'hotfix/fix-auth', `HEAD is "${head}"; expected "hotfix/fix-auth"`)
+
+  // The hotfix branch tip must equal main's tip at fork time — no commits added yet.
+  const hotfixTip = git(['rev-parse', 'hotfix/fix-auth'], { cwd: dir }).stdout.trim()
+  assert.equal(hotfixTip, mainTipBefore, 'hotfix branch tip must equal main tip at fork time')
+})
+
+test('flowHotfixStart result carries a collision advisory about user-supplied name', async () => {
+  // The advisory exists because hotfix names are NOT allocated from the shared
+  // registry (ADR-013: fully offline path). Two developers could pick the same
+  // name independently; the push would reject for the second one. Surfacing this
+  // advisory at branch-create time lets the operator verify uniqueness before push.
+  const { flowHotfixStart } = await import('../lib/flow.mjs')
+
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+
+  const res = flowHotfixStart(dir, 'fix-auth')
+
+  assert.equal(res.ok, true, `flowHotfixStart failed: ${JSON.stringify(res)}`)
+  assert.ok(res.advisory, 'result must carry an advisory field')
+  assert.match(
+    String(res.advisory),
+    /collision|push|reject|name/i,
+    `advisory should mention collision/push/reject/name risk; got: "${res.advisory}"`,
+  )
+})
+
+test('flowHotfixStart throws for an invalid branch name (check-ref-format rejection)', async () => {
+  // git check-ref-format --branch hotfix/<name> catches names that would produce
+  // an invalid ref — e.g. double-dots, trailing dots, leading hyphens, etc. This
+  // guard prevents creating a branch that git itself would later refuse to push.
+  const { flowHotfixStart } = await import('../lib/flow.mjs')
+
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+
+  assert.throws(
+    () => flowHotfixStart(dir, 'bad..name'),
+    (err) => {
+      // The error must describe what's wrong — name, ref-format, or invalid are
+      // all acceptable signals. The exact wording is the implementation's choice.
+      assert.match(
+        err.message,
+        /invalid|ref.?format|name|bad/i,
+        `error should name the problem; got: "${err.message}"`,
+      )
+      return true
+    },
+    'flowHotfixStart must throw when the name fails git check-ref-format',
+  )
+})
+
+test('flowHotfixStart succeeds with no remote configured (fully offline — ADR-013)', async () => {
+  // ADR-013 binding: the emergency path must work offline. This test uses a repo
+  // with NO remote at all — not even a bare filesystem origin. If flowHotfixStart
+  // ever tries to fetch, push, or read the registry, it will fail here. Passing
+  // proves the branch create/switch path is purely local.
+  const { flowHotfixStart } = await import('../lib/flow.mjs')
+
+  // mkRepo() only — no withRegistry, no remote add. Fully air-gapped.
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+
+  let res
+  assert.doesNotThrow(() => {
+    res = flowHotfixStart(dir, 'offline-fix')
+  }, 'flowHotfixStart must succeed with no remote configured (ADR-013 offline path)')
+
+  assert.equal(res.ok, true, `expected ok:true from offline flowHotfixStart; got: ${JSON.stringify(res)}`)
+  assert.equal(res.branch, 'hotfix/offline-fix', `expected "hotfix/offline-fix"; got "${res.branch}"`)
+
+  const head = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir }).stdout.trim()
+  assert.equal(head, 'hotfix/offline-fix', `HEAD should be on the hotfix branch; got "${head}"`)
+})
+
+test('flowHotfixStart throws matching /disabled|enabled/ when gitflow is not enabled', async () => {
+  // Every flow function gates on assertFlowEnabled. Hotfix start is no exception —
+  // accidentally creating a hotfix branch in a repo that has not opted in to gitflow
+  // would bypass the naming conventions and produce an untracked branch.
+  const { flowHotfixStart } = await import('../lib/flow.mjs')
+
+  const dir = scaffold(mkRepo())
+  // Intentionally do NOT call enableFlow — gitflow.enabled stays false.
+
+  assert.throws(
+    () => flowHotfixStart(dir, 'fix-auth'),
+    (err) => {
+      assert.match(
+        err.message,
+        /disabled|enabled/,
+        `error should mention gitflow disabled/enabled; got: "${err.message}"`,
+      )
+      return true
+    },
+    'flowHotfixStart must throw when gitflow is disabled',
+  )
+})
