@@ -93,3 +93,10 @@ _2026-06-11_
 
 **Rejected:** a dedicated hotfix claim type (remote round-trip on an emergency path); consuming project-global phase numbers
 
+## ADR-014 — Wave-conflict healing is drop-and-rerun at the integrated tip — never rebase
+_2026-06-11_
+
+**Why:** A conflicted worktree branch was written against a stale tip; rescuing it textually is the proven phase-04 trap (auto-merge stacked duplicate helpers with no conflict markers). Re-running the task sequentially on-branch is always semantically fresh and cannot conflict by construction; healed waves are test-gated before the next wave proceeds
+
+**Rejected:** rebase rung with test gate (tests-green does not prove no stale/duplicated code); raw rebase acceptance; skip-and-continue on re-run failure
+
