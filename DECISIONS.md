@@ -72,3 +72,10 @@ _2026-06-05_
 
 **Rejected:** moving the roadmap onto the astro-registry orphan branch now (too big for branch-automation phase)
 
+## ADR-011 — Opt-in forge CLI for PRs; pure-git pr:none default
+_2026-06-11_
+
+**Why:** PR creation defaults to push + compare URL (pure git, any remote); gh/glab run only when gitflow.pr opts in AND the CLI is installed, degrading gracefully to the URL. The never-gh canon constraint protects the registry, which forge CLIs never touch
+
+**Rejected:** pure-git-only phase (defers value); GitLab push-options (forge-specific)
+
