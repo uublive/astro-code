@@ -1103,3 +1103,109 @@ test('t5: wave loop logs •/✖ for stale-base branches routed to heal', () => 
     'wave loop must log() narration (• or stale keyword) for stale-base branches routed to heal',
   )
 })
+
+// ── t6: integrator prompt contract — merge-base staleness + overflow classification ──
+//
+// ADR-015 cause #1 (stale base): the integrator prompt MUST run
+// `git merge-base HEAD <branch>` per candidate and route any stale branch
+// (merge-base ≠ HEAD) to staleBranches[], never cherry-picking it — a textually
+// clean pick can stack duplicate helpers with zero conflict markers (phase-04
+// lesson). ADR-014 mandates drop-and-rerun at the integrated tip; the integrator
+// is the only actor that can make this call.
+//
+// ADR-016 cause #2 (overflow): the integrator prompt MUST classify changed files
+// vs each task's declared file set using `git diff --name-only`. An extra file
+// claimed by ANOTHER wave task is a collision → route to heal (conflicts[]); an
+// extra file nobody in the wave claims is harmless → integrate AND record in
+// advisories[] with a ⚠. Neither outcome is a silent pass: the schema surfaces
+// both so the wave loop can narrate and gate accordingly.
+//
+// These guards are static source checks against the integrateWave function body
+// (same windowed-slice technique as the phase-05 guards above). No eval/import.
+
+/**
+ * Extract the integrateWave agent() call body — the prompt template literal +
+ * options object that the integrator agent receives.  Starts at 'const
+ * integrateWave' and captures a generous window (≤3000 chars) that covers the
+ * full concatenated template literal including OBEY suffix.
+ */
+function extractIntegratorPromptWindow(wfSrc) {
+  const startIdx = wfSrc.indexOf('const integrateWave')
+  if (startIdx === -1) return null
+  return wfSrc.slice(startIdx, startIdx + 3000)
+}
+
+test('t6: integrator prompt runs git merge-base HEAD <branch> staleness check (ADR-015)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const body = extractIntegratorPromptWindow(wfSrc)
+  assert.ok(body, 'integrateWave definition not found in execute-phase.mjs')
+
+  // The prompt must instruct `git merge-base HEAD <branch>` — the cheap per-branch
+  // staleness check mandated by ADR-015.  Its absence means the integrator can
+  // silently cherry-pick a stale-base branch and stack duplicate code.
+  assert.ok(
+    /git merge-base HEAD/.test(body),
+    'integrateWave prompt must instruct `git merge-base HEAD <branch>` for staleness detection (ADR-015)',
+  )
+})
+
+test('t6: integrator prompt routes stale branches to staleBranches[] without cherry-picking (ADR-015)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const body = extractIntegratorPromptWindow(wfSrc)
+  assert.ok(body, 'integrateWave definition not found in execute-phase.mjs')
+
+  // On staleness the prompt must: (a) say do NOT cherry-pick, and (b) add the
+  // branch to staleBranches[].  ADR-015: textual cleanliness proves nothing;
+  // the phase-04 wave-2 incident stacked duplicate helpers with no conflict marker.
+  assert.ok(
+    /do NOT cherry-pick|do not cherry-pick/i.test(body),
+    'integrateWave prompt must instruct "do NOT cherry-pick" stale branches (ADR-015)',
+  )
+  assert.ok(
+    /staleBranches/.test(body),
+    'integrateWave prompt must route stale branches to staleBranches[] (ADR-015)',
+  )
+})
+
+test('t6: integrator prompt uses git diff --name-only for overflow classification (ADR-016)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const body = extractIntegratorPromptWindow(wfSrc)
+  assert.ok(body, 'integrateWave definition not found in execute-phase.mjs')
+
+  // The prompt must instruct `git diff --name-only` to enumerate the files a
+  // branch actually changed vs what the task declared — the basis for the
+  // collision vs harmless overflow classification (ADR-016 cause #2).
+  assert.ok(
+    /git diff --name-only/.test(body),
+    'integrateWave prompt must instruct `git diff --name-only` for overflow classification (ADR-016)',
+  )
+})
+
+test('t6: integrator prompt distinguishes collision (→ conflicts[]/heal) from harmless overflow (→ advisories[]) (ADR-016)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const body = extractIntegratorPromptWindow(wfSrc)
+  assert.ok(body, 'integrateWave definition not found in execute-phase.mjs')
+
+  // Collision path: extra file claimed by ANOTHER wave task → integrator must NOT
+  // cherry-pick and must route to conflicts[] (the heal ladder).
+  assert.ok(
+    /COLLISION|collision/.test(body) ||
+    (/ANOTHER wave task|another wave task/.test(body) && /conflicts\[\]/.test(body)),
+    'integrateWave prompt must name the COLLISION path (extra file claimed by another wave task → conflicts[])',
+  )
+
+  // Harmless path: extra files unclaimed by any wave peer → cherry-pick AND record
+  // in advisories[] with ⚠.  Blanket rejection would have thrown away the
+  // legitimate phase-04 t14 hooksPath fix.
+  assert.ok(
+    /advisories\[\]/.test(body) || /advisories\[/.test(body),
+    'integrateWave prompt must route harmless overflow to advisories[] with ⚠ (ADR-016)',
+  )
+
+  // The prompt must also mention ⚠ advisory for the harmless path so the integrator
+  // knows it is NOT a hard rejection — the ⚠ signals downstream narration, not failure.
+  assert.ok(
+    /⚠ advisory|⚠/.test(body),
+    'integrateWave prompt must include ⚠ advisory notation for harmless overflow path',
+  )
+})
