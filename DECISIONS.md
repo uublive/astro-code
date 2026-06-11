@@ -79,3 +79,10 @@ _2026-06-11_
 
 **Rejected:** pure-git-only phase (defers value); GitLab push-options (forge-specific)
 
+## ADR-012 — Releases are develop-to-main PRs tagged v<milestone>; no release/* branches
+_2026-06-11_
+
+**Why:** Under Option A the milestone feature branch already plays the stabilization role, so release branches add ceremony without benefit; tags derive from the project-global milestone number (v3, hotfix patches v3.1) with zero config
+
+**Rejected:** full release start/finish branch pair; user-supplied semver; calver
+
