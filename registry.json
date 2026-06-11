@@ -49,6 +49,15 @@
       "branch": "main",
       "claimed_at": "2026-06-05T08:00:19.425Z",
       "status": "complete"
+    },
+    {
+      "type": "milestone",
+      "number": 2,
+      "name": "self-healing parallel-wave integration",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-06-11T11:46:19.701Z",
+      "status": "active"
     }
   ]
 }
