@@ -655,7 +655,7 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
   }
   const integ = await integrateWave(wave)
 
-  // ── Self-healing ladder (ADR-014 + CONTEXT.md phase-05) ──────────────────
+  // ── Self-healing ladder (ADR-014 + CONTEXT.md phase-05/06) ───────────────
   //
   // The phase-04 wave-2 incident: git auto-merged stacked duplicate helper
   // copies with NO conflict marker — textual success ≠ correct code.  The old
@@ -665,17 +665,77 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
   // RE-RUN the task sequentially at the integrated tip.  A fresh re-run at the
   // current HEAD cannot produce stale/duplicated code by construction.
   //
+  // Phase-06 extension (ADR-015 cause #1 stale base; ADR-016 cause #2 overflow):
+  //   - staleBranches (merge-base ≠ HEAD) are folded into the heal list alongside
+  //     conflicts — same ladder, no fork (ADR-014/015).
+  //   - advisories (harmless overflow — unclaimed extra files) are integrated but
+  //     logged with a ⚠ and set overflowFlagged so the test gate still fires.
+  //
   // ADR-008 invariant: re-runs are sequential on-branch (no parallel-without-
   // isolation).  The integrator remains the sole git actor; the script only
   // drives agent calls.
-  if (integ && integ.integrated !== true && integ.conflicts && integ.conflicts.length) {
-    // Log every preserved branch immediately so no work is silently lost.
-    for (const conflict of integ.conflicts) {
+
+  // Per-wave state — declared here (not at phase scope) so a clean later wave
+  // never inherits state from an anomalous earlier one.
+  let ladderFired = false
+  let overflowFlagged = false
+  const healedBranches = [] // preserved branches whose task healed — torn down post-gate
+
+  // ── Phase-06 t5: log ⚠ advisories (harmless overflow, ADR-016 cause #2) ──
+  //
+  // An advisory means the branch overflowed into files no OTHER wave task claims
+  // — it integrated successfully, but the deviation must be surfaced so the user
+  // can judge whether it was intentional (the phase-04 t14 hooksPath fix was
+  // legitimate; blanket rejection would throw away good work).  Still, ANY wave
+  // that deviated from its contract must run the test gate before later waves
+  // build on it (CONTEXT.md § "The test gate extends to anomalous waves").
+  for (const advisory of (integ && integ.advisories) || []) {
+    log(
+      `⚠ wave ${w + 1} overflow advisory: branch \`${advisory.branch}\`` +
+        (advisory.taskId ? ` (task ${advisory.taskId})` : '') +
+        ` touched extra file(s): ${(advisory.extraFiles || []).join(', ')}` +
+        ` — integrated with ⚠ (unclaimed overflow, ADR-016)`,
+    )
+    overflowFlagged = true
+  }
+
+  const needsHeal =
+    integ &&
+    integ.integrated !== true &&
+    (
+      (integ.conflicts && integ.conflicts.length) ||
+      (integ.staleBranches && integ.staleBranches.length)
+    )
+
+  if (needsHeal) {
+    // Log every preserved/stale branch immediately so no work is silently lost.
+    for (const conflict of integ.conflicts || []) {
       log(
         `• wave ${w + 1} conflict: preserved branch \`${conflict.branch}\`` +
           (conflict.taskId ? ` (task ${conflict.taskId})` : ' (branch→task mapping unknown)'),
       )
     }
+
+    // Phase-06 t5 (ADR-015 cause #1 stale base): log stale branches routed to heal.
+    // A stale branch forked from an old tip; even a textually clean cherry-pick can
+    // stack duplicate helpers with no conflict marker (the phase-04 lesson).  The
+    // integrator NEVER cherry-picks stale branches — they always route to heal.
+    for (const stale of integ.staleBranches || []) {
+      log(
+        `• wave ${w + 1} stale fork-base: routing \`${stale.branch}\` to heal ladder` +
+          (stale.taskId ? ` (task ${stale.taskId})` : ' (branch→task mapping unknown)') +
+          ` — merge-base ≠ HEAD, a clean cherry-pick proves nothing (ADR-015)`,
+      )
+    }
+
+    // Fold staleBranches into the same conflict-shaped list so resolveHealList
+    // can treat them identically — same {branch, taskId} shape, same ladder,
+    // no fork (ADR-014/015).  Both conflicts and staleBranches are always
+    // routed to a fresh re-run at the integrated tip.
+    const allHealItems = [
+      ...(integ.conflicts || []),
+      ...(integ.staleBranches || []),
+    ]
 
     // Compute the precise set of tasks that need healing.  resolveHealList
     // (mirrored from lib/waves.mjs) maps each conflict object to the right task
@@ -685,24 +745,20 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
     const integratedTaskIds = new Set(
       (integ.branches || [])
         .map((b) => {
-          const hit = integ.conflicts.find((c) => c.branch === b)
+          const hit = allHealItems.find((c) => c.branch === b)
           // If the integrator confirmed this branch without listing it as a
-          // conflict it's integrated — reverse-map via the wave task list.
+          // conflict/stale it's integrated — reverse-map via the wave task list.
           return hit ? null : wave.find((t) => t.id === b || b.includes(t.id))?.id
         })
         .filter(Boolean),
     )
-    const healList = resolveHealList(wave, integ.conflicts, integratedTaskIds)
-
-    // Re-run each task in plan order sequentially at the integrated tip.
-    // One attempt per task; no retry (ADR-014 § "Re-run failure → fail the
-    // phase immediately").
-    let ladderFired = false
-    const healedBranches = [] // preserved branches whose task healed — torn down post-gate
+    const healList = resolveHealList(wave, allHealItems, integratedTaskIds)
+    // allHealItems = [...integ.conflicts, ...integ.staleBranches] — same shape.
     for (const t of healList) {
-      // Identify the preserved branch for this task so healPrompt can name it.
-      const conflict = integ.conflicts.find((c) => c.taskId === t.id)
-        || integ.conflicts.find((c) => !c.taskId) // null-mapped fallback
+      // Find preserved branch — check conflicts then staleBranches ({branch,taskId}).
+      const conflict =
+        allHealItems.find((c) => c.taskId === t.id) ||
+        allHealItems.find((c) => !c.taskId) // null-mapped fallback
       const preservedBranch = conflict?.branch || 'unknown'
 
       const healResult = await runHealOnBranch(t, preservedBranch)
@@ -734,50 +790,6 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
       }
     }
 
-    // After any healed wave, run the full test suite before proceeding to the
-    // next wave (ADR-014 § "Test gate only after a HEALED wave").  A failing
-    // suite is treated as an integration failure and stops the phase loudly —
-    // this is the guard that would have caught the phase-04 wave-2 bad merge
-    // before it poisoned later waves.  Clean (non-healing) waves stay fast;
-    // only healed waves pay the suite cost.
-    if (ladderFired && !integrationFailed) {
-      const gate = await runTestSuite()
-      if (!gate || !gate.passed) {
-        integrationFailed = {
-          wave: w + 1,
-          taskId: null,
-          branch: null,
-          note:
-            `test suite failed after healing wave ${w + 1}` +
-            (gate?.output ? `: ${gate.output}` : ' (no output returned)'),
-        }
-        log(
-          `✖ wave ${w + 1} test gate failed after heal — stopping before verify`,
-        )
-      } else {
-        log(`✓ wave ${w + 1} test gate passed after heal (${healedTaskIds.length} task(s) healed)`)
-        // Only now — re-run commits landed AND the suite is green — is a healed
-        // task's preserved branch truly superseded. Tearing down earlier would
-        // destroy the only copy of the dropped attempt while its replacement was
-        // still unproven; tearing down never would strand stale worktrees and
-        // false-FAIL the final verifier's rev-list check (the phase-05 UAT gap).
-        if (healedBranches.length) {
-          const teardown = await runTeardown(w, healedBranches)
-          const removed = teardown && Array.isArray(teardown.removed) ? teardown.removed : []
-          if (removed.length) {
-            log(`✓ wave ${w + 1} healed branch(es) torn down after re-run commits landed: ${removed.join(', ')}`)
-          }
-          // Cleanup failure is NOT integration failure — the healed work is on
-          // the branch and tested. But silence would read as success, so name
-          // every leftover branch for manual cleanup (and so the user knows why
-          // the final verifier might flag it).
-          const leftover = healedBranches.filter((b) => !removed.includes(b))
-          if (leftover.length) {
-            log(`⚠ preserved branch(es) not removed — clean up manually: ${leftover.join(', ')}`)
-          }
-        }
-      }
-    }
   } else if (!integ || integ.integrated !== true) {
     // The integrator returned integrated=false but with no conflicts array (or
     // an empty one) — the ladder cannot map any task, so we fail immediately.
@@ -789,6 +801,57 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
       note: integ?.note || 'integrator did not confirm success',
     }
     log(`✖ wave ${w + 1} integration failed — stopping before verify`)
+  }
+
+  // ── Extended test gate (phase-06 t5 / CONTEXT.md § "extended gate") ─────
+  //
+  // Phase-05 shipped: gate fires only when ladderFired (heal ladder ran).
+  // Phase-06 extension: gate also fires when overflowFlagged — any wave that
+  // deviated from its contract (healed OR integrated-with-overflow-⚠) must
+  // prove itself green before later waves build on it (CONTEXT.md § "The test
+  // gate extends to anomalous waves").  Clean, contract-conforming waves
+  // still skip the gate and stay fast.
+  //
+  // A failing suite is treated as an integration failure and stops the phase
+  // loudly — this is the guard that would have caught the phase-04 wave-2 bad
+  // merge before it poisoned later waves.
+  if ((ladderFired || overflowFlagged) && !integrationFailed) {
+    const gate = await runTestSuite()
+    if (!gate || !gate.passed) {
+      integrationFailed = {
+        wave: w + 1,
+        taskId: null,
+        branch: null,
+        note:
+          `test suite failed after healing wave ${w + 1}` +
+          (gate?.output ? `: ${gate.output}` : ' (no output returned)'),
+      }
+      log(
+        `✖ wave ${w + 1} test gate failed after heal — stopping before verify`,
+      )
+    } else {
+      log(`✓ wave ${w + 1} test gate passed after heal (${healedTaskIds.length} task(s) healed)`)
+      // Only now — re-run commits landed AND the suite is green — is a healed
+      // task's preserved branch truly superseded. Tearing down earlier would
+      // destroy the only copy of the dropped attempt while its replacement was
+      // still unproven; tearing down never would strand stale worktrees and
+      // false-FAIL the final verifier's rev-list check (the phase-05 UAT gap).
+      if (healedBranches.length) {
+        const teardown = await runTeardown(w, healedBranches)
+        const removed = teardown && Array.isArray(teardown.removed) ? teardown.removed : []
+        if (removed.length) {
+          log(`✓ wave ${w + 1} healed branch(es) torn down after re-run commits landed: ${removed.join(', ')}`)
+        }
+        // Cleanup failure is NOT integration failure — the healed work is on
+        // the branch and tested. But silence would read as success, so name
+        // every leftover branch for manual cleanup (and so the user knows why
+        // the final verifier might flag it).
+        const leftover = healedBranches.filter((b) => !removed.includes(b))
+        if (leftover.length) {
+          log(`⚠ preserved branch(es) not removed — clean up manually: ${leftover.join(', ')}`)
+        }
+      }
+    }
   }
 }
 

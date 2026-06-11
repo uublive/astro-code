@@ -978,3 +978,128 @@ test('t3: INTEGRATE_SCHEMA still has required:[integrated] and top-level additio
   assert.ok(Array.isArray(schema.required), 'INTEGRATE_SCHEMA must have a required array')
   assert.ok(schema.required.includes('integrated'), 'INTEGRATE_SCHEMA.required must still include "integrated"')
 })
+
+// ── t5: wave-loop wiring — stale/collision routing, overflowFlagged, extended gate, log() ──
+//
+// ADR-015 cause #1 (stale base) + ADR-016 cause #2 (overflow) wiring in the wave loop.
+// After the integrator returns, the loop must:
+//   (1) Route staleBranches into the heal ladder alongside conflicts — reusing
+//       resolveHealList (no new ladder fork, ADR-014/015).
+//   (2) Declare a per-wave `overflowFlagged` boolean at the same scope as `ladderFired`
+//       (inside the wave-loop body, not at phase scope — must not leak into later waves).
+//   (3) Log ⚠ advisories when integ.advisories is non-empty (branch + extraFiles named).
+//   (4) Log •/✖ lines for stale-base branches routed to heal.
+//   (5) Extend the gate condition from `ladderFired` to `ladderFired || overflowFlagged`.
+// All guards are static source checks (string/regex over the workflow source, no eval).
+
+test('t5: wave loop folds integ.staleBranches into the heal ladder (stale routing, ADR-015)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The wave loop must reference integ.staleBranches so stale branches reach
+  // resolveHealList the same way conflicts do (ADR-015: always route stale to heal).
+  assert.ok(
+    /integ\.(staleBranches|staleBranches)/.test(wfSrc),
+    'execute-phase.mjs wave loop must reference integ.staleBranches to route stale branches to the heal ladder',
+  )
+
+  // staleBranches must feed into resolveHealList or be combined with conflicts
+  // before that call — we check that the call site window contains staleBranches.
+  const mirrorStart = wfSrc.indexOf('// >>> MIRROR')
+  const mirrorEnd = wfSrc.indexOf('// <<< MIRROR')
+  // Find resolveHealList call sites OUTSIDE the MIRROR region.
+  let searchFrom = 0
+  const callSites = []
+  while (true) {
+    const idx = wfSrc.indexOf('resolveHealList(', searchFrom)
+    if (idx === -1) break
+    if (idx < mirrorStart || idx > mirrorEnd) callSites.push(idx)
+    searchFrom = idx + 1
+  }
+  assert.ok(callSites.length > 0, 'resolveHealList must be called outside the MIRROR region')
+
+  // The surrounding window (up to 600 chars before the call) must reference staleBranches.
+  const surroundingWindow = wfSrc.slice(Math.max(0, callSites[0] - 600), callSites[0] + 300)
+  assert.ok(
+    /staleBranches/.test(surroundingWindow),
+    'resolveHealList call site area must reference staleBranches (fold stale into heal ladder)',
+  )
+})
+
+test('t5: overflowFlagged is declared inside the wave loop body (per-wave scope, not phase scope)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // overflowFlagged must be declared with `let` or `const` INSIDE the wave loop.
+  // It must appear AFTER the `for (let w = 0;` loop start and BEFORE the loop end.
+  const loopStart = wfSrc.indexOf('for (let w = 0;')
+  assert.ok(loopStart !== -1, 'wave loop (for let w = 0) not found in execute-phase.mjs')
+
+  // The declaration must be inside the loop body, i.e. its index > loopStart.
+  const declIdx = wfSrc.indexOf('overflowFlagged', loopStart)
+  assert.ok(
+    declIdx !== -1 && declIdx > loopStart,
+    'overflowFlagged must be declared inside the wave loop body (after `for (let w = 0;`)',
+  )
+
+  // The declaration pattern: `let overflowFlagged` or `const overflowFlagged`.
+  assert.ok(
+    /(?:let|const)\s+overflowFlagged/.test(wfSrc),
+    'overflowFlagged must be declared with let or const (not a global)',
+  )
+})
+
+test('t5: wave-loop gate condition is (ladderFired || overflowFlagged) && !integrationFailed', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The test-gate if-condition must include overflowFlagged alongside ladderFired.
+  // Phase-05 shipped: `if (ladderFired && !integrationFailed)`.
+  // t5 extends it to: `if ((ladderFired || overflowFlagged) && !integrationFailed)`.
+  assert.ok(
+    /if\s*\(\s*\(\s*ladderFired\s*\|\|\s*overflowFlagged\s*\)/.test(wfSrc) ||
+    /if\s*\(\s*ladderFired\s*\|\|\s*overflowFlagged\s*\)/.test(wfSrc),
+    'wave-loop gate condition must be `(ladderFired || overflowFlagged) && !integrationFailed` (extended gate, t5 / CONTEXT.md)',
+  )
+})
+
+test('t5: wave loop logs ⚠ advisory per integ.advisories entry naming branch and extraFiles', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The loop must reference integ.advisories and emit a log() with ⚠.
+  assert.ok(
+    /integ\.advisories/.test(wfSrc),
+    'execute-phase.mjs must reference integ.advisories in the wave loop',
+  )
+
+  // There must be a log() call that includes both 'advisory' or '⚠' and 'extraFiles'.
+  // Locate the advisory log area — after the integ.advisories reference.
+  const advisoriesIdx = wfSrc.indexOf('integ.advisories')
+  assert.ok(advisoriesIdx !== -1, 'integ.advisories reference not found')
+  const advisoriesWindow = wfSrc.slice(advisoriesIdx, advisoriesIdx + 600)
+
+  // Must emit a ⚠ log line.
+  assert.ok(
+    /⚠/.test(advisoriesWindow) || /log\(/.test(advisoriesWindow),
+    'wave loop must log() ⚠ advisory when integ.advisories is non-empty',
+  )
+
+  // The advisory log must name extraFiles.
+  assert.ok(
+    /extraFiles/.test(advisoriesWindow),
+    'advisory log() must name extraFiles (so the user sees what overflowed)',
+  )
+})
+
+test('t5: wave loop logs •/✖ for stale-base branches routed to heal', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The loop must log something when a staleBranch is routed to heal.
+  // We look for a log() call near the staleBranches region that uses • or ✖.
+  const staleBranchesIdx = wfSrc.indexOf('integ.staleBranches')
+  assert.ok(staleBranchesIdx !== -1, 'integ.staleBranches reference not found')
+  const staleWindow = wfSrc.slice(staleBranchesIdx, staleBranchesIdx + 800)
+
+  // Must have a log() call with • (info) or ✖ (error) narrating the stale routing.
+  assert.ok(
+    /log\(/.test(staleWindow) && (/•|stale/.test(staleWindow)),
+    'wave loop must log() narration (• or stale keyword) for stale-base branches routed to heal',
+  )
+})
