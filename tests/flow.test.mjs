@@ -708,3 +708,162 @@ test('flowPR result carries .astrocode/state.json merge-conflict advisory in the
     `PR body should warn about .astrocode/state.json merge conflicts; got body: "${body}"`,
   )
 })
+
+// ---------------------------------------------------------------------------
+// t7: flowRelease — push develop + develop→main compare URL (pr:none), no tag
+//
+// WHY dynamic import: flowRelease is not exported from lib/flow.mjs until t8
+// lands. A static `import { flowRelease }` at module load time would make ESM
+// throw a SyntaxError / module resolution error that crashes the ENTIRE file,
+// breaking all 39 pre-existing tests. Instead, we use `await import(...)` inside
+// each async test body — if the export is missing, ONLY the test that tried to
+// call it fails (ReferenceError on destructure), and every other test runs
+// normally. Once t8 adds the export the dynamic import resolves correctly
+// and these tests turn green without touching this file.
+//
+// WHY real bare remote + set-url trick: same rationale as the flowPR tests
+// above — push can only be verified against a real remote. We override the fetch
+// URL to a github-style URL so parseCompareUrl returns a recognizable compare
+// URL, while pushing to the local bare path so no network is needed.
+// ---------------------------------------------------------------------------
+
+test('flowRelease pushes develop and returns a develop→main compare URL', async () => {
+  // Import flowRelease dynamically so a missing export fails only this test,
+  // not the entire 39-test suite (ESM static imports would crash at load time).
+  const { flowRelease } = await import('../lib/flow.mjs')
+
+  // Set up a full withRegistry-style repo: bare remote, gitflow enabled, develop
+  // created via flowInit, and HEAD on develop (the required branch for release).
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  const bare = mkBareRemote()
+  git(['remote', 'add', 'origin', bare], { cwd: dir })
+  git(['push', '-u', 'origin', 'main'], { cwd: dir })
+  const reg = initRegistry({ root: dir })
+  assert.equal(reg.ok, true, `initRegistry failed: ${reg.error}`)
+  flowInit(dir)
+
+  // Land on develop and make a commit so it has something to push.
+  git(['switch', 'develop'], { cwd: dir })
+  commitOnBranch(dir, 'release-ready commit')
+
+  // Override fetch URL to a github-like URL for compare-URL construction; push
+  // URL stays as the bare filesystem path so no network access is required.
+  git(['remote', 'set-url', 'origin', 'https://github.com/test-owner/test-repo.git'], { cwd: dir })
+  git(['remote', 'set-url', '--push', 'origin', bare], { cwd: dir })
+
+  const res = flowRelease(dir)
+
+  assert.equal(res.ok, true, `flowRelease failed: ${JSON.stringify(res)}`)
+
+  // Must return a github compare URL with develop as head and main as base.
+  assert.ok(res.url, 'flowRelease must return a compare URL')
+  assert.match(
+    res.url,
+    /github\.com\/test-owner\/test-repo\/compare\/main\.\.\./,
+    `compare URL should target main as base; got: ${res.url}`,
+  )
+  assert.match(
+    res.url,
+    /develop/,
+    `compare URL should mention develop as head; got: ${res.url}`,
+  )
+
+  // Verify develop was actually pushed to the bare remote.
+  const lsRemote = git(['ls-remote', bare, 'refs/heads/develop'])
+  assert.equal(lsRemote.status, 0, `ls-remote failed: ${lsRemote.stderr}`)
+  assert.match(lsRemote.stdout, /develop/, 'develop ref not found on bare remote after flowRelease')
+})
+
+test('flowRelease does not create any tag (OQ2: never tag at PR-open time)', async () => {
+  // OQ2 binding: release tagging is a separate `ac flow tag` step run after the
+  // develop→main PR merges. flowRelease must never create a tag — not v<N>, not
+  // v<N>.0, nothing. This test asserts the invariant so a future refactor cannot
+  // accidentally introduce premature tagging.
+  const { flowRelease } = await import('../lib/flow.mjs')
+
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  const bare = mkBareRemote()
+  git(['remote', 'add', 'origin', bare], { cwd: dir })
+  git(['push', '-u', 'origin', 'main'], { cwd: dir })
+  const reg = initRegistry({ root: dir })
+  assert.equal(reg.ok, true, `initRegistry failed: ${reg.error}`)
+  flowInit(dir)
+  git(['switch', 'develop'], { cwd: dir })
+  commitOnBranch(dir, 'pre-release commit')
+
+  // No URL override needed — we only care about tag absence here.
+  flowRelease(dir)
+
+  // git tag -l returns all tags; must be empty after flowRelease.
+  const tagList = git(['tag', '-l'], { cwd: dir }).stdout.trim()
+  assert.equal(tagList, '', `flowRelease must not create any tags; found: "${tagList}"`)
+
+  // Also verify no v* tags were pushed to the remote.
+  const remoteTags = git(['ls-remote', '--tags', bare]).stdout.trim()
+  assert.equal(remoteTags, '', `flowRelease must not push any tags to remote; found: "${remoteTags}"`)
+})
+
+test('flowRelease throws mentioning "develop" when HEAD is on a feature branch', async () => {
+  // Guard: flowRelease is only valid from the develop branch. Running it from a
+  // feature branch (or main) must throw a clear error naming the required branch
+  // so the user knows exactly what to fix before retrying.
+  const { flowRelease } = await import('../lib/flow.mjs')
+
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  const bare = mkBareRemote()
+  git(['remote', 'add', 'origin', bare], { cwd: dir })
+  git(['push', '-u', 'origin', 'main'], { cwd: dir })
+  const reg = initRegistry({ root: dir })
+  assert.equal(reg.ok, true, `initRegistry failed: ${reg.error}`)
+  flowInit(dir)
+
+  // Land on a feature branch (not develop) — simulates running `ac flow release`
+  // at the wrong point in the workflow.
+  const cfg = loadFlowConfig(dir)
+  const featureBranch = `${cfg.prefixes.feature}/m1-test-release-guard`
+  git(['switch', '-c', featureBranch, cfg.develop], { cwd: dir })
+
+  assert.throws(
+    () => flowRelease(dir),
+    (err) => {
+      assert.match(
+        err.message,
+        /develop/i,
+        `error should mention "develop"; got: ${err.message}`,
+      )
+      return true
+    },
+    'flowRelease must throw when HEAD is not on develop',
+  )
+})
+
+test('flowRelease throws "no remote" when repo has no remote configured', async () => {
+  // OQ4: push-requiring commands fail fast with a clear, actionable message when
+  // there is no remote. No partial side effects — develop must NOT be pushed
+  // (impossible without a remote) and no URL is returned.
+  const { flowRelease } = await import('../lib/flow.mjs')
+
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  // flowInit works locally without a remote.
+  flowInit(dir)
+  git(['switch', 'develop'], { cwd: dir })
+  commitOnBranch(dir, 'local-only commit')
+  // No remote added — repo is fully local.
+
+  assert.throws(
+    () => flowRelease(dir),
+    (err) => {
+      assert.match(
+        err.message,
+        /no remote|remote.*origin|no.*remote/i,
+        `error should mention missing remote; got: ${err.message}`,
+      )
+      return true
+    },
+    'flowRelease must throw when no remote is configured',
+  )
+})
