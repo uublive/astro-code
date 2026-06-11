@@ -67,6 +67,12 @@ function enableFlow(dir, extra = {}) {
 function mkBareRemote() {
   const bare = mkdtempSync(join(tmpdir(), 'ac-flow-origin-')) + '/origin.git'
   git(['init', '--quiet', '--bare', bare])
+  // Override core.hooksPath in the bare repo so its own hooks/ directory takes
+  // precedence over any global core.hooksPath the developer may have set (e.g.
+  // Sourcetree sets a global hookspath which would bypass per-repo pre-receive
+  // hooks). Without this, rejection-simulation tests that install a pre-receive
+  // hook into <bare>/hooks/ would silently pass instead of triggering the hook.
+  git(['config', 'core.hooksPath', join(bare, 'hooks')], { cwd: bare })
   return bare
 }
 
