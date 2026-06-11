@@ -535,3 +535,175 @@ test('runTestSuite prompt instructs running the full test suite and returning pa
     'runTestSuite prompt must reference the root directory',
   )
 })
+
+// ── t7: self-healing ladder in the wave loop ────────────────────────────────
+//
+// ADR-014 + CONTEXT.md § "NO rebase rung — the ladder is: drop & re-run, then
+// fail": when the integrator returns integrated=false (conflicts), the script
+// must NOT immediately set integrationFailed. Instead it fires the healing
+// ladder: log each preserved branch, compute the heal list via resolveHealList,
+// re-run each task via runHealOnBranch, gate with runTestSuite.  Only a failed
+// re-run or a failed test gate sets integrationFailed and stops the phase.
+//
+// The return value must include healed:[…taskIds] so the outer command can
+// report how many tasks were auto-healed.  The FAIL verdict text must surface
+// the richer integrationFailed (task id + branch) rather than the old
+// "conflicts: […]" form.
+//
+// All guards here are static source checks — no eval of the Workflow-tool
+// globals.
+
+test('wave loop uses resolveHealList to compute the heal task list on conflict (t7 self-healing ladder)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // resolveHealList must be called in the wave loop (not just defined in the MIRROR).
+  // The call site is outside the MIRROR sentinel region and drives the heal loop.
+  // We check for a call expression pattern that passes wave, integ.conflicts or
+  // similar, and the integratedTaskIds set — the exact names match the spec.
+  assert.ok(
+    /resolveHealList\s*\(/.test(wfSrc),
+    'execute-phase.mjs wave loop must call resolveHealList() for the self-healing ladder',
+  )
+
+  // The call must pass integ.conflicts (the integrator's conflict objects).
+  const callIdx = wfSrc.indexOf('resolveHealList(')
+  assert.ok(callIdx !== -1, 'resolveHealList call not found')
+  // There may be multiple: the definition in the MIRROR region + the call site.
+  // We need to find the CALL SITE (outside the MIRROR region).
+  const mirrorStart = wfSrc.indexOf('// >>> MIRROR')
+  const mirrorEnd = wfSrc.indexOf('// <<< MIRROR')
+  // Find all resolveHealList occurrences outside the MIRROR.
+  const callSites = []
+  let searchFrom = 0
+  while (true) {
+    const idx = wfSrc.indexOf('resolveHealList(', searchFrom)
+    if (idx === -1) break
+    if (idx < mirrorStart || idx > mirrorEnd) callSites.push(idx)
+    searchFrom = idx + 1
+  }
+  assert.ok(
+    callSites.length > 0,
+    'resolveHealList must be called OUTSIDE the MIRROR region (in the wave loop)',
+  )
+
+  // The call site window must reference integ.conflicts or similar.
+  const callWindow = wfSrc.slice(callSites[0], callSites[0] + 300)
+  assert.ok(
+    /integ\.conflicts|integ\?\.conflicts/.test(callWindow),
+    'resolveHealList call site must pass integ.conflicts (the integrator conflict objects)',
+  )
+})
+
+test('wave loop calls runHealOnBranch for each task in the heal list (t7)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // runHealOnBranch must be called inside the heal loop — not just defined.
+  // The call pattern is runHealOnBranch(t, preservedBranch) where preservedBranch
+  // comes from the integ.branches or integ.conflicts map.
+  const callIdx = wfSrc.indexOf('await runHealOnBranch(')
+  assert.ok(
+    callIdx !== -1,
+    'execute-phase.mjs wave loop must call `await runHealOnBranch(t, preservedBranch)` for each heal task',
+  )
+
+  // The call must be inside a for/loop context (not isolated outside any loop).
+  // We check that there's a `for` somewhere in the 300 chars before the call.
+  const preceding = wfSrc.slice(Math.max(0, callIdx - 400), callIdx)
+  assert.ok(
+    /for\s*\(|for\s+of/.test(preceding),
+    'runHealOnBranch call must be inside a loop (for each heal task)',
+  )
+})
+
+test('wave loop pushes heal result to results and tracks healedTaskIds (t7)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // After a successful runHealOnBranch call, the result must be pushed to results
+  // AND the task id must be tracked in healedTaskIds (for the return value).
+  assert.ok(
+    /healedTaskIds/.test(wfSrc),
+    'execute-phase.mjs must track healedTaskIds for the healed wave',
+  )
+
+  // healedTaskIds must be populated with task ids (push or add).
+  assert.ok(
+    /healedTaskIds\.(push|add)\s*\(/.test(wfSrc),
+    'healedTaskIds must be populated via push() or add() with healed task ids',
+  )
+})
+
+test('wave loop calls runTestSuite after a healed wave and sets integrationFailed on suite failure (t7)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // runTestSuite must be awaited inside the wave loop (not just defined).
+  const awaitTestIdx = wfSrc.indexOf('await runTestSuite(')
+  assert.ok(
+    awaitTestIdx !== -1,
+    'execute-phase.mjs wave loop must await runTestSuite() after a healed wave',
+  )
+
+  // After the test gate, a failed suite (gate.passed === false) must set integrationFailed.
+  // We check the region around the await runTestSuite() call for the failure branch.
+  const gateWindow = wfSrc.slice(awaitTestIdx, awaitTestIdx + 600)
+  assert.ok(
+    /passed/.test(gateWindow),
+    'runTestSuite result must be checked for the passed field',
+  )
+  assert.ok(
+    /integrationFailed\s*=/.test(gateWindow),
+    'a failing test suite after a healed wave must set integrationFailed',
+  )
+})
+
+test('wave loop sets integrationFailed with task id and branch on a falsy runHealOnBranch result (t7)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // When runHealOnBranch returns falsy, integrationFailed must be set immediately
+  // with a human-readable note that includes the task id and branch.  The note
+  // is what astro-execute.md surfaces to the user unchanged.
+  const healCallIdx = wfSrc.indexOf('await runHealOnBranch(')
+  assert.ok(healCallIdx !== -1, 'runHealOnBranch call not found')
+  const healWindow = wfSrc.slice(healCallIdx, healCallIdx + 800)
+
+  // The failure branch must set integrationFailed.
+  assert.ok(
+    /integrationFailed\s*=/.test(healWindow),
+    'wave loop must set integrationFailed when runHealOnBranch returns falsy',
+  )
+
+  // The note must reference the task id (t.id) so the user knows which task failed.
+  assert.ok(
+    /t\.id/.test(healWindow),
+    'integrationFailed note on heal failure must reference t.id (task id)',
+  )
+})
+
+test('return value includes healed: healedTaskIds (t7)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The final return statement must include a healed property.
+  // The return is the last statement; we search for its pattern.
+  assert.ok(
+    /healed\s*:\s*healedTaskIds/.test(wfSrc),
+    'execute-phase.mjs return value must include `healed: healedTaskIds`',
+  )
+})
+
+test('FAIL verdict text reads richer integrationFailed (task id + branch) not just conflicts array (t7)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The Verify phase FAIL verdict for integration failure must surface task id and
+  // branch — not just the old `conflicts.join(', ')` array — so the user knows
+  // exactly which task and branch triggered the failure.
+  // We find the verdict assignment near the 'Verify' phase.
+  const verifyIdx = wfSrc.indexOf("phase('Verify')")
+  assert.ok(verifyIdx !== -1, "phase('Verify') not found")
+  const verifyWindow = wfSrc.slice(verifyIdx, verifyIdx + 1500)
+
+  // Must reference integrationFailed.taskId or integrationFailed.branch
+  // (the richer shape set by the self-healing ladder failure branches).
+  assert.ok(
+    /integrationFailed\.(taskId|branch)/.test(verifyWindow),
+    'FAIL verdict in Verify phase must reference integrationFailed.taskId or integrationFailed.branch (richer failure report)',
+  )
+})

@@ -429,6 +429,13 @@ const integrateWave = (wave) =>
 
 phase('Execute')
 const results = []
+// healedTaskIds accumulates the ids of every task that was successfully healed
+// by the self-healing ladder in any wave.  Exposed in the return value so the
+// outer command (/astro-execute) can report how many tasks were auto-healed
+// and which ones — this is the observability surface for the phase-04 wave-2
+// class of incident (ADR-014 § "healed waves are test-gated before the next
+// wave proceeds").
+const healedTaskIds = []
 let integrationFailed = null
 for (let w = 0; w < waves.length && !integrationFailed; w++) {
   const wave = waves[w]
@@ -475,10 +482,116 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
     }
   }
   const integ = await integrateWave(wave)
-  if (!integ || integ.integrated !== true) {
+
+  // ── Self-healing ladder (ADR-014 + CONTEXT.md phase-05) ──────────────────
+  //
+  // The phase-04 wave-2 incident: git auto-merged stacked duplicate helper
+  // copies with NO conflict marker — textual success ≠ correct code.  The old
+  // `integrated !== true → integrationFailed` branch silently accepted that bad
+  // merge.  ADR-014 mandates: on ANY cherry-pick conflict, DROP the offending
+  // worktree-* branch (the integrator preserves it, never tears it down) and
+  // RE-RUN the task sequentially at the integrated tip.  A fresh re-run at the
+  // current HEAD cannot produce stale/duplicated code by construction.
+  //
+  // ADR-008 invariant: re-runs are sequential on-branch (no parallel-without-
+  // isolation).  The integrator remains the sole git actor; the script only
+  // drives agent calls.
+  if (integ && integ.integrated !== true && integ.conflicts && integ.conflicts.length) {
+    // Log every preserved branch immediately so no work is silently lost.
+    for (const conflict of integ.conflicts) {
+      log(
+        `• wave ${w + 1} conflict: preserved branch \`${conflict.branch}\`` +
+          (conflict.taskId ? ` (task ${conflict.taskId})` : ' (branch→task mapping unknown)'),
+      )
+    }
+
+    // Compute the precise set of tasks that need healing.  resolveHealList
+    // (mirrored from lib/waves.mjs) maps each conflict object to the right task
+    // (or falls back to every un-confirmed task when taskId is null) and returns
+    // them in plan order.  We build integratedTaskIds from the branches the
+    // integrator confirmed before the conflict stopped it.
+    const integratedTaskIds = new Set(
+      (integ.branches || [])
+        .map((b) => {
+          const hit = integ.conflicts.find((c) => c.branch === b)
+          // If the integrator confirmed this branch without listing it as a
+          // conflict it's integrated — reverse-map via the wave task list.
+          return hit ? null : wave.find((t) => t.id === b || b.includes(t.id))?.id
+        })
+        .filter(Boolean),
+    )
+    const healList = resolveHealList(wave, integ.conflicts, integratedTaskIds)
+
+    // Re-run each task in plan order sequentially at the integrated tip.
+    // One attempt per task; no retry (ADR-014 § "Re-run failure → fail the
+    // phase immediately").
+    let ladderFired = false
+    for (const t of healList) {
+      // Identify the preserved branch for this task so healPrompt can name it.
+      const conflict = integ.conflicts.find((c) => c.taskId === t.id)
+        || integ.conflicts.find((c) => !c.taskId) // null-mapped fallback
+      const preservedBranch = conflict?.branch || 'unknown'
+
+      const healResult = await runHealOnBranch(t, preservedBranch)
+      if (healResult) {
+        // Heal succeeded: record the result and the healed task id.  The
+        // preserved worktree + branch teardown is the integrator/agent's job —
+        // the script never runs git (ADR-005).
+        results.push(healResult)
+        healedTaskIds.push(t.id)
+        ladderFired = true
+      } else {
+        // Heal failed: fail the phase immediately with a richer note naming
+        // the exact task id and branch.  No retry (ADR-014).  The preserved
+        // branch is still untouched so the user can inspect it.
+        integrationFailed = {
+          wave: w + 1,
+          taskId: t.id,
+          branch: preservedBranch,
+          note:
+            `heal re-run failed for task ${t.id} ("${t.title}") on preserved branch \`${preservedBranch}\`` +
+            ` — re-run returned nothing; inspect the preserved branch and re-run manually`,
+        }
+        log(
+          `✖ wave ${w + 1} heal re-run failed for task ${t.id} on \`${preservedBranch}\`` +
+            ` — stopping before verify`,
+        )
+        break
+      }
+    }
+
+    // After any healed wave, run the full test suite before proceeding to the
+    // next wave (ADR-014 § "Test gate only after a HEALED wave").  A failing
+    // suite is treated as an integration failure and stops the phase loudly —
+    // this is the guard that would have caught the phase-04 wave-2 bad merge
+    // before it poisoned later waves.  Clean (non-healing) waves stay fast;
+    // only healed waves pay the suite cost.
+    if (ladderFired && !integrationFailed) {
+      const gate = await runTestSuite()
+      if (!gate || !gate.passed) {
+        integrationFailed = {
+          wave: w + 1,
+          taskId: null,
+          branch: null,
+          note:
+            `test suite failed after healing wave ${w + 1}` +
+            (gate?.output ? `: ${gate.output}` : ' (no output returned)'),
+        }
+        log(
+          `✖ wave ${w + 1} test gate failed after heal — stopping before verify`,
+        )
+      } else {
+        log(`✓ wave ${w + 1} test gate passed after heal (${healedTaskIds.length} task(s) healed)`)
+      }
+    }
+  } else if (!integ || integ.integrated !== true) {
+    // The integrator returned integrated=false but with no conflicts array (or
+    // an empty one) — the ladder cannot map any task, so we fail immediately.
+    // This path covers integrator errors and unexpected response shapes.
     integrationFailed = {
       wave: w + 1,
-      conflicts: integ?.conflicts || [],
+      taskId: null,
+      branch: null,
       note: integ?.note || 'integrator did not confirm success',
     }
     log(`✖ wave ${w + 1} integration failed — stopping before verify`)
@@ -490,9 +603,15 @@ let verdict
 if (integrationFailed) {
   // Don't verify a tree the work never reached — fail loudly with a cleanup hint
   // (the guard the issue asked for) instead of a misleading "goal absent" verdict.
+  // The richer integrationFailed shape (set by the self-healing ladder) carries
+  // taskId + branch so the user knows exactly which task and preserved branch to
+  // inspect — not just a raw conflicts array (the phase-04 wave-2 lesson).
+  const failDetail = integrationFailed.taskId
+    ? `task ${integrationFailed.taskId} on \`${integrationFailed.branch}\``
+    : (integrationFailed.branch ? `branch \`${integrationFailed.branch}\`` : 'no branch preserved')
   verdict =
     `FAIL — wave ${integrationFailed.wave} did not integrate onto the working branch ` +
-    `(conflicts: ${integrationFailed.conflicts.join(', ') || 'see note'}; ${integrationFailed.note}). ` +
+    `(${failDetail}; ${integrationFailed.note}). ` +
     `Executor commits may remain on \`worktree-*\` branches — resolve the conflict and re-run before verifying.`
   log('skipped goal verification — integration failed')
 } else {
@@ -510,4 +629,4 @@ if (integrationFailed) {
   )
 }
 
-return { phase: phaseSlug, tasks: tasks.length, waves: waves.length, strategy, executed: results.length, integrationFailed, verdict }
+return { phase: phaseSlug, tasks: tasks.length, waves: waves.length, strategy, executed: results.length, healed: healedTaskIds, integrationFailed, verdict }
