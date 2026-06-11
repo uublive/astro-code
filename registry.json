@@ -88,6 +88,16 @@
       "branch": "main",
       "claimed_at": "2026-06-11T11:47:43.345Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 8,
+      "milestone": 2,
+      "name": "Planner safeguards for test-first task splits",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-06-11T11:47:59.425Z",
+      "status": "active"
     }
   ]
 }
