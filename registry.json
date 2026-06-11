@@ -68,6 +68,16 @@
       "branch": "main",
       "claimed_at": "2026-06-11T11:47:11.373Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 6,
+      "milestone": 2,
+      "name": "Wave fork-base guard and executor file-ownership enforcement",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-06-11T11:47:27.576Z",
+      "status": "active"
     }
   ]
 }
