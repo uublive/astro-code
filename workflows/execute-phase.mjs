@@ -215,13 +215,31 @@ const execPrompt = (t) =>
 const runOnBranch = (t) =>
   agent(execPrompt(t), { label: `exec:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
 
+// Each conflict item is an object with branch + taskId so the script can drive
+// runOnBranch(t) for exactly the right task when healing a wave conflict (ADR-014).
+// Keeping items as plain strings would lose the branch→task mapping and force
+// re-running the whole wave remainder unnecessarily.  taskId is nullable: the
+// integrator maps by commit message + changed files; if it cannot map confidently
+// it returns null and the script re-runs every wave task not explicitly confirmed
+// as integrated.  additionalProperties:false at every level is required by canon.
 const INTEGRATE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
     integrated: { type: 'boolean' },
     branches: { type: 'array', items: { type: 'string' } },
-    conflicts: { type: 'array', items: { type: 'string' } },
+    conflicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          branch: { type: 'string' },
+          taskId: { type: ['string', 'null'] },
+        },
+        required: ['branch', 'taskId'],
+      },
+    },
     note: { type: 'string' },
   },
   required: ['integrated'],

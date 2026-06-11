@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 
 const WF = join(dirname(fileURLToPath(import.meta.url)), '..', 'workflows');
 const HOOKS = ['phase', 'agent', 'parallel', 'pipeline', 'log', 'workflow'];
@@ -117,3 +118,54 @@ test('execute-phase.mjs MIRROR region matches lib/waves.mjs (drift guard)', () =
       `(only semicolons and the "export" prefix may differ).`,
   );
 });
+
+// ── INTEGRATE_SCHEMA.conflicts items must be { branch, taskId } objects ───────
+//
+// Phase-05 ADR-014 decision: `INTEGRATE_SCHEMA.conflicts` items are objects with
+// `branch` (string) and `taskId` (string|null) so the script can drive
+// `runOnBranch(t)` for the right task when healing a wave conflict.  Keeping them
+// as plain strings would lose the branch→task mapping and force re-running the
+// whole wave remainder (wasteful).  `additionalProperties:false` at every level is
+// required by the canon (schema changes must keep it).
+test('INTEGRATE_SCHEMA.conflicts items are { branch, taskId } objects, not strings', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Extract the INTEGRATE_SCHEMA constant literal from the source so we can
+  // evaluate just that definition.  The schema is a plain object literal assigned
+  // to `const INTEGRATE_SCHEMA = { … }` — extract up to the first `}` that closes
+  // the top-level object by matching the delimited block.
+  const schemaMatch = wfSrc.match(/const INTEGRATE_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'INTEGRATE_SCHEMA constant not found in execute-phase.mjs')
+
+  // Evaluate the extracted object literal in an isolated context.
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  // Top-level must have additionalProperties:false (canon requirement).
+  assert.strictEqual(schema.additionalProperties, false, 'INTEGRATE_SCHEMA must have additionalProperties:false at the top level')
+
+  // conflicts must be present as an array property.
+  assert.ok(schema.properties?.conflicts, 'INTEGRATE_SCHEMA must have a conflicts property')
+  assert.strictEqual(schema.properties.conflicts.type, 'array', 'conflicts must be type:array')
+
+  const item = schema.properties.conflicts.items
+  assert.ok(item, 'conflicts.items must be defined')
+
+  // The item must be an object schema, not a bare string schema.
+  assert.strictEqual(item.type, 'object', 'conflicts.items must have type:object (not string)')
+  assert.strictEqual(item.additionalProperties, false, 'conflicts.items must have additionalProperties:false')
+
+  // Required fields: branch and taskId.
+  assert.ok(Array.isArray(item.required), 'conflicts.items must have a required array')
+  assert.ok(item.required.includes('branch'), 'conflicts.items.required must include "branch"')
+  assert.ok(item.required.includes('taskId'), 'conflicts.items.required must include "taskId"')
+
+  // branch must be type:string.
+  assert.strictEqual(item.properties?.branch?.type, 'string', 'conflicts.items.properties.branch must be type:string')
+
+  // taskId must accept string OR null (the integrator may not be able to map a branch).
+  const taskIdType = item.properties?.taskId?.type
+  assert.ok(
+    Array.isArray(taskIdType) && taskIdType.includes('string') && taskIdType.includes('null'),
+    `conflicts.items.properties.taskId must be type:['string','null'], got: ${JSON.stringify(taskIdType)}`,
+  )
+})
