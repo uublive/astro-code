@@ -349,11 +349,19 @@ const strategy =
       : 'parallel'
 log(`strategy: ${strategy} (${tasks.length} task(s), widest wave ${maxWidth}, budget ${SEQ_BUDGET})`)
 
+// execPrompt carries the file-ownership hygiene sentence (phase-06 t3 / ADR-016):
+// executors must declare up-front if they touch files outside their declared set.
+// The integrator — NOT the executor — decides whether that overflow routes to the
+// heal ladder (collision) or integrates with a ⚠ advisory (harmless).  Keeping this
+// contract in the prompt prevents silent cross-file pollution; the sentence must NOT
+// appear in healPrompt because heal re-runs are sequential on-branch and the
+// co-scheduling hazard is gone by then (CONTEXT.md note 1).
 const execPrompt = (t) =>
   `Implement task ${t.id} — "${t.title}" — of phase ${phaseSlug} in project ${root}.\n` +
   `Plan/task file: ${t.file || `${root}/.astrocode/phases/${phaseSlug}/PLAN.md`}\n` +
   `Make the change test-first where it adds behavior, run the tests, and make ONE atomic ` +
   `commit with a clear message. Match the project canon exactly (stack, naming, patterns). ` +
+  `touch ONLY your declared file(s); if other changes are genuinely required, say so in your summary. ` +
   `Return a short summary of what you changed.` +
   OBEY
 
@@ -477,6 +485,15 @@ const runTeardown = (w, branches) =>
 // integrator maps by commit message + changed files; if it cannot map confidently
 // it returns null and the script re-runs every wave task not explicitly confirmed
 // as integrated.  additionalProperties:false at every level is required by canon.
+//
+// Phase-06 t3 additions (ADR-015 cause #1 stale base; ADR-016 cause #2 overflow):
+//   - staleBranches: branches whose merge-base(HEAD, branch) ≠ HEAD — stale fork base.
+//     Same item shape as conflicts so the wave loop can feed both into resolveHealList
+//     with no fan-out.  Never cherry-picked; always routed to the heal ladder.
+//   - advisories: branches that overflowed into files NOT claimed by any same-wave peer.
+//     Integrated (not rejected — the phase-04 t14 hooksPath fix was legitimate) but
+//     logged with a ⚠.  Each item carries extraFiles so the log can name the overflow.
+// Both are optional (the happy path has neither), so they are NOT in required[].
 const INTEGRATE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -493,6 +510,31 @@ const INTEGRATE_SCHEMA = {
           taskId: { type: ['string', 'null'] },
         },
         required: ['branch', 'taskId'],
+      },
+    },
+    staleBranches: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          branch: { type: 'string' },
+          taskId: { type: ['string', 'null'] },
+        },
+        required: ['branch', 'taskId'],
+      },
+    },
+    advisories: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          branch: { type: 'string' },
+          taskId: { type: ['string', 'null'] },
+          extraFiles: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['branch', 'taskId', 'extraFiles'],
       },
     },
     note: { type: 'string' },

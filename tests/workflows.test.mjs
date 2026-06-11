@@ -848,3 +848,133 @@ test('static guard (t8-5): post-heal teardown exists and runs only after the tes
     'execute-phase.mjs must ⚠-name leftover preserved branches when teardown misses them',
   )
 })
+
+// ── t3: execPrompt hygiene + INTEGRATE_SCHEMA stale/overflow fields ───────────
+//
+// Phase-06 t3: (1) execPrompt must carry the "touch ONLY your declared file(s)"
+// hygiene sentence so executors know not to overflow into unrelated files.
+// healPrompt must remain UNRESTRICTED — by the time a collision-overflow task
+// re-runs on-branch, the co-scheduling hazard is gone (CONTEXT.md note 1).
+//
+// (2) INTEGRATE_SCHEMA must carry two new optional arrays:
+//   - staleBranches: items { branch, taskId } (same shape as conflicts.items)
+//     for branches whose merge-base ≠ HEAD (ADR-015 cause #1 stale base).
+//   - advisories: items { branch, taskId, extraFiles:[string] }
+//     for branches that overflowed into unclaimed files (ADR-016 cause #2
+//     harmless overflow — integrate with ⚠ advisory, NOT routed to heal).
+// Both must have additionalProperties:false at the item level per canon.
+// The required:['integrated'] and top-level additionalProperties:false are
+// unchanged, and the extraction regex still matches.
+
+test('t3: execPrompt contains "touch ONLY" declared-file hygiene instruction', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Locate the execPrompt definition window.
+  const startIdx = wfSrc.indexOf('const execPrompt')
+  assert.ok(startIdx !== -1, 'execPrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 800)
+
+  // Must contain the hygiene sentence telling executors to touch only declared files.
+  assert.ok(
+    /touch ONLY your declared file/i.test(window),
+    'execPrompt must instruct executors to "touch ONLY your declared file(s)"',
+  )
+})
+
+test('t3: healPrompt does NOT contain the "touch ONLY" restriction (heal re-runs are unrestricted)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // healPrompt must be unrestricted — the co-scheduling hazard is gone by the
+  // time a task re-runs sequentially on-branch (CONTEXT.md note 1).
+  const startIdx = wfSrc.indexOf('const healPrompt')
+  assert.ok(startIdx !== -1, 'healPrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 1500)
+
+  assert.ok(
+    !/touch ONLY your declared file/i.test(window),
+    'healPrompt must NOT contain the "touch ONLY" file restriction (heal re-runs are unrestricted per CONTEXT.md note 1)',
+  )
+})
+
+test('t3: INTEGRATE_SCHEMA.staleBranches is an array of { branch, taskId } objects with additionalProperties:false', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Extract the INTEGRATE_SCHEMA constant literal (same regex as the phase-05 guard).
+  const schemaMatch = wfSrc.match(/const INTEGRATE_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'INTEGRATE_SCHEMA constant not found in execute-phase.mjs')
+
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  // staleBranches must be present.
+  assert.ok(schema.properties?.staleBranches, 'INTEGRATE_SCHEMA must have a staleBranches property')
+  assert.strictEqual(schema.properties.staleBranches.type, 'array', 'staleBranches must be type:array')
+
+  const item = schema.properties.staleBranches.items
+  assert.ok(item, 'staleBranches.items must be defined')
+  assert.strictEqual(item.type, 'object', 'staleBranches.items must have type:object')
+  assert.strictEqual(item.additionalProperties, false, 'staleBranches.items must have additionalProperties:false')
+
+  // Required fields: branch and taskId (same shape as conflicts.items).
+  assert.ok(Array.isArray(item.required), 'staleBranches.items must have a required array')
+  assert.ok(item.required.includes('branch'), 'staleBranches.items.required must include "branch"')
+  assert.ok(item.required.includes('taskId'), 'staleBranches.items.required must include "taskId"')
+
+  // taskId must accept string OR null.
+  const taskIdType = item.properties?.taskId?.type
+  assert.ok(
+    Array.isArray(taskIdType) && taskIdType.includes('string') && taskIdType.includes('null'),
+    `staleBranches.items.taskId must be type:['string','null'], got: ${JSON.stringify(taskIdType)}`,
+  )
+})
+
+test('t3: INTEGRATE_SCHEMA.advisories is an array of { branch, taskId, extraFiles } objects with additionalProperties:false', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Extract and evaluate the INTEGRATE_SCHEMA constant.
+  const schemaMatch = wfSrc.match(/const INTEGRATE_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'INTEGRATE_SCHEMA constant not found in execute-phase.mjs')
+
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  // advisories must be present.
+  assert.ok(schema.properties?.advisories, 'INTEGRATE_SCHEMA must have an advisories property')
+  assert.strictEqual(schema.properties.advisories.type, 'array', 'advisories must be type:array')
+
+  const item = schema.properties.advisories.items
+  assert.ok(item, 'advisories.items must be defined')
+  assert.strictEqual(item.type, 'object', 'advisories.items must have type:object')
+  assert.strictEqual(item.additionalProperties, false, 'advisories.items must have additionalProperties:false')
+
+  // Required fields: branch, taskId, extraFiles.
+  assert.ok(Array.isArray(item.required), 'advisories.items must have a required array')
+  assert.ok(item.required.includes('branch'), 'advisories.items.required must include "branch"')
+  assert.ok(item.required.includes('taskId'), 'advisories.items.required must include "taskId"')
+  assert.ok(item.required.includes('extraFiles'), 'advisories.items.required must include "extraFiles"')
+
+  // extraFiles must be an array of strings.
+  const ef = item.properties?.extraFiles
+  assert.ok(ef, 'advisories.items must have an extraFiles property')
+  assert.strictEqual(ef.type, 'array', 'advisories.items.extraFiles must be type:array')
+  assert.strictEqual(ef.items?.type, 'string', 'advisories.items.extraFiles.items must be type:string')
+
+  // taskId must accept string OR null (like conflicts.items and staleBranches.items).
+  const taskIdType = item.properties?.taskId?.type
+  assert.ok(
+    Array.isArray(taskIdType) && taskIdType.includes('string') && taskIdType.includes('null'),
+    `advisories.items.taskId must be type:['string','null'], got: ${JSON.stringify(taskIdType)}`,
+  )
+})
+
+test('t3: INTEGRATE_SCHEMA still has required:[integrated] and top-level additionalProperties:false after extension', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const schemaMatch = wfSrc.match(/const INTEGRATE_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'INTEGRATE_SCHEMA constant not found in execute-phase.mjs')
+
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  // Invariants from phase-05 that must not be changed.
+  assert.strictEqual(schema.additionalProperties, false, 'INTEGRATE_SCHEMA top-level must keep additionalProperties:false')
+  assert.ok(Array.isArray(schema.required), 'INTEGRATE_SCHEMA must have a required array')
+  assert.ok(schema.required.includes('integrated'), 'INTEGRATE_SCHEMA.required must still include "integrated"')
+})
