@@ -317,6 +317,48 @@ const healPrompt = (t, preservedBranch) =>
 const runHealOnBranch = (t, preservedBranch) =>
   agent(healPrompt(t, preservedBranch), { label: `heal:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
 
+// Strict schema for the healed-wave test gate (see the helper below).
+//
+// Why additionalProperties:false + required:['passed']:
+//   Without a strict schema the agent can return {} or omit `passed` entirely and
+//   the script would treat the absence as "unclear" and continue — the exact
+//   phase-04 trap of a silently-skipped test gate (ADR-014 § "healed waves are
+//   test-gated before the next wave proceeds").  The schema forces the agent to
+//   commit to a boolean verdict; any deviation is a schema validation failure that
+//   stops the phase loudly rather than silently proceeding on broken code.
+//
+// output is NOT required — a passing suite has no useful failure output to return,
+// and requiring it would force the agent to emit an empty string every time.
+const TESTGATE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    passed: { type: 'boolean' },
+    output: { type: 'string' },
+  },
+  required: ['passed'],
+}
+
+// runTestSuite — run the full test suite in `root` via an executor agent.
+//
+// Why an agent (not a direct shell call): Workflow scripts cannot run processes
+// directly (the Workflow-tool sandbox has no `exec`/`spawn`); an astro-executor
+// agent runs in the main working tree and CAN invoke `node --test` (or the
+// project's test script) and return a structured verdict.  Using `agentType:
+// 'astro-executor'` + `phase:'Execute'` keeps the gate in the execution phase
+// rather than the verify phase (the verifier runs goal-backward; this is a
+// pure regression gate for the healed wave's diff).
+const runTestSuite = () =>
+  agent(
+    `Run the full test suite for the project at ${root}.\n` +
+      `Use \`node --test\` (or the equivalent test command for this project) to run ` +
+      `all tests under ${root}. Do NOT skip any tests.\n` +
+      `Return passed:true if every test passed, passed:false otherwise.\n` +
+      `If passed:false, populate output with the failure summary (test names + error messages) ` +
+      `so the caller can surface it in the integration-failure report.`,
+    { label: 'testgate', phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: TESTGATE_SCHEMA },
+  )
+
 // Each conflict item is an object with branch + taskId so the script can drive
 // runOnBranch(t) for exactly the right task when healing a wave conflict (ADR-014).
 // Keeping items as plain strings would lose the branch→task mapping and force

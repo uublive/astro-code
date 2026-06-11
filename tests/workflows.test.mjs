@@ -417,3 +417,121 @@ test('healPrompt or its surrounding comment references open-question-1 (bias to 
     'execute-phase.mjs must contain a comment referencing open-question-1 near healPrompt/runHealOnBranch',
   )
 })
+
+// ── TESTGATE_SCHEMA and runTestSuite: healed-wave test gate (phase-05 t6) ─────
+//
+// ADR-014 + CONTEXT.md § "Test gate only after a HEALED wave": after any wave
+// where the heal ladder fired, the script runs the full test suite (an agent does
+// it — the Workflow script cannot run processes directly) before the next wave
+// proceeds.  A failing suite is treated like an integration failure and stops the
+// phase immediately.
+//
+// The strict schema (`TESTGATE_SCHEMA`, `additionalProperties:false`,
+// `required:['passed']`) prevents the phase-04 silent-empty-return trap: without
+// it the agent could return `{}` and the script would never know the suite failed.
+//
+// These guards are static source checks (no eval of the full workflow script,
+// which uses Workflow-tool globals).  For TESTGATE_SCHEMA we use `runInNewContext`
+// on the extracted object literal (same pattern as the INTEGRATE_SCHEMA guard).
+
+test('TESTGATE_SCHEMA is defined with additionalProperties:false, passed:boolean, output:string, required:[passed]', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Extract the TESTGATE_SCHEMA constant literal.
+  const schemaMatch = wfSrc.match(/const TESTGATE_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'TESTGATE_SCHEMA constant not found in execute-phase.mjs')
+
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  // Top-level must have additionalProperties:false (canon requirement — every schema).
+  assert.strictEqual(
+    schema.additionalProperties, false,
+    'TESTGATE_SCHEMA must have additionalProperties:false at the top level',
+  )
+
+  // passed must be type:boolean.
+  assert.strictEqual(
+    schema.properties?.passed?.type, 'boolean',
+    'TESTGATE_SCHEMA.properties.passed must be type:boolean',
+  )
+
+  // output must be type:string.
+  assert.strictEqual(
+    schema.properties?.output?.type, 'string',
+    'TESTGATE_SCHEMA.properties.output must be type:string',
+  )
+
+  // required must include 'passed' (not 'output' — output is optional for passing suites).
+  assert.ok(Array.isArray(schema.required), 'TESTGATE_SCHEMA must have a required array')
+  assert.ok(
+    schema.required.includes('passed'),
+    'TESTGATE_SCHEMA.required must include "passed"',
+  )
+})
+
+test('runTestSuite is defined and calls agent with agentType:astro-executor, phase:Execute, and TESTGATE_SCHEMA', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // runTestSuite must be defined (arrow or function declaration).
+  assert.ok(
+    /const\s+runTestSuite\s*=/.test(wfSrc) || /function\s+runTestSuite\s*\(/.test(wfSrc),
+    'execute-phase.mjs must define runTestSuite',
+  )
+
+  // Extract a window around the runTestSuite definition.
+  // Use 1500 chars to capture the full agent() call including options object.
+  const startIdx = wfSrc.indexOf('runTestSuite')
+  assert.ok(startIdx !== -1, 'runTestSuite not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 1500)
+
+  // Must call agent().
+  assert.ok(
+    window.includes('agent('),
+    'runTestSuite must call agent()',
+  )
+
+  // Must use agentType: 'astro-executor'.
+  assert.ok(
+    window.includes('astro-executor'),
+    'runTestSuite agent call must use agentType: astro-executor',
+  )
+
+  // Must use phase: 'Execute'.
+  assert.ok(
+    window.includes("'Execute'") || window.includes('"Execute"'),
+    "runTestSuite agent call must use phase: 'Execute'",
+  )
+
+  // Must reference TESTGATE_SCHEMA as the schema.
+  assert.ok(
+    window.includes('TESTGATE_SCHEMA'),
+    'runTestSuite agent call must pass TESTGATE_SCHEMA as the schema',
+  )
+})
+
+test('runTestSuite prompt instructs running the full test suite and returning passed + failure output', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const startIdx = wfSrc.indexOf('runTestSuite')
+  assert.ok(startIdx !== -1, 'runTestSuite not found in execute-phase.mjs')
+  // Generous window to capture the full prompt template literal.
+  const window = wfSrc.slice(startIdx, startIdx + 1000)
+
+  // Must tell the agent to run the test suite.
+  assert.ok(
+    /test suite|test-suite|run.*test|node.*test/i.test(window),
+    'runTestSuite prompt must instruct running the full test suite',
+  )
+
+  // Must tell the agent to return passed.
+  assert.ok(
+    /passed/i.test(window),
+    'runTestSuite prompt must instruct returning the passed field',
+  )
+
+  // Must reference the root directory so the agent knows where to run.
+  assert.ok(
+    window.includes('root') || window.includes('${root}'),
+    'runTestSuite prompt must reference the root directory',
+  )
+})
