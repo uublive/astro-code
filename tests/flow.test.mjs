@@ -26,7 +26,7 @@ import { initPlanning } from '../lib/planning.mjs'
 import { paths } from '../lib/paths.mjs'
 import { readJSON, atomicWriteJSON } from '../lib/util.mjs'
 import { initRegistry } from '../lib/registry.mjs'
-import { flowInit, flowBranch, loadFlowConfig, parseCompareUrl } from '../lib/flow.mjs'
+import { flowInit, flowBranch, flowPR, loadFlowConfig, parseCompareUrl } from '../lib/flow.mjs'
 
 const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -541,4 +541,170 @@ test('parseCompareUrl: unrecognized SSH host → null', () => {
 test('parseCompareUrl: branch names with slashes are percent-encoded', () => {
   const url = parseCompareUrl('https://github.com/acme/repo.git', 'main', 'hotfix/fix-auth')
   assert.equal(url, 'https://github.com/acme/repo/compare/main...hotfix%2Ffix-auth')
+})
+
+// ---------------------------------------------------------------------------
+// t5: flowPR — push feature/m<N>-* to origin + compare URL (pr:none)
+//
+// WHY real bare remote: push + ls-remote can only be verified against a real
+// remote; mocking git would only prove the mock. Pattern mirrors registry.test.mjs
+// and the earlier withRegistry tests above. The github-URL scenario requires a
+// separate remote URL override so we can test URL generation without a real forge.
+// ---------------------------------------------------------------------------
+
+// Helper: make a commit on dir so the feature branch diverges from develop
+function commitOnBranch(dir, msg = 'work') {
+  writeFileSync(join(dir, `work-${Date.now()}.txt`), msg)
+  git(['add', '.'], { cwd: dir })
+  git(['commit', '-m', msg], { cwd: dir })
+}
+
+// Helper: extract the bare path from the origin remote URL (filesystem-based).
+// Used by ls-remote calls so we don't need network access to a real forge.
+function bareRemotePath(dir) {
+  return git(['remote', 'get-url', 'origin'], { cwd: dir }).stdout.trim()
+}
+
+test('flowPR pushes feature/m<N>-* to origin and returns a github compare URL targeting develop', () => {
+  // Set up: withRegistry (real bare remote, filesystem path), gitflow enabled,
+  // develop created, feature branch created via flowBranch.
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  const bare = mkBareRemote()
+  git(['remote', 'add', 'origin', bare], { cwd: dir })
+  git(['push', '-u', 'origin', 'main'], { cwd: dir })
+  const reg = initRegistry({ root: dir })
+  assert.equal(reg.ok, true, `initRegistry failed: ${reg.error}`)
+  flowInit(dir)
+  const br = flowBranch(dir)
+  assert.equal(br.ok, true, br.error || '')
+  commitOnBranch(dir) // ensure feature branch has commits ahead of develop
+
+  // Override the fetch URL to a github-like URL so parseCompareUrl returns a real
+  // compare URL. Set a pushurl back to the filesystem bare so the actual push works
+  // without network access.
+  git(['remote', 'set-url', 'origin', 'https://github.com/test-owner/test-repo.git'], { cwd: dir })
+  git(['remote', 'set-url', '--push', 'origin', bare], { cwd: dir })
+
+  const res = flowPR(dir)
+
+  assert.equal(res.ok, true, `flowPR failed: ${JSON.stringify(res)}`)
+
+  // Must return a github compare URL targeting develop as the base
+  assert.ok(res.url, 'flowPR must return a URL')
+  assert.match(
+    res.url,
+    /github\.com\/test-owner\/test-repo\/compare\/develop\.\.\./,
+    `compare URL should target develop; got: ${res.url}`,
+  )
+
+  // Verify the remote ref was actually pushed (ls-remote against the bare filesystem)
+  const lsRemote = git(['ls-remote', bare, `refs/heads/${br.branch}`])
+  assert.equal(lsRemote.status, 0, `ls-remote failed: ${lsRemote.stderr}`)
+  assert.match(lsRemote.stdout, new RegExp(br.branch), `remote ref ${br.branch} not found on bare remote`)
+})
+
+test('flowPR degrade: unrecognized remote URL carries branch names + advisory, does not throw', () => {
+  // Filesystem path remotes are not github/gitlab — parseCompareUrl returns null.
+  // The engine must degrade to { ok: true, branch, base, url: null, advisory }
+  // rather than throwing so the user always gets the branch names at minimum.
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  const bare = mkBareRemote()
+  git(['remote', 'add', 'origin', bare], { cwd: dir })
+  git(['push', '-u', 'origin', 'main'], { cwd: dir })
+  const reg = initRegistry({ root: dir })
+  assert.equal(reg.ok, true, `initRegistry failed: ${reg.error}`)
+  flowInit(dir)
+  const br = flowBranch(dir)
+  assert.equal(br.ok, true, br.error || '')
+  commitOnBranch(dir)
+
+  // Leave the remote URL as the filesystem path — unrecognized by parseCompareUrl
+  let res
+  assert.doesNotThrow(() => {
+    res = flowPR(dir)
+  }, 'flowPR must not throw on unrecognized remote — it must degrade gracefully')
+
+  assert.equal(res.ok, true, 'degraded flowPR must still return ok:true')
+  // Result must carry branch and base so the user knows what to PR
+  assert.ok(res.branch, 'degraded result must carry branch name')
+  assert.ok(res.base, 'degraded result must carry base branch name')
+  // URL is null or absent (unrecognized host)
+  assert.ok(!res.url, `degraded result should not have a URL; got: ${res.url}`)
+  // Advisory must be present to explain the degradation
+  assert.ok(res.advisory, 'degraded result must carry an advisory message')
+  assert.match(String(res.advisory), /⚠|unrecognized|unknown|no url|compare/i, 'advisory should explain the URL degradation')
+})
+
+test('flowPR throws "no remote" when repo has no remote configured', () => {
+  // OQ4: push-requiring commands fail fast with a clear message — never silent
+  // half-success. Without a remote there is nowhere to push; the error must name
+  // the missing remote so the user knows the next step.
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  flowInit(dir) // creates develop locally — no remote needed for this step
+
+  // Manually create a feature branch so we don't need registry (which needs remote)
+  const cfg = loadFlowConfig(dir)
+  const featureBranch = `${cfg.prefixes.feature}/m1-test`
+  git(['switch', '-c', featureBranch, cfg.develop], { cwd: dir })
+  commitOnBranch(dir)
+
+  assert.throws(
+    () => flowPR(dir),
+    (err) => {
+      assert.match(
+        err.message,
+        /no remote|remote.*origin|no.*remote/i,
+        `error should mention missing remote; got: ${err.message}`,
+      )
+      return true
+    },
+    'flowPR must throw when no remote is configured',
+  )
+})
+
+test('flowPR throws when gitflow is disabled', () => {
+  // Every flow function gates on assertFlowEnabled — PR creation is no exception.
+  // Ensures that projects that haven't opted in cannot accidentally push and open PRs.
+  const dir = scaffold(mkRepo())
+  // Do NOT call enableFlow — gitflow.enabled stays false
+
+  assert.throws(
+    () => flowPR(dir),
+    (err) => {
+      assert.match(err.message, /disabled|enabled/, 'error should mention gitflow.enabled')
+      return true
+    },
+    'flowPR must throw when gitflow is disabled',
+  )
+})
+
+test('flowPR result carries .astrocode/state.json merge-conflict advisory in the body', () => {
+  // The PR body must warn reviewers that .astrocode/state.json on the feature
+  // branch will conflict with develop at merge time (both sides modify it with
+  // progress data). Surfacing this in the PR body prevents surprise conflict
+  // blocks at the GitHub/GitLab merge UI step.
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  const bare = mkBareRemote()
+  git(['remote', 'add', 'origin', bare], { cwd: dir })
+  git(['push', '-u', 'origin', 'main'], { cwd: dir })
+  const reg = initRegistry({ root: dir })
+  assert.equal(reg.ok, true, `initRegistry failed: ${reg.error}`)
+  flowInit(dir)
+  flowBranch(dir)
+  commitOnBranch(dir)
+
+  const res = flowPR(dir)
+  assert.equal(res.ok, true, `flowPR failed: ${JSON.stringify(res)}`)
+
+  // The body field (or advisory if body is absent) must mention state.json conflict
+  const body = res.body || res.advisory || ''
+  assert.match(
+    body,
+    /state\.json|\.astrocode/i,
+    `PR body should warn about .astrocode/state.json merge conflicts; got body: "${body}"`,
+  )
 })
