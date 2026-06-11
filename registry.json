@@ -58,6 +58,16 @@
       "branch": "main",
       "claimed_at": "2026-06-11T11:46:19.701Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 5,
+      "milestone": 2,
+      "name": "Integrator self-healing ladder (rebase, re-run, fail)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-06-11T11:47:11.373Z",
+      "status": "active"
     }
   ]
 }
