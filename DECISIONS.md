@@ -86,3 +86,10 @@ _2026-06-11_
 
 **Rejected:** full release start/finish branch pair; user-supplied semver; calver
 
+## ADR-013 — Hotfixes consume no registry numbers
+_2026-06-11_
+
+**Why:** hotfix/<user-slug> is named directly so the emergency path works fully offline; push rejection already prevents cross-developer branch collisions and the v<N>.<k> tag carries identity
+
+**Rejected:** a dedicated hotfix claim type (remote round-trip on an emergency path); consuming project-global phase numbers
+
