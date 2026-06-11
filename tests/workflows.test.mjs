@@ -806,3 +806,45 @@ test('static guard (t8-4): heal: agent label AND runTestSuite gate call are both
     'execute-phase.mjs must call runTestSuite (healed-wave test gate, ADR-014)',
   )
 })
+
+test('static guard (t8-5): post-heal teardown exists and runs only after the test gate passes', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The phase-05 UAT gap: heals landed but the preserved worktree-* branches were
+  // never removed — stale worktrees accumulated and the final verifier's
+  // `git rev-list HEAD..worktree-*` check would false-FAIL a correctly healed
+  // phase. Guard all three pieces:
+
+  // (a) A strict teardown schema — `removed` is required so a silent no-op
+  //     teardown cannot read as success.
+  assert.ok(
+    wfSrc.includes('const TEARDOWN_SCHEMA'),
+    'execute-phase.mjs must define TEARDOWN_SCHEMA (strict post-heal teardown contract)',
+  )
+
+  // (b) The teardown agent call with its identity label.
+  assert.ok(
+    wfSrc.includes('runTeardown') && wfSrc.includes('teardown:w'),
+    'execute-phase.mjs must call runTeardown with a `teardown:w<N>` agent label',
+  )
+
+  // (c) Ordering: teardown must come AFTER the gate-pass narration in the wave
+  //     loop — tearing down before the suite passes would destroy the only copy
+  //     of the dropped attempt while its replacement was still unproven. Static
+  //     index comparison over the source (same technique as the MIRROR guard):
+  //     the gate-pass log line precedes the runTeardown(w, …) call site.
+  const gatePassIdx = wfSrc.indexOf('test gate passed after heal')
+  const teardownCallIdx = wfSrc.indexOf('await runTeardown(')
+  assert.ok(gatePassIdx !== -1, 'gate-pass narration line not found')
+  assert.ok(teardownCallIdx !== -1, 'await runTeardown( call site not found')
+  assert.ok(
+    teardownCallIdx > gatePassIdx,
+    'runTeardown must be invoked after the test-gate-pass branch — never before the healed wave is proven green',
+  )
+
+  // (d) The leftover advisory — cleanup failure must be named, never silent.
+  assert.ok(
+    wfSrc.includes('clean up manually'),
+    'execute-phase.mjs must ⚠-name leftover preserved branches when teardown misses them',
+  )
+})

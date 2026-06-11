@@ -359,6 +359,47 @@ const runTestSuite = () =>
     { label: 'testgate', phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: TESTGATE_SCHEMA },
   )
 
+// The strict schema (like TESTGATE_SCHEMA) prevents a silent no-op teardown from
+// reading as success: `removed` is required, so the script can diff it against the
+// branches it asked for and ⚠-flag any leftover instead of assuming cleanup happened.
+const TEARDOWN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    removed: { type: 'array', items: { type: 'string' } },
+    note: { type: 'string' },
+  },
+  required: ['removed'],
+}
+
+// runTeardown — remove the preserved worktree-* branches of SUCCESSFULLY healed
+// tasks, after (and only after) the healed wave's test gate passed.
+//
+// Why this exists (the phase-05 UAT gap): the heal ladder preserves a conflicted
+// branch so no work is lost, but once the task has been re-implemented fresh at the
+// integrated tip and the suite is green, the preserved branch holds only the stale
+// attempt. Leaving it would (a) accumulate dead worktrees and (b) trip the final
+// verifier's `git rev-list HEAD..worktree-*` un-integrated-commits check — a
+// correctly healed phase would read as stranded work. The script never runs git
+// (ADR-005), so an executor agent does the removal; it is given an EXPLICIT list and
+// told to touch nothing else — a heal-FAILED branch must stay preserved for
+// inspection (ADR-014).
+const runTeardown = (w, branches) =>
+  agent(
+    `You are the HEAL TEARDOWN step for wave ${w + 1} of phase ${phaseSlug}, running in the MAIN ` +
+      `working tree of ${root} (you have NO worktree of your own). The following preserved ` +
+      `\`worktree-*\` branches belonged to tasks that have since been HEALED: each task was ` +
+      `re-implemented fresh and committed on the current branch, and the post-heal test suite ` +
+      `passed — so these branches now hold only the stale, superseded attempts:\n` +
+      `${JSON.stringify(branches)}\n` +
+      `For EACH listed branch, in ${root}: find its worktree path via \`git worktree list\`, run ` +
+      `\`git worktree remove --force <path>\` (skip if no worktree), then \`git branch -D <branch>\`, ` +
+      `and finally \`git worktree prune\`. Touch ONLY the listed branches — any other ` +
+      `\`worktree-*\` branch must stay untouched (it may be a preserved failed heal under ` +
+      `inspection). Return removed=[the branches you actually removed].`,
+    { label: `teardown:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: TEARDOWN_SCHEMA },
+  )
+
 // Each conflict item is an object with branch + taskId so the script can drive
 // runOnBranch(t) for exactly the right task when healing a wave conflict (ADR-014).
 // Keeping items as plain strings would lose the branch→task mapping and force
@@ -392,7 +433,9 @@ const INTEGRATE_SCHEMA = {
 // The integrator is the only actor that can run git (Workflow scripts cannot). It
 // folds a wave's isolated worktree commits onto the working branch; clean worktrees
 // are torn down so the next wave forks from the integrated tip; conflicting worktrees
-// are PRESERVED (never torn down) so no work is ever silently lost (ADR-014).
+// are PRESERVED so no work is ever silently lost (ADR-014). A healed task's preserved
+// branch is removed later by runTeardown — only after its re-run commit landed AND the
+// healed wave's test gate passed; a FAILED heal's branch stays for inspection.
 //
 // wave tasks are passed as an inlined JSON scalar so the integrator can map each
 // conflicted worktree-* branch to a taskId by commit message + changed files — without
@@ -526,6 +569,7 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
     // One attempt per task; no retry (ADR-014 § "Re-run failure → fail the
     // phase immediately").
     let ladderFired = false
+    const healedBranches = [] // preserved branches whose task healed — torn down post-gate
     for (const t of healList) {
       // Identify the preserved branch for this task so healPrompt can name it.
       const conflict = integ.conflicts.find((c) => c.taskId === t.id)
@@ -535,10 +579,11 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
       const healResult = await runHealOnBranch(t, preservedBranch)
       if (healResult) {
         // Heal succeeded: record the result and the healed task id.  The
-        // preserved worktree + branch teardown is the integrator/agent's job —
-        // the script never runs git (ADR-005).
+        // preserved branch is NOT torn down here — only after the wave's test
+        // gate passes (runTeardown below); the script never runs git (ADR-005).
         results.push(healResult)
         healedTaskIds.push(t.id)
+        if (preservedBranch !== 'unknown') healedBranches.push(preservedBranch)
         ladderFired = true
       } else {
         // Heal failed: fail the phase immediately with a richer note naming
@@ -582,6 +627,26 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
         )
       } else {
         log(`✓ wave ${w + 1} test gate passed after heal (${healedTaskIds.length} task(s) healed)`)
+        // Only now — re-run commits landed AND the suite is green — is a healed
+        // task's preserved branch truly superseded. Tearing down earlier would
+        // destroy the only copy of the dropped attempt while its replacement was
+        // still unproven; tearing down never would strand stale worktrees and
+        // false-FAIL the final verifier's rev-list check (the phase-05 UAT gap).
+        if (healedBranches.length) {
+          const teardown = await runTeardown(w, healedBranches)
+          const removed = teardown && Array.isArray(teardown.removed) ? teardown.removed : []
+          if (removed.length) {
+            log(`✓ wave ${w + 1} healed branch(es) torn down after re-run commits landed: ${removed.join(', ')}`)
+          }
+          // Cleanup failure is NOT integration failure — the healed work is on
+          // the branch and tested. But silence would read as success, so name
+          // every leftover branch for manual cleanup (and so the user knows why
+          // the final verifier might flag it).
+          const leftover = healedBranches.filter((b) => !removed.includes(b))
+          if (leftover.length) {
+            log(`⚠ preserved branch(es) not removed — clean up manually: ${leftover.join(', ')}`)
+          }
+        }
       }
     }
   } else if (!integ || integ.integrated !== true) {
