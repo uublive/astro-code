@@ -6,7 +6,7 @@
 // Phase 01 plan.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildWaves, missingFromWave } from '../lib/waves.mjs';
+import { buildWaves, missingFromWave, classifyOverflow } from '../lib/waves.mjs';
 
 // ── helper: flatten waves → ordered task-id list ──────────────────────────
 function ids(waves) {
@@ -171,4 +171,123 @@ test('missingFromWave: a results array shorter than the wave treats the tail as 
   // tail silently would be the exact bug class we are guarding against.
   const missing = missingFromWave(WAVE, ['ok1']);
   assert.deepEqual(missing.map((t) => t.id), ['t2', 't3'], 'missing tail entries count as failed');
+});
+
+// ── 8. classifyOverflow — ADR-016 file-ownership enforcement ─────────────────
+//
+// Phase-04 cause #2: an executor touched a file outside its declared set.  When
+// that extra file is claimed by a wave peer, integrating both branches would
+// stack duplicate code with NO conflict marker (textual clean ≠ semantically
+// correct).  classifyOverflow is the pure decision function that the integrator
+// uses to distinguish "collision → heal ladder" from "harmless overflow → ⚠
+// advisory" (ADR-016).  These tests drive the implementation in lib/waves.mjs
+// (task t1 is test-first; the implementation lands in t2).
+
+test('classifyOverflow: changed files are a subset of declared → kind is clean with no extraFiles', () => {
+  // The happy path: executor touched exactly what it declared.  No overflow
+  // of any kind; no advisory, no heal needed.
+  const result = classifyOverflow(
+    ['lib/a.mjs', 'lib/b.mjs'],
+    new Set(['lib/a.mjs', 'lib/b.mjs']),
+    new Map([['t2', new Set(['lib/c.mjs'])]]),
+  );
+  assert.equal(result.kind, 'clean', 'subset of declared is clean');
+  assert.deepEqual(result.extraFiles, [], 'no extra files when all changed are declared');
+});
+
+test('classifyOverflow: empty changedFiles array → kind is clean', () => {
+  // An executor that touched nothing is trivially clean.
+  const result = classifyOverflow(
+    [],
+    new Set(['lib/a.mjs']),
+    new Map([['t2', new Set(['lib/b.mjs'])]]),
+  );
+  assert.equal(result.kind, 'clean', 'empty changed set is always clean');
+  assert.deepEqual(result.extraFiles, [], 'no extra files when nothing was changed');
+});
+
+test('classifyOverflow: extra file claimed by a different wave task → kind is collision', () => {
+  // Phase-04 cause #2: two parallel tasks both write lib/shared.mjs.  The
+  // integrator must NEVER cherry-pick both; route one to the heal ladder.
+  const result = classifyOverflow(
+    ['lib/a.mjs', 'lib/shared.mjs'],          // changed
+    new Set(['lib/a.mjs']),                   // declared: only lib/a.mjs
+    new Map([['t2', new Set(['lib/shared.mjs'])]]), // t2 also claims lib/shared.mjs
+  );
+  assert.equal(result.kind, 'collision', 'overflow into a peer-claimed file is a collision');
+  assert.deepEqual(result.extraFiles, ['lib/shared.mjs'], 'the colliding file is reported');
+});
+
+test('classifyOverflow: extra file not claimed by any wave peer → kind is harmless', () => {
+  // Phase-04 t14: the executor also fixed a hooksPath reference in an
+  // unrelated file.  Nobody else in the wave claimed that file, so
+  // integrating it is safe; emit a ⚠ advisory but do NOT reject.
+  const result = classifyOverflow(
+    ['lib/a.mjs', 'lib/util.mjs'],            // changed; lib/util.mjs is extra
+    new Set(['lib/a.mjs']),                   // declared
+    new Map([['t2', new Set(['lib/b.mjs'])]]), // peer claims something else entirely
+  );
+  assert.equal(result.kind, 'harmless', 'unclaimed overflow is harmless, not a collision');
+  assert.deepEqual(result.extraFiles, ['lib/util.mjs'], 'the extra file is still reported for the ⚠ advisory');
+});
+
+test('classifyOverflow: solo wave (empty waveClaimMap) with overflow → always harmless, never collision', () => {
+  // CONTEXT note 4: a wildcard-file task already forces a solo wave; in a solo
+  // wave there is no peer to collide with, so any overflow is definitionally harmless.
+  const result = classifyOverflow(
+    ['lib/a.mjs', 'lib/surprise.mjs'],
+    new Set(['lib/a.mjs']),
+    new Map(),                                // empty map = solo wave
+  );
+  assert.equal(result.kind, 'harmless', 'solo wave: no peers means no collision possible');
+  assert.deepEqual(result.extraFiles, ['lib/surprise.mjs'], 'extra files still surface in the advisory');
+});
+
+test('classifyOverflow: wildcard declared file (Set with *) treats every changed file as declared → clean', () => {
+  // A task with no declared file claims '*' — it can write anything.  Overflow
+  // detection must be skipped: extraFiles must be empty and kind must be clean.
+  const result = classifyOverflow(
+    ['lib/a.mjs', 'lib/b.mjs', 'lib/c.mjs'],
+    new Set(['*']),                           // wildcard: task declared no specific file
+    new Map([['t2', new Set(['lib/b.mjs'])]]),
+  );
+  assert.equal(result.kind, 'clean', 'wildcard-declared task has no overflow by definition');
+  assert.deepEqual(result.extraFiles, [], 'no extraFiles when declared is wildcard *');
+});
+
+test("classifyOverflow: declarer's own id in waveClaimMap is ignored — only OTHER tasks count", () => {
+  // The caller builds waveClaimMap from the wave's OTHER tasks, but as a safety
+  // net classifyOverflow must also ignore an entry keyed by the declaring
+  // task's own id if one somehow slips in — a task cannot collide with itself.
+  const result = classifyOverflow(
+    ['lib/a.mjs', 'lib/extra.mjs'],
+    new Set(['lib/a.mjs']),
+    // 'self' claims lib/extra.mjs — must be ignored; 't2' claims something else
+    new Map([
+      ['self', new Set(['lib/extra.mjs'])],
+      ['t2',   new Set(['lib/b.mjs'])],
+    ]),
+    'self',                                   // declaringTaskId
+  );
+  // lib/extra.mjs is only claimed by 'self'; ignoring that claim means no
+  // collision partner → harmless overflow (not collision).
+  assert.equal(result.kind, 'harmless', "declarer's own claim entry must not trigger a collision");
+  assert.deepEqual(result.extraFiles, ['lib/extra.mjs'], 'the extra file is still reported');
+});
+
+test('classifyOverflow: multiple extra files, some collision some harmless → collision wins', () => {
+  // If ANY extra file collides with a peer claim, the whole outcome is collision
+  // (route to heal).  The integrator never cherry-picks a mixed branch.
+  const result = classifyOverflow(
+    ['lib/a.mjs', 'lib/shared.mjs', 'lib/util.mjs'],
+    new Set(['lib/a.mjs']),
+    new Map([
+      ['t2', new Set(['lib/shared.mjs'])],    // peer claims lib/shared.mjs → collision
+      ['t3', new Set(['lib/z.mjs'])],         // peer claims something else
+    ]),
+  );
+  assert.equal(result.kind, 'collision', 'any collision among extra files makes the whole result a collision');
+  // Both extra files should be present in extraFiles
+  assert.ok(result.extraFiles.includes('lib/shared.mjs'), 'colliding file included');
+  assert.ok(result.extraFiles.includes('lib/util.mjs'), 'non-colliding extra file also included');
 });
