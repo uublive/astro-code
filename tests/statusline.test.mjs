@@ -20,7 +20,7 @@ const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
 const NOW = 1_700_000_000; // fixed clock for deterministic activity-age math
 
 // Build a throwaway project with the given state + roadmap on disk.
-function project({ state = {}, roadmap = {}, plannedSlugs = [] } = {}) {
+function project({ state = {}, roadmap = {}, plannedSlugs = [], discussedSlugs = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'ac-sl-'));
   const ac = join(root, '.astrocode');
   mkdirSync(ac, { recursive: true });
@@ -29,6 +29,10 @@ function project({ state = {}, roadmap = {}, plannedSlugs = [] } = {}) {
   for (const slug of plannedSlugs) {
     mkdirSync(join(ac, 'phases', slug), { recursive: true });
     writeFileSync(join(ac, 'phases', slug, 'PLAN.md'), '# plan');
+  }
+  for (const slug of discussedSlugs) {
+    mkdirSync(join(ac, 'phases', slug), { recursive: true });
+    writeFileSync(join(ac, 'phases', slug, 'CONTEXT.md'), '<!-- astro-discuss: captured -->\n# context');
   }
   return root;
 }
@@ -86,7 +90,7 @@ test('renderResumeNote (PreCompact) carries project/phase/status + next action +
   assert.match(note, /P3 close-ci-gates \(pending\)/, 'phase + status');
   assert.match(note, /2\/4 phases/);
   assert.match(note, /1 blocker/);
-  assert.match(note, /Next: \/astro-plan 3/, 'derives the next action');
+  assert.match(note, /Next: \/astro-discuss 3/, 'derives the next action (undiscussed → discuss first)');
   assert.match(note, /\.astrocode\/.*\/astro-status/s, 'points at on-disk state + how to re-orient');
 });
 
@@ -105,12 +109,20 @@ test('a fresh activity verb wins over the static status; a stale one is dropped'
   assert.match(seg, /▸ pending/, 'falls back to phase status');
 });
 
-test('nextAction routes by phase status + planned flag', () => {
-  const unplanned = project({ roadmap: ROADMAP });
-  assert.equal(nextAction(readContext(unplanned, NOW)), '/astro-plan 3');
+test('nextAction routes by phase status + discussed/planned flags (discuss → plan → execute)', () => {
+  const undiscussed = project({ roadmap: ROADMAP });
+  assert.equal(nextAction(readContext(undiscussed, NOW)), '/astro-discuss 3');
+
+  const discussed = project({ roadmap: ROADMAP, discussedSlugs: ['close-ci-gates'] });
+  assert.equal(nextAction(readContext(discussed, NOW)), '/astro-plan 3');
+
+  const stub = project({ roadmap: ROADMAP });
+  mkdirSync(join(stub, '.astrocode', 'phases', 'close-ci-gates'), { recursive: true });
+  writeFileSync(join(stub, '.astrocode', 'phases', 'close-ci-gates', 'CONTEXT.md'), '# seeded, no marker');
+  assert.equal(nextAction(readContext(stub, NOW)), '/astro-discuss 3', 'a stub CONTEXT.md is not "discussed"');
 
   const planned = project({ roadmap: ROADMAP, plannedSlugs: ['close-ci-gates'] });
-  assert.equal(nextAction(readContext(planned, NOW)), '/astro-execute 3');
+  assert.equal(nextAction(readContext(planned, NOW)), '/astro-execute 3', 'a plan trumps the discuss nudge');
 
   const verifying = project({ state: { active_phase: 'close-ci-gates' }, roadmap: {
     milestone: 1, phases: [{ number: 3, slug: 'close-ci-gates', name: 'x', status: 'verified' }] } });
@@ -130,7 +142,7 @@ test('renderBanner is plain multi-line with the creature logo + next action', ()
   const banner = renderBanner(readContext(root, NOW));
   assert.match(banner, /ASTRO·CODE/);
   assert.match(banner, /▛▀▀▀▜/, 'robo-face logo is present');
-  assert.match(banner, /next: \/astro-plan 3/);
+  assert.match(banner, /next: \/astro-discuss 3/);
   assert.doesNotMatch(banner, /\x1b\[/, 'banner carries no ANSI (rides in a systemMessage)');
 });
 

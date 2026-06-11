@@ -19,5 +19,6 @@ Begin a new milestone.
    if given; otherwise ask the user briefly).
 4. Propose the milestone's phases and create them with `ac phase add "<name>"` (each
    add runs its own duplicate-name check).
-5. Show `ac status` and suggest `/astro-plan <number>` for the first phase — always
-   reference a phase by its **number** (e.g. `/astro-plan 1`), never its name.
+5. Show `ac status` and suggest `/astro-discuss <number>` for the first phase (then
+   `/astro-plan <number>`; a trivial phase can skip straight to plan) — always
+   reference a phase by its **number** (e.g. `/astro-discuss 1`), never its name.

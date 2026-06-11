@@ -17,7 +17,8 @@ Add a new phase named `$ARGUMENTS` to the current milestone.
    future duplicate checks work. If it prints a `⚠ possible duplicate work` warning,
    relay it. If it errors with `run `ac registry init``, run that first (needs an
    `origin` remote), then retry.
-3. Show `ac status` and suggest `/astro-plan <number>` next.
+3. Show `ac status` and suggest `/astro-discuss <number>` next (then `/astro-plan <number>`);
+   a trivial phase can skip straight to `/astro-plan <number>`.
 
 Don't hand-edit `.astrocode/ROADMAP.md` — it's generated. Numbering and name tracking
 only work through `ac`.

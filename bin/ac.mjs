@@ -132,7 +132,12 @@ async function main() {
       if (!rm.phases.length) console.log('  (none)');
       for (const ph of rm.phases) {
         const planned = isPhasePlanned(r, ph.slug) ? 'planned' : 'not planned';
-        console.log(`  ${String(ph.number).padStart(2, '0')}  ${ph.status.padEnd(9)} ${ph.name}  (${planned})`);
+        // Show the discuss state for open, unplanned phases — the signal that
+        // routes the next suggestion to /astro-discuss before /astro-plan.
+        const discuss = ph.status !== 'complete' && !isPhasePlanned(r, ph.slug)
+          ? (phaseContextStatus(r, ph.slug) === 'ready' ? ' · discussed' : ' · undiscussed')
+          : '';
+        console.log(`  ${String(ph.number).padStart(2, '0')}  ${ph.status.padEnd(9)} ${ph.name}  (${planned}${discuss})`);
       }
       if (st.blockers?.length) console.log(`Blockers:  ${st.blockers.length}`);
       return;

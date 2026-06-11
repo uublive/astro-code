@@ -26,7 +26,8 @@ You are starting a new astro-code project in the current repository.
    Confirm with the user, then create each with `ac phase add "<name>"`. Each call
    claims the next phase number from the shared registry (collision-proof across
    the team; phases number from 1).
-5. Show `ac status` and tell the user the next step is `/astro-plan <number>` — always
-   reference a phase by its **number** (e.g. `/astro-plan 1`), never its name.
+5. Show `ac status` and tell the user the next step is `/astro-discuss <number>` for the
+   first phase (then `/astro-plan <number>`; a trivial phase can skip straight to plan) —
+   always reference a phase by its **number** (e.g. `/astro-discuss 1`), never its name.
 
 Keep PROJECT.md tight — vision + requirements + constraints, no fluff.

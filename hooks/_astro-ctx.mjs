@@ -15,6 +15,18 @@ export function readJson(p) {
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
 }
 
+// Mirror of lib/planning.mjs CONTEXT_MARKER_RE (this file can't import ../lib):
+// only a CONTEXT.md genuinely captured by /astro-discuss carries the marker, so
+// a hand-seeded stub doesn't count as "discussed".
+const CONTEXT_MARKER_RE = /<!--\s*astro-discuss:\s*captured\s*-->/i;
+function phaseDiscussed(root, slug) {
+  try {
+    return CONTEXT_MARKER_RE.test(readFileSync(join(root, '.astrocode', 'phases', slug, 'CONTEXT.md'), 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
 // Walk up from `startDir` until we find a dir holding `.astrocode/` state.
 export function findAstroRoot(startDir) {
   let dir = startDir;
@@ -66,6 +78,7 @@ export function readContext(root, nowSeconds) {
     milestone: roadmap.milestone ?? null,
     phase: phase ? { number: phase.number, slug: phase.slug, name: phase.name, status: phase.status } : null,
     planned: phase ? existsSync(join(root, '.astrocode', 'phases', phase.slug, 'PLAN.md')) : false,
+    discussed: phase ? phaseDiscussed(root, phase.slug) : false,
     done, total: phases.length, blockers, activity,
   };
 }
@@ -93,11 +106,15 @@ export function phaseLabel(phase) {
 }
 
 // The slash command to suggest next, derived from where the current phase is.
+// An unplanned phase routes discuss → plan → execute: discussion is the default
+// first step (the /astro-plan gate stays a soft fallback for trivial phases).
 export function nextAction(ctx) {
   const p = ctx?.phase;
   if (!p) return '/astro-status';
   switch (p.status) {
-    case 'pending': return ctx.planned ? `/astro-execute ${p.number}` : `/astro-plan ${p.number}`;
+    case 'pending':
+      if (ctx.planned) return `/astro-execute ${p.number}`;
+      return ctx.discussed ? `/astro-plan ${p.number}` : `/astro-discuss ${p.number}`;
     case 'executing': return `/astro-execute ${p.number}`;
     case 'verified': return `/astro-accept ${p.number}`;
     case 'rejected': return `/astro-plan ${p.number}`;
