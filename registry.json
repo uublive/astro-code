@@ -78,6 +78,16 @@
       "branch": "main",
       "claimed_at": "2026-06-11T11:47:27.576Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 7,
+      "milestone": 2,
+      "name": "Idempotent re-execution: done-detection via task-id commit stamps",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-06-11T11:47:43.345Z",
+      "status": "active"
     }
   ]
 }
