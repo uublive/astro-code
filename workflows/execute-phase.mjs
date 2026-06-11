@@ -175,6 +175,81 @@ function buildWaves(tasks) {
 function missingFromWave(wave, results) {
   return wave.filter((_, i) => !results[i])
 }
+
+/**
+ * Given a wave's task list, the integrator's conflict objects, and the set of
+ * task ids the integrator confirmed as integrated, return the ordered
+ * (plan/wave order) list of tasks that must be re-run on-branch at the
+ * integrated tip.
+ *
+ * WHY THIS EXISTS — the phase-04 wave-2 trap:
+ *   Git auto-merged stacked duplicate helper copies with *no conflict marker*;
+ *   textual success ≠ correct code.  ADR-014 mandates drop-and-rerun at the
+ *   integrated tip — NEVER rebase.  This function resolves exactly which tasks
+ *   need that re-run so wide waves don't wastefully re-run confirmed work.
+ *
+ * Rules (ref ADR-014 + CONTEXT.md § "Branch→task mapping"):
+ *   1. A conflict whose taskId is non-null → add that task (if it exists in
+ *      the wave; silently ignore phantom ids from a confused integrator).
+ *   2. A conflict whose taskId is null → add every wave task NOT in
+ *      integratedTaskIds (the set of task-ids the integrator explicitly
+ *      confirmed landed).
+ *   3. Deduplicate by task id; preserve wave (plan) order throughout.
+ *
+ * @param {Array<{ id: string, [key: string]: unknown }>} wave
+ *   The ordered task list for the current wave (plan order is preserved in output).
+ *
+ * @param {Array<{ branch: string, taskId: string|null }>} conflicts
+ *   Conflict objects from the integrator.  taskId is the wave-task id the
+ *   integrator mapped to this branch, or null when it could not map.
+ *
+ * @param {Set<string>} integratedTaskIds
+ *   The set of task ids the integrator explicitly confirmed as integrated.
+ *   Used only for null-taskId conflicts: tasks absent from this set are
+ *   candidates for re-run.
+ *
+ * @param {((branch: string) => string) | undefined} branchForTask
+ *   Optional inverse lookup (branch → taskId).  Accepted for API symmetry so
+ *   callers can pass their mapping closure; the pure computation here does not
+ *   need it — taskIds are already encoded in the conflict objects.
+ *
+ * @returns {Array<typeof wave[number]>} Deduplicated, plan-order subset of
+ *   `wave` that must be re-run.
+ */
+function resolveHealList(wave, conflicts, integratedTaskIds, branchForTask) {
+  // Build a fast id→task index; preserves nothing about order (we re-sort at
+  // the end against the original wave array to guarantee plan order).
+  const waveById = new Map(wave.map((t) => [t.id, t]))
+
+  // Collect the set of task ids that need re-running (dedup via Set).
+  const toRerun = new Set()
+
+  for (const conflict of conflicts) {
+    if (conflict.taskId !== null && conflict.taskId !== undefined) {
+      // Mapped conflict: the integrator is confident this branch belongs to
+      // exactly one task.  Add it if it exists in this wave.
+      if (waveById.has(conflict.taskId)) {
+        toRerun.add(conflict.taskId)
+      }
+      // If taskId is not in the wave, ignore — the integrator may reference a
+      // task from a different wave or a phantom id; we must not throw.
+    } else {
+      // Unmapped conflict (taskId === null): we cannot trust *any* un-confirmed
+      // task — re-run every wave task the integrator did not confirm integrated.
+      // This is the conservative path that closes the phase-04 phantom-merge
+      // gap for wide waves where the integrator loses track of a branch.
+      for (const t of wave) {
+        if (!integratedTaskIds.has(t.id)) {
+          toRerun.add(t.id)
+        }
+      }
+    }
+  }
+
+  // Return the matching tasks in the original wave (plan) order.  Filtering
+  // the wave array (rather than iterating toRerun) is what guarantees this.
+  return wave.filter((t) => toRerun.has(t.id))
+}
 // <<< MIRROR <<<
 
 const tasks = disc.tasks
@@ -246,26 +321,41 @@ const INTEGRATE_SCHEMA = {
 }
 
 // The integrator is the only actor that can run git (Workflow scripts cannot). It
-// folds a wave's isolated worktree commits onto the working branch and tears the
-// worktrees down so the next wave forks from the integrated tip.
-const integrateWave = (w) =>
+// folds a wave's isolated worktree commits onto the working branch; clean worktrees
+// are torn down so the next wave forks from the integrated tip; conflicting worktrees
+// are PRESERVED (never torn down) so no work is ever silently lost (ADR-014).
+//
+// wave tasks are passed as an inlined JSON scalar so the integrator can map each
+// conflicted worktree-* branch to a taskId by commit message + changed files — without
+// this the integrator would always return taskId:null and force re-running the whole
+// wave remainder (wasteful in wide waves).  The scalar is small (id + title + file
+// only) to respect the Workflow-arg-size rule.
+const integrateWave = (wave) =>
   agent(
     `You are the WAVE INTEGRATOR for phase ${phaseSlug}, running in the MAIN working tree of ${root} ` +
-      `(you have NO worktree of your own). The parallel executors for wave ${w + 1} each committed on a ` +
-      `separate \`worktree-*\` branch forked from the current HEAD. Fold them onto the CURRENTLY ` +
-      `checked-out branch so the next wave and the verifier see one combined tree. Do exactly this, in ${root}:\n` +
+      `(you have NO worktree of your own). The parallel executors each committed on a separate ` +
+      `\`worktree-*\` branch forked from the current HEAD. Fold them onto the CURRENTLY checked-out ` +
+      `branch so the next wave and the verifier see one combined tree.\n` +
+      `Wave task list (for branch→taskId mapping): ${JSON.stringify(wave.map((t) => ({ id: t.id, title: t.title, file: t.file || '' })))}\n` +
+      `Do exactly this, in ${root}:\n` +
       `1. List candidates: \`git for-each-ref --format='%(refname:short)' refs/heads/ | grep '^worktree-'\`. ` +
       `Keep only branches with commits not yet on HEAD (\`git rev-list HEAD..<branch>\` non-empty).\n` +
-      `2. Wave tasks are independent, so order does not matter. Cherry-pick each such branch's commits onto ` +
-      `the current branch (\`git cherry-pick <range>\`). On ANY conflict: \`git cherry-pick --abort\`, stop, ` +
-      `and return integrated=false with the conflicting branch in conflicts[] — do NOT force or hand-resolve.\n` +
-      `3. After a clean integration, tear down each merged worktree so it is not reprocessed: ` +
+      `2. Wave tasks are independent, so order does not matter. For each candidate branch, cherry-pick ` +
+      `its commits onto the current branch (\`git cherry-pick <range>\`). For each branch, map it to a ` +
+      `taskId by matching the commit message and changed files against the wave task list above — return ` +
+      `taskId:null only when you cannot map confidently.\n` +
+      `On ANY conflict: immediately run \`git cherry-pick --abort\`, then verify \`git status\` shows ` +
+      `a clean working tree (nothing to commit) before continuing. PRESERVE that branch and its worktree — ` +
+      `do NOT run \`git worktree remove\` or \`git branch -D\` on a conflicting branch. Add it to ` +
+      `conflicts[] with its mapped taskId (or null). Stop after the first conflict; return integrated=false.\n` +
+      `3. After a CLEAN (conflict-free) cherry-pick, tear down that branch's worktree: ` +
       `\`git worktree remove --force <path>\` (paths from \`git worktree list\`), \`git branch -D <branch>\`, ` +
-      `then \`git worktree prune\`.\n` +
+      `then \`git worktree prune\`. Only clean-merged branches are torn down.\n` +
       `4. Confirm the current branch now contains every integrated commit (\`git log --oneline -n 20\`).\n` +
-      `Return integrated=true with the branches[] you merged, or integrated=false with conflicts[] and a note.` +
+      `Return integrated=true with the branches[] you merged, or integrated=false with conflicts[] ` +
+      `(each item: { branch, taskId }) and a note.` +
       OBEY,
-    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: INTEGRATE_SCHEMA },
+    { label: `integrate:w${wave.length}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: INTEGRATE_SCHEMA },
   )
 
 phase('Execute')
@@ -315,7 +405,7 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
       if (r2) results.push(r2)
     }
   }
-  const integ = await integrateWave(w)
+  const integ = await integrateWave(wave)
   if (!integ || integ.integrated !== true) {
     integrationFailed = {
       wave: w + 1,

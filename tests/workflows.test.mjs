@@ -119,6 +119,122 @@ test('execute-phase.mjs MIRROR region matches lib/waves.mjs (drift guard)', () =
   );
 });
 
+// ── integrateWave: prompt must carry wave task list + correct conflict behavior ──
+//
+// Phase-05 task (b): the integrator must receive the wave's tasks as an inlined
+// JSON scalar (id + title + file) so it can map conflicted worktree-* branches
+// to task ids by commit message + changed files.  Without this, the integrator
+// is forced to guess or return taskId:null for everything (wasteful re-runs).
+//
+// Phase-05 task (c): on conflict the integrator must `git cherry-pick --abort`,
+// verify `git status` is clean before returning, and PRESERVE (NOT tear down)
+// the conflicting branch + worktree; only cleanly-merged worktrees are torn down.
+//
+// We extract the integrateWave function body from the source (spanning multiple
+// concatenated template literals) and check:
+//   1. It references JSON.stringify and wave.map (the scalar inlining)
+//   2. It instructs cherry-pick --abort on conflict
+//   3. It instructs verifying git status is clean before returning
+//   4. It instructs PRESERVING (not tearing down) conflicting branches/worktrees
+//   5. It still tears down CLEAN (merged) worktrees
+//   6. The integrateWave call site passes the wave task array (not just the wave index)
+
+/**
+ * Extract the entire integrateWave function definition from the workflow source.
+ * The prompt spans multiple concatenated template literals (`...` + `...`), so
+ * we extract the whole function body from `const integrateWave` through to the
+ * closing `)` of the `agent()` call rather than trying to parse one template literal.
+ */
+function extractIntegrateWaveBody(wfSrc) {
+  // Find the start of the integrateWave const declaration.
+  const startIdx = wfSrc.indexOf('const integrateWave')
+  if (startIdx === -1) return null
+  // Extract a generous window (next ~2000 chars) that covers the full definition.
+  // The agent() call ends with `}` + `)` before the next top-level statement.
+  // We look for the closing of the outer agent() — the pattern `}\n  )` that
+  // ends the options object and closes agent().
+  const window = wfSrc.slice(startIdx, startIdx + 2500)
+  return window
+}
+
+test('integrateWave prompt inlines wave task list as JSON scalar', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const body = extractIntegrateWaveBody(wfSrc)
+  assert.ok(body, 'integrateWave function definition not found in execute-phase.mjs')
+
+  // The function must accept a wave tasks parameter (not just an index w)
+  const fnMatch = body.match(/const integrateWave\s*=\s*\(([^)]*)\)\s*=>/)
+  assert.ok(fnMatch, 'integrateWave arrow function signature not found')
+  const paramList = fnMatch[1].trim()
+  assert.ok(
+    paramList.includes('wave') || paramList.length > 3,
+    `integrateWave should take wave tasks, not just an index; got: (${paramList})`,
+  )
+
+  // The prompt must inline wave tasks as JSON (JSON.stringify + wave.map).
+  // These appear inline in the template literal expression, not in a string.
+  assert.ok(
+    body.includes('JSON.stringify') && body.includes('.map('),
+    'integrateWave body must inline wave tasks via JSON.stringify(wave.map(...))',
+  )
+})
+
+test('integrateWave prompt instructs cherry-pick --abort on conflict', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const body = extractIntegrateWaveBody(wfSrc)
+  assert.ok(body, 'integrateWave function definition not found')
+
+  assert.ok(
+    body.includes('cherry-pick --abort'),
+    'integrateWave prompt must instruct "git cherry-pick --abort" on conflict',
+  )
+})
+
+test('integrateWave prompt instructs verifying git status is clean before returning on conflict', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const body = extractIntegrateWaveBody(wfSrc)
+  assert.ok(body, 'integrateWave function definition not found')
+
+  // Must verify git status is clean before returning after abort.
+  // The prompt must contain both "git status" and a word indicating cleanliness.
+  assert.ok(
+    body.includes('git status') && (body.includes('clean') || body.includes('nothing to commit')),
+    'integrateWave prompt must instruct verifying git status is clean before returning after abort',
+  )
+})
+
+test('integrateWave prompt preserves conflicting branch and worktree (does NOT tear them down)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const body = extractIntegrateWaveBody(wfSrc)
+  assert.ok(body, 'integrateWave function definition not found')
+
+  // Must explicitly instruct preservation of conflicting branches/worktrees.
+  assert.ok(
+    body.match(/preserv|PRESERVE|do NOT.*(?:tear|remov)|do not.*(?:tear|remov)/i),
+    'integrateWave prompt must instruct preserving (not tearing down) conflicting branches/worktrees',
+  )
+  // Must still tear down CLEAN (successfully merged) worktrees.
+  assert.ok(
+    body.includes('worktree remove') || body.includes('branch -D'),
+    'integrateWave prompt must still tear down clean (merged) worktrees',
+  )
+})
+
+test('integrateWave call site passes the wave tasks array', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The call site must be `integrateWave(wave)` — passing the task array —
+  // not `integrateWave(w)` passing just the loop index.
+  const callMatch = wfSrc.match(/await integrateWave\(([^)]+)\)/)
+  assert.ok(callMatch, 'integrateWave call site not found')
+  const callArg = callMatch[1].trim()
+
+  assert.ok(
+    callArg === 'wave',
+    `integrateWave call site must pass the wave tasks array (wave), not "${callArg}"`,
+  )
+})
+
 // ── INTEGRATE_SCHEMA.conflicts items must be { branch, taskId } objects ───────
 //
 // Phase-05 ADR-014 decision: `INTEGRATE_SCHEMA.conflicts` items are objects with
