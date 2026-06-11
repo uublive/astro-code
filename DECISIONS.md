@@ -100,3 +100,10 @@ _2026-06-11_
 
 **Rejected:** rebase rung with test gate (tests-green does not prove no stale/duplicated code); raw rebase acceptance; skip-and-continue on re-run failure
 
+## ADR-015 — Stale fork-base branches always route to the heal ladder — clean cherry-picks prove nothing
+_2026-06-11_
+
+**Why:** Only the integrator advances HEAD, so HEAD at integration time IS the correct fork base; merge-base(HEAD, branch) != HEAD means stale. Phase-04 showed auto-merge can stack duplicate code with zero conflict markers, so textual cleanliness never overrides staleness
+
+**Rejected:** cherry-pick stale branches behind a test gate; warn-only advisories; threading expected-base SHAs through the script
+
