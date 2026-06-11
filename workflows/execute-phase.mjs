@@ -290,6 +290,33 @@ const execPrompt = (t) =>
 const runOnBranch = (t) =>
   agent(execPrompt(t), { label: `exec:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
 
+// healPrompt is DISTINCT from execPrompt — it tells the executor this is a HEAL
+// re-run after an integration cherry-pick conflict, so it must not blindly pick up
+// where the failed worktree left off.  The dropped attempt on preservedBranch is
+// stale by definition (it was written against an old tip); resurrecting it is the
+// exact phase-04 wave-2 trap (ADR-014).
+//
+// open-question-1 (CONTEXT.md § "Open questions"): the planner resolved to bias
+// toward fresh implementation and NOT point the executor at the preserved branch's
+// diff for "reference" — the dropped attempt is stale by definition, so diffing it
+// would anchor the executor to potentially wrong code.  Only the preserved branch
+// name is passed (for orientation/blame), not its diff.
+const healPrompt = (t, preservedBranch) =>
+  `HEAL RE-RUN — task ${t.id} "${t.title}" — after a cherry-pick conflict (ADR-014 drop-and-rerun).\n` +
+  `The previous attempt is on \`${preservedBranch}\` (PRESERVED, stale — do NOT resurrect it).\n\n` +
+  `Steps:\n` +
+  `1. Inspect current HEAD/working-tree state: read relevant files in ${root} first.\n` +
+  `2. Implement FRESH against the integrated tip — the dropped attempt is stale by definition.\n` +
+  `3. Make ONE atomic commit with a clear message.\n\n` +
+  `Plan/task file: ${t.file || `${root}/.astrocode/phases/${phaseSlug}/PLAN.md`}\n` +
+  `Make the change test-first where it adds behavior, run the tests. ` +
+  `Match the project canon exactly (stack, naming, patterns). ` +
+  `Return a short summary of what you changed.` +
+  OBEY
+
+const runHealOnBranch = (t, preservedBranch) =>
+  agent(healPrompt(t, preservedBranch), { label: `heal:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
+
 // Each conflict item is an object with branch + taskId so the script can drive
 // runOnBranch(t) for exactly the right task when healing a wave conflict (ADR-014).
 // Keeping items as plain strings would lose the branch→task mapping and force

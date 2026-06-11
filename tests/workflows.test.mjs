@@ -285,3 +285,135 @@ test('INTEGRATE_SCHEMA.conflicts items are { branch, taskId } objects, not strin
     `conflicts.items.properties.taskId must be type:['string','null'], got: ${JSON.stringify(taskIdType)}`,
   )
 })
+
+// ── healPrompt and runHealOnBranch: heal-executor variant (phase-05 t5) ───────
+//
+// These guards enforce the contract introduced by t5: a `healPrompt(t, preservedBranch)`
+// function distinct from `execPrompt` that tells the executor this is a HEAL re-run
+// (inspect HEAD/working-tree first, implement fresh against the integrated tip, ONE
+// atomic commit); and a `runHealOnBranch(t, preservedBranch)` wrapper that calls
+// `agent(healPrompt(...), { label: `heal:${t.id}`, ... })`.
+// The comment must reference open-question-1 (bias to fresh implementation).
+// These are static source guards — no eval/import needed.
+
+test('healPrompt function is defined in execute-phase.mjs and is distinct from execPrompt', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // healPrompt must be defined as a function/arrow function taking two parameters.
+  assert.ok(
+    /const\s+healPrompt\s*=/.test(wfSrc) || /function\s+healPrompt\s*\(/.test(wfSrc),
+    'execute-phase.mjs must define healPrompt',
+  )
+
+  // It must accept a preservedBranch parameter.
+  const healMatch = wfSrc.match(/const\s+healPrompt\s*=\s*\(([^)]*)\)/)
+    || wfSrc.match(/function\s+healPrompt\s*\(([^)]*)\)/)
+  assert.ok(healMatch, 'healPrompt function signature not found')
+  const params = healMatch[1]
+  assert.ok(
+    params.includes('preservedBranch'),
+    `healPrompt must accept a preservedBranch parameter; got: (${params})`,
+  )
+
+  // It must be a distinct definition from execPrompt (both must exist separately).
+  assert.ok(
+    /const\s+execPrompt\s*=/.test(wfSrc),
+    'execPrompt must still exist in execute-phase.mjs (healPrompt must be distinct, not a replacement)',
+  )
+})
+
+test('healPrompt content instructs HEAL re-run: inspect HEAD first, implement fresh, ONE atomic commit', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Extract the healPrompt arrow function body (a generous window after its definition).
+  const startIdx = wfSrc.indexOf('const healPrompt')
+  assert.ok(startIdx !== -1, 'healPrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 1500)
+
+  // Must mention this is a HEAL re-run (the executor needs to know the context).
+  assert.ok(
+    /heal|HEAL/i.test(window),
+    'healPrompt must describe this as a HEAL re-run',
+  )
+
+  // Must tell the executor to inspect the current HEAD/working-tree state first.
+  assert.ok(
+    /inspect|HEAD|working.tree/i.test(window),
+    'healPrompt must instruct inspecting the current HEAD/working-tree state first',
+  )
+
+  // Must tell the executor to implement fresh (not resurrect the dropped attempt).
+  assert.ok(
+    /fresh|stale|do NOT resurrect|dropped/i.test(window),
+    'healPrompt must tell the executor the dropped attempt is stale and to implement fresh',
+  )
+
+  // Must instruct ONE atomic commit.
+  assert.ok(
+    /ONE atomic commit/i.test(window),
+    'healPrompt must instruct making ONE atomic commit',
+  )
+})
+
+test('healPrompt references the preserved branch in its output', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const startIdx = wfSrc.indexOf('const healPrompt')
+  assert.ok(startIdx !== -1, 'healPrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 1500)
+
+  // The prompt must reference preservedBranch (interpolated into the string).
+  assert.ok(
+    window.includes('preservedBranch'),
+    'healPrompt body must interpolate preservedBranch into the prompt string',
+  )
+})
+
+test('runHealOnBranch is defined and calls agent with heal label and correct agentType', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  assert.ok(
+    /const\s+runHealOnBranch\s*=/.test(wfSrc) || /function\s+runHealOnBranch\s*\(/.test(wfSrc),
+    'execute-phase.mjs must define runHealOnBranch',
+  )
+
+  // Extract the runHealOnBranch definition window.
+  const startIdx = wfSrc.indexOf('runHealOnBranch')
+  assert.ok(startIdx !== -1, 'runHealOnBranch not found')
+  const window = wfSrc.slice(startIdx, startIdx + 800)
+
+  // Must call agent(healPrompt(...)).
+  assert.ok(
+    window.includes('healPrompt'),
+    'runHealOnBranch must call agent(healPrompt(...))',
+  )
+
+  // Must use label pattern `heal:${t.id}` or `heal:` prefix.
+  assert.ok(
+    window.includes('heal:'),
+    'runHealOnBranch agent call must use a label with "heal:" prefix (e.g. `heal:${t.id}`)',
+  )
+
+  // Must use agentType: 'astro-executor'.
+  assert.ok(
+    window.includes('astro-executor'),
+    'runHealOnBranch agent call must use agentType: astro-executor',
+  )
+
+  // Must use phase: 'Execute'.
+  assert.ok(
+    window.includes("'Execute'") || window.includes('"Execute"'),
+    'runHealOnBranch agent call must use phase: Execute',
+  )
+})
+
+test('healPrompt or its surrounding comment references open-question-1 (bias to fresh implementation)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The comment must reference open-question-1 so future readers know why the
+  // prompt biases toward fresh rather than referencing the preserved branch diff.
+  assert.ok(
+    /open-question-1|open question 1/i.test(wfSrc),
+    'execute-phase.mjs must contain a comment referencing open-question-1 near healPrompt/runHealOnBranch',
+  )
+})
