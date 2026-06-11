@@ -79,3 +79,52 @@ There's a more GitFlow-idiomatic alternative. Both below; we must pick one.
 2. **Opt-in PRs** — detect `gh`/`glab`; create PRs if present, else print the URL.
 3. **Release + hotfix flows** — `release/*`, `hotfix/*`, tagging, dual-merge.
 4. Revisit moving the **roadmap** to the shared orphan branch (ties into canon).
+
+## Self-healing parallel-wave integration (flagged 2026-06-11, phase 04 incident)
+
+> Wave-2 integration of phase 04 failed and needed manual cherry-pick conflict
+> resolution. This class of failure recurs — astro-code must recover from it
+> itself instead of dumping a conflicted worktree on the user.
+
+What happened (three compounding causes, all reproducible):
+
+1. **Stale worktree fork base.** Wave-2 executor worktree (t5) forked from the
+   pre-phase HEAD (`2b8ff2d`) even though wave-1 integration had already advanced
+   the branch by 3 commits. The design assumes wave N+1 worktrees fork from the
+   integrated tip (`execute-phase.mjs` comment, line ~193) — the harness's
+   `isolation: 'worktree'` base does NOT guarantee that. Cherry-picks from a
+   stale base conflict with everything integrated since.
+2. **Executor scope overflow breaks file-disjointness.** t5 declared
+   `tests/flow.test.mjs` but committed 188 lines into `lib/flow.mjs` too —
+   test-first tasks whose imports crash without the implementation push
+   executors to implement (ESM import of a missing export fails the whole test
+   file, so "write failing tests" is structurally impossible without stubs).
+   Wave co-scheduling trusted the declared file, so t5 collided with t2.
+3. **The integrator is abort-only.** On ANY conflict it aborts the cherry-pick
+   and fails the entire run — correct but maximally unhelpful; executor commits
+   strand on `worktree-*` branches.
+
+What astro-code needs (in rough priority order):
+
+- **Integrator fallback ladder** instead of abort-only: on conflict, (a) try
+  rebasing the branch onto the integrated tip; (b) if still conflicting, DROP
+  the branch and re-run that one task sequentially on-branch at the integrated
+  tip (always converges — the executor sees the real current code); (c) only
+  fail if the sequential re-run fails. Mirrors the existing
+  "worktree-unavailable → re-run on-branch" degradation that already works.
+- **Fork-base guard:** record the wave-start SHA; before cherry-picking, the
+  integrator checks each `worktree-*` branch's merge-base against it. A
+  stale-base branch goes straight to the rebase/re-run ladder, never a raw
+  cherry-pick.
+- **File-ownership enforcement:** executor prompt must say "touch ONLY the
+  declared file(s)"; the integrator should detect overflow commits (diff names
+  vs the task's declared files) and route them to the sequential re-run path.
+- **Done-detection on re-run:** the Discover step returns every PLAN.md task —
+  re-running `/astro-execute` after a partial failure re-executes completed
+  tasks. Stamp task ids in commit messages (e.g. `(phase 04 t2)` already
+  happens ad hoc) and have Discover (or the script) filter tasks whose id
+  already appears on the branch, making `/astro-execute` resumable/idempotent.
+- **Planner guidance:** test-first task pairs that import not-yet-existing
+  exports should either include minimal stubs in the test task's declared
+  files, use dynamic import + skip, or be co-scheduled with their impl task in
+  one sequential slot — never parallel-split across a wave boundary.
