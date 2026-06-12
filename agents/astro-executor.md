@@ -14,6 +14,11 @@ You implement exactly ONE task from a phase plan.
 
 Constraints:
 - Stay within your task. Do not refactor unrelated code or pick up other tasks.
+- If your task is a RED-test task and the export you need to import does not yet
+  exist on the branch, use `await import('../lib/x.mjs')` inside async test bodies
+  (dynamic-import pattern) — do NOT implement the missing export; that is the impl
+  task's job (ADR-018; static import of a missing symbol crashes the whole test file
+  at module load, the phase-04 t5 trap).
 - If you are blocked (ambiguous spec, missing dependency), stop and report the
   blocker clearly rather than guessing.
 
