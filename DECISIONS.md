@@ -114,3 +114,10 @@ _2026-06-11_
 
 **Rejected:** blanket-hard enforcement (rejects legitimate fixes); warn-only (leaves the phase-04 t5 hazard open)
 
+## ADR-017 — Task commits stamp '(phase NN tK)' in the subject; a found stamp means done on re-run
+_2026-06-12_
+
+**Why:** Codifies the suffix executors already converged on (visible in oneline logs, plain-grep matchable, retroactively compatible with pre-feature phases); Discover checks stamps and skips done tasks so /astro-execute is resumable, with the end-of-phase verifier as the backstop for wrongly-skipped work and a missing stamp merely re-running the task (safe-over-fast)
+
+**Rejected:** git trailers (invisible in oneline, no retro match); pre-flight suite or file-touch checks before trusting a stamp
+
