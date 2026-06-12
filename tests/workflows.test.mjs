@@ -1921,3 +1921,93 @@ test('t2 (phase-08): plan-phase.mjs Synthesize agent() call has a high-density c
     'plan-phase.mjs must have a comment near the Synthesize call referencing ADR-018',
   )
 })
+
+// ── t5 (phase-08): integration guards — all four ADR-018 wiring points in one sweep ──
+//
+// t5 is the contract-guard task for phase-08: it depends on t1–t4 and asserts that
+// ALL four wiring points landed correctly.  The individual t1/t2/t3 tests above were
+// added alongside each implementation task; the guards below are t5's own sweep that
+// checks the same invariants under t5 labels so the commit stamp `(phase 08 t5)`
+// identifies a distinct, verified state of the full phase-08 surface.
+//
+// (a) plan-phase.mjs Synthesize prompt: dynamic-import rule + self-verification pass.
+// (b) execute-phase.mjs execPrompt: escape hatch sentence present.
+// (c) agents/astro-planner.md: ADR-018 rule (dynamic-import canon, phase-04 t5 WHY).
+// (d) execute-phase.mjs healPrompt: escape hatch sentence ABSENT (negative guard).
+//
+// All four are pure static source checks — readFileSync + regex/includes, no eval.
+
+const AGENTS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'agents')
+
+test('t5 (phase-08): plan-phase.mjs Synthesize prompt contains dynamic-import rule and self-verification instruction', () => {
+  const src = readFileSync(PLAN_PHASE_FILE, 'utf8')
+
+  const synthIdx = src.indexOf("phase('Synthesize')")
+  assert.ok(synthIdx !== -1, "phase('Synthesize') call not found in plan-phase.mjs")
+  const synthWindow = src.slice(synthIdx, synthIdx + 3000)
+
+  // (a-1) Must name the dynamic-import pattern — `await import` is the canonical token.
+  assert.ok(
+    /await import/.test(synthWindow),
+    't5: plan-phase.mjs Synthesize prompt must mention `await import` as the dynamic-import pattern (ADR-018)',
+  )
+
+  // (a-2) Must include a self-verification instruction covering every task.
+  assert.ok(
+    /check EVERY task|fix any violation/i.test(synthWindow),
+    't5: plan-phase.mjs Synthesize prompt must contain a self-verification instruction ("check EVERY task" or "fix any violation")',
+  )
+})
+
+test('t5 (phase-08): execute-phase.mjs execPrompt contains the dynamic-import escape hatch and "do NOT implement" guard', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const startIdx = wfSrc.indexOf('const execPrompt')
+  assert.ok(startIdx !== -1, 'execPrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 1200)
+
+  // (b-1) Must name the dynamic-import pattern.
+  assert.ok(
+    /await import|dynamic.?import/i.test(window),
+    't5: execPrompt must instruct `await import(...)` as the escape hatch for RED-test tasks (ADR-018)',
+  )
+
+  // (b-2) Must tell the executor NOT to implement the missing export.
+  assert.ok(
+    /do NOT implement the missing export/i.test(window),
+    't5: execPrompt must contain "do NOT implement the missing export" (impl task boundary guard, ADR-018)',
+  )
+})
+
+test('t5 (phase-08): agents/astro-planner.md contains the ADR-018 dynamic-import rule', () => {
+  const src = readFileSync(join(AGENTS_DIR, 'astro-planner.md'), 'utf8')
+
+  // (c-1) Must cite ADR-018 — the decision that mandates dynamic-import in RED-test tasks.
+  assert.ok(
+    /ADR-018/.test(src),
+    't5: agents/astro-planner.md must reference ADR-018 (the dynamic-import decision)',
+  )
+
+  // (c-2) Must instruct `await import(` — the canonical token that distinguishes
+  // dynamic from static import and is the house pattern (tests/flow.test.mjs style).
+  assert.ok(
+    /await import\(/.test(src),
+    't5: agents/astro-planner.md must instruct `await import(` as the canonical RED-test pattern (ADR-018)',
+  )
+})
+
+test('t5 (phase-08): execute-phase.mjs healPrompt does NOT contain the escape-hatch sentence (negative guard)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const startIdx = wfSrc.indexOf('const healPrompt')
+  assert.ok(startIdx !== -1, 'healPrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 1500)
+
+  // (d) healPrompt must remain unchanged — the missing-export problem is gone by heal
+  // time (the impl task has usually already run).  The escape hatch is execPrompt-only.
+  // We check for the absence of the sentinel phrase that marks the escape hatch text.
+  assert.ok(
+    !/if this is a RED-test task/i.test(window),
+    't5: healPrompt must NOT contain the escape-hatch sentence — heals run after the impl usually exists (ADR-018 scope, negative guard)',
+  )
+})
