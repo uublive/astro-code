@@ -121,3 +121,10 @@ _2026-06-12_
 
 **Rejected:** git trailers (invisible in oneline, no retro match); pre-flight suite or file-touch checks before trusting a stamp
 
+## ADR-018 — RED-test tasks never statically import missing symbols — dynamic-import is the canonical test-first pattern
+_2026-06-12_
+
+**Why:** A static import of a not-yet-existing export crashes the whole test file at module load, pushing executors to implement the export and overflow their declared file (the phase-04 t5 trap); await import inside async tests fails only the new tests at call time, preserving test-first cadence and one-file ownership. Test-after serialization stays allowed when explicitly chosen
+
+**Rejected:** test tasks declaring the impl file (blurs ownership); abandoning test-first
+
