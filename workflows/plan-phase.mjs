@@ -53,6 +53,13 @@ const findings = await parallel(
 
 phase('Synthesize')
 log(`research done (${findings.filter(Boolean).length}/${ANGLES.length}) — synthesizing PLAN.md + ACCEPTANCE.md`)
+// ADR-018 + phase-04 t5 safeguard: the Synthesize prompt carries the dynamic-import
+// rule inline so the planner has it in direct context when writing tasks — not just in
+// agents/astro-planner.md which it reads from disk but may skim under token pressure.
+// The closing self-verification instruction is defense-in-depth at the point where
+// plans are actually written; it prevents the phase-04 t5 trap (static import of a
+// missing symbol crashes the whole test file at load, forcing executors to implement
+// the missing export and overflow their declared file).
 const summary = await agent(
   `Synthesize an executable plan for phase "${phaseSlug}" (goal: ${goal}).\n\n` +
     `Researcher findings:\n${findings.filter(Boolean).join('\n\n---\n\n')}\n\n` +
@@ -62,7 +69,17 @@ const summary = await agent(
     `Also write ${root}/.astrocode/phases/${phaseSlug}/ACCEPTANCE.md — a short, user-facing ` +
     `UAT checklist of "the user can …" statements a human will confirm before the phase ` +
     `closes (acceptance, not unit tests). ` +
-    `The plan MUST conform to the canon and this phase's CONTEXT.md. ` +
+    `The plan MUST conform to the canon and this phase's CONTEXT.md.\n\n` +
+    `TEST-FIRST RULE (ADR-018 — prevents the phase-04 t5 trap): a RED-test task must ` +
+    `NEVER statically import a symbol that does not yet exist on the branch — a static import ` +
+    `of a missing export crashes the whole test file at module load, pushing executors to ` +
+    `implement the missing export and overflow their declared file. Instead use ` +
+    "`const { fn } = await import('../lib/x.mjs')`" + ` inside async test bodies so a missing ` +
+    `export fails ONLY the new tests at call time. Test-after serialization (depends_on the ` +
+    `impl task) stays allowed when explicitly chosen — the plan must say which it chose.\n\n` +
+    `Before writing PLAN.md, check EVERY task against these rules — red-test import rule, ` +
+    `two same-file tasks never both have empty depends_on, every task declares its file(s) ` +
+    `— and fix any violation.\n\n` +
     `Return a one-line summary of the plan.` +
     OBEY,
   { phase: 'Synthesize', agentType: 'astro-planner', model: models.planner },

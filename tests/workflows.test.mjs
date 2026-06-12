@@ -1728,3 +1728,139 @@ test('t1 (phase-08): astro-planner.md Principles bullet allows test-after serial
     'astro-planner.md Principles must allow test-after serialization when explicitly chosen (depends_on the impl task)',
   )
 })
+
+// ── t2 (phase-08): plan-phase.mjs Synthesize prompt carries ADR-018 + self-check ──
+//
+// ADR-018: RED-test tasks must never statically import a missing symbol — the
+// phase-04 t5 trap.  The Synthesize prompt in plan-phase.mjs (the main planning
+// workflow) must repeat this rule so the planner agent has it in direct context
+// when writing PLAN.md, not just in agents/astro-planner.md (which the agent reads
+// from disk but may skim under token pressure).
+//
+// The self-verification instruction closes the Synthesize prompt: before writing
+// PLAN.md the planner must check EVERY task against three rules — the red-test
+// import rule, the same-file serialization invariant (two same-file tasks never
+// both have empty depends_on), and the file-declaration requirement — and fix any
+// violation before producing output.  This is defense-in-depth at the point where
+// plans are actually written (phase-04 t5 prevention at the source).
+//
+// Static source checks against workflows/plan-phase.mjs — same readFileSync +
+// regex/includes style used throughout this file.
+
+const PLAN_PHASE_FILE = join(dirname(fileURLToPath(import.meta.url)), '..', 'workflows', 'plan-phase.mjs')
+
+test('t2 (phase-08): plan-phase.mjs Synthesize prompt contains the ADR-018 dynamic-import rule', () => {
+  const src = readFileSync(PLAN_PHASE_FILE, 'utf8')
+
+  // The Synthesize agent() call must carry the ADR-018 rule text so the planner
+  // has it in its direct context when generating PLAN.md tasks.  The rule must
+  // name dynamic-import as the canonical RED-test pattern (await import() inside
+  // async test bodies) and forbid static imports of missing symbols — the
+  // phase-04 t5 trap that this phase was designed to prevent.
+  //
+  // We locate the Synthesize agent call and check a generous window for key tokens.
+  const synthIdx = src.indexOf("phase('Synthesize')")
+  assert.ok(synthIdx !== -1, "phase('Synthesize') call not found in plan-phase.mjs")
+  const synthWindow = src.slice(synthIdx, synthIdx + 3000)
+
+  // Must name dynamic import (await import) as the safe RED-test pattern.
+  assert.ok(
+    /await import/.test(synthWindow),
+    'plan-phase.mjs Synthesize prompt must instruct `await import` as the dynamic-import pattern for RED-test tasks (ADR-018)',
+  )
+
+  // Must forbid static imports of missing symbols (the phase-04 t5 trap mechanism).
+  assert.ok(
+    /static import|never.*static|no.*static import/i.test(synthWindow),
+    'plan-phase.mjs Synthesize prompt must forbid static imports of missing symbols (the phase-04 t5 trap)',
+  )
+})
+
+test('t2 (phase-08): plan-phase.mjs Synthesize prompt references ADR-018', () => {
+  const src = readFileSync(PLAN_PHASE_FILE, 'utf8')
+
+  const synthIdx = src.indexOf("phase('Synthesize')")
+  assert.ok(synthIdx !== -1, "phase('Synthesize') call not found in plan-phase.mjs")
+  const synthWindow = src.slice(synthIdx, synthIdx + 3000)
+
+  // The rule must cite ADR-018 so the planner agent can cross-reference the decision.
+  assert.ok(
+    /ADR-018/.test(synthWindow),
+    'plan-phase.mjs Synthesize prompt must reference ADR-018 (the dynamic-import decision)',
+  )
+})
+
+test('t2 (phase-08): plan-phase.mjs Synthesize prompt closes with self-verification instruction covering all three rules', () => {
+  const src = readFileSync(PLAN_PHASE_FILE, 'utf8')
+
+  const synthIdx = src.indexOf("phase('Synthesize')")
+  assert.ok(synthIdx !== -1, "phase('Synthesize') call not found in plan-phase.mjs")
+  const synthWindow = src.slice(synthIdx, synthIdx + 3000)
+
+  // The closing self-verification instruction must tell the planner to check every
+  // task before writing PLAN.md.  The three required rule names are:
+  //   (1) red-test import rule (the dynamic-import / ADR-018 rule)
+  //   (2) same-file serialization: two tasks touching the same file must not both
+  //       have empty depends_on (they must be serialized)
+  //   (3) every task must declare its file(s)
+  // All three must appear in the self-check instruction.
+
+  // Self-check verb: "Before writing PLAN.md" (or equivalent).
+  assert.ok(
+    /Before writing PLAN\.md|before writing PLAN\.md/i.test(synthWindow),
+    'plan-phase.mjs Synthesize prompt must open the self-check with "Before writing PLAN.md"',
+  )
+
+  // Rule 1: red-test import rule named in the check.
+  assert.ok(
+    /red.test import rule|red-test import rule/i.test(synthWindow),
+    'plan-phase.mjs Synthesize self-check must name the "red-test import rule" (rule 1)',
+  )
+
+  // Rule 2: same-file tasks / depends_on serialization.
+  assert.ok(
+    /same.file.*depends_on|same-file.*depends_on|two same.file|two same-file/i.test(synthWindow),
+    'plan-phase.mjs Synthesize self-check must name the same-file serialization rule (rule 2: two same-file tasks never both have empty depends_on)',
+  )
+
+  // Rule 3: every task declares its file(s).
+  assert.ok(
+    /every task declares|declares its file/i.test(synthWindow),
+    'plan-phase.mjs Synthesize self-check must name the file-declaration requirement (rule 3: every task declares its file(s))',
+  )
+
+  // The check must cover EVERY task (not just some).
+  assert.ok(
+    /EVERY task|every task/i.test(synthWindow),
+    'plan-phase.mjs Synthesize self-check must apply to EVERY task (not a subset)',
+  )
+
+  // The check must instruct fixing any violation (not just reporting it).
+  assert.ok(
+    /fix.*violation|fix any violation/i.test(synthWindow),
+    'plan-phase.mjs Synthesize self-check must instruct fixing any violation found',
+  )
+})
+
+test('t2 (phase-08): plan-phase.mjs Synthesize agent() call has a high-density comment naming phase-04 t5 and ADR-018', () => {
+  const src = readFileSync(PLAN_PHASE_FILE, 'utf8')
+
+  const synthIdx = src.indexOf("phase('Synthesize')")
+  assert.ok(synthIdx !== -1, "phase('Synthesize') call not found in plan-phase.mjs")
+
+  // The comment near the Synthesize agent call must name both the WHY (phase-04 t5
+  // trap — the incident that motivated this safeguard) and the WHAT (ADR-018).
+  // High-density "why" comments are load-bearing in this codebase (CONVENTIONS.md).
+  // We search a broad window that includes the comment block above the agent call.
+  const commentWindow = src.slice(Math.max(0, synthIdx - 600), synthIdx + 3000)
+
+  assert.ok(
+    /phase.04.*t5|phase-04.*t5/i.test(commentWindow),
+    'plan-phase.mjs must have a comment near the Synthesize call naming the phase-04 t5 trap (WHY for the ADR-018 rule)',
+  )
+
+  assert.ok(
+    /ADR-018/.test(commentWindow),
+    'plan-phase.mjs must have a comment near the Synthesize call referencing ADR-018',
+  )
+})
