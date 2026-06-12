@@ -79,7 +79,14 @@ phase('Discover')
 const disc = await agent(
   `Read every plan/task file under ${root}/.astrocode/phases/${phaseSlug}/ (PLAN.md and any NN-*.md). ` +
     `Return the full task list with explicit dependencies — depends_on lists the ids of tasks ` +
-    `that must complete before this one. Use the ids exactly as written in the plan.`,
+    `that must complete before this one. Use the ids exactly as written in the plan.\n\n` +
+    `For each task, also set done:true if the current branch already carries a commit whose ` +
+    `subject ends with that task's exact stamp. Check with:\n` +
+    `  git log --oneline --fixed-strings --grep "(phase ${phaseNum} <taskId>)" HEAD\n` +
+    `Use --fixed-strings so the parentheses are literal characters (not regex metacharacters). ` +
+    `The closing paren is REQUIRED — "(phase ${phaseNum} t1)" must NOT match "(phase ${phaseNum} t14)". ` +
+    `If the command returns at least one commit line, set done:true; otherwise done:false. ` +
+    `Set done:false for tasks you cannot check. Never invent stamps — only grep for them.`,
   { schema: TASK_SCHEMA, phase: 'Discover', model: models.discover },
 )
 
@@ -363,9 +370,20 @@ function resolveHealList(wave, conflicts, integratedTaskIds, branchForTask) {
 // <<< MIRROR <<<
 
 const tasks = disc.tasks
-const { waves, deferredForFiles } = buildWaves(tasks)
+// Phase-07 / ADR-017: tasks Discover marked done (stamp found on branch) pre-seed
+// buildWaves so their dependents are immediately "ready" in wave 1 and the stamped
+// tasks themselves never appear in any wave (CONTEXT.md § "Wave building: done task
+// ids PRE-SEED the completed set").  skippedTaskIds is exposed in the return value
+// so /astro-execute can narrate which tasks were skipped.
+const skippedTaskIds = tasks.filter((t) => t.done).map((t) => t.id)
+const preCompleted = new Set(skippedTaskIds)
+if (skippedTaskIds.length) {
+  log(`• ${skippedTaskIds.length} task(s) already stamped on branch — skipping: ${skippedTaskIds.join(', ')}`)
+}
+const { waves, deferredForFiles } = buildWaves(tasks, preCompleted)
 log(
   `${tasks.length} task(s) in ${waves.length} wave(s)` +
+    (skippedTaskIds.length ? ` (${skippedTaskIds.length} already done)` : '') +
     (deferredForFiles ? ` (${deferredForFiles} same-file deferral(s) to avoid collisions)` : ''),
 )
 
@@ -402,6 +420,9 @@ const execPrompt = (t) =>
   `Make the change test-first where it adds behavior, run the tests, and make ONE atomic ` +
   `commit with a clear message. Match the project canon exactly (stack, naming, patterns). ` +
   `touch ONLY your declared file(s); if other changes are genuinely required, say so in your summary. ` +
+  `End the commit subject with the stamp \`(phase ${phaseNum} ${t.id})\` — this exact suffix ` +
+  `enables idempotent re-execution (ADR-017): a later re-run of /astro-execute will detect ` +
+  `the stamp and skip this task rather than re-executing it. ` +
   `Return a short summary of what you changed.` +
   OBEY
 
@@ -425,10 +446,12 @@ const healPrompt = (t, preservedBranch) =>
   `Steps:\n` +
   `1. Inspect current HEAD/working-tree state: read relevant files in ${root} first.\n` +
   `2. Implement FRESH against the integrated tip — the dropped attempt is stale by definition.\n` +
-  `3. Make ONE atomic commit with a clear message.\n\n` +
+  `3. Make ONE atomic commit with a clear message, ending the subject with the stamp \`(phase ${phaseNum} ${t.id})\`.\n\n` +
   `Plan/task file: ${t.file || `${root}/.astrocode/phases/${phaseSlug}/PLAN.md`}\n` +
   `Make the change test-first where it adds behavior, run the tests. ` +
   `Match the project canon exactly (stack, naming, patterns). ` +
+  `The stamp \`(phase ${phaseNum} ${t.id})\` must appear at the end of the commit subject — ` +
+  `it enables idempotent re-execution (ADR-017) so future re-runs skip this healed task. ` +
   `Return a short summary of what you changed.` +
   OBEY
 
@@ -649,6 +672,14 @@ const results = []
 // wave proceeds").
 const healedTaskIds = []
 let integrationFailed = null
+// Phase-07 / ADR-017: all-done short-circuit — when every task is already stamped
+// on the branch, waves is empty and the loop below is a no-op.  The Verify phase
+// still runs (CONTEXT.md: "a phase may have executed fully but failed verification
+// — verify must still run").  We log a narration so the user sees why no execution
+// happened rather than an unexplained gap in the log.
+if (!waves.length && tasks.length) {
+  log(`⊡ all ${tasks.length} task(s) already stamped on branch — skipping Execute, going straight to Verify`)
+}
 for (let w = 0; w < waves.length && !integrationFailed; w++) {
   const wave = waves[w]
   log(`wave ${w + 1}/${waves.length}: ${wave.map((t) => t.id).join(', ')}`)
@@ -930,4 +961,4 @@ if (integrationFailed) {
   )
 }
 
-return { phase: phaseSlug, tasks: tasks.length, waves: waves.length, strategy, executed: results.length, healed: healedTaskIds, integrationFailed, verdict }
+return { phase: phaseSlug, tasks: tasks.length, waves: waves.length, strategy, executed: results.length, skipped: skippedTaskIds, healed: healedTaskIds, integrationFailed, verdict }

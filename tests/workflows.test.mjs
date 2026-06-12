@@ -1361,3 +1361,147 @@ test('t4 (phase-07): TASK_SCHEMA items still have additionalProperties:false aft
     'TASK_SCHEMA items must keep additionalProperties:false after the done field addition',
   )
 })
+
+// ── t8: static source-contract guards (phase-07 done-detection) ──────────────
+//
+// ADR-017: commit stamps `(phase NN tK)` enable idempotent re-execution.
+// These guards enforce phase-07 contracts via pure string/regex over the workflow
+// source — same technique as the existing hook-shadowing and MIRROR drift guards:
+// readFileSync + includes/regex, no eval of Workflow-tool globals.
+//
+// (a) TASK_SCHEMA carries done in required and a boolean done property.
+//     Already covered by the t4 (phase-07) tests immediately above using
+//     runInNewContext — do NOT duplicate that guard here.
+//
+// (b) Discover prompt contains --fixed-strings AND a closing-paren stamp pattern.
+//     The t1/t14 trap (CONTEXT.md note 1): `--grep "(phase 07 t1"` (no closing paren)
+//     would match both t1 AND t14.  The prompt must spell out the closing paren
+//     `(phase ` and instruct --fixed-strings (or regex-escape) so the match is
+//     precise.  A bare `t1` substring in the grep would be a silent correctness bug
+//     that re-executes already-stamped tasks or skips unstamped ones.
+//
+// (c) Both execPrompt and healPrompt carry the stamp instruction.
+//     The executor must end each commit subject with `(phase NN tK)` so later
+//     re-runs can detect it.  Missing the instruction in either prompt means
+//     that class of commits is never stamped and done-detection silently breaks
+//     for those tasks.
+//
+// (d) The return object includes skipped:.
+//     CONTEXT.md § "result gains skipped:[taskIds]" — the outer /astro-execute
+//     command reads this to narrate which tasks were found already stamped.
+//     A missing field silently drops observability.
+//
+// (e) All-done short-circuit: Execute wave loop is conditioned on executable
+//     tasks remaining (waves array is non-empty / tasks are not all done).
+//     If every task is already stamped, the Execute phase must short-circuit
+//     to Verify immediately (re-verify still runs — a phase may have executed
+//     fully but failed the prior verification).
+
+test('t8 (b): Discover prompt contains --fixed-strings and closing-paren stamp pattern', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Find the Discover agent call (agent() with schema: TASK_SCHEMA) in the source.
+  // The disc = await agent(…) block is the Discover agent; its prompt must contain
+  // the stamp-grep instruction with closing-paren precision to avoid the t1/t14 trap.
+  const discoverIdx = wfSrc.indexOf("phase('Discover')")
+  assert.ok(discoverIdx !== -1, "phase('Discover') call not found in execute-phase.mjs")
+  // Take a generous window covering the full Discover agent() call (prompt + options).
+  const discoverWindow = wfSrc.slice(discoverIdx, discoverIdx + 2000)
+
+  // Must mention (phase  — the closing-paren stamp pattern that prevents t1/t14 ambiguity.
+  // The exact string in the prompt must be "(phase " (with the space) so the agent
+  // constructs a grep pattern like `--grep "(phase 07 t1)"` (closing paren required).
+  assert.ok(
+    discoverWindow.includes('(phase '),
+    'Discover prompt must contain "(phase " — the closing-paren stamp pattern that prevents the t1/t14 ambiguity trap',
+  )
+
+  // Must instruct --fixed-strings (or equivalent) so the parens are literal chars,
+  // not regex metacharacters.  Without it `--grep "(phase 07 t1)"` could have
+  // surprising matches depending on grep's default mode.
+  assert.ok(
+    discoverWindow.includes('--fixed-strings') || discoverWindow.includes('fixed-strings'),
+    'Discover prompt must instruct --fixed-strings for the stamp grep (prevents t1/t14 pattern ambiguity)',
+  )
+})
+
+test('t8 (c): execPrompt contains the (phase NN tK) stamp instruction', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Locate the execPrompt definition (arrow function).
+  const execIdx = wfSrc.indexOf('const execPrompt')
+  assert.ok(execIdx !== -1, 'execPrompt not found in execute-phase.mjs')
+  // Window covering the full template literal (≤ 800 chars is sufficient).
+  const execWindow = wfSrc.slice(execIdx, execIdx + 800)
+
+  // The prompt must instruct the executor to stamp the commit subject with
+  // `(phase NN tK)` where NN/tK are interpolated per task.  Without this
+  // instruction the executor produces unstamped commits and done-detection
+  // silently breaks for tasks run via the normal (non-heal) path.
+  assert.ok(
+    /\(phase.*tK\)|\(phase.*t\$\{.*\}/.test(execWindow) || execWindow.includes('(phase '),
+    'execPrompt must include the (phase NN tK) stamp instruction so executors stamp their commits',
+  )
+
+  // More precisely: the stamp pattern must include phaseNum and t.id interpolation,
+  // not a hardcoded literal — otherwise all tasks in all phases get the same stamp.
+  assert.ok(
+    execWindow.includes('phaseNum') || execWindow.includes('phaseSlug'),
+    'execPrompt stamp instruction must reference phaseNum (or phaseSlug) so the stamp is phase-specific',
+  )
+})
+
+test('t8 (c): healPrompt contains the (phase NN tK) stamp instruction', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Locate the healPrompt definition.
+  const healIdx = wfSrc.indexOf('const healPrompt')
+  assert.ok(healIdx !== -1, 'healPrompt not found in execute-phase.mjs')
+  const healWindow = wfSrc.slice(healIdx, healIdx + 1500)
+
+  // Heal re-runs are re-implementations — the fresh commit must ALSO be stamped
+  // so a second /astro-execute re-run doesn't re-execute a healed task.
+  // Same precision requirement: phaseNum/t.id interpolated, not hardcoded.
+  assert.ok(
+    /\(phase.*tK\)|\(phase.*t\$\{.*\}/.test(healWindow) || healWindow.includes('(phase '),
+    'healPrompt must include the (phase NN tK) stamp instruction so healed commits are also stamped',
+  )
+  assert.ok(
+    healWindow.includes('phaseNum') || healWindow.includes('phaseSlug'),
+    'healPrompt stamp instruction must reference phaseNum (or phaseSlug) so the stamp is phase-specific',
+  )
+})
+
+test('t8 (d): return statement includes skipped: field', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The final return object must carry a skipped field (CONTEXT.md: "result gains
+  // skipped:[taskIds]").  Without it the outer /astro-execute command cannot narrate
+  // which tasks were found already stamped on the branch (silent observability drop).
+  // We accept skipped: anywhere in the return statement or as a named variable.
+  assert.ok(
+    /return\s*\{[^}]*skipped\s*:/.test(wfSrc) || /skipped\s*:\s*skipped/.test(wfSrc),
+    'execute-phase.mjs return statement must include a `skipped:` field (CONTEXT.md "result gains skipped:[taskIds]")',
+  )
+})
+
+test('t8 (e): all-done short-circuit — Execute phase is skipped when no executable waves remain', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // When every task is already stamped (done), buildWaves returns an empty waves
+  // array.  The Execute phase must short-circuit to Verify immediately rather than
+  // entering the wave loop and logging "strategy: … (0 tasks, widest wave 0, budget 8)".
+  // CONTEXT.md: "if every task is done, skip Execute entirely and go straight to Verify".
+  //
+  // We look for a condition that guards the Execute wave loop against an empty waves
+  // array — any of these patterns is acceptable:
+  //   `if (waves.length)` / `if (waves.length === 0)` / `if (!waves.length)`
+  //   `if (tasks.every(t => t.done))` / `const executableTasks = tasks.filter(!done)`
+  // The key invariant: the wave loop body must NOT fire when waves is empty.
+  // We check for the presence of a waves.length guard or a done-filtered task list.
+  assert.ok(
+    /waves\.length\s*(?:===?\s*0|>\s*0)|!waves\.length|if\s*\(\s*waves\.length\s*\)/.test(wfSrc) ||
+    /tasks\.every.*done|skippedTasks|executableTasks|doneTasks/.test(wfSrc),
+    'execute-phase.mjs must short-circuit the Execute phase when all tasks are done (waves empty) — guard the wave loop',
+  )
+})
