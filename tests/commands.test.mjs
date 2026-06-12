@@ -90,6 +90,24 @@ test('astro-execute.md fallback tier does not instruct parallel astro-executor c
 // preceded by a negation word within 10 characters so it reads as a prohibition, not
 // an instruction.
 
+// ── 4. The fallback tier must instruct executors to stamp commits ───────────────────
+//
+// Per ADR-017, every astro-executor commit subject must end with `(phase NN tK)` so
+// that Discover can detect done tasks on re-run and skip them.  The Agent-tool fallback
+// tier in astro-execute.md is the only place this instruction lives for the non-Workflow
+// path; its absence would leave fallback runs un-resumable.
+
+test('astro-execute.md fallback tier instructs executors to stamp commits with (phase NN tK)', () => {
+  // The phrase "(phase NN tK)" is the canonical stamp format from ADR-017.
+  // Accept slight variation in whitespace but require the exact tokens in order.
+  const hasStampInstruction = /\(phase\s+NN\s+tK\)/i.test(fallbackTier);
+  assert.ok(
+    hasStampInstruction,
+    `fallback tier must instruct astro-executor to end commit subjects with "(phase NN tK)" ` +
+      `(ADR-017 / phase-07 scope) so fallback runs are resumable — found no such instruction in:\n\n${fallbackTier}`,
+  );
+});
+
 test('astro-execute.md fallback tier does not instruct batching in a single message', () => {
   const phrase = 'in a single message';
   let searchFrom = 0;

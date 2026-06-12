@@ -48,7 +48,9 @@ Execute phase `$ARGUMENTS`.
      `astro-executor` call at a time (NOT parallel, NOT batched in a single message) —
      each makes one atomic commit so the next task and the verifier can see prior
      changes. After all tasks complete, spawn `astro-verifier`. Tell each agent to read
-     the canon + CONTEXT.md.
+     the canon + CONTEXT.md. Tell each `astro-executor` to end its commit subject with
+     `(phase NN tK)` — NN is the leading number from the phase slug, tK is the task id —
+     so the run is resumable if re-executed (ADR-017).
    - **No subagents at all:** execute the tasks inline, in dependency order, one
      atomic commit each, then verify yourself.
 5. Clear the live status (`ac activity clear` — also clear it on any early stop or
