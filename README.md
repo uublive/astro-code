@@ -27,6 +27,13 @@ npm install -g .     # puts `ac` on your PATH
 ac install           # populates ~/.astro/code and links commands/agents into Claude Code
 ```
 
+> **Windows / PowerShell:** `ac` is shadowed by PowerShell's built-in `Add-Content`
+> alias (aliases beat external commands), so typing `ac install` prompts for
+> `Value[0]` instead of running the CLI. Use the equivalent **`astrocode`** command
+> (`astrocode install`), or bypass the alias with `ac.cmd install`, or remove it for
+> your session: `Remove-Item Alias:ac`. Note `ac install` links files with symlinks,
+> which on Windows require Developer Mode or an elevated shell.
+
 `ac install` keeps the files in `~/.astro/code` and symlinks the commands/agents into
 **every** Claude config dir Claude Code reads: the base `~/.claude` **and every
 jean-claude profile** (auto-detected from `~/.claude/.jean-claude/profiles.json`). So

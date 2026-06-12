@@ -128,3 +128,18 @@ What astro-code needs (in rough priority order):
   exports should either include minimal stubs in the test task's declared
   files, use dynamic import + skip, or be co-scheduled with their impl task in
   one sequential slot — never parallel-split across a wave boundary.
+
+## Windows compatibility (flagged 2026-06-12, first external install attempt)
+
+A Windows/PowerShell user hit two issues installing:
+
+1. **`ac` is shadowed by PowerShell's built-in `Add-Content` alias** (aliases beat
+   external commands) — `ac install` prompted for `Value[0]`. FIXED: second bin name
+   `astrocode` + README note (workarounds: `ac.cmd`, `Remove-Item Alias:ac`).
+2. **`symlinkSync` in lib/install.mjs needs admin/Developer Mode on Windows** —
+   standard users get EPERM. NOT yet fixed. Candidate phase: copy-fallback when
+   symlink fails (keep symlinks elsewhere; REQ-008's reversibility must survive —
+   uninstall must recognize copies too). While in there, audit other Windows
+   assumptions: POSIX paths in hooks/statusline, `$HOME` vs USERPROFILE, git
+   hooks scripts written as POSIX sh in tests (test-only, fine), and whether
+   `ac update` (git pull + npm install -g) works under PowerShell.
