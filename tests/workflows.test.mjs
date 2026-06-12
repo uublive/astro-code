@@ -223,15 +223,18 @@ test('integrateWave prompt preserves conflicting branch and worktree (does NOT t
 test('integrateWave call site passes the wave tasks array', () => {
   const wfSrc = readFileSync(WF_FILE, 'utf8')
 
-  // The call site must be `integrateWave(wave)` — passing the task array —
-  // not `integrateWave(w)` passing just the loop index.
+  // The call site must pass BOTH the wave index (for the `integrate:w<N>` label)
+  // and the wave tasks array (for branch→taskId mapping) — `integrateWave(w, wave)`.
+  // Passing only the index loses the task list; passing only the array regresses
+  // the label to a task-count (the phase-06 UAT label finding).
   const callMatch = wfSrc.match(/await integrateWave\(([^)]+)\)/)
   assert.ok(callMatch, 'integrateWave call site not found')
-  const callArg = callMatch[1].trim()
+  const callArgs = callMatch[1].split(',').map((a) => a.trim())
 
-  assert.ok(
-    callArg === 'wave',
-    `integrateWave call site must pass the wave tasks array (wave), not "${callArg}"`,
+  assert.deepEqual(
+    callArgs,
+    ['w', 'wave'],
+    `integrateWave call site must pass (w, wave) — got (${callArgs.join(', ')})`,
   )
 })
 
@@ -1209,3 +1212,28 @@ test('t6: integrator prompt distinguishes collision (→ conflicts[]/heal) from 
     'integrateWave prompt must include ⚠ advisory notation for harmless overflow path',
   )
 })
+
+// ── phase-06 UAT hardening: needsHeal must key on the lists, not the flag ─────
+//
+// A misbehaving integrator could return integrated=true while still reporting
+// staleBranches[]/conflicts[] (contradicting its prompt contract). If the heal
+// trigger required `integrated !== true`, those lists would be silently ignored
+// and the preserved branches stranded until the end verifier flags them. The
+// trigger therefore keys on the LISTS alone; this guard pins that.
+test('static guard (phase-06 UAT): needsHeal keys on conflicts/staleBranches lists, never on the integrated flag', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8');
+
+  const idx = wfSrc.indexOf('const needsHeal');
+  assert.ok(idx !== -1, 'needsHeal definition not found in execute-phase.mjs');
+  // Window covering the full boolean expression (it spans a handful of lines).
+  const window = wfSrc.slice(idx, idx + 300);
+
+  assert.ok(
+    /staleBranches/.test(window) && /conflicts/.test(window),
+    'needsHeal must consider both integ.conflicts and integ.staleBranches',
+  );
+  assert.ok(
+    !/integrated\s*!==?\s*true/.test(window),
+    'needsHeal must NOT condition on integ.integrated — lists present ⇒ heal, whatever the flag says',
+  );
+});

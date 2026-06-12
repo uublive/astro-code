@@ -561,7 +561,7 @@ const INTEGRATE_SCHEMA = {
 //   completely gates the overflow check — a stale branch is NEVER classified for
 //   overflow, it is always routed to heal regardless of whether the cherry-pick
 //   would apply cleanly.  Phase-04 proved textual cleanliness proves nothing.
-const integrateWave = (wave) =>
+const integrateWave = (w, wave) =>
   agent(
     `You are the WAVE INTEGRATOR for phase ${phaseSlug}, running in the MAIN working tree of ${root} ` +
       `(you have NO worktree of your own). The parallel executors each committed on a separate ` +
@@ -596,7 +596,7 @@ const integrateWave = (wave) =>
       `Return integrated=true with branches[] merged (and advisories[] for any ⚠ overflow), ` +
       `or integrated=false with conflicts[]/staleBranches[] (each: {branch,taskId}) and a note.` +
       OBEY,
-    { label: `integrate:w${wave.length}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: INTEGRATE_SCHEMA },
+    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: INTEGRATE_SCHEMA },
   )
 
 phase('Execute')
@@ -653,7 +653,7 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
       if (r2) results.push(r2)
     }
   }
-  const integ = await integrateWave(wave)
+  const integ = await integrateWave(w, wave)
 
   // ── Self-healing ladder (ADR-014 + CONTEXT.md phase-05/06) ───────────────
   //
@@ -699,9 +699,13 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
     overflowFlagged = true
   }
 
+  // Keyed on the LISTS, deliberately NOT on the integrated flag: a misbehaving
+  // integrator could return integrated=true while still reporting stale/conflicted
+  // branches (contradicting its prompt contract) — and silently ignoring those
+  // lists would strand preserved branches until the end verifier flags them
+  // (the phase-06 UAT finding). Lists present ⇒ heal, whatever the flag says.
   const needsHeal =
     integ &&
-    integ.integrated !== true &&
     (
       (integ.conflicts && integ.conflicts.length) ||
       (integ.staleBranches && integ.staleBranches.length)
