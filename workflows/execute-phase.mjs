@@ -25,12 +25,33 @@ const input = typeof args === 'string' ? JSON.parse(args) : args || {}
 const { root, phase: phaseSlug, models = {} } = input
 if (!root || !phaseSlug) throw new Error('execute-phase requires args { root, phase }')
 
+// Phase-07 / ADR-017: extract the zero-padded phase number from the slug as a
+// STRING so the commit-stamp grep pattern "(phase 07 tK)" is correct.
+// WHY STRING (not parseInt): the slug prefix "07-…" must become "07", not 7 —
+// parseInt strips the leading zero and would produce stamps like "(phase 7 t1)"
+// that never match commits stamped with the canonical "(phase 07 t1)" suffix.
+// This is the same zero-padding the executor has converged on (13 of the last 30
+// commits carry it) and which ADR-017 codifies as the project-wide convention.
+// Phase-04 re-run cause: Discover returned every PLAN.md task with no
+// done-awareness, so re-running /astro-execute re-executed completed tasks
+// unnecessarily — phaseNum feeds into the Discover prompt's stamp-grep
+// instruction so it can identify which tasks are already stamped on the branch.
+const phaseNum = (phaseSlug.match(/^(\d+)/) || [])[1] || phaseSlug
+
 // Agents read the canon + discussion brief from disk (absolute paths into the main
 // repo, so worktree executors see them regardless of git state).
 const OBEY =
   `\n\nRead and OBEY: ${root}/.astrocode/CONVENTIONS.md and ${root}/.astrocode/DECISIONS.md (project canon), ` +
   `plus ${root}/.astrocode/phases/${phaseSlug}/CONTEXT.md (this phase's decisions, if present).`
 
+// Phase-07 / ADR-017: TASK_SCHEMA items gain `done: boolean` (required).
+// WHY required AND boolean: without a strict schema the Discover agent can omit
+// `done` entirely (returns {} or null) and the skip-wiring would treat the
+// absence as "unclear" and re-execute — the exact phase-04 re-run trap.
+// `additionalProperties: false` at every level is a canon invariant (CONVENTIONS.md).
+// The done field drives buildWaves(tasks, preCompleted) pre-seeding so dependents
+// of stamped tasks are ready in wave 1 and the stamped tasks never appear in any
+// wave (phase-07 resumability, ADR-017).
 const TASK_SCHEMA = {
   type: 'object',
   additionalProperties: false,
@@ -45,8 +66,9 @@ const TASK_SCHEMA = {
           title: { type: 'string' },
           file: { type: 'string' },
           depends_on: { type: 'array', items: { type: 'string' } },
+          done: { type: 'boolean' },
         },
-        required: ['id', 'title', 'depends_on'],
+        required: ['id', 'title', 'depends_on', 'done'],
       },
     },
   },

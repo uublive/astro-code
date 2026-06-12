@@ -1237,3 +1237,127 @@ test('static guard (phase-06 UAT): needsHeal keys on conflicts/staleBranches lis
     'needsHeal must NOT condition on integ.integrated — lists present ⇒ heal, whatever the flag says',
   );
 });
+
+// ── t4 (phase-07): phaseNum extraction + TASK_SCHEMA done field ──────────────
+//
+// ADR-017: commit stamps encode `(phase NN tK)` where NN is the zero-padded
+// project-global phase number derived from the slug.  The phase-04 re-run cause
+// was Discover returning every PLAN.md task with no done-awareness, so re-running
+// /astro-execute re-executed completed tasks unnecessarily.  These two changes
+// together enable the stamp-based done-detection loop:
+//
+//   (1) phaseNum: string extraction from the slug's leading digits MUST preserve
+//       zero-padding (e.g. slug "07-idempotent-…" → "07", never 7).  parseInt
+//       would strip the leading zero, breaking stamp matching.
+//
+//   (2) TASK_SCHEMA items gain `done: { type: 'boolean' }` (properties) and
+//       `'done'` in required[], keeping `additionalProperties: false` so the
+//       Discover agent is forced to commit to a boolean verdict per task — the
+//       same anti-ambiguity pattern used in TESTGATE_SCHEMA.
+
+test('t4 (phase-07): phaseNum is extracted as a STRING from phaseSlug (no parseInt — preserves zero-padding)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // phaseNum must be declared after the phaseSlug destructure.
+  assert.ok(
+    /const\s+phaseNum\s*=/.test(wfSrc),
+    'execute-phase.mjs must declare const phaseNum after the phaseSlug destructure',
+  )
+
+  // The extraction must use match() on phaseSlug — NOT parseInt or Number().
+  // parseInt would strip leading zeros ("07" → 7), breaking stamp matching.
+  const declIdx = wfSrc.indexOf('const phaseNum')
+  assert.ok(declIdx !== -1, 'const phaseNum declaration not found')
+  const window = wfSrc.slice(declIdx, declIdx + 200)
+
+  assert.ok(
+    /phaseSlug\.match/.test(window),
+    'phaseNum must be extracted via phaseSlug.match() (not parseInt/Number — zero-padding must be preserved)',
+  )
+  assert.ok(
+    !/parseInt|Number\(/.test(window),
+    'phaseNum extraction must NOT use parseInt or Number() — those strip leading zeros like "07" → 7',
+  )
+})
+
+test('t4 (phase-07): phaseNum extraction comment references ADR-017 and phase-04 re-run cause', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The comment around phaseNum must name ADR-017 (the stamp ADR) and the
+  // phase-04 re-run cause (the incident that motivated done-detection).
+  // High-density "why" comments are load-bearing here (CONVENTIONS.md).
+  const declIdx = wfSrc.indexOf('const phaseNum')
+  assert.ok(declIdx !== -1, 'const phaseNum declaration not found')
+
+  // Search a window of ~600 chars before + after the declaration for the comment.
+  const commentWindow = wfSrc.slice(Math.max(0, declIdx - 600), declIdx + 400)
+
+  assert.ok(
+    /ADR-017/.test(commentWindow),
+    'the comment near phaseNum must reference ADR-017 (the stamp decision)',
+  )
+  assert.ok(
+    /phase.04|phase-04/i.test(commentWindow),
+    'the comment near phaseNum must reference the phase-04 re-run cause',
+  )
+})
+
+test('t4 (phase-07): TASK_SCHEMA items include done:boolean in properties', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Extract the TASK_SCHEMA constant literal and evaluate it.
+  const schemaMatch = wfSrc.match(/const TASK_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'TASK_SCHEMA constant not found in execute-phase.mjs')
+
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  // Drill into items.properties to find the done field.
+  const item = schema?.properties?.tasks?.items
+  assert.ok(item, 'TASK_SCHEMA.properties.tasks.items must be defined')
+  assert.ok(item.properties?.done, 'TASK_SCHEMA items must have a done property in properties')
+  assert.strictEqual(
+    item.properties.done.type,
+    'boolean',
+    'TASK_SCHEMA items.properties.done must be type:boolean',
+  )
+})
+
+test('t4 (phase-07): TASK_SCHEMA items.required includes done', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const schemaMatch = wfSrc.match(/const TASK_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'TASK_SCHEMA constant not found in execute-phase.mjs')
+
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  const item = schema?.properties?.tasks?.items
+  assert.ok(item, 'TASK_SCHEMA.properties.tasks.items must be defined')
+  assert.ok(Array.isArray(item.required), 'TASK_SCHEMA items must have a required array')
+  assert.ok(
+    item.required.includes('done'),
+    "TASK_SCHEMA items.required must include 'done'",
+  )
+})
+
+test('t4 (phase-07): TASK_SCHEMA items still have additionalProperties:false after done field addition', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const schemaMatch = wfSrc.match(/const TASK_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'TASK_SCHEMA constant not found in execute-phase.mjs')
+
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  // Both the outer and inner schema must keep additionalProperties:false per canon.
+  assert.strictEqual(
+    schema.additionalProperties,
+    false,
+    'TASK_SCHEMA top-level must keep additionalProperties:false',
+  )
+  const item = schema?.properties?.tasks?.items
+  assert.ok(item, 'TASK_SCHEMA.properties.tasks.items must be defined')
+  assert.strictEqual(
+    item.additionalProperties,
+    false,
+    'TASK_SCHEMA items must keep additionalProperties:false after the done field addition',
+  )
+})
