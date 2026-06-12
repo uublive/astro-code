@@ -1665,3 +1665,66 @@ test('t6 (phase-07): per-task skip narration logs "already on branch (stamp foun
     'per-task skip log must interpolate the individual task id (${id}, ${t.id}, or t.id), not just a count or array',
   )
 })
+
+// ── t1 (phase-08): astro-planner.md carries the full test-first + dynamic-import rule ──
+//
+// ADR-018: RED-test tasks must never statically import a symbol that does not yet
+// exist on the branch — a static import of a missing export crashes the whole test
+// file at module load, pushing executors to implement the missing export and overflow
+// their declared file (the phase-04 t5 trap).  The canonical pattern is
+// `await import('../lib/x.mjs')` inside async test bodies so a missing export fails
+// only the new tests at call time, preserving test-first cadence and one-file
+// ownership.  Test-after serialization (`depends_on` the impl task) stays allowed
+// when explicitly chosen — the plan must say which it chose.
+//
+// This guard is a static source check over agents/astro-planner.md — the same
+// readFileSync + regex/includes style used throughout this file.
+
+const PLANNER_FILE = join(dirname(fileURLToPath(import.meta.url)), '..', 'agents', 'astro-planner.md')
+
+test('t1 (phase-08): astro-planner.md Principles bullet mandates dynamic-import for RED-test tasks (ADR-018)', () => {
+  const src = readFileSync(PLANNER_FILE, 'utf8')
+
+  // The bullet must instruct dynamic import as the canonical RED-test pattern.
+  // `await import(` is the literal token that distinguishes the dynamic pattern
+  // from a static top-level import statement.
+  assert.ok(
+    /await import\(/.test(src),
+    'astro-planner.md Principles must instruct `await import(` as the dynamic-import pattern for RED-test tasks (ADR-018)',
+  )
+})
+
+test('t1 (phase-08): astro-planner.md Principles bullet references ADR-018', () => {
+  const src = readFileSync(PLANNER_FILE, 'utf8')
+
+  // The rule must cite ADR-018 so readers know where the decision lives.
+  assert.ok(
+    /ADR-018/.test(src),
+    'astro-planner.md Principles must reference ADR-018 (the dynamic-import ADR)',
+  )
+})
+
+test('t1 (phase-08): astro-planner.md Principles bullet names the phase-04 t5 trap', () => {
+  const src = readFileSync(PLANNER_FILE, 'utf8')
+
+  // The WHY must name the phase-04 t5 trap so the planner understands the failure
+  // mode it prevents.  High-density "why" comments are load-bearing here
+  // (CONVENTIONS.md).  The phrase must be close enough to "phase-04 t5" to be
+  // recognisable in the bullet context.
+  assert.ok(
+    /phase.04.*t5|phase-04.*t5/i.test(src),
+    'astro-planner.md Principles must name the phase-04 t5 trap as the WHY for the dynamic-import rule',
+  )
+})
+
+test('t1 (phase-08): astro-planner.md Principles bullet allows test-after serialization when explicitly chosen', () => {
+  const src = readFileSync(PLANNER_FILE, 'utf8')
+
+  // Test-after serialization (depends_on the impl task) stays allowed but must
+  // be explicitly chosen — the plan must say which.  The bullet must name this
+  // escape hatch so planners know it is available.
+  assert.ok(
+    /depends_on|depends on/i.test(src) && /explicit|plan must say|chosen/i.test(src),
+    'astro-planner.md Principles must allow test-after serialization when explicitly chosen (depends_on the impl task)',
+  )
+})

@@ -29,7 +29,7 @@ Principles:
   same-file tasks both with empty `depends_on` — they will collide at integration.
   Set `file` accurately for every task; an omitted `file` forces that task to run alone.
 - **Match the codebase.** Reuse existing patterns, naming, and test conventions.
-- **Test-first for behavior.** Tasks that add behavior specify the test first.
+- **Test-first for behavior.** Tasks that add behavior specify the test first. A RED-test task MUST NOT statically import a symbol that does not yet exist on the branch — use `await import('../lib/x.mjs')` inside async test bodies so a missing export fails only the new tests at call time, not the whole file (ADR-018; the phase-04 t5 trap: a module-load crash pushes executors to implement the export and overflow their declared file). Test-after serialization (`depends_on` the impl task) stays allowed when explicitly chosen — the plan must say which.
 - No speculative scope. Plan only what the phase goal requires.
 
 Return a one-line summary of the plan (task count + wave shape).
