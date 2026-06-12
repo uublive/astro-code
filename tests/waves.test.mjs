@@ -391,3 +391,26 @@ test('buildWaves preCompleted: all tasks done → empty waves array', () => {
   const { waves } = buildWaves(tasks, new Set(['t1', 't2']));
   assert.equal(waves.length, 0, 'all tasks done → no waves should be produced');
 });
+
+test('buildWaves preCompleted: a pre-seeded id absent from tasks is harmless', () => {
+  // Guard against phantom stamps — e.g. the grep finds a stamp from a task that
+  // was renamed or removed from the plan.  Passing an id not present in `tasks`
+  // must not affect the waves produced: every task in `tasks` still appears,
+  // no extra wave is emitted, no exception is thrown.
+  const tasks = [
+    { id: 't1', file: 'lib/a.mjs', depends_on: [] },
+    { id: 't2', file: 'lib/b.mjs', depends_on: ['t1'] },
+  ];
+  // 't-phantom' is not in tasks at all
+  const { waves } = buildWaves(tasks, new Set(['t-phantom']));
+  const allIds = waves.flat().map((t) => t.id);
+  // Both real tasks must appear — the phantom id must not cause a stall
+  assert.ok(allIds.includes('t1'), 't1 must still appear when phantom id is pre-seeded');
+  assert.ok(allIds.includes('t2'), 't2 must still appear when phantom id is pre-seeded');
+  // Topological order must be preserved: t2 depends on t1
+  const waveIndex = new Map(waves.flatMap((w, i) => w.map((t) => [t.id, i])));
+  assert.ok(
+    waveIndex.get('t2') > waveIndex.get('t1'),
+    't2 must still come after t1 despite the phantom pre-seeded id',
+  );
+});
