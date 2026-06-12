@@ -76,17 +76,20 @@ const TASK_SCHEMA = {
 }
 
 phase('Discover')
+// Phase-07 / ADR-017: the Discover prompt's done-detection instruction must be
+// DEAD-SIMPLE and mechanical — one grep per task, no reasoning prose.  Discover
+// may run on the haiku tier (CONTEXT.md § "Done-detection must be mechanical").
+// The exact grep pattern "(phase ${phaseNum} <taskId>)" includes the closing paren
+// so `t1` never matches `t14` (the t1/t14 trap, CONTEXT.md note 1).  phaseNum is
+// interpolated by the script at prompt-build time (never invented by the agent).
+// --fixed-strings ensures parens are literal, not regex metacharacters.
 const disc = await agent(
   `Read every plan/task file under ${root}/.astrocode/phases/${phaseSlug}/ (PLAN.md and any NN-*.md). ` +
     `Return the full task list with explicit dependencies — depends_on lists the ids of tasks ` +
     `that must complete before this one. Use the ids exactly as written in the plan.\n\n` +
-    `For each task, also set done:true if the current branch already carries a commit whose ` +
-    `subject ends with that task's exact stamp. Check with:\n` +
-    `  git log --oneline --fixed-strings --grep "(phase ${phaseNum} <taskId>)" HEAD\n` +
-    `Use --fixed-strings so the parentheses are literal characters (not regex metacharacters). ` +
-    `The closing paren is REQUIRED — "(phase ${phaseNum} t1)" must NOT match "(phase ${phaseNum} t14)". ` +
-    `If the command returns at least one commit line, set done:true; otherwise done:false. ` +
-    `Set done:false for tasks you cannot check. Never invent stamps — only grep for them.`,
+    `For each task, set done:true or done:false using this EXACT check (replace <taskId> with the task id):\n` +
+    `  git log --oneline --fixed-strings --grep "(phase ${phaseNum} <taskId>)"\n` +
+    `If the command returns at least one line, set done:true; otherwise set done:false.`,
   { schema: TASK_SCHEMA, phase: 'Discover', model: models.discover },
 )
 

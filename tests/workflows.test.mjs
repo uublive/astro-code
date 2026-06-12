@@ -1425,6 +1425,81 @@ test('t8 (b): Discover prompt contains --fixed-strings and closing-paren stamp p
   )
 })
 
+// ── t5 (phase-07): Discover prompt is a DEAD-SIMPLE mechanical grep per task ──
+//
+// ADR-017 + CONTEXT.md note 1: Discover may run on the haiku tier, so the
+// done-detection instruction must be mechanical — one grep per task, no
+// pattern-reasoning prose (which a weaker model may misinterpret).  The
+// prompt must spell the EXACT grep command with the closing-paren pattern
+// (to avoid the t1/t14 trap) and state the binary rule: output → done:true,
+// no output → done:false.  phaseNum must be interpolated from the script
+// variable, not invented by the agent.
+//
+// These guards extend t8 (b) by checking that:
+//   (1) The full `git log --oneline --fixed-strings --grep` command form is
+//       present — not just `--fixed-strings` in isolation — so the agent
+//       receives an unambiguous, copy-pasteable instruction.
+//   (2) The phaseNum variable is interpolated directly inside the grep
+//       pattern (not explained externally) so the agent never needs to
+//       derive or invent it.
+//   (3) The prompt states the mechanical done/not-done rule using output
+//       presence, keeping reasoning out of the instruction path.
+
+test('t5 (phase-07): Discover prompt spells the exact `git log --oneline --fixed-strings --grep` command', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const discoverIdx = wfSrc.indexOf("phase('Discover')")
+  assert.ok(discoverIdx !== -1, "phase('Discover') call not found in execute-phase.mjs")
+  const discoverWindow = wfSrc.slice(discoverIdx, discoverIdx + 2000)
+
+  // The full command form must be spelled out so a haiku-tier model gets an
+  // unambiguous, copy-pasteable instruction rather than having to infer flags.
+  assert.ok(
+    discoverWindow.includes('git log --oneline --fixed-strings --grep'),
+    'Discover prompt must spell the full `git log --oneline --fixed-strings --grep` command form (DEAD-SIMPLE, haiku-safe)',
+  )
+})
+
+test('t5 (phase-07): Discover prompt interpolates phaseNum into the grep pattern (never invented by the agent)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const discoverIdx = wfSrc.indexOf("phase('Discover')")
+  assert.ok(discoverIdx !== -1, "phase('Discover') call not found in execute-phase.mjs")
+  const discoverWindow = wfSrc.slice(discoverIdx, discoverIdx + 2000)
+
+  // phaseNum must be interpolated directly into the grep pattern string so the
+  // script computes the phase number at prompt-build time and the Discover agent
+  // never needs to derive or invent it (CONTEXT.md note 2: "NN must be derived
+  // from the phase slug's leading number at prompt-build time, never invented").
+  // We check that the template literal contains `${phaseNum}` inside the grep
+  // pattern context — presence of both the literal and its neighbour "(phase "
+  // confirms it is the grep arg, not some unrelated interpolation.
+  assert.ok(
+    discoverWindow.includes('${phaseNum}') && discoverWindow.includes('(phase '),
+    'Discover prompt must interpolate ${phaseNum} inside the grep pattern "(phase ${phaseNum} ...)" — never agent-invented',
+  )
+})
+
+test('t5 (phase-07): Discover prompt states binary done rule (output → done:true, else done:false) without extra reasoning', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const discoverIdx = wfSrc.indexOf("phase('Discover')")
+  assert.ok(discoverIdx !== -1, "phase('Discover') call not found in execute-phase.mjs")
+  const discoverWindow = wfSrc.slice(discoverIdx, discoverIdx + 2000)
+
+  // The done rule must be mechanical: "if command returns any line → done:true,
+  // else done:false".  This phrasing is safe for a haiku-tier model.
+  // We verify both branches are named in the prompt window.
+  assert.ok(
+    /done\s*:\s*true|done:true/.test(discoverWindow),
+    'Discover prompt must state the done:true branch of the binary rule',
+  )
+  assert.ok(
+    /done\s*:\s*false|done:false/.test(discoverWindow),
+    'Discover prompt must state the done:false branch of the binary rule',
+  )
+})
+
 test('t8 (c): execPrompt contains the (phase NN tK) stamp instruction', () => {
   const wfSrc = readFileSync(WF_FILE, 'utf8')
 
