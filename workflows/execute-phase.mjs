@@ -109,14 +109,32 @@ function filesCollide(a, b) {
  * but deferred only for file-safety; their deps stay satisfied, so they will
  * be admitted to the very next wave.  No task is starved indefinitely.
  *
+ * Phase-07 resumability — `preCompleted`:
+ *   When /astro-execute is re-run after a partial failure, Discover passes the
+ *   ids of tasks whose commit stamp was already found on the branch.  Those ids
+ *   seed `completed` before the Kahn loop begins, so their dependents are
+ *   immediately "ready" in wave 1 (the whole point — without pre-seeding a
+ *   dependent would stall behind a dep that is done but absent from `remaining`
+ *   and would therefore never enter `completed`).  Pre-seeded tasks are also
+ *   filtered OUT of `remaining` so they never appear in any emitted wave —
+ *   re-executing a stamped task would be incorrect.  The default `new Set()`
+ *   keeps every existing caller compatible with zero behaviour change.
+ *
  * @param {Array<{ id: string, file?: string, depends_on: string[] }>} tasks
+ * @param {Set<string>} [preCompleted=new Set()]  Task ids already done on the
+ *   branch (found via commit-stamp grep).  Safe to omit — defaults to an empty
+ *   set so all existing callers are unaffected.
  * @returns {{ waves: Array<typeof tasks>, deferredForFiles: number }}
  */
-function buildWaves(tasks) {
-  const completed = new Set()
+function buildWaves(tasks, preCompleted = new Set()) {
+  // Seed completed with every pre-done id so their dependents are satisfied
+  // from the very first Kahn iteration (phase-07 resumability).
+  const completed = new Set(preCompleted)
   const waves = []
   let deferredForFiles = 0
-  let remaining = tasks.slice()
+  // Filter pre-done ids out of remaining: a stamped task must never appear in
+  // any wave even though its id satisfies dependents' depends_on checks above.
+  let remaining = tasks.filter((t) => !completed.has(t.id))
 
   while (remaining.length) {
     const ready = remaining.filter((t) => t.depends_on.every((d) => completed.has(d)))

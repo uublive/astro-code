@@ -291,3 +291,103 @@ test('classifyOverflow: multiple extra files, some collision some harmless → c
   assert.ok(result.extraFiles.includes('lib/shared.mjs'), 'colliding file included');
   assert.ok(result.extraFiles.includes('lib/util.mjs'), 'non-colliding extra file also included');
 });
+
+// ── 9. buildWaves preCompleted — phase-07 resumability pre-seeding ────────────
+//
+// When /astro-execute is re-run after a partial failure, tasks whose stamp is
+// already found on the branch are passed in as `preCompleted`.  The wave builder
+// must:
+//   a) treat those ids as already done so their DEPENDENTS are ready in wave 1
+//      (the entire point — without this, dependents are stuck behind a "done"
+//      task that never appears in a wave, so the run stalls).
+//   b) NEVER include a preCompleted task in any wave — it is already done and
+//      must not be re-executed.
+//   c) Leave all existing callers (no second argument) compatible — the default
+//      `new Set()` keeps the behaviour identical to the original.
+
+test('buildWaves with no preCompleted arg behaves identically to no-arg call', () => {
+  // The default param must keep every existing caller compatible — this test
+  // proves the zero-arg path is unchanged.
+  const tasks = [
+    { id: 't1', file: 'lib/a.mjs', depends_on: [] },
+    { id: 't2', file: 'lib/b.mjs', depends_on: ['t1'] },
+  ];
+  const { waves: withDefault } = buildWaves(tasks);
+  const { waves: withEmpty }   = buildWaves(tasks, new Set());
+  assert.deepEqual(
+    ids(withDefault),
+    ids(withEmpty),
+    'explicit empty Set must produce the same waves as the no-arg call',
+  );
+});
+
+test('buildWaves preCompleted: a done task never appears in any wave', () => {
+  // Phase-07 resumability: t1 is already stamped on the branch.  It must not
+  // appear in any wave — re-running a stamped task would be wrong.
+  const tasks = [
+    { id: 't1', file: 'lib/a.mjs', depends_on: [] },
+    { id: 't2', file: 'lib/b.mjs', depends_on: ['t1'] },
+  ];
+  const { waves } = buildWaves(tasks, new Set(['t1']));
+  const allIds = waves.flat().map((t) => t.id);
+  assert.ok(!allIds.includes('t1'), 'pre-completed t1 must not appear in any wave');
+  assert.ok(allIds.includes('t2'), 't2 (dependent of done t1) must still appear');
+});
+
+test('buildWaves preCompleted: dependent of a done task is ready in wave 1', () => {
+  // The whole point of pre-seeding: t2 depends on t1; t1 is done.  t2 must be
+  // ready immediately (wave 0) — not deferred behind a "t1 not yet done" stall.
+  const tasks = [
+    { id: 't1', file: 'lib/a.mjs', depends_on: [] },
+    { id: 't2', file: 'lib/b.mjs', depends_on: ['t1'] },
+    { id: 't3', file: 'lib/c.mjs', depends_on: ['t2'] },
+  ];
+  const { waves } = buildWaves(tasks, new Set(['t1']));
+  // t2 depends on t1 (done), so it should be in wave 0 of the returned waves.
+  assert.ok(waves.length >= 1, 'must produce at least one wave');
+  assert.ok(
+    waves[0].some((t) => t.id === 't2'),
+    't2 must land in the first returned wave because its dep t1 is pre-seeded',
+  );
+  // t3 depends on t2, which is not done — it must come in a later wave.
+  assert.ok(
+    waves.flat().some((t) => t.id === 't3'),
+    't3 must also appear (in a later wave)',
+  );
+  const waveIndex = new Map(waves.flatMap((w, i) => w.map((t) => [t.id, i])));
+  assert.ok(
+    waveIndex.get('t3') > waveIndex.get('t2'),
+    't3 must come after t2 in wave order',
+  );
+});
+
+test('buildWaves preCompleted: multiple done tasks — all absent from waves, all deps unlocked', () => {
+  // A realistic re-run: t1 and t2 are both stamped; only t3 (depends on both)
+  // needs executing.
+  const tasks = [
+    { id: 't1', file: 'lib/a.mjs', depends_on: [] },
+    { id: 't2', file: 'lib/b.mjs', depends_on: [] },
+    { id: 't3', file: 'lib/c.mjs', depends_on: ['t1', 't2'] },
+  ];
+  const { waves } = buildWaves(tasks, new Set(['t1', 't2']));
+  const allIds = waves.flat().map((t) => t.id);
+  assert.ok(!allIds.includes('t1'), 't1 must not appear (pre-completed)');
+  assert.ok(!allIds.includes('t2'), 't2 must not appear (pre-completed)');
+  assert.ok(allIds.includes('t3'), 't3 must appear — all its deps are pre-seeded');
+  // t3 must be in the first wave (deps already satisfied at init).
+  assert.ok(
+    waves[0].some((t) => t.id === 't3'),
+    't3 must be in wave 0 since both t1 and t2 are pre-seeded',
+  );
+});
+
+test('buildWaves preCompleted: all tasks done → empty waves array', () => {
+  // All-done short-circuit: every task is stamped.  The result must have no
+  // waves (empty array) and nothing is executed.
+  const tasks = [
+    { id: 't1', file: 'lib/a.mjs', depends_on: [] },
+    { id: 't2', file: 'lib/b.mjs', depends_on: ['t1'] },
+  ];
+  const { waves } = buildWaves(tasks, new Set(['t1', 't2']));
+  assert.equal(waves.length, 0, 'all tasks done → no waves should be produced');
+});
