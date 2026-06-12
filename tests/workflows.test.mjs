@@ -1580,3 +1580,88 @@ test('t8 (e): all-done short-circuit — Execute phase is skipped when no execut
     'execute-phase.mjs must short-circuit the Execute phase when all tasks are done (waves empty) — guard the wave loop',
   )
 })
+
+// ── t6: call-site wiring — executableTasks, per-task skip narration, buildWaves(executableTasks) ──
+//
+// Phase-07 / ADR-017: at the buildWaves call site the script must:
+//   (a) Compute `const executableTasks = tasks.filter((t) => !t.done)` so the
+//       wave builder only sees tasks that still need running.  Passing the full
+//       `tasks` array when some are already done is harmless (buildWaves filters
+//       via preCompleted anyway) but the intent must be explicit in the source.
+//   (b) Call `buildWaves(executableTasks, preCompleted)` — NOT `buildWaves(tasks, …)` —
+//       so the call site mirrors the variable name in the task spec.
+//   (c) Narrate each skip INDIVIDUALLY via a log line containing
+//       "already on branch (stamp found) — skipping" and the specific task id.
+//       A summary-only log ("N task(s) already stamped") is insufficient; the
+//       per-task log emits at discovery time so the user sees exactly which task
+//       was skipped, matching CONTEXT.md § "Narrate each skip".
+//   (d) The Execute wave loop must be conditioned so it is skipped when
+//       `executableTasks.length === 0` (all tasks done) but Verify still runs —
+//       no early-return before phase('Verify').  The existing `!waves.length`
+//       guard is acceptable, but the source must also reference `executableTasks`
+//       (so the reader can confirm the no-op wave loop is deliberate).
+
+test('t6 (phase-07): executableTasks is computed as tasks filtered to undone tasks', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Must declare const executableTasks (or let — but const matches the spec).
+  assert.ok(
+    /(?:const|let)\s+executableTasks\s*=/.test(wfSrc),
+    'execute-phase.mjs must declare executableTasks (filtered to tasks where !t.done)',
+  )
+
+  // The right-hand side must filter tasks by !t.done — not some other predicate.
+  // Search for the const/let declaration specifically (not a comment mention).
+  const declIdx = wfSrc.search(/(?:const|let)\s+executableTasks\s*=/)
+  assert.ok(declIdx !== -1, 'executableTasks declaration not found')
+  const declWindow = wfSrc.slice(declIdx, declIdx + 120)
+  assert.ok(
+    /filter\s*\(.*!.*done/.test(declWindow),
+    'executableTasks must be computed via tasks.filter((t) => !t.done)',
+  )
+})
+
+test('t6 (phase-07): buildWaves is called with executableTasks, not with the full tasks array', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The call site must pass executableTasks as the first arg to buildWaves.
+  // Passing the full tasks array (which includes done tasks) would make the
+  // executableTasks variable irrelevant — the explicit name is load-bearing
+  // documentation of intent (only executable tasks enter the wave builder).
+  assert.ok(
+    /buildWaves\s*\(\s*executableTasks\s*,/.test(wfSrc),
+    'buildWaves must be called with executableTasks as the first argument (not the full tasks array)',
+  )
+})
+
+test('t6 (phase-07): per-task skip narration logs "already on branch (stamp found) — skipping" for each done task', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The narration must happen PER TASK (a loop or map over skippedTaskIds), not
+  // just as a single summary line.  CONTEXT.md: "Narrate each skip via log('• task
+  // ' + id + ' already on branch (stamp found) — skipping')" — the individual
+  // task id must appear in the log so the user sees precisely which task was skipped.
+  //
+  // We verify:
+  //  1. The phrase "already on branch (stamp found) — skipping" (or close variant)
+  //     exists in the source (the spec's exact text).
+  //  2. The log line references a loop variable or task id interpolation (not just a
+  //     static count), confirming it fires per task rather than once as a summary.
+  assert.ok(
+    /already on branch.*stamp found.*skipping|stamp found.*already on branch.*skipping/.test(wfSrc),
+    'execute-phase.mjs must contain a log line with "already on branch (stamp found) — skipping" for per-task skip narration',
+  )
+
+  // The per-task log must reference the task id (interpolated from a variable),
+  // not just the skippedTaskIds array as a whole.  This distinguishes a per-task
+  // loop log from a summary log.
+  const skipNarrIdx = wfSrc.search(/already on branch.*stamp found.*skipping|stamp found.*already on branch.*skipping/)
+  assert.ok(skipNarrIdx !== -1, 'per-task skip narration line not found')
+  // The surrounding context (50 chars before, 150 after) must include a task-id
+  // variable reference — e.g. `id`, `t.id`, or `${id}` interpolation.
+  const narrWindow = wfSrc.slice(Math.max(0, skipNarrIdx - 50), skipNarrIdx + 150)
+  assert.ok(
+    /\$\{id\}|\$\{t\.id\}|t\.id|` \+ id/.test(narrWindow),
+    'per-task skip log must interpolate the individual task id (${id}, ${t.id}, or t.id), not just a count or array',
+  )
+})

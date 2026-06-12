@@ -378,12 +378,22 @@ const tasks = disc.tasks
 // tasks themselves never appear in any wave (CONTEXT.md § "Wave building: done task
 // ids PRE-SEED the completed set").  skippedTaskIds is exposed in the return value
 // so /astro-execute can narrate which tasks were skipped.
+// Skips are narrated at discovery time ONLY — never re-checked mid-run
+// (CONTEXT.md note 4: a task completed by THIS run is tracked by the run itself,
+// not by stamps; re-grepping mid-run would produce false positives for in-flight
+// work and is explicitly out of scope per the phase-07 plan).
 const skippedTaskIds = tasks.filter((t) => t.done).map((t) => t.id)
 const preCompleted = new Set(skippedTaskIds)
-if (skippedTaskIds.length) {
-  log(`• ${skippedTaskIds.length} task(s) already stamped on branch — skipping: ${skippedTaskIds.join(', ')}`)
+for (const id of skippedTaskIds) {
+  log(`• task ${id} already on branch (stamp found) — skipping`)
 }
-const { waves, deferredForFiles } = buildWaves(tasks, preCompleted)
+// Only tasks that are NOT yet stamped on the branch enter the wave builder.
+// We filter to executableTasks rather than passing the full tasks array so the
+// call site makes the intent explicit (only executable tasks need waves built).
+// preCompleted still seeds the completed set inside buildWaves so dependents of
+// done tasks are immediately "ready" in wave 1 (the whole point of pre-seeding).
+const executableTasks = tasks.filter((t) => !t.done)
+const { waves, deferredForFiles } = buildWaves(executableTasks, preCompleted)
 log(
   `${tasks.length} task(s) in ${waves.length} wave(s)` +
     (skippedTaskIds.length ? ` (${skippedTaskIds.length} already done)` : '') +
@@ -676,11 +686,13 @@ const results = []
 const healedTaskIds = []
 let integrationFailed = null
 // Phase-07 / ADR-017: all-done short-circuit — when every task is already stamped
-// on the branch, waves is empty and the loop below is a no-op.  The Verify phase
-// still runs (CONTEXT.md: "a phase may have executed fully but failed verification
-// — verify must still run").  We log a narration so the user sees why no execution
-// happened rather than an unexplained gap in the log.
-if (!waves.length && tasks.length) {
+// on the branch, executableTasks is empty and waves is empty; the loop below is a
+// no-op.  The Verify phase still runs (CONTEXT.md: "a phase may have executed fully
+// but failed verification — verify must still run").  We log a narration so the user
+// sees why no execution happened rather than an unexplained gap in the log.
+// We do NOT early-return here — Verify must execute regardless (never early-return
+// before the Verify phase per the phase-07 spec).
+if (executableTasks.length === 0 && tasks.length) {
   log(`⊡ all ${tasks.length} task(s) already stamped on branch — skipping Execute, going straight to Verify`)
 }
 for (let w = 0; w < waves.length && !integrationFailed; w++) {
