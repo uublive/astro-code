@@ -433,6 +433,7 @@ const execPrompt = (t) =>
   `Make the change test-first where it adds behavior, run the tests, and make ONE atomic ` +
   `commit with a clear message. Match the project canon exactly (stack, naming, patterns). ` +
   `touch ONLY your declared file(s); if other changes are genuinely required, say so in your summary. ` +
+  `If this is a RED-test task whose import would crash at module load because the export does not exist yet, use the dynamic-import pattern (\`await import(...)\` inside async tests) — do NOT implement the missing export; that is the impl task's job (ADR-018). ` +
   `End the commit subject with the stamp \`(phase ${phaseNum} ${t.id})\` — this exact suffix ` +
   `enables idempotent re-execution (ADR-017): a later re-run of /astro-execute will detect ` +
   `the stamp and skip this task rather than re-executing it. ` +

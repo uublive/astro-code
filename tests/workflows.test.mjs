@@ -1506,8 +1506,10 @@ test('t8 (c): execPrompt contains the (phase NN tK) stamp instruction', () => {
   // Locate the execPrompt definition (arrow function).
   const execIdx = wfSrc.indexOf('const execPrompt')
   assert.ok(execIdx !== -1, 'execPrompt not found in execute-phase.mjs')
-  // Window covering the full template literal (≤ 800 chars is sufficient).
-  const execWindow = wfSrc.slice(execIdx, execIdx + 800)
+  // Window covering the full template literal (≤ 1100 chars; expanded from 800
+  // to accommodate the phase-08 t3 dynamic-import escape hatch sentence added
+  // after the "touch ONLY" hygiene line).
+  const execWindow = wfSrc.slice(execIdx, execIdx + 1100)
 
   // The prompt must instruct the executor to stamp the commit subject with
   // `(phase NN tK)` where NN/tK are interpolated per task.  Without this
@@ -1839,6 +1841,61 @@ test('t2 (phase-08): plan-phase.mjs Synthesize prompt closes with self-verificat
   assert.ok(
     /fix.*violation|fix any violation/i.test(synthWindow),
     'plan-phase.mjs Synthesize self-check must instruct fixing any violation found',
+  )
+})
+
+// ── t3 (phase-08): execPrompt carries the dynamic-import escape hatch (ADR-018) ──
+//
+// ADR-018: a RED-test task whose static import would crash at module load
+// (because the export doesn't exist yet) must use the dynamic-import pattern
+// (`await import(...)` inside async tests) rather than implement the missing
+// export.  Implementing the export is the impl task's job; doing it here is
+// the phase-04 t5 overflow trap (touch ONLY declared files tells the WHAT;
+// this sentence supplies the HOW for the RED-test case).
+//
+// healPrompt is unchanged — heals run sequentially after the impl usually
+// exists, so the co-scheduling hazard that makes module-load crashes dangerous
+// is already gone by heal time.
+//
+// Static source guard — same readFileSync + regex/includes style.
+
+test('t3 (phase-08): execPrompt contains the dynamic-import escape hatch for RED-test tasks (ADR-018)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const startIdx = wfSrc.indexOf('const execPrompt')
+  assert.ok(startIdx !== -1, 'execPrompt not found in execute-phase.mjs')
+  // Window large enough to capture the full template literal concat chain.
+  const window = wfSrc.slice(startIdx, startIdx + 1200)
+
+  // Must instruct the dynamic-import pattern for RED-test tasks.
+  // The sentinel token `await import` distinguishes dynamic from static import.
+  assert.ok(
+    /await import/.test(window),
+    'execPrompt must instruct `await import(...)` as the dynamic-import escape hatch for RED-test tasks (ADR-018)',
+  )
+
+  // Must name the impl task as the owner of the missing export — so the executor
+  // knows NOT to implement the export itself (that is the phase-04 t5 overflow trap).
+  assert.ok(
+    /impl task|implementation task|impl.*task/i.test(window),
+    'execPrompt must name "impl task" as the owner of the missing export (do NOT implement it — that is the impl task\'s job)',
+  )
+})
+
+test('t3 (phase-08): healPrompt does NOT gain the dynamic-import escape hatch (heals run after impl exists)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const startIdx = wfSrc.indexOf('const healPrompt')
+  assert.ok(startIdx !== -1, 'healPrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 1500)
+
+  // healPrompt must remain unchanged — the missing-export problem is gone by
+  // heal time (the impl task has usually already run), and adding the hatch
+  // would create confusion with the "implement FRESH" instruction (ADR-014).
+  // We verify the hatch's exact impl-task reference is absent from healPrompt.
+  assert.ok(
+    !/if this is a RED-test task/i.test(window),
+    'healPrompt must NOT contain the dynamic-import escape hatch sentence — heals run after the impl usually exists (ADR-018 scope)',
   )
 })
 
