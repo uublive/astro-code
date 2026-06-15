@@ -412,13 +412,22 @@ log(
 //   ('sequential' | 'parallel'); tune the A/B cutover with args.seqBudget.
 const SEQ_BUDGET = Number(input.seqBudget) || 8
 const maxWidth = waves.length ? Math.max(...waves.map((w) => w.length)) : 0
+// Worktree robustness: some environments are worktree-HOSTILE — the harness fires
+// one `git worktree add` per parallel agent, and under a wide wave the concurrent
+// adds lose a lock race, so a MAJORITY fail with "Cannot create agent worktree: not
+// in a git repository" while a few win (the partial-success signature: e.g. 6 of 18
+// succeeded).  config.use_worktrees (passed through args as `useWorktrees`) lets such
+// a project opt out of the parallel path entirely — clean sequential on-branch, zero
+// failed-agent noise.  Default true (back-compat).  An explicit args.strategy still
+// wins (escape hatch); only the AUTO picker respects the flag.
+const useWorktrees = input.useWorktrees !== false
 const strategy =
   input.strategy === 'sequential' || input.strategy === 'parallel'
     ? input.strategy
-    : tasks.length <= SEQ_BUDGET || maxWidth < 2
+    : !useWorktrees || tasks.length <= SEQ_BUDGET || maxWidth < 2
       ? 'sequential'
       : 'parallel'
-log(`strategy: ${strategy} (${tasks.length} task(s), widest wave ${maxWidth}, budget ${SEQ_BUDGET})`)
+log(`strategy: ${strategy} (${tasks.length} task(s), widest wave ${maxWidth}, budget ${SEQ_BUDGET}, worktrees ${useWorktrees})`)
 
 // execPrompt carries the file-ownership hygiene sentence (phase-06 t3 / ADR-016):
 // executors must declare up-front if they touch files outside their declared set.
@@ -686,6 +695,13 @@ const results = []
 // wave proceeds").
 const healedTaskIds = []
 let integrationFailed = null
+// Adaptive worktree downgrade: once a parallel wave shows the MAJORITY of its
+// executors failing to get a worktree (the lock-race signature — partial success,
+// not a hard error), the environment is worktree-hostile.  This latch flips the
+// wave-loop guard so every REMAINING wave runs on-branch sequentially — the user
+// eats the failure noise ONCE, not on every wave.  Correctness is preserved either
+// way (on-branch is always valid); only intra-wave parallelism is given up.
+let worktreesUnavailable = false
 // Phase-07 / ADR-017: all-done short-circuit — when every task is already stamped
 // on the branch, executableTasks is empty and waves is empty; the loop below is a
 // no-op.  The Verify phase still runs (CONTEXT.md: "a phase may have executed fully
@@ -699,8 +715,9 @@ if (executableTasks.length === 0 && tasks.length) {
 for (let w = 0; w < waves.length && !integrationFailed; w++) {
   const wave = waves[w]
   log(`wave ${w + 1}/${waves.length}: ${wave.map((t) => t.id).join(', ')}`)
-  // A, or a single-task wave (nothing to parallelize): commit straight on the branch.
-  if (strategy === 'sequential' || wave.length === 1) {
+  // A, or a single-task wave (nothing to parallelize), or worktrees proven
+  // unavailable this run: commit straight on the branch.
+  if (strategy === 'sequential' || wave.length === 1 || worktreesUnavailable) {
     for (const t of wave) {
       const out = await runOnBranch(t)
       if (out) results.push(out)
@@ -738,6 +755,18 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
     for (const t of missing) {
       const r2 = await runOnBranch(t)
       if (r2) results.push(r2)
+    }
+    // Adaptive downgrade: a MAJORITY worktree-failure means the harness can't
+    // reliably create worktrees here (lock-race under width) — not a one-off
+    // flake.  Latch on so the rest of the run goes straight on-branch and the
+    // user stops seeing the failure noise wave after wave.  A lone transient
+    // failure (minority) does NOT trip this — that task just re-ran above.
+    if (!worktreesUnavailable && missing.length * 2 >= wave.length) {
+      worktreesUnavailable = true
+      log(
+        `⚠ worktree isolation unreliable here (${missing.length}/${wave.length} failed) — ` +
+          `running all remaining waves sequentially on-branch`,
+      )
     }
   }
   const integ = await integrateWave(w, wave)

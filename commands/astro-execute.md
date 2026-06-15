@@ -21,9 +21,16 @@ Execute phase `$ARGUMENTS`.
      Workflow({
        scriptPath: "<ac path workflows>/execute-phase.mjs",   // from `ac path workflows`
        args: { root: "<project root>", phase: "<phase slug>",
-               models: <the JSON object from `ac config get models`> }
+               models: <the JSON object from `ac config get models`>,
+               useWorktrees: <the boolean from `ac config get use_worktrees`> }
      })
      ```
+     `useWorktrees` honors `config.use_worktrees`: set it `false` (e.g. `ac config set
+     use_worktrees false`) on a worktree-hostile machine — where parallel agents fail
+     with "Cannot create agent worktree: not in a git repository" — and the workflow
+     runs sequentially on-branch instead of fighting the harness. (Even when `true`,
+     the workflow auto-downgrades a run to sequential after the first wave where a
+     majority of worktree creations fail, so the noise happens at most once.)
      **Speed override:** if the user passed `--fast`, use the JSON from
      `ac models fast --preview` as the `models` arg instead (a one-off fast preset —
      sonnet everywhere except the opus verify gate — that is NOT persisted to config).

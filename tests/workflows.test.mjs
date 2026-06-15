@@ -2011,3 +2011,50 @@ test('t5 (phase-08): execute-phase.mjs healPrompt does NOT contain the escape-ha
     't5: healPrompt must NOT contain the escape-hatch sentence — heals run after the impl usually exists (ADR-018 scope, negative guard)',
   )
 })
+
+// ── worktree-robustness guards: honor use_worktrees + adaptive downgrade ──────
+//
+// Some environments are worktree-hostile: the harness fires one `git worktree add`
+// per parallel agent and the concurrent adds lose a lock race under a wide wave, so
+// a majority fail with "Cannot create agent worktree: not in a git repository". Two
+// safeguards, both pinned here so neither silently regresses:
+//   (1) config.use_worktrees (args.useWorktrees) makes the AUTO strategy picker pick
+//       sequential when false — an explicit opt-out for known-hostile machines.
+//   (2) Adaptive downgrade: a majority worktree-failure in a parallel wave latches
+//       `worktreesUnavailable`, routing every remaining wave on-branch.
+test('static guard (worktrees): use_worktrees flag gates the auto strategy picker', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8');
+
+  // The script must read the flag from args (default true) ...
+  assert.ok(
+    /const\s+useWorktrees\s*=\s*input\.useWorktrees\s*!==\s*false/.test(wfSrc),
+    'execute-phase.mjs must read `useWorktrees` from args (default true)',
+  );
+  // ... and the auto strategy branch must consult it (so false ⇒ sequential).
+  const idx = wfSrc.indexOf('const strategy =');
+  assert.ok(idx !== -1, 'strategy selection not found');
+  const window = wfSrc.slice(idx, idx + 320);
+  assert.ok(
+    /!useWorktrees/.test(window),
+    'the auto strategy picker must force sequential when !useWorktrees',
+  );
+});
+
+test('static guard (worktrees): a majority-failed parallel wave latches the on-branch downgrade', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8');
+
+  // The latch must exist, the wave-loop guard must consult it, and the downgrade
+  // must trip on a MAJORITY (not any) worktree failure.
+  assert.ok(
+    /let\s+worktreesUnavailable\s*=\s*false/.test(wfSrc),
+    'execute-phase.mjs must declare the `worktreesUnavailable` latch',
+  );
+  assert.ok(
+    /wave\.length === 1 \|\| worktreesUnavailable/.test(wfSrc),
+    'the wave-loop on-branch guard must consult `worktreesUnavailable`',
+  );
+  assert.ok(
+    /missing\.length \* 2 >= wave\.length/.test(wfSrc),
+    'the downgrade must trip on a MAJORITY worktree failure (missing*2 >= wave.length), not a lone flake',
+  );
+});
