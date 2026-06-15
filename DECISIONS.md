@@ -128,3 +128,10 @@ _2026-06-12_
 
 **Rejected:** test tasks declaring the impl file (blurs ownership); abandoning test-first
 
+## ADR-019 — Worktree-hostile environments: honor use_worktrees + adaptive sequential downgrade
+_2026-06-15_
+
+**Why:** The harness creates one git worktree per parallel agent; under wide waves the concurrent 'git worktree add' calls lose a lock race so a majority fail with 'not in a git repository' while a few succeed. The execute-phase workflow now (1) honors config.use_worktrees=false via args to force sequential up front, and (2) latches a sequential downgrade for the rest of a run once a parallel wave shows majority worktree failure — so the failure noise happens at most once and correctness (on-branch commits) is always preserved
+
+**Rejected:** leaving use_worktrees as dead config; per-wave re-run only (repeats the failure noise every wave); throttling the harness's worktree creation (not controllable from the script)
+
