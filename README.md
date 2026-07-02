@@ -57,6 +57,7 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)
 /astro-execute <phase>    wave-based parallel execution, then verify
 /astro-autonomous <phase> run a whole phase end-to-end (discuss→plan→execute→verify), then stop
+/astro-alex "<prompt>"    fast lane for a long, off-the-cuff prompt: capture → distill → execute
 /astro-verify <phase>     AI gate: confirm the phase goal is met (goal-backward)
 /astro-accept <phase>     human gate: UAT sign-off, then close the phase
 /astro-milestone          start the next milestone cycle
@@ -98,6 +99,19 @@ Everything lives in **`.astrocode/`** in your repo (human-readable, git-committe
 about scope, approach, and edge cases, then writes the decisions to the phase's
 `CONTEXT.md` — which `/astro-plan` reads and obeys. Optional but recommended; trivial
 phases can skip it.
+
+**The fast lane (off-the-cuff work).** `/astro-alex "<a long, unplanned prompt>"` is for
+the way some people work — a big freehand request dumped in one go that shouldn't need
+four commands to land. It **captures the raw prompt verbatim** (the source of truth),
+**distills a lean spec** you can eyeball — a checklist of changes, each traced back to
+the raw prompt, plus an explicit "to clarify / unclassified" list so nothing is silently
+dropped — then goes **straight to execution**: sequential atomic commits and a single
+verify pass, skipping the research/planning fan-out. It defaults the executor to Opus
+(there's no upstream Opus plan feeding it; override with `--model sonnet|haiku`), and a
+**scope guard** stops and escalates anything systemic (new architecture/data-model,
+cross-cutting migration, new dependency, or work that contradicts the canon) back to the
+full `discuss → plan → execute` flow. Like every other path, it produces a **verified**
+phase at best — human `/astro-accept` still closes it.
 
 **Two gates close a phase.** It moves `executing → verified → complete`: the
 `astro-verifier` agent is the machine gate (goal-backward, tests), and `/astro-accept`
