@@ -5,6 +5,7 @@ import process from 'node:process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, join, dirname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
 import { initPlanning, phaseContextStatus } from '../lib/planning.mjs';
@@ -17,7 +18,7 @@ import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
-import { installClaude, uninstallClaude, ASTRO_HOME } from '../lib/install.mjs';
+import { installClaude, uninstallClaude, installStatusline, ASTRO_HOME } from '../lib/install.mjs';
 import { collectStats } from '../lib/stats.mjs';
 
 function parseArgs(args) {
@@ -96,6 +97,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac stats [--since ISO|--session ID] token usage (fresh vs cache) + wall-clock from transcripts
   ac registry init [--force]          create the orphan registry branch + backfill from roadmaps
   ac registry show                    print the shared numbering registry
+  ac statusline [install|preview]     wire the rich statusline (recap·model·ctx-bar·M/P) or preview it
   ac install | uninstall              (un)install commands + agents into ~/.claude
   ac update [clone-path]              git pull + refresh the global CLI and commands
   ac path [sub]                       print the framework dir (e.g. ac path workflows)
@@ -546,6 +548,47 @@ async function main() {
       } else {
         die('usage: ac decision <add|list>');
       }
+      return;
+    }
+
+    case 'statusline': {
+      const sub = pos[0] || 'preview';
+      if (sub === 'install') {
+        const res = installStatusline(FRAMEWORK_ROOT);
+        console.log(`✓ statusline deployed (${res.hooks} hook file(s)) and wired into ${res.wired.length} config dir(s):`);
+        for (const w of res.wired) {
+          console.log(`  ${w.ok ? '✓' : '⚠'} ${w.label}: ${w.dir}${w.ok ? '' : '  (skipped — unparseable settings.json)'}`);
+        }
+        console.log('  takes effect on the next statusline repaint (a keystroke or the next turn).');
+        return;
+      }
+      if (sub !== 'preview') die(`unknown statusline subcommand "${sub}" — use install | preview`);
+      // Render the real hook against a representative Claude stdin blob so the
+      // preview is WYSIWYG (dot + bar included). A tiny synthetic transcript drives
+      // the recap + context-fill; --tokens/--model/--recap override the samples.
+      // We run it under an isolated HOME so the leading busy/idle dot can be shown
+      // (seeded here) without reading or writing the real session-state file.
+      const cwd = process.cwd();
+      const previewHome = join(tmpdir(), `ac-sl-preview-${process.pid}`);
+      mkdirSync(join(previewHome, '.astro', 'code'), { recursive: true });
+      const tp = join(previewHome, 'transcript.jsonl');
+      const cacheRead = Number(flags.tokens) || 88_000;
+      writeFileSync(tp,
+        JSON.stringify({ type: 'user', message: { content: typeof flags.recap === 'string' ? flags.recap : 'wire up the new statusline' } }) + '\n' +
+        JSON.stringify({ message: { usage: { input_tokens: 12_000, cache_creation_input_tokens: 4_000, cache_read_input_tokens: cacheRead } } }) + '\n');
+      const now = Math.floor(Date.now() / 1000);
+      const rec = flags.idle ? { prompt: now - 10, stop: now } : { prompt: now, at: now };
+      writeFileSync(join(previewHome, '.astro', 'code', 'session-state.json'), JSON.stringify({ preview: rec }));
+      const blob = {
+        session_id: 'preview',
+        workspace: { current_dir: cwd }, cwd,
+        model: { id: typeof flags.model === 'string' ? flags.model : 'claude-opus-4-8', display_name: typeof flags.name === 'string' ? flags.name : 'Opus 4.8' },
+        transcript_path: tp,
+        cost: { total_cost_usd: 0.42 },
+      };
+      const hook = join(HOME_ROOT, 'hooks', 'astro-statusline.mjs');
+      const r = spawnSync(process.execPath, [hook, ''], { input: JSON.stringify(blob), encoding: 'utf8', env: { ...process.env, HOME: previewHome } });
+      process.stdout.write((r.stdout || '(empty)') + '\n');
       return;
     }
 

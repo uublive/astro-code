@@ -85,9 +85,18 @@ export function readContext(root, nowSeconds) {
 
 // --- presentation ------------------------------------------------------------
 
-const ANSI = {
+// Shiny palette. Truecolor terminals (COLORTERM=truecolor|24bit) get vivid neon
+// tones; everyone else falls back to the bright ANSI set (bold + 9x) — still
+// punchy, and universally supported. NO_COLOR strips it all.
+const TRUECOLOR = /^(truecolor|24bit)$/i.test(process.env.COLORTERM || '');
+const rgb = (r, g, b) => `\x1b[1;38;2;${r};${g};${b}m`;        // bold + 24-bit fg
+const ANSI = TRUECOLOR ? {
+  reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[38;2;128;140;168m',
+  red: rgb(255, 71, 108), green: rgb(57, 255, 150), yellow: rgb(255, 209, 71),
+  cyan: rgb(56, 224, 255), magenta: rgb(199, 125, 255),
+} : {
   reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[90m',
-  red: '\x1b[31m', green: '\x1b[32m', yellow: '\x1b[33m', cyan: '\x1b[36m',
+  red: '\x1b[1;91m', green: '\x1b[1;92m', yellow: '\x1b[1;93m', cyan: '\x1b[1;96m', magenta: '\x1b[1;95m',
 };
 const useColor = () => !process.env.NO_COLOR;
 function paint(s, code) { return useColor() && code ? `${code}${s}${ANSI.reset}` : s; }
@@ -127,7 +136,7 @@ export function nextAction(ctx) {
 export function renderSegment(ctx) {
   if (!ctx || (ctx.milestone == null && !ctx.phase)) return '';
   const col = ctx.phase ? statusColor(ctx.phase.status) : ANSI.dim;
-  const parts = [`${paint('⊡', col)} ${paint('astro', ANSI.bold)}`];
+  const parts = [`${paint('⊡', col)} ${paint('astro', ANSI.magenta)}`];
   if (ctx.milestone != null) parts.push(`M${ctx.milestone}`);
   if (ctx.phase) parts.push(`P${ctx.phase.number} ${phaseLabel(ctx.phase)}`);
   if (ctx.activity) parts.push(paint(ctx.activity, ANSI.yellow));     // live verb wins
@@ -135,6 +144,126 @@ export function renderSegment(ctx) {
   if (ctx.total) parts.push(`${ctx.done}/${ctx.total}`);
   if (ctx.blockers) parts.push(paint(`⚠${ctx.blockers}`, ANSI.red));
   return parts.join(' · ');
+}
+
+// --- busy / idle activity dot -------------------------------------------------
+// The statusline can't tell from its own stdin whether a turn is in flight, so
+// two hooks record turn boundaries into a per-session record: UserPromptSubmit
+// stamps `prompt` (a turn started), Stop stamps `stop` (it ended). We're busy
+// when the last boundary was a prompt — unless the record has gone stale (a turn
+// that crashed before Stop can't pin the dot green forever).
+export const SESSION_STALE_SECONDS = 20 * 60;
+
+export function isBusy(rec, nowSeconds, ttl = SESSION_STALE_SECONDS) {
+  if (!rec || typeof rec !== 'object') return false;
+  const prompt = typeof rec.prompt === 'number' ? rec.prompt : -Infinity;
+  const stop = typeof rec.stop === 'number' ? rec.stop : -Infinity;
+  if (stop >= prompt) return false;            // last boundary was a Stop → idle
+  const at = typeof rec.at === 'number' ? rec.at : prompt;
+  return (nowSeconds - at) <= ttl;             // busy, unless the turn went stale
+}
+
+// The leading status glyph: a solid green ● while working, a hollow dim ○ when idle.
+export function renderStatus(busy) {
+  return busy ? paint('●', ANSI.green) : paint('○', ANSI.dim);
+}
+
+// --- Claude-session segment: recap · model · context-fill bar ----------------
+// These read Claude's own live session (the stdin blob + the transcript it points
+// at), not the .astrocode/ project state. Kept here so the statusline hook stays
+// pure I/O glue and every renderer is unit-testable. The transcript reader is
+// injectable so tests don't need a file on disk.
+
+function defaultRead(p) {
+  try { return p ? readFileSync(p, 'utf8') : null; } catch { return null; }
+}
+
+// Nominal context window for the running model. The 1M-context Opus variant is
+// tagged `[1m]` in its id; everything else is the standard 200k window.
+export function modelLimit(model) {
+  const id = (model && (model.id || model.display_name)) || '';
+  return /\[1m\]|(?:^|[^0-9a-z])1m(?:$|[^0-9a-z])/i.test(id) ? 1_000_000 : 200_000;
+}
+
+// Current context-window occupancy, from the session transcript: the LAST line
+// carrying a `usage` block reflects how full the window is right now. The whole
+// input side occupies the window — fresh input + both cache tiers. We scan from
+// the end and stop at the first hit (cheap on big transcripts). null → no usage.
+export function readContextTokens(transcriptPath, read = defaultRead) {
+  const text = read(transcriptPath);
+  if (text == null) return null;
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const s = lines[i].trim();
+    if (!s) continue;
+    let obj; try { obj = JSON.parse(s); } catch { continue; }
+    const u = (obj.message && obj.message.usage) || obj.usage;
+    if (u && (u.input_tokens != null || u.cache_read_input_tokens != null)) {
+      return (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+    }
+  }
+  return null;
+}
+
+// A short "what's Claude doing" recap: the last human turn in the transcript,
+// squished to one line. Tool-result turns (content is tool_result blocks, no
+// text) and slash-command/meta turns (wrapped in <…> or […]) are skipped.
+export function readRecap(transcriptPath, read = defaultRead) {
+  const text = read(transcriptPath);
+  if (text == null) return '';
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const s = lines[i].trim();
+    if (!s) continue;
+    let obj; try { obj = JSON.parse(s); } catch { continue; }
+    if (obj.type !== 'user' || !obj.message) continue;
+    const c = obj.message.content;
+    let t = '';
+    if (typeof c === 'string') t = c;
+    else if (Array.isArray(c)) t = c.filter((b) => b && b.type === 'text').map((b) => b.text || '').join(' ');
+    t = t.trim();
+    if (!t || t.startsWith('<') || t.startsWith('[')) continue; // tool-result / command meta
+    return t;
+  }
+  return '';
+}
+
+// Collapse whitespace and cap a string to `n` visible chars with an ellipsis.
+export function truncate(s, n = 48) {
+  const t = String(s || '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+}
+
+// A graphical █░ progress bar for a 0..1 fraction.
+export function progressBar(fraction, width = 10) {
+  const f = Math.max(0, Math.min(1, Number(fraction) || 0));
+  const filled = Math.round(f * width);
+  return '█'.repeat(filled) + '░'.repeat(Math.max(0, width - filled));
+}
+
+const kfmt = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(n % 1e6 ? 1 : 0)}M`
+  : n >= 1e5 ? `${Math.round(n / 1e3)}k`
+    : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : `${n}`);
+
+// The dim, leading recap segment. Empty when there's no task text.
+export function renderRecap(text) {
+  const t = truncate(text, 48);
+  return t ? paint(`❯ ${t}`, ANSI.dim) : '';
+}
+
+// model name + a context-fill bar (bar+percent+tokens/limit). `tokens`/`limit`
+// may be null (no transcript yet) → only the model shows. Colour ramps
+// green→yellow→red as the window fills. Empty when there's no model at all.
+export function renderClaudeSegment({ model, tokens, limit } = {}) {
+  const parts = [];
+  const name = model && (model.display_name || model.id);
+  if (name) parts.push(paint(name, ANSI.cyan));
+  if (tokens != null && limit) {
+    const f = tokens / limit;
+    const col = f >= 0.85 ? ANSI.red : f >= 0.6 ? ANSI.yellow : ANSI.green;
+    parts.push(`${paint(progressBar(f), col)} ${Math.round(f * 100)}% · ${kfmt(tokens)}/${kfmt(limit)}`);
+  }
+  return parts.join(' ');
 }
 
 // A terse, PLAIN-text continuity note for the PreCompact hook. Context compaction

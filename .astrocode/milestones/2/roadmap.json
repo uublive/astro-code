@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "milestone": 2,
+  "phases": [
+    {
+      "number": 5,
+      "name": "Integrator self-healing ladder (rebase, re-run, fail)",
+      "slug": "05-integrator-self-healing-ladder-rebase-re-run-fail",
+      "status": "complete",
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_at": "2026-06-11T14:15:50.519Z"
+    },
+    {
+      "number": 6,
+      "name": "Wave fork-base guard and executor file-ownership enforcement",
+      "slug": "06-wave-fork-base-guard-and-executor-file-ownership-enforcement",
+      "status": "complete",
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_at": "2026-06-12T06:08:16.240Z"
+    },
+    {
+      "number": 7,
+      "name": "Idempotent re-execution: done-detection via task-id commit stamps",
+      "slug": "07-idempotent-re-execution-done-detection-via-task-id-commit-stamps",
+      "status": "complete",
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_at": "2026-06-12T12:20:56.448Z"
+    },
+    {
+      "number": 8,
+      "name": "Planner safeguards for test-first task splits",
+      "slug": "08-planner-safeguards-for-test-first-task-splits",
+      "status": "complete",
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_at": "2026-06-12T13:25:40.598Z"
+    }
+  ]
+}

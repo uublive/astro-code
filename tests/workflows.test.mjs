@@ -1797,10 +1797,12 @@ test('t2 (phase-08): plan-phase.mjs Synthesize prompt closes with self-verificat
 
   const synthIdx = src.indexOf("phase('Synthesize')")
   assert.ok(synthIdx !== -1, "phase('Synthesize') call not found in plan-phase.mjs")
-  const synthWindow = src.slice(synthIdx, synthIdx + 3000)
+  // 3600 (was 3000): the self-check now also names the wave-green rule (ADR-020),
+  // which legitimately grew the prompt past the original window.
+  const synthWindow = src.slice(synthIdx, synthIdx + 3600)
 
   // The closing self-verification instruction must tell the planner to check every
-  // task before writing PLAN.md.  The three required rule names are:
+  // task before writing PLAN.md.  The four required rule names are:
   //   (1) red-test import rule (the dynamic-import / ADR-018 rule)
   //   (2) same-file serialization: two tasks touching the same file must not both
   //       have empty depends_on (they must be serialized)
@@ -1829,6 +1831,13 @@ test('t2 (phase-08): plan-phase.mjs Synthesize prompt closes with self-verificat
   assert.ok(
     /every task declares|declares its file/i.test(synthWindow),
     'plan-phase.mjs Synthesize self-check must name the file-declaration requirement (rule 3: every task declares its file(s))',
+  )
+
+  // Rule 4 (ADR-020): wave-green — a deletion carries its consumer fixups; no task
+  // leaves the build broken at a wave boundary.
+  assert.ok(
+    /wave-green rule|wave-green|build green|deletions carry/i.test(synthWindow),
+    'plan-phase.mjs Synthesize self-check must name the wave-green rule (rule 4, ADR-020: no task leaves the build broken; deletions carry their consumer fixups)',
   )
 
   // The check must cover EVERY task (not just some).
@@ -1944,7 +1953,8 @@ test('t5 (phase-08): plan-phase.mjs Synthesize prompt contains dynamic-import ru
 
   const synthIdx = src.indexOf("phase('Synthesize')")
   assert.ok(synthIdx !== -1, "phase('Synthesize') call not found in plan-phase.mjs")
-  const synthWindow = src.slice(synthIdx, synthIdx + 3000)
+  // 3600 (was 3000): wave-green rule (ADR-020) grew the prompt past the original window.
+  const synthWindow = src.slice(synthIdx, synthIdx + 3600)
 
   // (a-1) Must name the dynamic-import pattern — `await import` is the canonical token.
   assert.ok(

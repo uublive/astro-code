@@ -37,6 +37,7 @@ devs never collide.
 - `/astro-new-project` — scaffold a new project · `/astro-adopt` — adopt an existing codebase
 - `/astro-phase <name>` — add a phase · `/astro-milestone` — start the next milestone
 - `/astro-status` — where am I, what's next · `/astro-decision` — record an ADR into the canon
+- `/astro-statusline` — set a rich statusline (busy/idle dot · task recap · model · context-fill bar · milestone/phase)
 
 **Go faster** (the speed switch — opus→sonnet ladder, no haiku):
 - `ac models fast` — persist the fast profile (sonnet everywhere except the opus verify gate)
