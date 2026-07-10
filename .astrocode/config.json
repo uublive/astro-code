@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "max_concurrent_agents": 6,
+  "use_worktrees": true,
+  "registry_branch": "astro-registry",
+  "registry_remote": "origin",
+  "models": {
+    "planner": "opus",
+    "researcher": "sonnet",
+    "executor": "sonnet",
+    "verifier": "opus",
+    "discover": "sonnet"
+  }
+}

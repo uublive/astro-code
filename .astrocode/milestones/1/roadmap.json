@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "milestone": 1,
+  "phases": [
+    {
+      "number": 1,
+      "name": "Test the wave file-disjointness layering",
+      "slug": "01-test-the-wave-file-disjointness-layering",
+      "status": "complete",
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_at": "2026-06-05T08:51:54.343Z"
+    },
+    {
+      "number": 2,
+      "name": "Harden the parallel-execution fallback path",
+      "slug": "02-harden-the-parallel-execution-fallback-path",
+      "status": "complete",
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_at": "2026-06-05T11:05:51.694Z"
+    },
+    {
+      "number": 3,
+      "name": "GitFlow branch automation (Option A)",
+      "slug": "03-gitflow-branch-automation-option-a",
+      "status": "complete",
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_at": "2026-06-11T08:15:50.088Z"
+    },
+    {
+      "number": 4,
+      "name": "GitFlow PRs, release and hotfix flows",
+      "slug": "04-gitflow-prs-release-and-hotfix-flows",
+      "status": "complete",
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_at": "2026-06-11T11:08:53.632Z"
+    }
+  ]
+}

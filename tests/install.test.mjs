@@ -42,13 +42,18 @@ test('install → ~/.astro/code + symlinks into ~/.claude (default); uninstall r
     const preCompact = JSON.stringify(settings.hooks?.PreCompact || []);
     assert.match(preCompact, /astro-precompact\.mjs/, 'PreCompact hook registered');
 
+    // the busy/idle dot hooks are wired into the turn-boundary events
+    assert.match(JSON.stringify(settings.hooks?.UserPromptSubmit || []), /astro-session-state\.mjs\S* prompt/, 'UserPromptSubmit → busy');
+    assert.match(JSON.stringify(settings.hooks?.Stop || []), /astro-session-state\.mjs\S* stop/, 'Stop → idle');
+
     const un = uninstallClaude();
     assert.ok(un.removed > 0);
     assert.ok(!existsSync(link));
     assert.ok(!existsSync(join(fakeHome, '.astro', 'code')));
-    // uninstall removed our PreCompact entry, reversibly
+    // uninstall removed our PreCompact + busy/idle entries, reversibly
     const after = JSON.parse(readFileSync(settingsFile, 'utf8'));
     assert.doesNotMatch(JSON.stringify(after.hooks?.PreCompact || []), /astro-precompact/, 'PreCompact hook removed on uninstall');
+    assert.doesNotMatch(JSON.stringify(after.hooks || {}), /astro-session-state/, 'busy/idle hooks removed on uninstall');
   });
 });
 

@@ -944,7 +944,11 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
         branch: null,
         note:
           `test suite failed after healing wave ${w + 1}` +
-          (gate?.output ? `: ${gate.output}` : ' (no output returned)'),
+          (gate?.output ? `: ${gate.output}` : ' (no output returned)') +
+          `. If the suite failed to LOAD/COMPILE (a barrel or importer references a module ` +
+          `this wave deleted), that is a non-compiling wave boundary — a destructive edit was ` +
+          `split from the consumer fixups it forced (ADR-020). Fix the PLAN (fold the deletion ` +
+          `and its barrel/import updates into one task), not the gate.`,
       }
       log(
         `✖ wave ${w + 1} test gate failed after heal — stopping before verify`,

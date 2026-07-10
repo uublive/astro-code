@@ -77,7 +77,16 @@ const summary = await agent(
     "`const { fn } = await import('../lib/x.mjs')`" + ` inside async test bodies so a missing ` +
     `export fails ONLY the new tests at call time. Test-after serialization (depends_on the ` +
     `impl task) stays allowed when explicitly chosen — the plan must say which it chose.\n\n` +
+    `WAVE-GREEN RULE (ADR-020 — every wave boundary must compile): each task must leave the ` +
+    `build green ON ITS OWN, because the wave model integrates and gates at every boundary. A ` +
+    `destructive edit (deleting/renaming a module or symbol) and the updates to EVERY consumer ` +
+    `it breaks (barrel/index re-exports, importers, type references) are ONE atomic task that ` +
+    `declares ALL those files. NEVER split a deletion from the barrel/import fixups it forces — ` +
+    `the files are disjoint so the wave builder will NOT couple them, and the resulting ` +
+    `non-compiling boundary bails the gate. Do NOT use depends_on ordering for this; fold it ` +
+    `into one task.\n\n` +
     `Before writing PLAN.md, check EVERY task against these rules — red-test import rule, ` +
+    `wave-green rule (no task leaves the build broken; deletions carry their consumer fixups), ` +
     `two same-file tasks never both have empty depends_on, every task declares its file(s) ` +
     `— and fix any violation.\n\n` +
     `Return a one-line summary of the plan.` +

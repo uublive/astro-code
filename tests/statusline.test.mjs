@@ -14,6 +14,8 @@ import { spawnSync } from 'node:child_process';
 
 import {
   findAstroRoot, readContext, renderSegment, renderBanner, nextAction, renderResumeNote, ACTIVITY_TTL_SECONDS,
+  modelLimit, readContextTokens, readRecap, progressBar, renderClaudeSegment, renderRecap, truncate,
+  isBusy, renderStatus, SESSION_STALE_SECONDS,
 } from '../hooks/_astro-ctx.mjs';
 
 const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -161,6 +163,117 @@ test('ac activity sets {text, at} and clear nulls it', () => {
   assert.equal(st.activity, null);
 });
 
+// --- busy / idle activity dot -------------------------------------------------
+
+test('isBusy: prompt after stop = busy; stop after prompt = idle; stale = idle', () => {
+  assert.equal(isBusy({ prompt: NOW, at: NOW }, NOW), true, 'a fresh prompt with no stop is busy');
+  assert.equal(isBusy({ prompt: NOW - 100, stop: NOW - 10, at: NOW - 10 }, NOW), false, 'stop after prompt is idle');
+  assert.equal(isBusy({ prompt: NOW - 5, stop: NOW - 50, at: NOW - 5 }, NOW), true, 'a newer prompt than stop is busy again');
+  assert.equal(isBusy({ prompt: NOW - SESSION_STALE_SECONDS - 1, at: NOW - SESSION_STALE_SECONDS - 1 }, NOW), false, 'a turn that never stopped goes stale → idle');
+  assert.equal(isBusy(null, NOW), false, 'no record → idle');
+});
+
+test('renderStatus is a green ● when busy, a dim ○ when idle', () => {
+  assert.equal(renderStatus(true), '●');   // NO_COLOR strips the ANSI
+  assert.equal(renderStatus(false), '○');
+});
+
+test('the session-state hook toggles busy/idle per session_id and stays SILENT', () => {
+  const home = mkdtempSync(join(tmpdir(), 'ac-ss-'));
+  const hook = join(FRAMEWORK, 'hooks', 'astro-session-state.mjs');
+  const fire = (kind) => spawnSync(process.execPath, [hook, kind], {
+    input: JSON.stringify({ session_id: 's1' }), env: { ...process.env, HOME: home }, encoding: 'utf8',
+  });
+  const stateFile = join(home, '.astro', 'code', 'session-state.json');
+
+  const p = fire('prompt');
+  assert.equal(p.status, 0);
+  assert.equal(p.stdout, '', 'UserPromptSubmit hook must print nothing (stdout is injected into context)');
+  let rec = JSON.parse(readFileSync(stateFile, 'utf8')).s1;
+  assert.ok(typeof rec.prompt === 'number' && rec.stop == null, 'prompt stamped, no stop yet');
+
+  fire('stop');
+  rec = JSON.parse(readFileSync(stateFile, 'utf8')).s1;
+  assert.ok(rec.stop >= rec.prompt, 'stop stamped after prompt');
+});
+
+test('the statusline hook leads with the busy/idle dot from session-state', () => {
+  const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
+  const home = mkdtempSync(join(tmpdir(), 'ac-sl-dot-'));
+  mkdirSync(join(home, '.astro', 'code'), { recursive: true });
+  const now = Math.floor(Date.now() / 1000);
+  writeFileSync(join(home, '.astro', 'code', 'session-state.json'),
+    JSON.stringify({ live: { prompt: now, at: now } }));   // busy: prompt, no stop
+  const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
+  const run = (sid) => spawnSync(process.execPath, [hook, join(home, '.claude')], {
+    input: JSON.stringify({ session_id: sid, workspace: { current_dir: join(root, 'src') } }),
+    env: { ...process.env, HOME: home, NO_COLOR: '1' }, encoding: 'utf8',
+  }).stdout;
+
+  assert.match(run('live'), /^● /, 'busy session leads with a solid dot');
+  assert.match(run('other'), /^○ /, 'a session with no record leads with a hollow dot');
+});
+
+// --- Claude-session segment: recap · model · context-fill bar ----------------
+
+test('modelLimit is 1M for the [1m] Opus variant, 200k otherwise', () => {
+  assert.equal(modelLimit({ id: 'claude-opus-4-8[1m]' }), 1_000_000);
+  assert.equal(modelLimit({ id: 'claude-opus-4-8', display_name: 'Opus 4.8' }), 200_000);
+  assert.equal(modelLimit({ id: 'claude-sonnet-5' }), 200_000);
+  assert.equal(modelLimit(null), 200_000);
+});
+
+test('readContextTokens sums the LAST usage line (fresh input + both cache tiers)', () => {
+  const transcript = [
+    JSON.stringify({ message: { usage: { input_tokens: 1, cache_read_input_tokens: 1 } } }),
+    JSON.stringify({ type: 'user', message: { content: 'hi' } }),           // no usage — skipped
+    JSON.stringify({ message: { usage: { input_tokens: 5_000, cache_creation_input_tokens: 2_000, cache_read_input_tokens: 90_000 } } }),
+    '', 'not json',
+  ].join('\n');
+  assert.equal(readContextTokens('x', () => transcript), 97_000);
+  assert.equal(readContextTokens('x', () => null), null, 'no transcript → null');
+  assert.equal(readContextTokens('x', () => '{"type":"user"}'), null, 'no usage → null');
+});
+
+test('readRecap returns the last human text turn, skipping tool-results + command meta', () => {
+  const transcript = [
+    JSON.stringify({ type: 'user', message: { content: 'first ask' } }),
+    JSON.stringify({ type: 'assistant', message: { content: 'ok' } }),
+    JSON.stringify({ type: 'user', message: { content: [{ type: 'text', text: 'the real task' }] } }),
+    JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'output' }] } }), // no text → skip
+    JSON.stringify({ type: 'user', message: { content: '<command-name>/astro-plan</command-name>' } }),    // meta → skip
+  ].join('\n');
+  assert.equal(readRecap('x', () => transcript), 'the real task');
+  assert.equal(readRecap('x', () => null), '');
+});
+
+test('progressBar fills proportionally and clamps out-of-range', () => {
+  assert.equal(progressBar(0, 10), '░'.repeat(10));
+  assert.equal(progressBar(1, 10), '█'.repeat(10));
+  assert.equal(progressBar(0.5, 10), '█████░░░░░');
+  assert.equal(progressBar(2, 4), '████', 'clamps >1');
+  assert.equal(progressBar(-1, 4), '░░░░', 'clamps <0');
+});
+
+test('truncate collapses whitespace and ellipsizes past the cap', () => {
+  assert.equal(truncate('  a   b\n c ', 10), 'a b c');
+  assert.equal(truncate('abcdefghij', 5), 'abcd…');
+});
+
+test('renderClaudeSegment shows model + a coloured fill bar; model-only when no tokens', () => {
+  const seg = renderClaudeSegment({ model: { display_name: 'Opus 4.8' }, tokens: 104_000, limit: 200_000 });
+  assert.match(seg, /Opus 4\.8/);
+  assert.match(seg, /[█░]/, 'graphical bar present');
+  assert.match(seg, /52% · 104k\/200k/);
+  assert.equal(renderClaudeSegment({ model: { display_name: 'Opus 4.8' }, tokens: null, limit: 200_000 }), 'Opus 4.8');
+  assert.equal(renderClaudeSegment({}), '', 'empty with no model');
+});
+
+test('renderRecap prefixes ❯ and is empty for blank text', () => {
+  assert.match(renderRecap('do the thing'), /❯ do the thing/);
+  assert.equal(renderRecap(''), '');
+});
+
 test('the statusline hook renders the project segment from a Claude stdin blob', () => {
   const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
   const fakeHome = mkdtempSync(join(tmpdir(), 'ac-sl-home-'));   // isolate: no chain/cache to run
@@ -172,4 +285,29 @@ test('the statusline hook renders the project segment from a Claude stdin blob',
   });
   assert.equal(r.status, 0);
   assert.match(r.stdout, /⊡ astro · M1 · P3 close-ci-gates/);
+});
+
+test('the statusline hook composes recap + model + context bar from stdin + transcript', () => {
+  const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-sl-home-'));
+  const tp = join(fakeHome, 'transcript.jsonl');
+  writeFileSync(tp, [
+    JSON.stringify({ type: 'user', message: { content: 'ship the statusline' } }),
+    JSON.stringify({ message: { usage: { input_tokens: 10_000, cache_read_input_tokens: 90_000 } } }),
+  ].join('\n'));
+  const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
+  const r = spawnSync(process.execPath, [hook, join(fakeHome, '.claude')], {
+    input: JSON.stringify({
+      workspace: { current_dir: join(root, 'src') },
+      model: { id: 'claude-opus-4-8', display_name: 'Opus 4.8' },
+      transcript_path: tp,
+    }),
+    env: { ...process.env, HOME: fakeHome, NO_COLOR: '1' },
+    encoding: 'utf8',
+  });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /❯ ship the statusline/, 'recap first');
+  assert.match(r.stdout, /Opus 4\.8/, 'model');
+  assert.match(r.stdout, /50% · 100k\/200k/, 'context-fill bar');
+  assert.match(r.stdout, /⊡ astro · M1 · P3 close-ci-gates/, 'astro segment still there');
 });

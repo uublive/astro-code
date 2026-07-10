@@ -26,10 +26,18 @@ devs never collide.
 - `/astro-accept <n>` — human UAT sign-off; this is what actually closes a phase
 - `/astro-autonomous <n>` — runs discuss→plan→execute in one go, then **stops** for you (still need `/astro-accept`)
 
+**Fast lane for off-the-cuff work:**
+- `/astro-alex "<long unplanned prompt>"` — captures the raw prompt verbatim, distills a
+  lean traceable spec (+ a "to clarify" list so nothing is lost), then executes straight
+  through — sequential atomic commits + one verify pass, no research/plan fan-out.
+  Executor defaults to Opus (`--model sonnet|haiku` to override); a **scope guard**
+  escalates anything systemic back to the full loop. Verified at best — `/astro-accept` closes it.
+
 **Set up & navigate:**
 - `/astro-new-project` — scaffold a new project · `/astro-adopt` — adopt an existing codebase
 - `/astro-phase <name>` — add a phase · `/astro-milestone` — start the next milestone
 - `/astro-status` — where am I, what's next · `/astro-decision` — record an ADR into the canon
+- `/astro-statusline` — set a rich statusline (busy/idle dot · task recap · model · context-fill bar · milestone/phase)
 
 **Go faster** (the speed switch — opus→sonnet ladder, no haiku):
 - `ac models fast` — persist the fast profile (sonnet everywhere except the opus verify gate)

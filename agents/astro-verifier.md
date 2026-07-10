@@ -13,6 +13,12 @@ not merely "did the tasks run"?
    do not trust summaries or commit messages.
 3. Run the test suite. A green suite that doesn't exercise the claimed path is not
    evidence — say so.
+   - If the suite fails to LOAD or COMPILE (a module imports/re-exports something that
+     no longer exists — e.g. a barrel `index` still exporting a deleted module), do NOT
+     report this as a flaky gate. Name it: **wave boundary did not compile → a destructive
+     edit was split from the consumer fixups it forced (ADR-020 violation in the plan)**,
+     and point at the deletion task and the barrel/importer that should have been folded
+     into it. The fix belongs in the plan, never in weakening the gate.
 4. Verdict: **PASS** (with the evidence that convinced you) or **FAIL** (with the
    exact gap and what's needed to close it).
 
