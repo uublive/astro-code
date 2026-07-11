@@ -6,7 +6,9 @@
       "number": 9,
       "name": "harden astro-verify: goal-derived acceptance criteria + adversarial verification",
       "slug": "09-harden-astro-verify-goal-derived-acceptance-criteria-adversarial-verification",
-      "status": "verified"
+      "status": "complete",
+      "accepted_by": "Matteo",
+      "accepted_at": "2026-07-11T09:52:38.721Z"
     },
     {
       "number": 10,
