@@ -42,8 +42,11 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
      Tell each agent to read the canon + `.astrocode/phases/<slug>/CONTEXT.md`.
    - **No subagents at all:** do it inline in this session — research the angles
      yourself, then write the plan. Slower, no parallelism, but it works.
-   Either way the result is `.astrocode/phases/<slug>/PLAN.md` (+ `ACCEPTANCE.md`)
-   with numbered, dependency-aware tasks conforming to the canon.
+   Either way the workflow first pre-registers `.astrocode/phases/<slug>/CRITERIA.md` —
+   a **plan-blind, goal-derived** bar written *before* the researchers run (the verifier
+   checks the result against it, so it must not be shaped by the plan) — then the result
+   is `.astrocode/phases/<slug>/PLAN.md` (+ `ACCEPTANCE.md`) with numbered,
+   dependency-aware tasks conforming to the canon and aimed at every criterion.
 4. Clear the live status (`ac activity clear`), then summarize the plan and suggest
    `/astro-execute <number>` (reference the phase by its number, e.g. `/astro-execute 1`).
    Clear it too if planning fails or you stop early.
