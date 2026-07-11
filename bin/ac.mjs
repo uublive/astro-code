@@ -625,6 +625,10 @@ async function main() {
       }
       console.log(`✓ home: ${res.home}  (${res.commands} commands, ${res.agents} agents, ${res.workflows} workflows, ${res.hooks} hooks)`);
       for (const t of res.targets) {
+        if (t.selfHosted) {
+          console.log(`✓ self-hosted → ${t.dir}  [${t.label}]  (source files in place — not symlinked)`);
+          continue;
+        }
         const hk = t.hooks ? ', update banner+statusline' : '';
         console.log(`✓ linked → ${t.dir}  [${t.label}]  (${t.commands} cmds, ${t.agents} agents${hk})`);
       }

@@ -57,6 +57,30 @@ test('install → ~/.astro/code + symlinks into ~/.claude (default); uninstall r
   });
 });
 
+test('install does NOT symlink over a config dir that IS the framework clone (self-hosted)', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-home-'));
+  const clone = mkdtempSync(join(tmpdir(), 'ac-clone-')); // a fake framework == the config dir
+  for (const d of ['commands', 'agents', 'workflows', 'hooks']) mkdirSync(join(clone, d), { recursive: true });
+  writeFileSync(join(clone, 'commands', 'astro-status.md'), '# real source');
+  writeFileSync(join(clone, 'agents', 'astro-verifier.md'), '# real agent');
+
+  await withEnv({ home: fakeHome, configDir: clone }, async () => {
+    const { installClaude } = await import(`../lib/install.mjs?self=${encodeURIComponent(clone)}`);
+    const res = installClaude(clone); // framework root === the config dir
+
+    // the clone's own tracked source files stay REGULAR files, never clobbered by symlinks
+    const cmd = join(clone, 'commands', 'astro-status.md');
+    assert.ok(!lstatSync(cmd).isSymbolicLink(), 'clone command file must stay a regular file');
+    assert.equal(readFileSync(cmd, 'utf8'), '# real source', 'content preserved');
+    assert.ok(!lstatSync(join(clone, 'agents', 'astro-verifier.md')).isSymbolicLink(), 'clone agent file stays regular');
+
+    const self = res.targets.find((t) => t.dir === clone);
+    assert.ok(self && self.selfHosted, 'target flagged selfHosted');
+    assert.equal(self.commands, 0, 'no command symlinks created in the clone');
+    assert.equal(self.agents, 0, 'no agent symlinks created in the clone');
+  });
+});
+
 test('install honors a bare CLAUDE_CONFIG_DIR (no jean-claude)', async () => {
   const fakeHome = mkdtempSync(join(tmpdir(), 'ac-home-'));
   const profile = join(fakeHome, '.claude-myprofile');
