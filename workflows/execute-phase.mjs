@@ -22,8 +22,28 @@ export const meta = {
 
 // Defensive: accept args as an object, or as a JSON string if the caller stringified it.
 const input = typeof args === 'string' ? JSON.parse(args) : args || {}
-const { root, phase: phaseSlug, models = {} } = input
+const { root, phase: phaseSlug, models: baseModels = {} } = input
 if (!root || !phaseSlug) throw new Error('execute-phase requires args { root, phase }')
+
+// Phase-10 (ADR-022): the per-phase effort dial.  `effort` arrives as a run-scoped
+// arg — the command resolves the stored level (or the hardcoded `standard` default,
+// or a `--effort` one-off override) and passes it in; this script NEVER persists it.
+// Depth is bought in exactly two places — the bounded verify→remediate loop and the
+// model tier — and NEVER in wider research (C9): quota tokens are the scarce resource,
+// so spend them on remediate cycles that provably converge, not on fan-out.
+// The level→max-cycles map is inlined as a tiny literal (no MIRROR block is warranted
+// for three integers): light spends ZERO cycles (today's single-pass behavior),
+// standard up to 1, deep up to 3.  An absent/unknown level normalizes to the standard
+// budget (`?? 1`) so a typo can never produce an unbounded or zero-when-meant-more loop (C3).
+const effort = input.effort || 'standard'
+const maxCycles = ({ light: 0, standard: 1, deep: 3 })[effort] ?? 1
+// Resolve the EFFECTIVE model tiers ONCE, up front, so every agent() call below
+// (Discover, the execute waves, verify, and remediation) reads the same map.  `deep`
+// escalates BOTH the executor and the verifier to opus for THIS phase only — a fresh
+// object, never a mutation of the persisted config (C4).  Every other level passes the
+// base tiers through untouched; discover is deliberately NOT escalated (the dial spends
+// on execute+verify only, ADR-022).
+const models = effort === 'deep' ? { ...baseModels, executor: 'opus', verifier: 'opus' } : baseModels
 
 // Phase-07 / ADR-017: extract the zero-padded phase number from the slug as a
 // STRING so the commit-stamp grep pattern "(phase 07 tK)" is correct.
@@ -979,30 +999,84 @@ for (let w = 0; w < waves.length && !integrationFailed; w++) {
   }
 }
 
+// ── Phase-10 (ADR-022): structured verify verdict + verify→remediate loop ──────
+//
+// VERIFY_SCHEMA pins the verifier's return to the shape the remediate loop needs:
+// a per-criterion result keyed to the EXACT C<n> id from CRITERIA.md, plus — for each
+// unmet criterion — the failing command and its output as evidence.  This is what lets
+// the loop (a) SCOPE a remediation pass to ONLY the unmet criteria and carry the
+// verifier's evidence (C7), and (b) COMPARE failing-criteria sets across cycles for the
+// stop-on-no-progress bail (C6).  `criteriaFound` distinguishes a real CRITERIA.md from
+// a self-derived bar: when it is false the loop degrades to single-pass (the shrink
+// comparison would be undecidable without a stable id set).  additionalProperties:false
+// at every level is a canon invariant (CONVENTIONS.md §State).
+const VERIFY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    passed: { type: 'boolean' },
+    criteriaFound: { type: 'boolean' },
+    summary: { type: 'string' },
+    criteria: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string' },
+          passed: { type: 'boolean' },
+          command: { type: 'string' },
+          output: { type: 'string' },
+        },
+        required: ['id', 'passed'],
+      },
+    },
+  },
+  required: ['passed', 'criteriaFound', 'summary'],
+}
+
+// REMEDIATE_SCHEMA forces the executor to report the `git rev-parse HEAD` it read
+// BEFORE and AFTER its atomic commit.  The Workflow script cannot run git (ADR-005),
+// so HEAD-moved is the only trustworthy no-progress signal it can obtain — an
+// unchanged SHA means the pass committed nothing and the loop must bail rather than
+// grind the same stuck approach (C6).  additionalProperties:false + required both
+// heads means a silent empty return cannot read as "made progress".
+const REMEDIATE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    headBefore: { type: 'string' },
+    headAfter: { type: 'string' },
+    summary: { type: 'string' },
+  },
+  required: ['headBefore', 'headAfter'],
+}
+
 phase('Verify')
 let verdict
+let remediationCycles = 0
+let stoppedReason = 'passed'
 if (integrationFailed) {
-  // Don't verify a tree the work never reached — fail loudly with a cleanup hint
-  // (the guard the issue asked for) instead of a misleading "goal absent" verdict.
-  // The richer integrationFailed shape (set by the self-healing ladder) carries
-  // taskId + branch so the user knows exactly which task and preserved branch to
-  // inspect — not just a raw conflicts array (the phase-04 wave-2 lesson).
+  // Don't verify a tree the work never reached (phase-04 wave-2 lesson). The richer
+  // integrationFailed shape (taskId + branch) is wrapped into the SAME structured
+  // verdict object the goal path yields, so the return stays one shape (Phase-10).
   const failDetail = integrationFailed.taskId
     ? `task ${integrationFailed.taskId} on \`${integrationFailed.branch}\``
     : (integrationFailed.branch ? `branch \`${integrationFailed.branch}\`` : 'no branch preserved')
-  verdict =
+  const summary =
     `FAIL — wave ${integrationFailed.wave} did not integrate onto the working branch ` +
     `(${failDetail}; ${integrationFailed.note}). ` +
     `Executor commits may remain on \`worktree-*\` branches — resolve the conflict and re-run before verifying.`
+  verdict = { passed: false, criteriaFound: false, summary, criteria: [] }
+  stoppedReason = 'integration-failed'
   log('skipped goal verification — integration failed')
-} else {
-  // ADR-021 — adversarial, plan-blind verification. The bar is the pre-registered,
-  // goal-derived CRITERIA.md, NOT the plan or the executor's claims: grading against
-  // the plan is exactly the Terminal-Bench 2.0 false-PASS (internal verify PASSed work
-  // the ground-truth verifier scored 0.0). These rules are inlined here as defense-in-
-  // depth — the full contract also lives in agents/astro-verifier.md, but the model has
-  // this in direct context at the point the verdict is produced.
-  verdict = await agent(
+}
+
+// runVerify — the ADR-021 adversarial, plan-blind goal verification, now returning the
+// structured VERIFY_SCHEMA verdict so ONE call serves the first verify AND every
+// re-verify in the loop (no forked verifier prompt).
+const runVerify = () =>
+  agent(
     `Verify phase "${phaseSlug}" of the project at ${root}. The work is committed on the ` +
       `CURRENT branch — verify against HEAD/the working tree, NOT a fresh checkout of main.\n\n` +
       `Your job is to PROVE THE WORK IS WRONG. A false PASS is the costliest error — assume the ` +
@@ -1024,10 +1098,134 @@ if (integrationFailed) {
       `violation.\n\n` +
       `PASS only if EVERY criterion has independent passing evidence you gathered yourself AND the ` +
       `structural checks hold. Otherwise FAIL — name the unmet criterion, the command you ran, the ` +
-      `output you saw, and what is needed to close it.` +
+      `output you saw, and what is needed to close it.\n\n` +
+      `RETURN A STRUCTURED VERDICT: set passed=true only if EVERY criterion independently passed; ` +
+      `set criteriaFound=true if CRITERIA.md was present (false if you self-derived the bar); put the ` +
+      `human-facing FAIL text (unmet criterion, command, output, what closes it) in summary; and for ` +
+      `EACH criterion add an item to criteria[] carrying its EXACT C<n> id (verbatim from CRITERIA.md — ` +
+      `never re-worded), passed true/false, and for every FAILING criterion the exact failing command ` +
+      `and its output as evidence (so the remediate loop can scope + compare the failing set).` +
       OBEY,
-    { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier },
+    { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier, schema: VERIFY_SCHEMA },
   )
+
+// remediatePrompt is the THIRD executor prompt (sibling to execPrompt/healPrompt): a
+// remediation pass scoped to ONLY the unmet criteria, carrying the verifier's evidence
+// VERBATIM (the exact failing command + its output) so the executor attacks the real gap,
+// plan-blind (C7).  It reuses the EXISTING astro-executor — no new agent type (ADR-022).
+// It forbids reading PLAN.md/SPEC.md and re-attacking passing criteria, and instructs the
+// executor to report HEAD before/after its ONE atomic commit (the no-progress signal, C6).
+const remediatePrompt = (unmet, cycle) =>
+  `REMEDIATION PASS (cycle ${cycle + 1}) — phase ${phaseSlug} in project ${root}.\n` +
+  `The adversarial, plan-blind verifier FAILED this phase against its goal-derived CRITERIA.md. ` +
+  `Close ONLY the unmet criteria listed below — do NOT touch, re-attack, or "improve" any criterion ` +
+  `that is not listed here (they already pass; changing them risks regressing them):\n` +
+  unmet
+    .map(
+      (c) =>
+        `- ${c.id}` +
+        (c.command ? `\n    failing command: ${c.command}` : '') +
+        (c.output ? `\n    observed output: ${c.output}` : ''),
+    )
+    .join('\n') +
+  `\n\n` +
+  `Stay plan-blind (ADR-021): do NOT read PLAN.md or SPEC.md, and do NOT widen scope beyond the ` +
+  `criteria above. First run \`git rev-parse HEAD\` and report it as headBefore. Fix the gap ` +
+  `test-first where it adds behavior, run the tests, then make ONE atomic commit whose subject ends ` +
+  `with the stamp \`(phase ${phaseNum} remediate-c${cycle})\` (ADR-017 idempotency). After committing, ` +
+  `run \`git rev-parse HEAD\` again and report it as headAfter. Match the project canon exactly ` +
+  `(stack, naming, patterns). Return headBefore, headAfter, and a short summary of what you changed.` +
+  OBEY
+
+const runRemediation = (unmet, cycle) =>
+  agent(remediatePrompt(unmet, cycle), {
+    label: `remediate:c${cycle}`,
+    phase: 'Execute',
+    agentType: 'astro-executor',
+    model: models.executor,
+    schema: REMEDIATE_SCHEMA,
+  })
+
+if (!integrationFailed) {
+  // ADR-021 — adversarial, plan-blind verification (runVerify, defined above).
+  // Phase-10 (ADR-022): the FIRST verify, then the bounded verify→remediate loop.
+  verdict = await runVerify()
+
+  // Automated verify→remediate loop.  Fire ONLY when the first verify FAILED against a
+  // REAL CRITERIA.md (criteriaFound) and the level's budget is > 0 — light (0 cycles)
+  // and an absent CRITERIA.md both degrade to today's single-pass behavior, keeping the
+  // shrink-comparison decidable (a self-derived bar has no stable id set to compare).
+  if (!verdict.passed && verdict.criteriaFound && maxCycles > 0) {
+    for (let cycle = 0; cycle < maxCycles && !verdict.passed; cycle++) {
+      const unmet = (verdict.criteria || []).filter((c) => !c.passed)
+      const beforeIds = new Set(unmet.map((c) => c.id))
+      log(
+        `• remediation cycle ${cycle + 1}/${maxCycles}: ${beforeIds.size} unmet criterion/criteria` +
+          (beforeIds.size ? ` (${[...beforeIds].join(', ')})` : ''),
+      )
+      const rem = await runRemediation(unmet, cycle)
+      remediationCycles++
+
+      // STOP-ON-NO-PROGRESS #1 (checked BEFORE consuming more budget, C6): the pass
+      // committed nothing — HEAD did not move (or the executor returned no heads at
+      // all). Grinding a stuck approach only burns quota, so bail to a human FAIL even
+      // with budget remaining. verdict.passed stays false — NEVER `verified`.
+      const headMoved = rem && rem.headAfter && rem.headBefore && rem.headAfter !== rem.headBefore
+      if (!headMoved) {
+        stoppedReason = 'no-progress'
+        log(`✖ remediation cycle ${cycle + 1} made no commit (HEAD unchanged) — bailing to human FAIL`)
+        break
+      }
+
+      // Re-verify with the SAME adversarial, schema'd verifier (no forked prompt).
+      verdict = await runVerify()
+      if (verdict.passed) {
+        log(`✓ remediation cycle ${cycle + 1} closed the phase — verified`)
+        break
+      }
+
+      // STOP-ON-NO-PROGRESS #2 (C6): the failing-criteria set did not STRICTLY shrink.
+      // A plain cardinality comparison is deliberate — a cycle that fixes one criterion
+      // but incidentally breaks a different one is net-no-progress and bails (safe over
+      // fast). Fires even with budget remaining; keeps verdict.passed=false.
+      const afterIds = new Set((verdict.criteria || []).filter((c) => !c.passed).map((c) => c.id))
+      if (afterIds.size >= beforeIds.size) {
+        stoppedReason = 'no-progress'
+        log(
+          `✖ remediation cycle ${cycle + 1}: failing-criteria set did not shrink ` +
+            `(${beforeIds.size} → ${afterIds.size}) — bailing to human FAIL`,
+        )
+        break
+      }
+      log(
+        `⚠ remediation cycle ${cycle + 1}: ${afterIds.size} criterion/criteria still failing ` +
+          `(was ${beforeIds.size}) — continuing`,
+      )
+    }
+    // If the loop exhausted its budget still-failing (and did not bail on no-progress),
+    // that is `max-cycles`. verdict.passed remains false; the command surfaces it.
+    if (!verdict.passed && stoppedReason !== 'no-progress') stoppedReason = 'max-cycles'
+  }
+  // A pass on the very first verify (loop never ran) leaves stoppedReason at its
+  // 'passed' default; be explicit for any pass so the report is unambiguous.
+  if (verdict.passed) stoppedReason = 'passed'
 }
 
-return { phase: phaseSlug, tasks: tasks.length, waves: waves.length, strategy, executed: results.length, skipped: skippedTaskIds, healed: healedTaskIds, integrationFailed, verdict }
+// verdict is now the structured object; verdict.summary / verdict.passed are what the
+// commands read. effort/remediationCycles/stoppedReason are additive (Phase-10 t4).
+// The loop's best self-produced status is `verified` — it never sets complete/accepts
+// (REQ-006 two-gate closure stays intact, C9).
+return {
+  phase: phaseSlug,
+  tasks: tasks.length,
+  waves: waves.length,
+  strategy,
+  effort,
+  executed: results.length,
+  skipped: skippedTaskIds,
+  healed: healedTaskIds,
+  remediationCycles,
+  stoppedReason,
+  integrationFailed,
+  verdict,
+}
