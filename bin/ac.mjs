@@ -11,7 +11,8 @@ import { findRoot, paths } from '../lib/paths.mjs';
 import { initPlanning, phaseContextStatus } from '../lib/planning.mjs';
 import { profileModels, PROFILE_NAMES } from '../lib/models.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
-import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, isPhasePlanned } from '../lib/roadmap.mjs';
+import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, setPhaseEffort, isPhasePlanned } from '../lib/roadmap.mjs';
+import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry } from '../lib/registry.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
@@ -81,6 +82,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase verify <phase>             mark a phase verified (AI gate passed)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
+  ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac flow init                        ensure main + develop exist (gitflow, opt-in)
   ac flow                             create+switch to feature/m<N> off develop
   ac flow pr                          push the feature branch and print the develop PR URL
@@ -400,8 +402,31 @@ async function main() {
         await setPhaseStatus(r, ph.slug, 'rejected');
         await updateState(r, (s) => ({ ...s, blockers: [...(s.blockers || []), { phase: ph.slug, reason, at: new Date().toISOString() }] }));
         console.log(`✗ phase ${ph.number} "${ph.name}" → rejected${reason ? `: ${reason}` : ''}`);
+      } else if (sub === 'effort') {
+        // Per-phase effort dial (ADR-022), mirroring `ac models` ergonomics.
+        //   ac phase effort <n>               RESOLVE: print the effective level
+        //   ac phase effort <n> --effort <l>  RESOLVE with a one-off, non-persisting
+        //                                     override (the `--preview` idiom — a
+        //                                     single read, roadmap.json untouched — C5)
+        //   ac phase effort <n> <level>       WRITE: persist the level for that phase
+        // There is deliberately NO `ac config` effort key — effort is per-phase only,
+        // resolved from the phase's own roadmap entry with a hardcoded `standard`
+        // default (never sourced from config — C8).
+        if (!ph) die('usage: ac phase effort <phase> [<level>] [--effort <level>]');
+        const level = pos[2];
+        if (level == null) {
+          // RESOLVE mode: print the effective level so /astro-execute can consume it.
+          // resolveEffort applies precedence override > stored > hardcoded default.
+          const override = typeof flags.effort === 'string' ? flags.effort : undefined;
+          console.log(resolveEffort(ph.effort ?? DEFAULT_EFFORT, override));
+        } else {
+          // WRITE mode: setPhaseEffort validates FIRST, so a bogus level throws
+          // (→ main().catch → die, non-zero exit) with nothing written to disk (C1).
+          await setPhaseEffort(r, ph.slug, level);
+          console.log(`✓ phase ${ph.number} "${ph.name}" → ${level}`);
+        }
       } else {
-        die('usage: ac phase <add|check|context|verify|accept|reject> …');
+        die('usage: ac phase <add|check|context|verify|accept|reject|effort> …');
       }
       return;
     }
