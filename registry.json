@@ -117,6 +117,16 @@
       "branch": "main",
       "claimed_at": "2026-07-11T09:18:25.543Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 10,
+      "milestone": 3,
+      "name": "per-phase effort dial: tunable verify/remediate depth",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-07-11T09:18:27.853Z",
+      "status": "active"
     }
   ]
 }
