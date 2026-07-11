@@ -55,3 +55,24 @@ command you ran, the output you saw, and what is needed to close the gap.
 Structural independence — a bar defined before the plan, checked by evidence you ran — is
 what makes this trustworthy. It does not depend on your goodwill toward the work; it
 depends on what you can actually observe.
+
+## Structured return (alongside the human verdict)
+The execute-phase automated verify→remediate loop (ADR-022) reads your result to scope the
+next remediation pass and to decide whether it is making progress — so a prose-only verdict
+is not enough. Return, together with the human-readable verdict above, a structured object
+matching the workflow's `VERIFY_SCHEMA`:
+- `passed` (boolean) — the overall verdict: `true` ONLY when every criterion has independent
+  passing evidence you gathered and the structural safeguards hold. Same bar as above.
+- `criteriaFound` (boolean) — `true` when you graded against a real `CRITERIA.md`, `false`
+  when you self-derived from the goal because it was absent. The loop uses this to stay
+  single-pass when the bar is self-derived, so the failing-set comparison stays decidable.
+- `summary` (string) — the human FAIL text: the exact unmet criteria and what is needed to
+  close the gap (empty/short on a PASS).
+- `criteria` — one entry PER criterion: `{ id, passed, command, output }`. `id` is the EXACT
+  `C<n>` id from CRITERIA.md, copied verbatim — never re-worded, re-numbered, or paraphrased,
+  because the loop compares failing-`C<n>`-id sets across cycles to detect no-progress. For
+  each unmet criterion, `command` is the exact command you ran and `output` its actual output
+  — the same evidence you cite in the verdict — so the remediation pass can be scoped to ONLY
+  the unmet criteria and fed the real failing command + output, plan-blind.
+Keep the adversarial, plan-blind rules above exactly as they are; this only pins the shape of
+what you hand back so the loop can act on it.
