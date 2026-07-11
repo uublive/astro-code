@@ -1207,8 +1207,11 @@ if (!integrationFailed) {
     if (!verdict.passed && stoppedReason !== 'no-progress') stoppedReason = 'max-cycles'
   }
   // A pass on the very first verify (loop never ran) leaves stoppedReason at its
-  // 'passed' default; be explicit for any pass so the report is unambiguous.
+  // 'passed' default; be explicit for any pass so the report is unambiguous. A single-pass
+  // FAIL (light, or an absent/self-derived CRITERIA.md — the loop never fired) must NOT keep
+  // the 'passed' default: relabel it honestly so telemetry never reads 'passed' on a failure.
   if (verdict.passed) stoppedReason = 'passed'
+  else if (stoppedReason === 'passed') stoppedReason = 'single-pass'
 }
 
 // verdict is now the structured object; verdict.summary / verdict.passed are what the
