@@ -104,10 +104,14 @@ prompt (one `AskUserQuestion` or just prompt for it) — never invent one.
      scriptPath: "<ac path workflows>/execute-phase.mjs",   // from `ac path workflows`
      args: { root: "<project root>", phase: "<phase slug>",
              strategy: "sequential", useWorktrees: false,
+             effort: "light",
              models: <the models map from step 7> }
    })
    ```
-   `strategy:"sequential"` + `useWorktrees:false` is the **no-fan-out** guarantee: tasks
+   `effort:"light"` is passed **explicitly** so the fast lane always runs **0 remediation
+   cycles** — verify once, FAIL stops — regardless of any stored level on the phase. Speed
+   is the whole point of this command; a deeper verify→remediate budget only applies when a
+   run explicitly opts into it, never by inheriting another phase's effort. `strategy:"sequential"` + `useWorktrees:false` is the **no-fan-out** guarantee: tasks
    run one at a time on the working branch, each an atomic commit stamped `(phase NN
    tK)` (so a re-run of `astro-alex`/`/astro-execute` skips what already landed), then a
    single adversarial verify pass: the fast lane has no `CRITERIA.md`, so the verifier
@@ -125,13 +129,16 @@ prompt (one `AskUserQuestion` or just prompt for it) — never invent one.
      its criteria (never treat SPEC.md as the bar), then verify by running the evidence.
 
 9. **Report — and surface what's unresolved.** Clear the status (`ac activity clear`).
-   - **PASS** → run `ac phase verify <slug>` (marks it **verified** — the AI gate). Then
-     tell the user: the phase is done and waiting on human UAT (`/astro-accept
-     <number>`), **and re-print the `## To clarify / unclassified` items** so the open
-     questions are addressed rather than forgotten. `astro-alex` never auto-accepts its
-     own work.
-   - **FAIL / integration conflict** → surface the reasons, leave the phase unverified,
-     and stop.
+   The workflow returns a **structured verdict**; read `verdict.passed` for the gate and
+   `verdict.summary` for the human-readable reason.
+   - **PASS** (`verdict.passed` true) → run `ac phase verify <slug>` (marks it **verified**
+     — the AI gate). Then tell the user: the phase is done and waiting on human UAT
+     (`/astro-accept <number>`), **and re-print the `## To clarify / unclassified` items** so
+     the open questions are addressed rather than forgotten. `astro-alex` never auto-accepts
+     its own work.
+   - **FAIL / integration conflict** (`verdict.passed` false, or `integrationFailed`) →
+     surface `verdict.summary` (the reasons), leave the phase unverified, and stop. The fast
+     lane is single-pass — a FAIL stops here; it does not auto-remediate.
 
 ## Guardrails
 

@@ -2068,3 +2068,216 @@ test('static guard (worktrees): a majority-failed parallel wave latches the on-b
     'the downgrade must trip on a MAJORITY worktree failure (missing*2 >= wave.length), not a lone flake',
   );
 });
+
+// ── Phase-10 t5 (ADR-022): verify→remediate loop contract guards ──────────────
+//
+// These static-source guards pin the shape of the automated verify→remediate loop
+// landed by t4 in execute-phase.mjs so it can never silently regress.  They are
+// test-after (serialized on t4): the loop is already committed on the branch and
+// these guards assert its already-landed contract.  Every check is string/regex or
+// runInNewContext over an extracted object literal — the Workflow sandbox script is
+// NEVER executed (it binds Workflow-tool globals: phase/agent/parallel/log).
+
+test('t5 (phase 10): VERIFY_SCHEMA has additionalProperties:false + required [passed, criteriaFound, summary] and a strict criteria[] item', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // Extract the VERIFY_SCHEMA object literal (same regex idiom as the INTEGRATE_SCHEMA guard).
+  const schemaMatch = wfSrc.match(/const VERIFY_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'VERIFY_SCHEMA constant not found in execute-phase.mjs')
+
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  // Top-level canon invariant.
+  assert.strictEqual(schema.additionalProperties, false, 'VERIFY_SCHEMA must have additionalProperties:false at the top level')
+
+  // The verdict fields the loop reads must be typed.
+  assert.strictEqual(schema.properties?.passed?.type, 'boolean', 'VERIFY_SCHEMA.passed must be type:boolean')
+  assert.strictEqual(schema.properties?.criteriaFound?.type, 'boolean', 'VERIFY_SCHEMA.criteriaFound must be type:boolean (drives the single-pass degrade)')
+  assert.strictEqual(schema.properties?.summary?.type, 'string', 'VERIFY_SCHEMA.summary must be type:string (human FAIL text)')
+
+  // required must pin all three so a silent {} cannot read as a pass.
+  assert.ok(Array.isArray(schema.required), 'VERIFY_SCHEMA must have a required array')
+  for (const key of ['passed', 'criteriaFound', 'summary']) {
+    assert.ok(schema.required.includes(key), `VERIFY_SCHEMA.required must include "${key}"`)
+  }
+
+  // criteria[] carries the per-criterion evidence the loop scopes + compares on.
+  assert.strictEqual(schema.properties?.criteria?.type, 'array', 'VERIFY_SCHEMA.criteria must be type:array')
+  const item = schema.properties.criteria.items
+  assert.ok(item, 'VERIFY_SCHEMA.criteria.items must be defined')
+  assert.strictEqual(item.type, 'object', 'VERIFY_SCHEMA.criteria.items must be type:object')
+  assert.strictEqual(item.additionalProperties, false, 'VERIFY_SCHEMA.criteria.items must have additionalProperties:false')
+  assert.strictEqual(item.properties?.id?.type, 'string', 'criteria item must carry the exact C<n> id as type:string')
+  assert.strictEqual(item.properties?.passed?.type, 'boolean', 'criteria item must carry passed:boolean')
+})
+
+test('t5 (phase 10): REMEDIATE_SCHEMA has additionalProperties:false + required [headBefore, headAfter] (the no-progress signal)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const schemaMatch = wfSrc.match(/const REMEDIATE_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'REMEDIATE_SCHEMA constant not found in execute-phase.mjs')
+
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  assert.strictEqual(schema.additionalProperties, false, 'REMEDIATE_SCHEMA must have additionalProperties:false at the top level')
+  assert.strictEqual(schema.properties?.headBefore?.type, 'string', 'REMEDIATE_SCHEMA.headBefore must be type:string')
+  assert.strictEqual(schema.properties?.headAfter?.type, 'string', 'REMEDIATE_SCHEMA.headAfter must be type:string')
+
+  // Both heads required — the Workflow script cannot run git, so an unchanged/empty
+  // SHA is the ONLY trustworthy no-progress signal (ADR-005 / C6). A silent {} must fail.
+  assert.ok(Array.isArray(schema.required), 'REMEDIATE_SCHEMA must have a required array')
+  assert.ok(schema.required.includes('headBefore'), 'REMEDIATE_SCHEMA.required must include "headBefore"')
+  assert.ok(schema.required.includes('headAfter'), 'REMEDIATE_SCHEMA.required must include "headAfter"')
+})
+
+test('t5 (phase 10): inline level→cycles map yields light=0/standard=1/deep=3 and unknown/absent→standard budget via ?? 1', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The map is inlined as a tiny literal (no MIRROR warranted for three integers, C3).
+  const mapMatch = wfSrc.match(/const maxCycles\s*=\s*\((\{[^}]*\})\)\[effort\]\s*(\?\?\s*1)/)
+  assert.ok(mapMatch, 'execute-phase.mjs must inline `const maxCycles = ({ light:0, standard:1, deep:3 })[effort] ?? 1`')
+
+  const map = runInNewContext(`(${mapMatch[1]})`)
+  assert.strictEqual(map.light, 0, 'light must spend 0 remediate cycles (today\'s single-pass behavior)')
+  assert.strictEqual(map.standard, 1, 'standard must spend up to 1 cycle')
+  assert.strictEqual(map.deep, 3, 'deep must spend up to 3 cycles')
+
+  // The `?? 1` fallback normalizes an unknown/absent level to the standard budget so a
+  // typo can never produce an unbounded or silently-zero loop (C3).
+  assert.ok(/\?\?\s*1/.test(mapMatch[2]), 'the level→cycles map must fall back to the standard budget (?? 1) for an unknown/absent level')
+})
+
+test('t5 (phase 10): deep escalates executor+verifier to opus while other levels pass base tiers through', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // A single up-front resolution: deep → a FRESH object forcing opus on execute+verify,
+  // every other level → baseModels untouched (never mutate persisted config, C4).
+  const line = wfSrc.match(/const models\s*=\s*effort\s*===\s*'deep'\s*\?\s*\{([^}]*)\}\s*:\s*baseModels/)
+  assert.ok(line, 'execute-phase.mjs must resolve `const models = effort === \'deep\' ? { ...baseModels, executor:\'opus\', verifier:\'opus\' } : baseModels`')
+
+  const deepBranch = line[1]
+  assert.ok(/\.\.\.baseModels/.test(deepBranch), 'the deep branch must spread baseModels (only override execute+verify, keep the rest)')
+  assert.ok(/executor:\s*'opus'/.test(deepBranch), 'the deep branch must force executor:\'opus\'')
+  assert.ok(/verifier:\s*'opus'/.test(deepBranch), 'the deep branch must force verifier:\'opus\'')
+
+  // Non-deep passes baseModels through untouched (the `: baseModels` else branch).
+  assert.ok(/:\s*baseModels/.test(wfSrc), 'light/standard must pass baseModels through untouched (never escalate)')
+})
+
+test('t5 (phase 10): remediatePrompt scopes to ONLY unmet criteria, embeds failing command+output, forbids PLAN.md/SPEC.md, appends OBEY', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const startIdx = wfSrc.indexOf('const remediatePrompt')
+  assert.ok(startIdx !== -1, 'remediatePrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 1400)
+
+  // Scoped to ONLY the unmet criteria — do NOT re-attack passing ones.
+  assert.ok(/unmet/.test(window), 'remediatePrompt must be built from the unmet criteria list')
+  assert.ok(
+    /ONLY the unmet|do NOT touch|not listed/i.test(window),
+    'remediatePrompt must tell the executor to close ONLY the unmet criteria and not re-attack passing ones',
+  )
+
+  // Embeds the verifier's evidence VERBATIM — the exact failing command + its output.
+  assert.ok(
+    /c\.command/.test(window) && /c\.output/.test(window),
+    'remediatePrompt must embed each unmet criterion\'s failing command (c.command) and observed output (c.output)',
+  )
+  assert.ok(
+    /failing command/i.test(window) && /output/i.test(window),
+    'remediatePrompt must label the embedded evidence (failing command / observed output)',
+  )
+
+  // Plan-blind (ADR-021): must forbid reading PLAN.md and SPEC.md.
+  assert.ok(/PLAN\.md/.test(window), 'remediatePrompt must forbid reading PLAN.md (stay plan-blind, ADR-021)')
+  assert.ok(/SPEC\.md/.test(window), 'remediatePrompt must forbid reading SPEC.md (stay plan-blind, ADR-021)')
+
+  // Must instruct ONE atomic commit stamped for ADR-017 idempotency.
+  assert.ok(/ONE atomic commit/i.test(window), 'remediatePrompt must instruct making ONE atomic commit')
+  assert.ok(/remediate-c/.test(window), 'remediatePrompt must stamp the commit `(phase N remediate-c<cycle>)` (ADR-017 idempotency)')
+
+  // Must append the OBEY canon-pointer like the sibling prompts.
+  assert.ok(/OBEY/.test(window), 'remediatePrompt must append OBEY (canon pointer, like execPrompt/healPrompt)')
+})
+
+test('t5 (phase 10): runRemediation reuses the EXISTING astro-executor (no new agent type) with the remediate label + REMEDIATE_SCHEMA', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const startIdx = wfSrc.indexOf('const runRemediation')
+  assert.ok(startIdx !== -1, 'runRemediation not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 400)
+
+  assert.ok(window.includes('remediatePrompt'), 'runRemediation must call agent(remediatePrompt(...))')
+  assert.ok(window.includes('astro-executor'), 'runRemediation must reuse agentType: astro-executor (no new agent type, C7)')
+  assert.ok(window.includes("'Execute'") || window.includes('"Execute"'), 'runRemediation must use phase: Execute')
+  assert.ok(window.includes('REMEDIATE_SCHEMA'), 'runRemediation must pass REMEDIATE_SCHEMA')
+  assert.ok(/remediate:/.test(window), 'runRemediation agent call must carry a `remediate:` label')
+
+  // No new agent type may have been introduced (ADR-022 rejected a remediator agent).
+  assert.ok(!/astro-remediator/.test(wfSrc), 'execute-phase.mjs must NOT introduce an astro-remediator agent (ADR-022 rejected a new agent type)')
+})
+
+test('t5 (phase 10): the remediate loop runs ONLY after a verify FAIL, gated on criteriaFound + maxCycles>0, and is bounded by maxCycles', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  // The loop must be entered from an if-condition requiring a FAIL against a real
+  // CRITERIA.md with budget remaining: !verdict.passed && verdict.criteriaFound && maxCycles > 0.
+  const gate = wfSrc.match(/if\s*\(\s*!verdict\.passed\s*&&\s*verdict\.criteriaFound\s*&&\s*maxCycles\s*>\s*0\s*\)/)
+  assert.ok(gate, 'the remediate loop must be gated on `!verdict.passed && verdict.criteriaFound && maxCycles > 0`')
+
+  // The FIRST verify must happen BEFORE that gate (loop runs only after a verify FAIL).
+  const firstVerifyIdx = wfSrc.indexOf('verdict = await runVerify()')
+  assert.ok(firstVerifyIdx !== -1, 'the first `verdict = await runVerify()` must exist')
+  assert.ok(gate.index > firstVerifyIdx, 'the remediate loop gate must come AFTER the first runVerify() (only remediate on a FAIL)')
+
+  // The for-loop must be bounded by maxCycles AND stop as soon as it passes.
+  assert.ok(
+    /for\s*\(\s*let\s+cycle\s*=\s*0;\s*cycle\s*<\s*maxCycles\s*&&\s*!verdict\.passed;\s*cycle\+\+\s*\)/.test(wfSrc),
+    'the loop must be `for (let cycle = 0; cycle < maxCycles && !verdict.passed; cycle++)` (bounded + early-exit on pass)',
+  )
+})
+
+test('t5 (phase 10): stop-on-no-progress — HEAD-unchanged check precedes the re-verify and bails, keeping passed:false / never verified', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const loopIdx = wfSrc.indexOf('for (let cycle = 0; cycle < maxCycles')
+  assert.ok(loopIdx !== -1, 'remediate loop not found')
+  const loopWindow = wfSrc.slice(loopIdx, loopIdx + 2200)
+
+  // Ordering: the HEAD-moved (no-progress #1) check must precede the re-verify so a
+  // no-commit pass bails BEFORE consuming another verify + more budget (C6).
+  const headMovedIdx = loopWindow.indexOf('headMoved')
+  const reVerifyIdx = loopWindow.indexOf('verdict = await runVerify()')
+  assert.ok(headMovedIdx !== -1, 'the loop must compute a headMoved / HEAD-unchanged signal')
+  assert.ok(reVerifyIdx !== -1, 'the loop must re-verify with runVerify()')
+  assert.ok(headMovedIdx < reVerifyIdx, 'the HEAD-unchanged (no-progress) check must precede the re-verify — bail before spending more budget')
+
+  // Both no-progress bails set stoppedReason and break.
+  assert.ok(
+    (loopWindow.match(/stoppedReason\s*=\s*'no-progress'/g) || []).length >= 2,
+    'both no-progress bails (HEAD-unchanged AND set-did-not-shrink) must set stoppedReason=\'no-progress\'',
+  )
+
+  // The shrink comparison bails when the failing set did not STRICTLY shrink.
+  assert.ok(
+    /afterIds\.size\s*>=\s*beforeIds\.size/.test(loopWindow),
+    'the second no-progress bail must fire when the failing-criteria set did not strictly shrink (afterIds.size >= beforeIds.size)',
+  )
+
+  // A no-progress bail must NEVER flip the verdict to a pass — the loop only reads
+  // verdict.passed and the file never assigns it true (verified is the verifier's call).
+  assert.ok(
+    !/verdict\.passed\s*=\s*true/.test(wfSrc),
+    'the loop must NEVER set verdict.passed = true on a no-progress bail (never self-verify — REQ-006, C9)',
+  )
+})
+
+test('t5 (phase 10): execute-phase.mjs does not shadow a Workflow hook and preserves the phaseSlug binding', () => {
+  // A focused restatement of the global hook-shadowing invariant for the file t4 touched
+  // (the loop threads `phaseSlug`/`phaseNum` through the remediate prompt + stamp).
+  const locals = destructuredLocals(readFileSync(WF_FILE, 'utf8'))
+  assert.ok(locals.includes('phaseSlug'), 'execute-phase.mjs must still bind the phase slug as phaseSlug')
+  for (const hook of HOOKS) {
+    assert.ok(!locals.includes(hook), `execute-phase.mjs local "${hook}" shadows the ${hook}() hook — rename it`)
+  }
+})
