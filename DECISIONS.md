@@ -147,3 +147,10 @@ _2026-07-11_
 
 **Rejected:** B repurpose ACCEPTANCE.md (over-couples the AI gate and human UAT into one doc); C verifier self-derives criteria at verify time with no artifact (bar not reviewable pre-execution, cannot catch a bad goal early, independence rests on prompt discipline only)
 
+## ADR-022 — Per-phase effort dial: an AUTOMATED verify->remediate loop in execute-phase, bounded by the level's max cycles AND stop-on-no-progress (no new commit, or the failing-criteria set didn't shrink -> bail to human FAIL). A remediation pass reuses astro-executor scoped to ONLY the unmet criteria + the verifier's evidence, then re-verifies with the P9 adversarial verifier. Levels light/standard/deep map to 0/1/3 cycles (deep also opus tier for execute+verify); research stays 3 angles at every level. Reaches 'verified' at best -> human /astro-accept still closes (REQ-006). effort is an additive roadmap-entry field, default standard
+_2026-07-11_
+
+**Why:** Quota tokens are the scarce resource; spend depth on verify->remediate cycles (proven to converge), NOT wider planning fan-outs. Safe to automate only because ADR-021 made the verifier's PASS/FAIL trustworthy
+
+**Rejected:** raw per-phase token budget (hard to choose a number); a new astro-remediator agent (extra surface vs scoping the executor); widening research at high effort (the wrong place to spend); re-running failing tasks unchanged (reproduces the failure)
+
