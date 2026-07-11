@@ -98,6 +98,15 @@
       "branch": "main",
       "claimed_at": "2026-06-11T11:47:59.425Z",
       "status": "complete"
+    },
+    {
+      "type": "milestone",
+      "number": 3,
+      "name": "trustworthy self-judgment",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-07-11T09:18:23.329Z",
+      "status": "active"
     }
   ]
 }
