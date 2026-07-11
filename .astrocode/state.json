@@ -2,7 +2,7 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 3,
-  "active_phase": "10-per-phase-effort-dial-tunable-verify-remediate-depth",
+  "active_phase": null,
   "status": "executing",
   "decisions": [],
   "blockers": [
@@ -12,6 +12,6 @@
       "at": "2026-06-11T13:55:18.891Z"
     }
   ],
-  "updated_at": "2026-07-11T21:17:35.965Z",
+  "updated_at": "2026-07-11T21:49:39.383Z",
   "activity": null
 }

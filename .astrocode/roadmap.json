@@ -14,7 +14,10 @@
       "number": 10,
       "name": "per-phase effort dial: tunable verify/remediate depth",
       "slug": "10-per-phase-effort-dial-tunable-verify-remediate-depth",
-      "status": "verified"
+      "status": "complete",
+      "effort": "standard",
+      "accepted_by": "Matteo",
+      "accepted_at": "2026-07-11T21:49:39.379Z"
     }
   ]
 }
