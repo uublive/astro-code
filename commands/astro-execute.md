@@ -22,6 +22,7 @@ Execute phase `$ARGUMENTS`.
        scriptPath: "<ac path workflows>/execute-phase.mjs",   // from `ac path workflows`
        args: { root: "<project root>", phase: "<phase slug>",
                models: <the JSON object from `ac config get models`>,
+               effort: <the level from `ac phase effort <slug>` (see the --effort note below)>,
                useWorktrees: <the boolean from `ac config get use_worktrees`> }
      })
      ```
@@ -35,6 +36,18 @@ Execute phase `$ARGUMENTS`.
      `ac models fast --preview` as the `models` arg instead (a one-off fast preset —
      sonnet everywhere except the opus verify gate — that is NOT persisted to config).
      To make it the project default instead, they'd run `ac models fast` once.
+     **Effort override:** resolve the effective effort level and pass it as `args.effort`.
+     Default = `ac phase effort <slug>` (the phase's stored level, or the hardcoded
+     `standard` when it carries none). If the user passed `--effort <light|standard|deep>`,
+     resolve `ac phase effort <slug> --effort <level>` instead — a one-off, run-scoped
+     override that is NEVER written back to `roadmap.json` (mirrors `--fast`). Do NOT
+     recompute model tiers here: the workflow applies `deep`→opus (executor + verifier,
+     in-memory only) and the level→cycle budget itself. The level sets an **automated
+     verify→remediate loop**: on a mid-phase verify FAIL the workflow re-runs the
+     `astro-executor` scoped to only the unmet criteria (up to `light`=0 / `standard`=1 /
+     `deep`=3 cycles) and re-verifies, **bailing early to a human-facing FAIL on
+     no-progress** (HEAD didn't move, or the failing-criteria set didn't shrink). It
+     reaches `verified` at best — never auto-accepts (REQ-006).
      It discovers the plan's tasks + dependencies, groups them into waves, and
      executes them **on the current working branch**, picking a strategy automatically:
      small phases (or any with no parallelizable wave) run **sequentially on-branch**
@@ -58,16 +71,30 @@ Execute phase `$ARGUMENTS`.
      the canon + CONTEXT.md. Tell each `astro-executor` to end its commit subject with
      `(phase NN tK)` — NN is the leading number from the phase slug, tK is the task id —
      so the run is resumable if re-executed (ADR-017).
+     Honor the effort dial here too: resolve the level (`ac phase effort <slug>`, or
+     `ac phase effort <slug> --effort <level>` for a `--effort` one-off) and, for `deep`,
+     use the opus tier for both the `astro-executor` and `astro-verifier` calls (in-memory
+     only — never persisted). On a verify FAIL, run the same bounded verify→remediate loop:
+     re-spawn the existing `astro-executor` scoped to ONLY the unmet criteria (with the
+     verifier's failing command + output as evidence, plan-blind — never a new agent type),
+     one atomic commit, then re-verify — up to the level's budget (`light`=0 / `standard`=1
+     / `deep`=3 cycles) and **bailing early to FAIL on no-progress** (HEAD unchanged, or the
+     failing-criteria set didn't shrink).
    - **No subagents at all:** execute the tasks inline, in dependency order, one
      atomic commit each, then verify yourself.
 5. Clear the live status (`ac activity clear` — also clear it on any early stop or
-   `integrationFailed`), then report the verdict (the workflow has returned by now — safe to suggest `/clear`).
-   - **PASS** → run `ac phase verify <slug>` (marks it **verified** — the AI gate),
-     then tell the user to run **`/astro-accept <number>`** (by number, e.g. `/astro-accept 3`) for UAT sign-off, which is
-     what actually closes the phase. Optionally add: state is saved to `.astrocode/`,
-     so `/clear` before `/astro-accept` (or the next phase) keeps context lean and
-     loses nothing — a suggestion, not a requirement.
-   - **FAIL** → surface the reasons and stop; leave the phase unverified.
+   `integrationFailed`), then report the verdict. `verdict` is now a **structured object**
+   — read `verdict.passed` (boolean) for PASS/FAIL and `verdict.summary` for the
+   human-facing reason text (the workflow has returned by now — safe to suggest `/clear`).
+   - **`verdict.passed` true** → run `ac phase verify <slug>` (marks it **verified** — the
+     AI gate), then tell the user to run **`/astro-accept <number>`** (by number, e.g.
+     `/astro-accept 3`) for UAT sign-off, which is what actually closes the phase.
+     Optionally add: state is saved to `.astrocode/`, so `/clear` before `/astro-accept`
+     (or the next phase) keeps context lean and loses nothing — a suggestion, not a
+     requirement.
+   - **`verdict.passed` false** → surface `verdict.summary` (and, when present,
+     `stoppedReason: 'no-progress' | 'max-cycles'` from the verify→remediate loop) and
+     stop; leave the phase unverified.
 
 Execution + the in-workflow verifier produce a **verified** phase at best — never
 **complete**. Only human UAT (`/astro-accept`) closes a phase.
