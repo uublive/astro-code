@@ -5,13 +5,7 @@
   "active_phase": null,
   "status": "milestone-complete",
   "decisions": [],
-  "blockers": [
-    {
-      "phase": "05-integrator-self-healing-ladder-rebase-re-run-fail",
-      "reason": "Post-heal teardown missing: after a successful heal the preserved worktree-* branch+worktree are never removed (no agent step, no narration line) — stale branches accumulate and the end-of-phase verifier's rev-list check can false-FAIL a correctly healed phase. CONTEXT/PLAN t7 required teardown after the re-run's commit lands.",
-      "at": "2026-06-11T13:55:18.891Z"
-    }
-  ],
-  "updated_at": "2026-07-11T21:54:10.979Z",
+  "blockers": [],
+  "updated_at": "2026-07-11T22:04:52.002Z",
   "activity": null
 }
