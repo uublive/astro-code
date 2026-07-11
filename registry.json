@@ -107,6 +107,16 @@
       "branch": "main",
       "claimed_at": "2026-07-11T09:18:23.329Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 9,
+      "milestone": 3,
+      "name": "harden astro-verify: goal-derived acceptance criteria + adversarial verification",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-07-11T09:18:25.543Z",
+      "status": "active"
     }
   ]
 }
