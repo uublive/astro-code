@@ -140,3 +140,10 @@ _2026-07-11_
 
 **Why:** Terminal-Bench 2.0 finding: internal verify PASSed work ground-truth scored 0.0; in real projects there is no external verifier so false-PASS silently ships broken work
 
+## ADR-021 — Goal-derived CRITERIA.md is the verifier's bar: a plan-blind agent derives falsifiable, goal-sourced success criteria (each with a concrete observation method) as a NEW FIRST stage of /astro-plan, before the researcher fan-out. The verifier checks ONLY goal + CRITERIA.md + independently-gathered evidence (run the thing, test behavior); it is FORBIDDEN to read PLAN.md or trust task/commit summaries. Overall PASS requires every criterion to independently pass. ACCEPTANCE.md stays the human-UAT doc for /astro-accept
+_2026-07-11_
+
+**Why:** Terminal-Bench 2.0: internal verify PASSed work ground-truth scored 0.0. Plan-derived acceptance is self-referential and the verifier re-read the plan and agreed — 'goal-backward' degraded to 'trust the plan'. Structural independence (criteria precede and are separate from the plan; verifier blind to the plan) beats relying on the verifier's willpower, which is exactly what failed
+
+**Rejected:** B repurpose ACCEPTANCE.md (over-couples the AI gate and human UAT into one doc); C verifier self-derives criteria at verify time with no artifact (bar not reviewable pre-execution, cannot catch a bad goal early, independence rests on prompt discipline only)
+
