@@ -35,12 +35,6 @@
   non-force push whose rejection *is* the mutual exclusion (retry on reject; always
   preserve sibling files in the tree). All numbering, decisions, and shared canon go
   through `transact`. Never reintroduce a silent local-only fallback.
-- Wave-green planning (ADR-020): every task must leave the build green on its own,
-  because the wave model integrates and gates at every wave boundary. A destructive edit
-  (deleting/renaming a module or symbol) and the updates to every consumer it breaks
-  (barrel/`index` re-exports, importers, type references) are **one atomic task** that
-  declares all those files — never split a deletion from the barrel/import fixups it
-  forces, and never lean on `depends_on` ordering to keep an intermediate boundary green.
 - Config & secrets: `.astrocode/config.json` (`max_concurrent_agents`, `use_worktrees`,
   `registry_branch`/`registry_remote`, per-role `models` tiers). Git CLI only — never
   `gh` — so the registry works on any remote. No secrets in the repo.

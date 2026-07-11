@@ -135,10 +135,15 @@ _2026-06-15_
 
 **Rejected:** leaving use_worktrees as dead config; per-wave re-run only (repeats the failure noise every wave); throttling the harness's worktree creation (not controllable from the script)
 
-## ADR-020 — Every wave boundary must compile: a destructive edit and the consumer fixups it forces are ONE atomic task
-_2026-06-23_
+## ADR-020 — M3 'trustworthy self-judgment' opened for the verify-hardening directive; P9 hardens astro-verify (goal-derived criteria + adversarial verification), P10 (per-phase effort dial) is QUEUED and must not start until P9 is accepted
+_2026-07-11_
 
-**Why:** The wave model integrates AND gates at every wave boundary, so its load-bearing invariant is that each boundary leaves the build green. buildWaves only couples tasks by depends_on + file-disjointness — it cannot see semantic coupling. A plan that put "delete 9 schema modules" (t13) in an earlier wave than "remove their exports from the barrel index.ts" (t6) touched disjoint files with no declared dependency, so the wave builder legally produced a Wave-A boundary where index.ts re-exports deleted modules — a tree that cannot compile — and the integration/test gate correctly bailed. "Independently committable" (ADR's prior planner rule) is too weak: both commits are valid in isolation but jointly required to stay green. The fix is at the planner, not the gate: a destructive edit (deleting/renaming a module or symbol) and the updates to EVERY consumer it breaks (barrels, re-exports, importers) must land in ONE atomic task = one green commit — never split across tasks or waves. This is the general form of the ADR-018 trap (a missing-symbol intermediate); the verifier additionally surfaces "wave boundary did not compile → non-atomic destructive edit (ADR-020)" so a regression names the plan, not the gate.
+**Why:** Terminal-Bench 2.0 finding: internal verify PASSed work ground-truth scored 0.0; in real projects there is no external verifier so false-PASS silently ships broken work
 
-**Rejected:** weakening the gate to tolerate non-compiling intermediates (the recurring mis-fix — a broken wave tip poisons later waves' executors which fork from it and cannot even run tests); depends_on-ordered splits (more parallelism but relies on the planner ordering export-removal-before-deletion correctly every time — too fragile for a build-breaking class)
+## ADR-021 — Goal-derived CRITERIA.md is the verifier's bar: a plan-blind agent derives falsifiable, goal-sourced success criteria (each with a concrete observation method) as a NEW FIRST stage of /astro-plan, before the researcher fan-out. The verifier checks ONLY goal + CRITERIA.md + independently-gathered evidence (run the thing, test behavior); it is FORBIDDEN to read PLAN.md or trust task/commit summaries. Overall PASS requires every criterion to independently pass. ACCEPTANCE.md stays the human-UAT doc for /astro-accept
+_2026-07-11_
+
+**Why:** Terminal-Bench 2.0: internal verify PASSed work ground-truth scored 0.0. Plan-derived acceptance is self-referential and the verifier re-read the plan and agreed — 'goal-backward' degraded to 'trust the plan'. Structural independence (criteria precede and are separate from the plan; verifier blind to the plan) beats relying on the verifier's willpower, which is exactly what failed
+
+**Rejected:** B repurpose ACCEPTANCE.md (over-couples the AI gate and human UAT into one doc); C verifier self-derives criteria at verify time with no artifact (bar not reviewable pre-execution, cannot catch a bad goal early, independence rests on prompt discipline only)
 

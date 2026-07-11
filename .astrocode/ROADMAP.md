@@ -1,5 +1,6 @@
 # Roadmap
 
-**Milestone 2**
+**Milestone 3**
 
-_No phases yet. Add one with `ac phase add <name>`._
+- [ ] Phase 9 — harden astro-verify: goal-derived acceptance criteria + adversarial verification `verified`
+- [ ] Phase 10 — per-phase effort dial: tunable verify/remediate depth `pending`

@@ -1,5 +1,18 @@
 {
   "version": 1,
-  "milestone": 2,
-  "phases": []
+  "milestone": 3,
+  "phases": [
+    {
+      "number": 9,
+      "name": "harden astro-verify: goal-derived acceptance criteria + adversarial verification",
+      "slug": "09-harden-astro-verify-goal-derived-acceptance-criteria-adversarial-verification",
+      "status": "verified"
+    },
+    {
+      "number": 10,
+      "name": "per-phase effort dial: tunable verify/remediate depth",
+      "slug": "10-per-phase-effort-dial-tunable-verify-remediate-depth",
+      "status": "pending"
+    }
+  ]
 }
