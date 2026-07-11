@@ -4,7 +4,7 @@
 // touches the real user/profile directories.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, existsSync, lstatSync, readlinkSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, existsSync, lstatSync, readlinkSync, mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,27 +57,34 @@ test('install → ~/.astro/code + symlinks into ~/.claude (default); uninstall r
   });
 });
 
-test('install does NOT symlink over a config dir that IS the framework clone (self-hosted)', async () => {
+test('install does NOT symlink over commands/agents that ARE the framework source (shared subdir via bind mount / symlink)', async () => {
   const fakeHome = mkdtempSync(join(tmpdir(), 'ac-home-'));
-  const clone = mkdtempSync(join(tmpdir(), 'ac-clone-')); // a fake framework == the config dir
+  const clone = mkdtempSync(join(tmpdir(), 'ac-clone-')); // the framework checkout
   for (const d of ['commands', 'agents', 'workflows', 'hooks']) mkdirSync(join(clone, d), { recursive: true });
   writeFileSync(join(clone, 'commands', 'astro-status.md'), '# real source');
   writeFileSync(join(clone, 'agents', 'astro-verifier.md'), '# real agent');
 
-  await withEnv({ home: fakeHome, configDir: clone }, async () => {
-    const { installClaude } = await import(`../lib/install.mjs?self=${encodeURIComponent(clone)}`);
-    const res = installClaude(clone); // framework root === the config dir
+  // The config dir is a DIFFERENT top-level path whose commands/ and agents/ ARE the
+  // clone's (symlinked subdirs stand in for the sandbox's bind mount — same dev+inode,
+  // different path). This is the case a resolve()/path-equality guard silently misses.
+  const cfg = mkdtempSync(join(tmpdir(), 'ac-cfg-'));
+  symlinkSync(join(clone, 'commands'), join(cfg, 'commands'));
+  symlinkSync(join(clone, 'agents'), join(cfg, 'agents'));
 
-    // the clone's own tracked source files stay REGULAR files, never clobbered by symlinks
+  await withEnv({ home: fakeHome, configDir: cfg }, async () => {
+    const { installClaude } = await import(`../lib/install.mjs?self=${encodeURIComponent(cfg)}`);
+    const res = installClaude(clone); // framework root != config dir, but the subdirs coincide
+
+    // the clone's real source files stay REGULAR — never clobbered through the shared subdir
     const cmd = join(clone, 'commands', 'astro-status.md');
-    assert.ok(!lstatSync(cmd).isSymbolicLink(), 'clone command file must stay a regular file');
+    assert.ok(!lstatSync(cmd).isSymbolicLink(), 'source command file must stay a regular file');
     assert.equal(readFileSync(cmd, 'utf8'), '# real source', 'content preserved');
-    assert.ok(!lstatSync(join(clone, 'agents', 'astro-verifier.md')).isSymbolicLink(), 'clone agent file stays regular');
+    assert.ok(!lstatSync(join(clone, 'agents', 'astro-verifier.md')).isSymbolicLink(), 'source agent file stays regular');
 
-    const self = res.targets.find((t) => t.dir === clone);
-    assert.ok(self && self.selfHosted, 'target flagged selfHosted');
-    assert.equal(self.commands, 0, 'no command symlinks created in the clone');
-    assert.equal(self.agents, 0, 'no agent symlinks created in the clone');
+    const self = res.targets.find((t) => t.dir === cfg);
+    assert.ok(self && self.selfHosted, 'target flagged selfHosted (shared source subdir)');
+    assert.equal(self.commands, 0, 'no command symlinks written into the source');
+    assert.equal(self.agents, 0, 'no agent symlinks written into the source');
   });
 });
 
