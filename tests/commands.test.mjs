@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const COMMANDS = join(dirname(fileURLToPath(import.meta.url)), '..', 'commands');
 const EXECUTE_MD = join(COMMANDS, 'astro-execute.md');
+const ALEX_MD = join(COMMANDS, 'astro-alex.md');
 
 /**
  * Slice out the "No Workflow tool, but the Agent tool is available" tier from
@@ -128,4 +129,63 @@ test('astro-execute.md fallback tier does not instruct batching in a single mess
     );
     searchFrom = idx + phrase.length;
   }
+});
+
+// ── 5. Effort dial (phase 10 / ADR-022) command-doc contract guards ─────────────────
+//
+// Phase 10 surfaces the per-phase effort dial through the command docs.  These guards
+// pin the load-bearing prose so a reword can't silently drop the contract:
+//   • astro-execute.md must document the `--effort` one-off, thread `effort` into the
+//     Workflow args, and read the now-STRUCTURED verdict (`verdict.summary` /
+//     `verdict.passed`) instead of a bare string.
+//   • astro-alex.md must keep the fast lane pinned to `effort: "light"` (0 remediation
+//     cycles / single-pass) so it never inherits a phase's deeper budget (C10).
+// Test-after: t6/t7 have already landed the prose; these assert its shape.
+
+const executeSrc = readFileSync(EXECUTE_MD, 'utf8');
+const alexSrc = readFileSync(ALEX_MD, 'utf8');
+
+test('astro-execute.md documents the --effort one-off override', () => {
+  // The one-off surface is the `--effort <light|standard|deep>` flag (mirrors `--fast`).
+  const hasEffortFlag = /--effort\s+<\s*light\s*\|\s*standard\s*\|\s*deep\s*>/i.test(executeSrc);
+  assert.ok(
+    hasEffortFlag,
+    `astro-execute.md must document the "--effort <light|standard|deep>" one-off override ` +
+      `(phase 10 / C5) — found no such flag documentation.`,
+  );
+});
+
+test('astro-execute.md passes effort into the Workflow args (args.effort)', () => {
+  // The level must be threaded to the workflow as an arg — either the `effort: <…>` key
+  // inside the args object, or the `args.effort` reference in the surrounding prose.
+  const hasEffortArg = /\beffort:\s*</.test(executeSrc) || /\bargs\.effort\b/.test(executeSrc);
+  assert.ok(
+    hasEffortArg,
+    `astro-execute.md must pass the resolved effort level into the Workflow args ` +
+      `(an "effort:" key or "args.effort") so the workflow applies the cycle budget — ` +
+      `found neither.`,
+  );
+});
+
+test('astro-execute.md reads the structured verdict (verdict.summary / verdict.passed)', () => {
+  // The verify verdict is now a structured object; step 5 must read the boolean gate and
+  // the human-facing summary rather than treating the verdict as a bare string.
+  const hasPassed = /verdict\.passed/.test(executeSrc);
+  const hasSummary = /verdict\.summary/.test(executeSrc);
+  assert.ok(
+    hasPassed && hasSummary,
+    `astro-execute.md must read the structured verdict — both "verdict.passed" and ` +
+      `"verdict.summary" (phase 10) — found passed=${hasPassed}, summary=${hasSummary}.`,
+  );
+});
+
+test('astro-alex.md pins the fast lane to effort: "light"', () => {
+  // The fast lane always runs single-pass: it must pass effort:"light" explicitly in its
+  // Workflow call so it never inherits a phase's stored (deeper) budget (C10).
+  const hasLight = /effort:\s*"light"/.test(alexSrc);
+  assert.ok(
+    hasLight,
+    `astro-alex.md must pin the fast lane to effort:"light" in its Workflow args ` +
+      `(0 remediation cycles / single-pass — C10) — found no such pin.`,
+  );
 });
