@@ -135,3 +135,8 @@ _2026-06-15_
 
 **Rejected:** leaving use_worktrees as dead config; per-wave re-run only (repeats the failure noise every wave); throttling the harness's worktree creation (not controllable from the script)
 
+## ADR-020 — M3 'trustworthy self-judgment' opened for the verify-hardening directive; P9 hardens astro-verify (goal-derived criteria + adversarial verification), P10 (per-phase effort dial) is QUEUED and must not start until P9 is accepted
+_2026-07-11_
+
+**Why:** Terminal-Bench 2.0 finding: internal verify PASSed work ground-truth scored 0.0; in real projects there is no external verifier so false-PASS silently ships broken work
+
