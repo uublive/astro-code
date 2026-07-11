@@ -1,23 +1,5 @@
 {
   "version": 1,
   "milestone": 3,
-  "phases": [
-    {
-      "number": 9,
-      "name": "harden astro-verify: goal-derived acceptance criteria + adversarial verification",
-      "slug": "09-harden-astro-verify-goal-derived-acceptance-criteria-adversarial-verification",
-      "status": "complete",
-      "accepted_by": "Matteo",
-      "accepted_at": "2026-07-11T09:52:38.721Z"
-    },
-    {
-      "number": 10,
-      "name": "per-phase effort dial: tunable verify/remediate depth",
-      "slug": "10-per-phase-effort-dial-tunable-verify-remediate-depth",
-      "status": "complete",
-      "effort": "standard",
-      "accepted_by": "Matteo",
-      "accepted_at": "2026-07-11T21:49:39.379Z"
-    }
-  ]
+  "phases": []
 }
