@@ -110,14 +110,19 @@ prompt (one `AskUserQuestion` or just prompt for it) — never invent one.
    `strategy:"sequential"` + `useWorktrees:false` is the **no-fan-out** guarantee: tasks
    run one at a time on the working branch, each an atomic commit stamped `(phase NN
    tK)` (so a re-run of `astro-alex`/`/astro-execute` skips what already landed), then a
-   single goal-backward verify pass over the SPEC + the test suite. Tell the user to
+   single adversarial verify pass: the fast lane has no `CRITERIA.md`, so the verifier
+   **self-derives goal criteria from the phase goal** and checks the result against those
+   by running the evidence — it must NOT treat `SPEC.md` as the bar (SPEC is a plan-shaped
+   execution contract, not a goal-derived bar). Tell the user to
    watch **`/workflows`** for progress; you'll be notified on completion. If the result
    has `integrationFailed`, surface the hint and stop (leave the phase unverified).
    - **No Workflow tool available?** Fall back to the same shape as `/astro-execute`'s
      Agent-tool tier: read the PLAN tasks, produce a topological order, then spawn one
      `astro-executor` at a time (NOT parallel, NOT batched in a single message) — each
      one atomic commit ending its subject with `(phase NN tK)` — and after all tasks
-     spawn `astro-verifier`. Tell each agent to read the canon + this phase's SPEC.md.
+     spawn `astro-verifier`. Tell each **executor** to read the canon + this phase's
+     SPEC.md; tell the **verifier** to read the canon + the phase **goal** and self-derive
+     its criteria (never treat SPEC.md as the bar), then verify by running the evidence.
 
 9. **Report — and surface what's unresolved.** Clear the status (`ac activity clear`).
    - **PASS** → run `ac phase verify <slug>` (marks it **verified** — the AI gate). Then
