@@ -996,15 +996,35 @@ if (integrationFailed) {
     `Executor commits may remain on \`worktree-*\` branches — resolve the conflict and re-run before verifying.`
   log('skipped goal verification — integration failed')
 } else {
+  // ADR-021 — adversarial, plan-blind verification. The bar is the pre-registered,
+  // goal-derived CRITERIA.md, NOT the plan or the executor's claims: grading against
+  // the plan is exactly the Terminal-Bench 2.0 false-PASS (internal verify PASSed work
+  // the ground-truth verifier scored 0.0). These rules are inlined here as defense-in-
+  // depth — the full contract also lives in agents/astro-verifier.md, but the model has
+  // this in direct context at the point the verdict is produced.
   verdict = await agent(
-    `Verify phase "${phaseSlug}" of the project at ${root}. The phase's work is committed on the ` +
-      `CURRENT branch — verify against HEAD/the working tree, NOT a fresh checkout of main. Read its goal ` +
-      `in ${root}/.astrocode/phases/${phaseSlug}/ and confirm the implemented code actually delivers it ` +
-      `(goal-backward, not just "tasks ran"). First confirm the phase's commits are present ` +
-      `(\`git log --oneline\`) and that no \`worktree-*\` branch still holds un-integrated commits ` +
-      `(\`git for-each-ref refs/heads/worktree-*\`, then \`git rev-list HEAD..<branch>\` must be empty). ` +
-      `Run the test suite. Also flag any violation of the project canon (naming, patterns, prior decisions). ` +
-      `Report PASS or FAIL with reasons.` +
+    `Verify phase "${phaseSlug}" of the project at ${root}. The work is committed on the ` +
+      `CURRENT branch — verify against HEAD/the working tree, NOT a fresh checkout of main.\n\n` +
+      `Your job is to PROVE THE WORK IS WRONG. A false PASS is the costliest error — assume the ` +
+      `work is broken until you have run the evidence yourself.\n\n` +
+      `Check ONLY against: the phase goal, and ${root}/.astrocode/phases/${phaseSlug}/CRITERIA.md ` +
+      `(the pre-registered, goal-derived bar). Do NOT read PLAN.md or SPEC.md; do NOT trust task ` +
+      `summaries, commit messages, or executor claims; do NOT broad-grep the phase directory (you ` +
+      `might incidentally read the plan). If CRITERIA.md is ABSENT, SELF-DERIVE goal criteria from ` +
+      `the goal yourself and SAY SO — open the verdict with a provenance line ("CRITERIA.md found ` +
+      `(N criteria)" or "CRITERIA.md absent — self-derived N criteria from the goal"); never silently ` +
+      `skip the bar, never trust the plan.\n\n` +
+      `For EACH criterion, ASSUME IT FAILS until you have independently observed it pass: run its ` +
+      `Observe: command / drive the behavior end-to-end, and cite the exact command + its actual ` +
+      `output as evidence; actively try its "Fails if:". A green suite is not evidence for a ` +
+      `criterion unless it actually exercises that behavior.\n\n` +
+      `Also confirm the phase's commits are present (\`git log --oneline\`) and that no \`worktree-*\` ` +
+      `branch still holds un-integrated commits (\`git for-each-ref refs/heads/worktree-*\`, then ` +
+      `\`git rev-list HEAD..<branch>\` must be empty). Run the full test suite. Flag any project-canon ` +
+      `violation.\n\n` +
+      `PASS only if EVERY criterion has independent passing evidence you gathered yourself AND the ` +
+      `structural checks hold. Otherwise FAIL — name the unmet criterion, the command you ran, the ` +
+      `output you saw, and what is needed to close it.` +
       OBEY,
     { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier },
   )
