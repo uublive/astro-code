@@ -33,13 +33,17 @@ remediate loop is only safe because the verifier's FAIL/PASS signal is now trust
    - `standard` = up to **1** cycle, configured tier. *(default)*
    - `deep`   = up to **3** cycles, **and opus tier** for execute + verify that phase.
 
-## Logged defaults (not forks — captured for the planner)
-- **Scope across execution modes:** the dial applies in the execute-phase **Workflow path
-  and its Agent-tier fallback**. **`/astro-alex` (fast lane) defaults to `light`** (single
-  pass — consistent with its no-fan-out identity), overridable.
-- **Storage:** `effort` is an **additive field on the roadmap phase entry**
-  (`effort: "standard"`), defaulting to `standard` when absent — backward-compatible with
-  existing phases. Mutated only through a lock-guarded `lib/` helper (REQ-002).
+## Decisions (round 3 — items previously defaulted, now explicit)
+7. **Scope across execution modes:** the dial applies in the execute-phase **Workflow path
+   and its Agent-tier fallback**. **`/astro-alex` (fast lane) stays `light` / single-pass**
+   (verify once, FAIL stops) — its whole point is speed for off-the-cuff work; a user can
+   opt a specific run into deeper effort explicitly.
+8. **Per-phase only — no project-wide effort knob.** `effort` is an **additive field on the
+   roadmap phase entry** (`effort: "standard"`), **hardcoded `standard` default** when
+   absent (backward-compatible), mutated only through a lock-guarded `lib/` helper (REQ-002).
+   There is **no `ac config` / global effort preset** — deep is a deliberate per-phase choice.
+
+## Logged defaults (implementation detail — for the planner)
 - **Re-verify uses the same P9 verifier** (adversarial, per-criterion, plan-blind against
   CRITERIA.md) — the loop's convergence signal is exactly the trustworthy gate.
 
