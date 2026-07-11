@@ -14,6 +14,7 @@ export const meta = {
   name: 'astro-plan-phase',
   description: 'Research a phase from several angles in parallel, then synthesize an executable PLAN.md',
   phases: [
+    { title: 'Criteria', detail: 'plan-blind: pre-register goal-derived success criteria (CRITERIA.md)' },
     { title: 'Research', detail: 'parallel researchers gather approaches, patterns, risks' },
     { title: 'Synthesize', detail: 'merge findings into a single task-broken plan' },
   ],
@@ -29,6 +30,31 @@ const OBEY =
   `\n\nRead and OBEY before answering:\n` +
   `  - ${root}/.astrocode/CONVENTIONS.md and ${root}/.astrocode/DECISIONS.md (project canon)\n` +
   `  - ${root}/.astrocode/phases/${phaseSlug}/CONTEXT.md (this phase's /astro-discuss decisions, if present)`
+
+// ADR-021 — the Criteria stage runs FIRST, before any research or plan exists, so the
+// verifier's bar is pre-registered from the GOAL and can never be shaped by the
+// implementation (the Terminal-Bench 2.0 false-PASS this closes: a plan-derived bar
+// grades the work against its own claims). It's a single sequential agent (NOT in the
+// researcher parallel() array) so CRITERIA.md is written before the fan-out — the
+// researchers/planner may then aim the plan at the bar. The criteria author is plan-blind
+// by contract (agents/astro-criteria-author.md); the prompt restates it as defense-in-depth.
+phase('Criteria')
+log(`pre-registering the bar for "${phaseSlug}" — plan-blind, goal-derived CRITERIA.md`)
+await agent(
+  `Author the pre-registered success criteria for phase "${phaseSlug}" (goal: ${goal}).\n` +
+    `You are PLAN-BLIND: derive the criteria from the GOAL + CONTEXT + canon ONLY. No plan exists ` +
+    `yet — do NOT read PLAN.md / ACCEPTANCE.md / SPEC.md even if one is present from a prior attempt.\n` +
+    `Write ${root}/.astrocode/phases/${phaseSlug}/CRITERIA.md as falsifiable, goal-level/behavioral ` +
+    `criteria — each exactly:\n` +
+    `  ### C<n> — <one-line observable claim about the finished system>\n` +
+    `  - **Observe:** <command to run + expected observable result, OR artifact/behavior to inspect ` +
+    `— independently runnable with only Read/Bash/Grep/Glob>\n` +
+    `  - **Fails if:** <the failure mode that makes it FAIL>\n` +
+    `Ban structural/existence checks (file-exists, grep-for-a-string, "function defined") — a ` +
+    `different valid implementation of the goal must still satisfy every criterion. Return a one-line count.` +
+    OBEY,
+  { phase: 'Criteria', agentType: 'astro-criteria-author', model: models.planner },
+)
 
 phase('Research')
 const ANGLES = [
@@ -69,7 +95,10 @@ const summary = await agent(
     `Also write ${root}/.astrocode/phases/${phaseSlug}/ACCEPTANCE.md — a short, user-facing ` +
     `UAT checklist of "the user can …" statements a human will confirm before the phase ` +
     `closes (acceptance, not unit tests). ` +
-    `The plan MUST conform to the canon and this phase's CONTEXT.md.\n\n` +
+    `The plan MUST conform to the canon and this phase's CONTEXT.md, and MUST aim at every ` +
+    `criterion in ${root}/.astrocode/phases/${phaseSlug}/CRITERIA.md — that pre-registered, ` +
+    `goal-derived bar is what the verifier will check the result against (the plan does not get ` +
+    `to define its own bar).\n\n` +
     `TEST-FIRST RULE (ADR-018 — prevents the phase-04 t5 trap): a RED-test task must ` +
     `NEVER statically import a symbol that does not yet exist on the branch — a static import ` +
     `of a missing export crashes the whole test file at module load, pushing executors to ` +
