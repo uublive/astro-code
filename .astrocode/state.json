@@ -1,9 +1,9 @@
 {
   "version": 1,
   "project": "astro-code",
-  "active_milestone": 2,
-  "active_phase": null,
-  "status": "milestone-complete",
+  "active_milestone": 3,
+  "active_phase": "09-harden-astro-verify-goal-derived-acceptance-criteria-adversarial-verification",
+  "status": "executing",
   "decisions": [],
   "blockers": [
     {
@@ -12,6 +12,6 @@
       "at": "2026-06-11T13:55:18.891Z"
     }
   ],
-  "updated_at": "2026-06-12T13:28:21.298Z",
+  "updated_at": "2026-07-11T09:46:17.064Z",
   "activity": null
 }

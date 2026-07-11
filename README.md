@@ -93,7 +93,7 @@ comparison, run the same task in a fresh session and compare.
 ## How it works
 
 Everything lives in **`.astrocode/`** in your repo (human-readable, git-committed):
-`PROJECT.md`, `ROADMAP.md`, per-phase `PLAN.md`/`SUMMARY.md`, plus the canon.
+`PROJECT.md`, `ROADMAP.md`, per-phase `CRITERIA.md`/`PLAN.md`/`SUMMARY.md`, plus the canon.
 
 **Discuss before planning.** `/astro-discuss` asks adaptive, pick-an-answer questions
 about scope, approach, and edge cases, then writes the decisions to the phase's
@@ -114,9 +114,12 @@ full `discuss → plan → execute` flow. Like every other path, it produces a *
 phase at best — human `/astro-accept` still closes it.
 
 **Two gates close a phase.** It moves `executing → verified → complete`: the
-`astro-verifier` agent is the machine gate (goal-backward, tests), and `/astro-accept`
-is the human gate (UAT against the acceptance checklist written at plan time). The AI
-never auto-closes its own work; `ac phase accept` requires a prior `verified`.
+`astro-verifier` agent is the machine gate — adversarial and **plan-blind**, it checks the
+result against a pre-registered, goal-derived `CRITERIA.md` (written *before* the plan, so
+the bar can't be shaped by the implementation) by running the evidence per criterion, never
+by trusting the plan or the task summaries. `/astro-accept` is the human gate (UAT against
+the acceptance checklist written at plan time). The AI never auto-closes its own work;
+`ac phase accept` requires a prior `verified`.
 
 **Numbering & duplicate detection.** `ac phase add` / `ac milestone new` claim the next
 free number from `registry.json` on an orphan branch (`astro-registry`) via a git

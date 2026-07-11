@@ -26,7 +26,8 @@ below (one-off fast preset; see those commands). Otherwise use the configured ti
    continue. The user may decline discussion for a trivial phase — honor that and proceed.
 
 2. **Plan.** Run the **`/astro-plan <number>`** flow (the plan-phase Workflow, or its
-   graceful fallback). It writes `PLAN.md` + `ACCEPTANCE.md`. If planning fails or produces
+   graceful fallback). It writes a plan-blind, goal-derived `CRITERIA.md` first (the
+   verifier's bar), then `PLAN.md` + `ACCEPTANCE.md`. If planning fails or produces
    no tasks, stop and report — do not execute an empty plan.
 
 3. **Execute + verify.** Run the **`/astro-execute <number>`** flow. The execute-phase
