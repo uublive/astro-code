@@ -19,7 +19,8 @@ import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
-import { installClaude, uninstallClaude, installStatusline, ASTRO_HOME } from '../lib/install.mjs';
+import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME } from '../lib/install.mjs';
+import { applyTune, undoTune, tuneTarget, UNTUNABLE } from '../lib/tune.mjs';
 import { collectStats } from '../lib/stats.mjs';
 
 function parseArgs(args) {
@@ -99,6 +100,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac stats [--since ISO|--session ID] token usage (fresh vs cache) + wall-clock from transcripts
   ac registry init [--force]          create the orphan registry branch + backfill from roadmaps
   ac registry show                    print the shared numbering registry
+  ac tune [--user] [--undo]           apply astro-recommended Claude settings (additive, reversible)
   ac statusline [install|preview]     wire the rich statusline (recap·model·ctx-bar·M/P) or preview it
   ac install | uninstall              (un)install commands + agents into ~/.claude
   ac update [clone-path]              git pull + refresh the global CLI and commands
@@ -573,6 +575,34 @@ async function main() {
       } else {
         die('usage: ac decision <add|list>');
       }
+      return;
+    }
+
+    case 'tune': {
+      // Apply (or undo) the astro-recommended Claude Code settings — the officially
+      // supported settings.json subset only, additively and reversibly.
+      const scope = flags.user ? 'user' : 'project';
+      const target = tuneTarget(scope, {
+        projectRoot: flags.user ? undefined : root(),
+        configDir: flags.user ? baseConfigDir() : undefined,
+      });
+      if (flags.undo) {
+        const res = undoTune(target);
+        console.log(res.undone
+          ? `✓ tune undone in ${res.file} — removed ${res.removed.allow.length} allow entr(ies), ${res.removed.keys.length} key(s)`
+          : `• nothing to undo in ${res.file} (no tune manifest recorded)`);
+        return;
+      }
+      const res = applyTune(target);
+      console.log(`✓ tuned ${res.file}  [${scope}]`);
+      console.log(`  permissions.allow: +${res.added.allow.length} added` +
+        (res.skippedAllow ? ` (${res.skippedAllow} already present)` : '') +
+        ` — ac CLI, node --test, read-only git → fewer prompts outside Bypass mode`);
+      console.log(res.added.keys.length
+        ? `  set (were absent): ${res.added.keys.join(', ')}`
+        : '  keys: all already user-set — left untouched');
+      console.log(`  not touchable (internal-only /config state): ${UNTUNABLE.join(' · ')}`);
+      console.log('  reverse any time: ac tune --undo' + (flags.user ? ' --user' : ''));
       return;
     }
 
