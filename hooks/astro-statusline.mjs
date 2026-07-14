@@ -58,11 +58,14 @@ let claude = '';
 if (data) {
   const tp = data.transcript_path;
   recap = renderRecap(readRecap(tp));
-  claude = renderClaudeSegment({
-    model: data.model,
-    tokens: readContextTokens(tp),
-    limit: modelLimit(data.model),
-  });
+  const tokens = readContextTokens(tp);
+  let limit = modelLimit(data.model);
+  // Safety net: a real request can never exceed its context window, so if the measured
+  // occupancy is above our table limit, the table is stale — bump it. This makes a
+  // misleading >100% reading (the 236% bug) structurally impossible even if a model's
+  // window grows and modelLimit hasn't caught up.
+  if (tokens != null && limit && tokens > limit) limit = Math.max(1_000_000, tokens);
+  claude = renderClaudeSegment({ model: data.model, tokens, limit });
 }
 
 // (5) the astro project segment — current milestone/phase/status + live activity.

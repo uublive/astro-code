@@ -178,11 +178,19 @@ function defaultRead(p) {
   try { return p ? readFileSync(p, 'utf8') : null; } catch { return null; }
 }
 
-// Nominal context window for the running model. The 1M-context Opus variant is
-// tagged `[1m]` in its id; everything else is the standard 200k window.
+// Nominal context window (max input tokens) for the running model — the fill bar's
+// denominator. Authoritative sizes from the Claude models catalog (claude-api skill,
+// cached 2026-06-24): the whole CURRENT generation — Opus 4.6/4.7/4.8, Sonnet 4.6/5,
+// Fable 5, Mythos 5 — is **1M**. Only **Haiku** and the **legacy** tier (Opus ≤4.5,
+// Sonnet ≤4.5, Claude 3/2/instant) are **200K**. There is NO `[1m]` opt-in variant —
+// 1M is simply the default and the max for current models (the earlier `[1m]` check was
+// wrong and made `claude-opus-4-8` read 200K → a misleading 236%). Unknown ids default to
+// 1M (matching every model Claude Code runs today); the statusline hook also bumps the
+// limit if measured tokens ever exceed it, so a future change can't resurrect a >100%.
+const CTX_200K = /haiku|opus-4-(0|1|5)|sonnet-4-(0|5)|sonnet-3|claude-[123]-|claude-2|instant/i;
 export function modelLimit(model) {
-  const id = (model && (model.id || model.display_name)) || '';
-  return /\[1m\]|(?:^|[^0-9a-z])1m(?:$|[^0-9a-z])/i.test(id) ? 1_000_000 : 200_000;
+  const id = String((model && (model.id || model.display_name)) || '');
+  return CTX_200K.test(id) ? 200_000 : 1_000_000;
 }
 
 // Current context-window occupancy, from the session transcript: the LAST line

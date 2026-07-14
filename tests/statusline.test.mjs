@@ -216,11 +216,20 @@ test('the statusline hook leads with the busy/idle dot from session-state', () =
 
 // --- Claude-session segment: recap · model · context-fill bar ----------------
 
-test('modelLimit is 1M for the [1m] Opus variant, 200k otherwise', () => {
-  assert.equal(modelLimit({ id: 'claude-opus-4-8[1m]' }), 1_000_000);
-  assert.equal(modelLimit({ id: 'claude-opus-4-8', display_name: 'Opus 4.8' }), 200_000);
-  assert.equal(modelLimit({ id: 'claude-sonnet-5' }), 200_000);
-  assert.equal(modelLimit(null), 200_000);
+test('modelLimit: current gen (Opus 4.6+/Sonnet 4.6+/Fable/Sonnet-5) = 1M; Haiku + legacy = 200K', () => {
+  // current generation → 1M (the whole reason the 236% bug existed)
+  assert.equal(modelLimit({ id: 'claude-opus-4-8', display_name: 'Opus 4.8' }), 1_000_000);
+  assert.equal(modelLimit({ id: 'claude-sonnet-5' }), 1_000_000);
+  assert.equal(modelLimit({ id: 'claude-fable-5' }), 1_000_000);
+  assert.equal(modelLimit({ id: 'claude-opus-4-6' }), 1_000_000);
+  assert.equal(modelLimit({ id: 'claude-sonnet-4-6' }), 1_000_000);
+  assert.equal(modelLimit(null), 1_000_000, 'unknown → 1M (what Claude Code runs today)');
+  // Haiku + legacy tier → 200K
+  assert.equal(modelLimit({ id: 'claude-haiku-4-5' }), 200_000);
+  assert.equal(modelLimit({ id: 'claude-opus-4-5-20251101' }), 200_000);
+  assert.equal(modelLimit({ id: 'claude-opus-4-1' }), 200_000);
+  assert.equal(modelLimit({ id: 'claude-sonnet-4-5' }), 200_000);
+  assert.equal(modelLimit({ id: 'claude-3-5-sonnet-20241022' }), 200_000);
 });
 
 test('readContextTokens sums the LAST usage line (fresh input + both cache tiers)', () => {
@@ -308,6 +317,6 @@ test('the statusline hook composes recap + model + context bar from stdin + tran
   assert.equal(r.status, 0);
   assert.match(r.stdout, /❯ ship the statusline/, 'recap first');
   assert.match(r.stdout, /Opus 4\.8/, 'model');
-  assert.match(r.stdout, /50% · 100k\/200k/, 'context-fill bar');
+  assert.match(r.stdout, /10% · 100k\/1M/, 'context-fill bar (Opus 4.8 → 1M window)');
   assert.match(r.stdout, /⊡ astro · M1 · P3 close-ci-gates/, 'astro segment still there');
 });
