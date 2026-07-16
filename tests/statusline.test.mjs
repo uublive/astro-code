@@ -244,6 +244,19 @@ test('readContextTokens sums the LAST usage line (fresh input + both cache tiers
   assert.equal(readContextTokens('x', () => '{"type":"user"}'), null, 'no usage → null');
 });
 
+test('readContextTokens skips trailing ALL-ZERO usage markers (context-limit / aborted turns)', () => {
+  // Claude Code writes zeroed usage markers at the context limit; the last non-zero turn
+  // is the real occupancy. Taking the last block blindly would read 0 → "0% · 0/1M" on a FULL session.
+  const transcript = [
+    JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 2, cache_read_input_tokens: 973_242, cache_creation_input_tokens: 1_980 } } }),
+    JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }),
+    JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 0, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }),
+  ].join('\n');
+  assert.equal(readContextTokens('x', () => transcript), 975_224, 'ignore zeroed markers → last real occupancy');
+  // A transcript with ONLY zeroed usage → null (segment shows model only), never 0.
+  assert.equal(readContextTokens('x', () => JSON.stringify({ message: { usage: { input_tokens: 0, cache_read_input_tokens: 0 } } })), null);
+});
+
 test('readRecap returns the last human text turn, skipping tool-results + command meta', () => {
   const transcript = [
     JSON.stringify({ type: 'user', message: { content: 'first ask' } }),

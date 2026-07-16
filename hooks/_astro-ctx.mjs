@@ -206,9 +206,14 @@ export function readContextTokens(transcriptPath, read = defaultRead) {
     if (!s) continue;
     let obj; try { obj = JSON.parse(s); } catch { continue; }
     const u = (obj.message && obj.message.usage) || obj.usage;
-    if (u && (u.input_tokens != null || u.cache_read_input_tokens != null)) {
-      return (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
-    }
+    if (!u) continue;
+    const sum = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+    // Skip all-zero usage blocks. Claude Code writes trailing assistant markers — at the
+    // context limit, or on an aborted/empty turn — with a ZEROED usage object; taking the
+    // last usage block blindly then reads 0 and renders "0% · 0/1M" on a session that's
+    // actually FULL. A real turn always consumes the window (cache_read or input > 0), so
+    // return the last turn that genuinely did.
+    if (sum > 0) return sum;
   }
   return null;
 }
