@@ -83,6 +83,16 @@ test('renderSegment shows ⊡, milestone, phase, progress, blockers', () => {
   assert.match(seg, /⚠1/);
 });
 
+test('renderSegment shows the astro-code version by the brand mark when provided', () => {
+  const root = project({ roadmap: ROADMAP });
+  const seg = renderSegment({ ...readContext(root, NOW), version: '0.5.2' });
+  assert.match(seg, /⊡ astro v0\.5\.2 · M1/, 'version sits right after the astro mark');
+  // absent version → unchanged brand (never a bare "v")
+  const noV = renderSegment(readContext(root, NOW));
+  assert.match(noV, /⊡ astro · M1/);
+  assert.doesNotMatch(noV, /v0\.5\.2|astro v/);
+});
+
 test('renderResumeNote (PreCompact) carries project/phase/status + next action + on-disk pointer', () => {
   const root = project({ state: { project: 'demo', blockers: [1] }, roadmap: ROADMAP });
   const note = renderResumeNote(readContext(root, NOW));

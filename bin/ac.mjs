@@ -634,6 +634,8 @@ async function main() {
       const now = Math.floor(Date.now() / 1000);
       const rec = flags.idle ? { prompt: now - 10, stop: now } : { prompt: now, at: now };
       writeFileSync(join(previewHome, '.astro', 'code', 'session-state.json'), JSON.stringify({ preview: rec }));
+      // seed the version file so the preview shows the ⊡ astro v<version> mark like the real line
+      try { const v = (JSON.parse(readFileSync(join(FRAMEWORK_ROOT, 'package.json'), 'utf8')) || {}).version; if (v) writeFileSync(join(previewHome, '.astro', 'code', 'version'), v + '\n'); } catch { /* best-effort */ }
       const blob = {
         session_id: 'preview',
         workspace: { current_dir: cwd }, cwd,
