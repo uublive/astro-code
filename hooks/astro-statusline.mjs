@@ -30,6 +30,22 @@ function readJson(p) {
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
 }
 
+// astro-code's own version, for the statusline brand mark (⊡ astro v0.5.2). Prefer the
+// explicit `version` file written at install; fall back to the clone's package.json via
+// the `source` pointer. NEVER read HOME/package.json — it can be a stale leftover.
+function readVersion() {
+  try {
+    const v = readFileSync(join(HOME, 'version'), 'utf8').trim();
+    if (v) return v;
+  } catch { /* fall through */ }
+  try {
+    const src = readFileSync(join(HOME, 'source'), 'utf8').trim();
+    const v = (JSON.parse(readFileSync(join(src, 'package.json'), 'utf8')) || {}).version;
+    if (v) return String(v);
+  } catch { /* none */ }
+  return null;
+}
+
 let data = null;
 try { data = JSON.parse(input); } catch { /* no/!json stdin */ }
 
@@ -74,7 +90,7 @@ let project = '';
 const cwd = data?.workspace?.current_dir || data?.cwd || process.cwd();
 try {
   const projRoot = findAstroRoot(cwd);
-  if (projRoot) project = renderSegment(readContext(projRoot, Math.floor(Date.now() / 1000)));
+  if (projRoot) project = renderSegment({ ...readContext(projRoot, Math.floor(Date.now() / 1000)), version: readVersion() });
 } catch { /* not inside an astro-code project */ }
 
 // (6) git branch + (7) session cost — cheap, always-useful context.

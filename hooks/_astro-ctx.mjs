@@ -136,7 +136,9 @@ export function nextAction(ctx) {
 export function renderSegment(ctx) {
   if (!ctx || (ctx.milestone == null && !ctx.phase)) return '';
   const col = ctx.phase ? statusColor(ctx.phase.status) : ANSI.dim;
-  const parts = [`${paint('⊡', col)} ${paint('astro', ANSI.magenta)}`];
+  const brand = `${paint('⊡', col)} ${paint('astro', ANSI.magenta)}` +
+    (ctx.version ? paint(` v${ctx.version}`, ANSI.dim) : '');
+  const parts = [brand];
   if (ctx.milestone != null) parts.push(`M${ctx.milestone}`);
   if (ctx.phase) parts.push(`P${ctx.phase.number} ${phaseLabel(ctx.phase)}`);
   if (ctx.activity) parts.push(paint(ctx.activity, ANSI.yellow));     // live verb wins
