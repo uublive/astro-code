@@ -1,0 +1,22 @@
+{
+  "name": "{{KIT_ID}}",
+  "version": "0.1.0",
+  "description": "{{DESCRIPTION}}",
+  "author": "{{AUTHOR}}",
+  "contents": [],
+  "download_url": "https://TODO.example/{{KIT_ID}}/dist/kit.zip",
+  "sha256": "",
+  "manifest_version": 4,
+  "contract_version": "^1.0.0",
+  "requires": {
+    "tools": [],
+    "runtime": ["python3"],
+    "astro": ">=0.3.0"
+  },
+  "outputs": {
+    "format": "{{OUTPUT_FORMAT}}",
+    "artifacts": [
+      { "path": "_report/{{PRIMARY_ARTIFACT}}", "tags": ["email_attachment"] }
+    ]
+  }
+}

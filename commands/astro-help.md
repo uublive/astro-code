@@ -35,6 +35,7 @@ devs never collide.
 
 **Set up & navigate:**
 - `/astro-new-project` — scaffold a new project · `/astro-adopt` — adopt an existing codebase
+- `/astro-new-kit` — start a new Astro kit (standalone kit project: manifest v4 + recipe + build tooling)
 - `/astro-phase <name>` — add a phase · `/astro-milestone` — start the next milestone
 - `/astro-status` — where am I, what's next · `/astro-decision` — record an ADR into the canon
 - `/astro-statusline` — set a rich statusline (busy/idle dot · task recap · model · context-fill bar · milestone/phase)

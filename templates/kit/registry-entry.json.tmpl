@@ -1,0 +1,35 @@
+{
+  "id": "{{KIT_ID}}",
+  "name": "{{KIT_DISPLAY_NAME}}",
+  "description": "{{DESCRIPTION}}",
+  "version": "0.1.0",
+  "tags": ["{{TAG_1}}", "{{TAG_2}}"],
+  "category": "{{CATEGORY}}",
+  "triggers": [
+    "{{TRIGGER_1}}",
+    "{{TRIGGER_2}}"
+  ],
+  "provides": {
+    "instructions": ["CLAUDE.md"],
+    "examples": ["EXAMPLES.md"],
+    "scripts": ["generate_report.py"],
+    "schemas": [],
+    "references": []
+  },
+  "requires": {
+    "tools": [],
+    "runtime": ["python3"],
+    "astro": ">=0.3.0"
+  },
+  "outputs": {
+    "format": "{{OUTPUT_FORMAT}}",
+    "artifacts": [
+      { "path": "_report/{{PRIMARY_ARTIFACT}}", "tags": ["email_attachment"] }
+    ]
+  },
+  "estimated_duration": "{{DURATION}}",
+  "download_url": "https://TODO.example/{{KIT_ID}}/dist/kit.zip",
+  "sha256": "",
+  "contract_version": "^1.0.0",
+  "manifest_version": 4
+}

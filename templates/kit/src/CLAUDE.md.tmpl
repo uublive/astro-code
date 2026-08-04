@@ -1,0 +1,34 @@
+# {{KIT_DISPLAY_NAME}} — Kit Instructions
+
+{{DESCRIPTION}}
+
+## Mission
+
+<!-- One tight paragraph: what this kit lets Astro do end-to-end, for whom, and
+     what the final deliverable is. -->
+
+## How to run
+
+1. Read `recipes/{{KIT_ID}}.yaml` — it is the execution contract. Execute its
+   phases **in order**; each phase's `goal`, `constraints`, `input`, and `output`
+   are binding.
+2. Stay in the current working directory. All runtime output goes under
+   `_report/` — never scatter files elsewhere.
+3. Track progress in `_report/state.json` so an interrupted run can resume.
+4. Deliverables are produced by the kit's scripts (`scripts/`,
+   `generate_report.py`) — if a script fails, debug and fix it; do NOT create
+   the artifact by hand.
+
+## Arguments
+
+<!-- What $ARGUMENTS must contain, what is required vs optional, and what to do
+     when a required argument is missing (print usage and STOP). -->
+
+## Deliverables
+
+<!-- The artifacts this kit produces (mirror kit.json outputs.artifacts), and
+     which one is the email deliverable. -->
+
+## Reference material
+
+<!-- What lives in reference/ and schemas/ and when to consult it. -->

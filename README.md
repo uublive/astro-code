@@ -52,6 +52,7 @@ is coordinated across the team). Drive the loop from Claude Code:
 ```
 /astro-new-project        scaffold .astrocode/, shape PROJECT.md + the roadmap
 /astro-adopt              adopt an EXISTING codebase: map it → draft canon → plan next
+/astro-new-kit [kit-id]   start a new Astro kit: scaffold manifest v4 + recipe + build tooling, then the normal loop
 /astro-phase <name>       add a phase (claims its number)
 /astro-discuss <phase>    talk through decisions/edge cases → CONTEXT.md (before planning)
 /astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)

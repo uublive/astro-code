@@ -31,6 +31,9 @@ test('install → ~/.astro/code + symlinks into ~/.claude (default); uninstall r
     const res = installClaude(FRAMEWORK);
     assert.ok(res.commands > 0 && res.agents > 0 && res.workflows > 0);
     assert.ok(existsSync(join(fakeHome, '.astro', 'code', 'workflows', 'execute-phase.mjs')));
+    // the templates TREE ships too (nested dirs) — /astro-new-kit reads it via `ac path templates`
+    assert.ok(existsSync(join(fakeHome, '.astro', 'code', 'templates', 'kit', 'kit.json.tmpl')));
+    assert.ok(existsSync(join(fakeHome, '.astro', 'code', 'templates', 'kit', 'tools', 'build_kit.sh')));
 
     const link = join(fakeHome, '.claude', 'commands', 'astro-status.md');
     assert.ok(lstatSync(link).isSymbolicLink());

@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/matteoalvazzi/AstroKit/main/schemas/kit-manifest.v4.schema.json",
+  "title": "AstroKitManifestV4",
+  "description": "AstroKit kit.json manifest schema, version 4. Supersedes v3. Adds outputs.artifacts[] as closed objects {path: string, tags?: [email_attachment]} with at-most-one email_attachment enforced post-parse in validate_manifest.py. Top-level object is open (additionalProperties not constrained). Inner artifact objects are closed (additionalProperties: false). v3 retained through the next release cycle — see schemas/kit-manifest.v3.schema.json.",
+  "type": "object",
+  "required": ["manifest_version"],
+  "$defs": {
+    "aptToolEntry": {
+      "title": "AptToolEntry",
+      "description": "A tool installed from the system APT package manager (Debian/Ubuntu). Uses the Debian package-name regex to reject uppercase letters, shell metacharacters, and malformed names.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "name"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "const": "apt",
+          "description": "Discriminator field identifying this entry as an APT-sourced package."
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9+\\-.]+$",
+          "description": "Debian package name. Must match Debian Policy §5.6.7 regex: lowercase alphanumeric, plus, hyphen, dot only. Minimum two characters. Rejects uppercase, shell metacharacters, and lookalike Unicode."
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional APT package version string (e.g. 1:2.38.1-5). APT version syntax is complex (epoch, upstream, revision); this schema accepts any non-empty string. Exact-pin enforcement is in the Phase 33 validator."
+        },
+        "verify": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional POSIX shell one-liner Astro runs post-install to confirm the tool is functional. Exit code 0 = healthy. Semantic meaning specified in Astro installer spec (Phase 37)."
+        }
+      }
+    },
+    "pipToolEntry": {
+      "title": "PipToolEntry",
+      "description": "A Python package installed via pip. Uses PEP 503 normalized name regex and an exact-pin version regex to reject semver ranges and wildcards.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "name"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "const": "pip",
+          "description": "Discriminator field identifying this entry as a pip-sourced Python package."
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9\\-]*[a-z0-9])?$",
+          "description": "Python package name in PEP 503 normalized form: lowercase, hyphens only, no consecutive hyphens. Rejects uppercase, underscores, dots, and lookalike chars. Single-char names allowed (e.g. 'a')."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+(\\.[0-9]+){0,3}([a-z]+[0-9]*)?(\\.(post|dev)[0-9]+)?$",
+          "description": "Exact-pin pip version string (e.g. 1.45.0, 2.0.0a1, 1.0.0.post1). Rejects semver ranges (>=1.0), caret (^1.0), wildcards (*), and meta tokens (latest). Per D-09."
+        },
+        "verify": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional POSIX shell one-liner Astro runs post-install to confirm the tool is functional. Exit code 0 = healthy. Semantic meaning specified in Astro installer spec (Phase 37)."
+        }
+      }
+    },
+    "npmToolEntry": {
+      "title": "NpmToolEntry",
+      "description": "A Node.js package installed via npm. Accepts scoped names (@scope/pkg). Enforces exact semver version pinning; rejects ranges and operators.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "name"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "const": "npm",
+          "description": "Discriminator field identifying this entry as an npm-sourced Node.js package."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "npm package name. Non-empty string; accepts scoped packages (e.g. @scope/pkg) and standard names. npm naming rules beyond non-empty are enforced by the registry, not this schema."
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9a-zA-Z.\\-]+)?(\\+[0-9a-zA-Z.\\-]+)?$",
+          "description": "Exact semver version string (e.g. 3.2.1, 1.0.0-beta.1, 2.0.0+build.1). Rejects caret (^), tilde (~), >=, <=, *, latest, and range expressions. Per D-09."
+        },
+        "global": {
+          "type": "boolean",
+          "description": "Whether to install the package globally (npm install -g). Defaults to false if omitted."
+        },
+        "verify": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional POSIX shell one-liner Astro runs post-install to confirm the tool is functional. Exit code 0 = healthy. Semantic meaning specified in Astro installer spec (Phase 37)."
+        }
+      }
+    },
+    "urlToolEntry": {
+      "title": "UrlToolEntry",
+      "description": "A tool downloaded from an HTTPS URL. Requires sha256 integrity hash and filename. URL must use HTTPS to prevent MITM attacks. sha256 must be a full 64-character lowercase hex digest.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "url", "sha256", "filename"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "const": "url",
+          "description": "Discriminator field identifying this entry as a URL-downloaded tool."
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "description": "HTTPS URL to download the tool from. Must start with https:// to prevent MITM attacks (T-32-02). HTTP URLs fail validation."
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 hex digest of the downloaded file, lowercase, exactly 64 characters. Astro's installer verifies the download against this value. Empty string and partial hex digests are rejected (T-32-01)."
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Local filename to save the downloaded file as. Used by Astro's installer when writing to disk."
+        },
+        "executable": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether the downloaded file should be made executable (chmod +x). Defaults to false."
+        },
+        "verify": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Optional POSIX shell one-liner Astro runs post-install to confirm the tool is functional. Exit code 0 = healthy. Semantic meaning specified in Astro installer spec (Phase 37)."
+        }
+      }
+    }
+  },
+  "properties": {
+    "manifest_version": {
+      "type": "integer",
+      "const": 4,
+      "description": "Manifest schema version. Must be exactly 4 for this schema. Use kit-manifest.v3.schema.json for v3 kits."
+    },
+    "requires": {
+      "type": "object",
+      "description": "Optional declaration of host preconditions (per D-01). Three sibling fields: tools[] (external binaries Astro installs per source), runtime[] (free-form runtime VM identifiers like python3, bash, node), astro (semver range of Astro versions this kit targets). All three siblings are optional (per D-02).",
+      "additionalProperties": false,
+      "properties": {
+        "tools": {
+          "type": "array",
+          "description": "Array of tool-entry objects. Each entry is discriminated on its source field via oneOf over four subschemas in $defs.",
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/aptToolEntry" },
+              { "$ref": "#/$defs/pipToolEntry" },
+              { "$ref": "#/$defs/npmToolEntry" },
+              { "$ref": "#/$defs/urlToolEntry" }
+            ]
+          }
+        },
+        "runtime": {
+          "type": "array",
+          "description": "Array of runtime VM identifiers the kit's scripts execute under (e.g. python3, bash, node). Free strings per D-03 — no enum, accommodates new runtimes without schema bump.",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "astro": {
+          "type": "string",
+          "description": "Semver range string declaring which Astro versions this kit targets (e.g. >=0.3.0). Per D-04 enforced by regex; accepts >=, <=, =, range expressions; rejects bare partial versions like 0.3 and meta tokens like latest.",
+          "pattern": "^(>=|<=|>|<|=|~>|\\^)?\\s?\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.\\-]+)?(\\s+(<|<=|>|>=|=)\\s?\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.\\-]+)?)?$"
+        }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "description": "Optional. Describes deliverables this kit produces for end users. When present, artifacts[] items must be objects with a path field and an optional tags field closed to the email_attachment value.",
+      "properties": {
+        "format": {
+          "type": "string",
+          "description": "Human-readable format hint (e.g. 'html', 'pdf', 'markdown'). Free string."
+        },
+        "artifacts": {
+          "type": "array",
+          "description": "Ordered list of output artifact objects. Each item is a closed object with required path and optional tags. The email_attachment tag marks the single artifact Astro attaches to email replies. At most one artifact per kit may carry this tag — enforced post-parse by validate_manifest.py (not expressible in JSON Schema without awkward gymnastics).",
+          "items": {
+            "type": "object",
+            "required": ["path"],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Relative path to the output file within the kit's runtime output directory."
+              },
+              "tags": {
+                "type": "array",
+                "description": "Optional semantic tags. Closed to email_attachment in v4. At most one artifact per kit may carry this tag.",
+                "items": {
+                  "type": "string",
+                  "enum": ["email_attachment"]
+                },
+                "uniqueItems": true
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

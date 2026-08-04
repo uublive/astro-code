@@ -1,0 +1,59 @@
+name: {{KIT_ID}}
+description: >
+  {{DESCRIPTION}}
+version: 1
+
+phases:
+  # ─────────────────────────────────────────────────────────────────────
+  # PHASE 0 — Prepare
+  # ─────────────────────────────────────────────────────────────────────
+  - name: prepare
+    goal: >
+      Initialize the run in the CURRENT working directory.
+
+      IMPORTANT: Do NOT cd anywhere. Stay in pwd for ALL work.
+
+      Step 1 — Parse $ARGUMENTS to extract the required inputs.
+        If a required input is missing, print usage and STOP.
+
+      Step 2 — Create _report/ and initialize _report/state.json to track
+      progress across phases.
+    constraints:
+      - "Stay in pwd — do NOT cd or create files outside _report/"
+      - "Required arguments missing → print usage and STOP"
+      - "Use python3 for JSON file manipulation"
+    input: []
+    output:
+      - _report/state.json
+
+  # ─────────────────────────────────────────────────────────────────────
+  # PHASE 1 — {{WORK_PHASE_TITLE}}
+  # ─────────────────────────────────────────────────────────────────────
+  - name: work
+    goal: >
+      {{WORK_PHASE_GOAL}}
+    constraints:
+      - "Record intermediate results in _report/ so the run is resumable"
+      - "Update state.json when the phase completes"
+    input:
+      - _report/state.json
+    output:
+      - _report/state.json
+
+  # ─────────────────────────────────────────────────────────────────────
+  # PHASE 2 — Generate deliverable
+  # ─────────────────────────────────────────────────────────────────────
+  - name: generate_report
+    goal: >
+      Produce the kit's primary deliverable.
+
+      Use: python3 generate_report.py
+
+      Output: _report/{{PRIMARY_ARTIFACT}}
+    constraints:
+      - "ALWAYS use the script — NEVER generate the deliverable by hand"
+      - "If the script fails, debug and fix it — do NOT create the artifact manually"
+    input:
+      - _report/state.json
+    output:
+      - _report/{{PRIMARY_ARTIFACT}}

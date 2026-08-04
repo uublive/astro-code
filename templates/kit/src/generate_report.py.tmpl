@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""Generate the primary deliverable for the {{KIT_ID}} kit.
+
+Reads the run state from _report/ and writes _report/{{PRIMARY_ARTIFACT}}.
+Stdlib-only unless kit.json declares the dependency in requires.tools[].
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+REPORT_DIR = Path("_report")
+
+
+def main() -> int:
+    state_path = REPORT_DIR / "state.json"
+    if not state_path.is_file():
+        print("error: _report/state.json not found — run the recipe's prepare "
+              "phase first", file=sys.stderr)
+        return 1
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+
+    # TODO: build the real deliverable from the run state.
+    out_path = REPORT_DIR / "{{PRIMARY_ARTIFACT}}"
+    raise NotImplementedError("implement report generation")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
