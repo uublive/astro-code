@@ -50,7 +50,8 @@ The scaffold source of truth is `$(ac path templates)/kit/` — referred to as
      flesh things out. Create empty `src/scripts/`, `src/reference/`, `src/schemas/`
      (with `.gitkeep`).
    - `$KIT_TPL/tools/` → `tools/` **verbatim** (build_kit.sh, _zip_src.py,
-     validate_manifest.py, _schema_engine.py, schemas/). `chmod +x tools/build_kit.sh`.
+     publish_kit.py, validate_manifest.py, _schema_engine.py, schemas/).
+     `chmod +x tools/build_kit.sh`.
    - Sanity-check the scaffold now: `python3 tools/validate_manifest.py kit.json`
      must exit 0. Fix before continuing.
 
@@ -90,4 +91,6 @@ The scaffold source of truth is `$(ac path templates)/kit/` — referred to as
    remind the user to reopen the session there first.
 
 Keep PROJECT.md tight. The kit is DONE when the "Build & definition of done" list in
-`KIT-CONTRACT.md` fully holds.
+`KIT-CONTRACT.md` fully holds. Once it's green, `/astro-publish-kit` packages it
+(src/ + `kit.json` inside the zip) and uploads it to a running Astro instance's
+hosted kit registry.

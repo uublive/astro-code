@@ -89,3 +89,16 @@ A kit is DONE when all of these hold:
 - the recipe exists, parses as YAML, and its phases' inputs/outputs are consistent
 - every declared artifact is actually produced by the workflow the recipe describes
 - `dist/kit.zip` is committed (`git add -f dist/kit.zip`)
+
+## Publishing to a hosted Astro instance
+
+`dist/kit.zip` ships only `src/` — the manifest lives beside it, for the GitHub
+registry model. A hosted Astro instance instead wants ONE file: the kit zip **with
+`kit.json` inside at the root** (the registry-schema manifest — `id`, `name`,
+`description`, `version`, `tags`, …, which `registry-entry.json` already holds).
+`tools/publish_kit.py` builds that upload package (every `src/` file root-relative
++ `kit.json` at the root) and POSTs it to `POST /api/kit-packages` (admin auth;
+the server assigns `download_url` + `sha256`). Run it via `/astro-publish-kit`, or
+directly: `python3 tools/publish_kit.py --kit-root . --base <url> --email <admin>`
+(password via `$ASTRO_ADMIN_PASSWORD`). Re-uploading an existing id+version is
+rejected — bump `version` or publish with `--replace`.
