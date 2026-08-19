@@ -146,6 +146,16 @@
       "branch": "main",
       "claimed_at": "2026-08-19T13:08:04.317Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 12,
+      "milestone": 4,
+      "name": "Kit conversion command (source to standard kit)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-08-19T13:08:07.910Z",
+      "status": "active"
     }
   ]
 }
