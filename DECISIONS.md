@@ -159,3 +159,8 @@ _2026-08-19_
 
 **Why:** Groups all kit commands as a coherent family in the slash-command list and scales as more are added; chosen over the astro-<verb>-kit suffix form. New kit commands MUST follow this prefix.
 
+## ADR-024 — astro-kit-convert reuses the astro-kit-new scaffold (shared templates/kit tree + vendored tools) rather than forking scaffolding
+_2026-08-19_
+
+**Why:** One source of truth for kit anatomy; convert = scaffold + port + parity layer. Prevents drift between the two kit-creation paths.
+
