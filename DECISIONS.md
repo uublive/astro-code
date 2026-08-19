@@ -164,3 +164,8 @@ _2026-08-19_
 
 **Why:** One source of truth for kit anatomy; convert = scaffold + port + parity layer. Prevents drift between the two kit-creation paths.
 
+## ADR-025 — Kit-conversion feature parity is proven by a golden-fixture parity contract: capture the source's real outputs on representative inputs, then the converted kit must reproduce equivalent (normalized) outputs, checked as falsifiable CRITERIA
+_2026-08-19_
+
+**Why:** Parity must be measured against the original's actual behavior, not asserted by a human checklist; normalization is limited to declared benign nondeterminism so parity can't be silently loosened.
+
