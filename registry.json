@@ -136,6 +136,16 @@
       "branch": "main",
       "claimed_at": "2026-08-19T13:07:35.862Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 11,
+      "milestone": 4,
+      "name": "Standardize kit command naming",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-08-19T13:08:04.317Z",
+      "status": "active"
     }
   ]
 }
