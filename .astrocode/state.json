@@ -1,11 +1,14 @@
 {
   "version": 1,
   "project": "astro-code",
-  "active_milestone": 3,
+  "active_milestone": 4,
   "active_phase": null,
-  "status": "milestone-complete",
+  "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-07-11T22:04:52.002Z",
-  "activity": null
+  "updated_at": "2026-08-19T13:21:32.737Z",
+  "activity": {
+    "text": "✎ discussing phase 12",
+    "at": 1787145692
+  }
 }

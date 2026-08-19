@@ -98,7 +98,7 @@ registry model. A hosted Astro instance instead wants ONE file: the kit zip **wi
 `description`, `version`, `tags`, …, which `registry-entry.json` already holds).
 `tools/publish_kit.py` builds that upload package (every `src/` file root-relative
 + `kit.json` at the root) and POSTs it to `POST /api/kit-packages` (admin auth;
-the server assigns `download_url` + `sha256`). Run it via `/astro-publish-kit`, or
+the server assigns `download_url` + `sha256`). Run it via `/astro-kit-publish`, or
 directly: `python3 tools/publish_kit.py --kit-root . --base <url> --email <admin>`
 (password via `$ASTRO_ADMIN_PASSWORD`). Re-uploading an existing id+version is
 rejected — bump `version` or publish with `--replace`.

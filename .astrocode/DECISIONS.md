@@ -154,3 +154,8 @@ _2026-07-11_
 
 **Rejected:** raw per-phase token budget (hard to choose a number); a new astro-remediator agent (extra surface vs scoping the executor); widening research at high effort (the wrong place to spend); re-running failing tasks unchanged (reproduces the failure)
 
+## ADR-023 — Kit commands use the astro-kit-<verb> naming convention (astro-kit-new, astro-kit-publish, astro-kit-convert)
+_2026-08-19_
+
+**Why:** Groups all kit commands as a coherent family in the slash-command list and scales as more are added; chosen over the astro-<verb>-kit suffix form. New kit commands MUST follow this prefix.
+

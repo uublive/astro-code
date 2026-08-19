@@ -4,7 +4,7 @@
 // touches the real user/profile directories.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, existsSync, lstatSync, readlinkSync, mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, existsSync, lstatSync, readlinkSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +31,7 @@ test('install → ~/.astro/code + symlinks into ~/.claude (default); uninstall r
     const res = installClaude(FRAMEWORK);
     assert.ok(res.commands > 0 && res.agents > 0 && res.workflows > 0);
     assert.ok(existsSync(join(fakeHome, '.astro', 'code', 'workflows', 'execute-phase.mjs')));
-    // the templates TREE ships too (nested dirs) — /astro-new-kit reads it via `ac path templates`
+    // the templates TREE ships too (nested dirs) — /astro-kit-new reads it via `ac path templates`
     assert.ok(existsSync(join(fakeHome, '.astro', 'code', 'templates', 'kit', 'kit.json.tmpl')));
     assert.ok(existsSync(join(fakeHome, '.astro', 'code', 'templates', 'kit', 'tools', 'build_kit.sh')));
 
@@ -88,6 +88,35 @@ test('install does NOT symlink over commands/agents that ARE the framework sourc
     assert.ok(self && self.selfHosted, 'target flagged selfHosted (shared source subdir)');
     assert.equal(self.commands, 0, 'no command symlinks written into the source');
     assert.equal(self.agents, 0, 'no agent symlinks written into the source');
+  });
+});
+
+test('reinstall prunes a RENAMED/DELETED command from the home mirror and its config-dir link', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-home-'));
+  const clone = mkdtempSync(join(tmpdir(), 'ac-clone-'));
+  for (const d of ['commands', 'agents', 'workflows', 'hooks']) mkdirSync(join(clone, d), { recursive: true });
+  writeFileSync(join(clone, 'commands', 'astro-old.md'), '# old name');
+  writeFileSync(join(clone, 'agents', 'astro-verifier.md'), '# agent');
+  const cfg = mkdtempSync(join(tmpdir(), 'ac-cfg-'));
+
+  await withEnv({ home: fakeHome, configDir: cfg }, async () => {
+    const { installClaude } = await import(`../lib/install.mjs?rename=${encodeURIComponent(fakeHome)}`);
+    installClaude(clone);
+    const homeCmd = join(fakeHome, '.astro', 'code', 'commands', 'astro-old.md');
+    const linkCmd = join(cfg, 'commands', 'astro-old.md');
+    assert.ok(existsSync(homeCmd), 'old command copied into home mirror');
+    assert.ok(lstatSync(linkCmd).isSymbolicLink(), 'old command linked into config dir');
+
+    // Rename in source: astro-old.md → astro-new.md, then reinstall.
+    rmSync(join(clone, 'commands', 'astro-old.md'));
+    writeFileSync(join(clone, 'commands', 'astro-new.md'), '# new name');
+    installClaude(clone);
+
+    assert.ok(!existsSync(homeCmd), 'stale home copy pruned on reinstall');
+    assert.ok(!existsSync(linkCmd) && !lstatSync(linkCmd, { throwIfNoEntry: false }), 'dangling old-name link pruned');
+    const newLink = join(cfg, 'commands', 'astro-new.md');
+    assert.ok(lstatSync(newLink).isSymbolicLink(), 'renamed command linked under its new name');
+    assert.ok(readlinkSync(newLink).startsWith(join(fakeHome, '.astro', 'code')));
   });
 });
 

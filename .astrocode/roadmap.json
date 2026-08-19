@@ -1,5 +1,18 @@
 {
   "version": 1,
-  "milestone": 3,
-  "phases": []
+  "milestone": 4,
+  "phases": [
+    {
+      "number": 11,
+      "name": "Standardize kit command naming",
+      "slug": "11-standardize-kit-command-naming",
+      "status": "verified"
+    },
+    {
+      "number": 12,
+      "name": "Kit conversion command (source to standard kit)",
+      "slug": "12-kit-conversion-command-source-to-standard-kit",
+      "status": "pending"
+    }
+  ]
 }

@@ -22,6 +22,19 @@ out-of-declared-file commits are detected rather than trusted, `/astro-execute`
 re-runs are idempotent (done-detection from task-id commit stamps), and the planner
 stops emitting test-first task splits that force executors to overflow their files.
 
+## Milestone 4 — Kit command standardization & conversion
+
+Two goals. (1) **Standardize the kit command surface** onto one consistent naming
+convention so all kit commands read as a coherent group — today the set mixes forms
+(`new-kit`, `publish-kit`, and a future converter) — keeping deprecated aliases so
+existing invocations and muscle memory keep working, and updating every cross-reference
+(README, `/astro-help`, KIT-CONTRACT, installer). (2) **Add a kit-conversion command**
+that takes an existing *non-kit* implementation — a standalone script/repo or an
+existing tool/service — and reproduces its capability as a standard Astro kit: full kit
+anatomy (manifest v4, recipe, `src/` + vendored `tools/`, EXAMPLES, report generator),
+built and publishable, at **feature parity** with the original — parity verified against
+the source's real behavior, not assumed.
+
 ## Requirements
 
 <!-- One line per requirement. Use stable IDs (REQ-001) so phases can map to them. -->

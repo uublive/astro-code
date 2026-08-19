@@ -91,6 +91,6 @@ The scaffold source of truth is `$(ac path templates)/kit/` — referred to as
    remind the user to reopen the session there first.
 
 Keep PROJECT.md tight. The kit is DONE when the "Build & definition of done" list in
-`KIT-CONTRACT.md` fully holds. Once it's green, `/astro-publish-kit` packages it
+`KIT-CONTRACT.md` fully holds. Once it's green, `/astro-kit-publish` packages it
 (src/ + `kit.json` inside the zip) and uploads it to a running Astro instance's
 hosted kit registry.

@@ -1,5 +1,6 @@
 # Roadmap
 
-**Milestone 3**
+**Milestone 4**
 
-_No phases yet. Add one with `ac phase add <name>`._
+- [ ] Phase 11 — Standardize kit command naming `verified`
+- [ ] Phase 12 — Kit conversion command (source to standard kit) `pending`
