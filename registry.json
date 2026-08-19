@@ -127,6 +127,15 @@
       "branch": "main",
       "claimed_at": "2026-07-11T09:18:27.853Z",
       "status": "complete"
+    },
+    {
+      "type": "milestone",
+      "number": 4,
+      "name": "Kit command standardization and conversion",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-08-19T13:07:35.862Z",
+      "status": "active"
     }
   ]
 }
