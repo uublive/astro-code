@@ -159,3 +159,13 @@ _2026-08-19_
 
 **Why:** Groups all kit commands as a coherent family in the slash-command list and scales as more are added; chosen over the astro-<verb>-kit suffix form. New kit commands MUST follow this prefix.
 
+## ADR-024 — astro-kit-convert reuses the astro-kit-new scaffold (shared templates/kit tree + vendored tools) rather than forking scaffolding
+_2026-08-19_
+
+**Why:** One source of truth for kit anatomy; convert = scaffold + port + parity layer. Prevents drift between the two kit-creation paths.
+
+## ADR-025 — Kit-conversion feature parity is proven by a golden-fixture parity contract: capture the source's real outputs on representative inputs, then the converted kit must reproduce equivalent (normalized) outputs, checked as falsifiable CRITERIA
+_2026-08-19_
+
+**Why:** Parity must be measured against the original's actual behavior, not asserted by a human checklist; normalization is limited to declared benign nondeterminism so parity can't be silently loosened.
+

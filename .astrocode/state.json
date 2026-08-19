@@ -2,13 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 4,
-  "active_phase": null,
+  "active_phase": "12-kit-conversion-command-source-to-standard-kit",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-08-19T13:21:32.737Z",
-  "activity": {
-    "text": "✎ discussing phase 12",
-    "at": 1787145692
-  }
+  "updated_at": "2026-08-19T14:37:13.378Z",
+  "activity": null
 }
