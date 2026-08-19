@@ -54,6 +54,7 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-adopt              adopt an EXISTING codebase: map it → draft canon → plan next
 /astro-kit-new [kit-id]   start a new Astro kit: scaffold manifest v4 + recipe + build tooling, then the normal loop
 /astro-kit-publish        publish a kit to a hosted Astro instance (zip with kit.json inside → its kit registry)
+/astro-kit-convert [src]  convert an existing non-kit implementation into a standard Astro kit at verified feature parity
 /astro-phase <name>       add a phase (claims its number)
 /astro-discuss <phase>    talk through decisions/edge cases → CONTEXT.md (before planning)
 /astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)
