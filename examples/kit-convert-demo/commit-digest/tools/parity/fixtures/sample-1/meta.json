@@ -1,0 +1,7 @@
+{
+  "source_commit": "c5cdc78d80c4540b2e14a31cb9353531266aad13",
+  "source_file": "examples/kit-convert-demo/source/commit_digest.py",
+  "capture_command": "python3 commit_digest.py --in sample-commits.json --out digest.json",
+  "captured_at": "2026-08-19T14:23:50Z",
+  "note": "input.json is the source's own sample-commits.json verbatim."
+}

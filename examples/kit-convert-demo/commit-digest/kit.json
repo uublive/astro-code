@@ -1,0 +1,44 @@
+{
+  "name": "commit-digest",
+  "version": "0.1.0",
+  "description": "Summarize a JSON list of commits into a deterministic digest.json (counts by type, per-author commit counts, unique authors, first/last commit date) — converted from the standalone commit_digest.py sample source at verified parity.",
+  "author": "Matteo Alvazzi",
+  "contents": [
+    "CLAUDE.md",
+    "EXAMPLES.md",
+    "README.md",
+    "generate_report.py",
+    "recipes/commit-digest.yaml",
+    "reference/.gitkeep",
+    "schemas/digest.schema.json",
+    "scripts/build_digest.py"
+  ],
+  "download_url": "https://TODO.example/commit-digest/dist/kit.zip",
+  "sha256": "78c6ecb638038bfa6fd0011d9ce1cd00f9de133ec06cbcb962028228d307c618",
+  "manifest_version": 4,
+  "contract_version": "^1.0.0",
+  "requires": {
+    "tools": [
+      {
+        "source": "pip",
+        "name": "python-dateutil",
+        "version": "2.8.2"
+      }
+    ],
+    "runtime": [
+      "python3"
+    ],
+    "astro": ">=0.3.0"
+  },
+  "outputs": {
+    "format": "json",
+    "artifacts": [
+      {
+        "path": "_report/digest.json",
+        "tags": [
+          "email_attachment"
+        ]
+      }
+    ]
+  }
+}

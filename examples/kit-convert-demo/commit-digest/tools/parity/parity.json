@@ -1,0 +1,30 @@
+{
+  "fixtures": [
+    {
+      "name": "sample-1",
+      "command": "python3 src/scripts/build_digest.py --in {input} --out {output}",
+      "input": "tools/parity/fixtures/sample-1/input.json",
+      "output": "tools/parity/fixtures/sample-1/actual_output.json",
+      "expected_output": "tools/parity/fixtures/sample-1/expected_output.json",
+      "timeout": 30,
+      "normalize": {
+        "fields": [
+          { "path": "generated_at", "kind": "blank" }
+        ]
+      }
+    },
+    {
+      "name": "sample-2",
+      "command": "python3 src/scripts/build_digest.py --in {input} --out {output}",
+      "input": "tools/parity/fixtures/sample-2/input.json",
+      "output": "tools/parity/fixtures/sample-2/actual_output.json",
+      "expected_output": "tools/parity/fixtures/sample-2/expected_output.json",
+      "timeout": 30,
+      "normalize": {
+        "fields": [
+          { "path": "generated_at", "kind": "blank" }
+        ]
+      }
+    }
+  ]
+}

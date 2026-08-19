@@ -1,0 +1,15 @@
+{
+  "authors": {
+    "Margaret Hamilton": 1,
+    "Radia Perlman": 2
+  },
+  "by_type": {
+    "feat": 2,
+    "fix": 1
+  },
+  "commit_count": 3,
+  "first_date": "2026-02-10",
+  "generated_at": "2026-08-19T14:24:00.346911+00:00",
+  "last_date": "2026-02-12",
+  "unique_authors": 2
+}

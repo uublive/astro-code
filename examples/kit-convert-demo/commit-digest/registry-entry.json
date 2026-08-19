@@ -1,0 +1,60 @@
+{
+  "id": "commit-digest",
+  "name": "Commit Digest",
+  "description": "Summarize a JSON list of commits into a deterministic digest.json (counts by type, per-author commit counts, unique authors, first/last commit date) — converted from the standalone commit_digest.py sample source at verified parity.",
+  "version": "0.1.0",
+  "tags": [
+    "git",
+    "reporting"
+  ],
+  "category": "data",
+  "triggers": [
+    "summarize these commits",
+    "build a commit digest"
+  ],
+  "provides": {
+    "instructions": [
+      "CLAUDE.md"
+    ],
+    "examples": [
+      "EXAMPLES.md"
+    ],
+    "scripts": [
+      "generate_report.py",
+      "scripts/build_digest.py"
+    ],
+    "schemas": [
+      "schemas/digest.schema.json"
+    ],
+    "references": []
+  },
+  "requires": {
+    "tools": [
+      {
+        "source": "pip",
+        "name": "python-dateutil",
+        "version": "2.8.2"
+      }
+    ],
+    "runtime": [
+      "python3"
+    ],
+    "astro": ">=0.3.0"
+  },
+  "outputs": {
+    "format": "json",
+    "artifacts": [
+      {
+        "path": "_report/digest.json",
+        "tags": [
+          "email_attachment"
+        ]
+      }
+    ]
+  },
+  "estimated_duration": "under 1 minute",
+  "download_url": "https://TODO.example/commit-digest/dist/kit.zip",
+  "sha256": "78c6ecb638038bfa6fd0011d9ce1cd00f9de133ec06cbcb962028228d307c618",
+  "contract_version": "^1.0.0",
+  "manifest_version": 4
+}

@@ -1,0 +1,44 @@
+[
+  {
+    "hash": "a1b2c3d",
+    "author": "Ada Lovelace",
+    "type": "feat",
+    "date": "2026-01-05T09:12:00Z",
+    "subject": "add digest generator"
+  },
+  {
+    "hash": "b2c3d4e",
+    "author": "Ada Lovelace",
+    "type": "fix",
+    "date": "2026-01-06T14:47:00Z",
+    "subject": "handle empty commit list"
+  },
+  {
+    "hash": "c3d4e5f",
+    "author": "Grace Hopper",
+    "type": "feat",
+    "date": "2026-01-08T11:30:00Z",
+    "subject": "add --publish webhook flag"
+  },
+  {
+    "hash": "d4e5f6a",
+    "author": "Grace Hopper",
+    "type": "docs",
+    "date": "2026-01-09T16:05:00Z",
+    "subject": "document digest.json output shape"
+  },
+  {
+    "hash": "e5f6a7b",
+    "author": "Katherine Johnson",
+    "type": "fix",
+    "date": "2026-01-10T08:55:00Z",
+    "subject": "sort authors deterministically"
+  },
+  {
+    "hash": "f6a7b8c",
+    "author": "Ada Lovelace",
+    "type": "chore",
+    "date": "2026-01-12T19:20:00Z",
+    "subject": "pin python-dateutil to 2.8.2"
+  }
+]

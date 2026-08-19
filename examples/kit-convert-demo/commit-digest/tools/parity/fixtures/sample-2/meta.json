@@ -1,0 +1,7 @@
+{
+  "source_commit": "c5cdc78d80c4540b2e14a31cb9353531266aad13",
+  "source_file": "examples/kit-convert-demo/source/commit_digest.py",
+  "capture_command": "python3 commit_digest.py --in sample-2-input.json --out digest.json",
+  "captured_at": "2026-08-19T14:24:00Z",
+  "note": "A second representative, deterministic input distinct from sample-commits.json: unsorted commit dates across two UTC offsets (-05:00 and Z), exercising cross-timezone first/last-date ordering."
+}

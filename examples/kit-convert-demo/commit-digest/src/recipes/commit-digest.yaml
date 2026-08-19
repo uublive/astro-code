@@ -1,0 +1,53 @@
+name: commit-digest
+description: >
+  Summarize a JSON list of commits into a deterministic digest.json (counts by
+  type, per-author commit counts, unique authors, first/last commit date).
+  Converted from the standalone commit_digest.py sample source at verified
+  parity (ADR-025) — network+secret-bound capabilities of the source are out
+  of scope, see PROJECT.md.
+version: 1
+
+phases:
+  # ─────────────────────────────────────────────────────────────────────
+  # PHASE 0 — Prepare
+  # ─────────────────────────────────────────────────────────────────────
+  - name: prepare
+    goal: >
+      Initialize the run in the CURRENT working directory.
+
+      IMPORTANT: Do NOT cd anywhere. Stay in pwd for ALL work.
+
+      Step 1 — Parse $ARGUMENTS to extract the path to the input commits JSON
+      array (a JSON array of `{hash, author, type, date, subject}` objects).
+        If the input path is missing or does not exist, print usage and STOP.
+
+      Step 2 — Create _report/ and initialize _report/state.json with the
+      resolved `input_path` so later phases don't reparse $ARGUMENTS.
+    constraints:
+      - "Stay in pwd — do NOT cd or create files outside _report/"
+      - "Required arguments missing → print usage and STOP"
+      - "Use python3 for JSON file manipulation"
+    input: []
+    output:
+      - _report/state.json
+
+  # ─────────────────────────────────────────────────────────────────────
+  # PHASE 1 — Generate deliverable
+  # ─────────────────────────────────────────────────────────────────────
+  - name: generate_report
+    goal: >
+      Produce the kit's primary deliverable.
+
+      Use: python3 generate_report.py
+
+      This reads `_report/state.json` for `input_path`, then runs the ported
+      core logic (`scripts/build_digest.py`) to write the digest.
+
+      Output: _report/digest.json
+    constraints:
+      - "ALWAYS use the script — NEVER generate the deliverable by hand"
+      - "If the script fails, debug and fix it — do NOT create the artifact manually"
+    input:
+      - _report/state.json
+    output:
+      - _report/digest.json

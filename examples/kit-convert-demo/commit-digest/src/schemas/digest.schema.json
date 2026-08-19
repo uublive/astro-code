@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/commit-digest/schemas/digest.schema.json",
+  "title": "CommitDigest",
+  "description": "Shape of digest.json, the commit-digest kit's single deliverable. Mirrors the output of the converted source's build_digest() exactly (ADR-025 parity target) — every field except generated_at is a pure function of the input commit list.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "generated_at",
+    "commit_count",
+    "by_type",
+    "authors",
+    "unique_authors",
+    "first_date",
+    "last_date"
+  ],
+  "properties": {
+    "generated_at": {
+      "type": "string",
+      "description": "ISO 8601 UTC timestamp of the run. The one nondeterministic field — normalized away by the parity harness."
+    },
+    "commit_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total number of commits in the input."
+    },
+    "by_type": {
+      "type": "object",
+      "description": "Commit count per conventional-commit-style type (feat, fix, docs, chore, ...).",
+      "additionalProperties": { "type": "integer", "minimum": 1 }
+    },
+    "authors": {
+      "type": "object",
+      "description": "Commit count per author.",
+      "additionalProperties": { "type": "integer", "minimum": 1 }
+    },
+    "unique_authors": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of distinct authors in the input."
+    },
+    "first_date": {
+      "type": ["string", "null"],
+      "description": "ISO 8601 date of the earliest commit, or null when the input is empty."
+    },
+    "last_date": {
+      "type": ["string", "null"],
+      "description": "ISO 8601 date of the latest commit, or null when the input is empty."
+    }
+  }
+}
