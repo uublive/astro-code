@@ -156,6 +156,15 @@
       "branch": "main",
       "claimed_at": "2026-08-19T13:08:07.910Z",
       "status": "active"
+    },
+    {
+      "type": "milestone",
+      "number": 5,
+      "name": "Lean execution path",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "feature/lean-execution",
+      "claimed_at": "2026-08-21T20:18:00.751Z",
+      "status": "active"
     }
   ]
 }
