@@ -165,6 +165,16 @@
       "branch": "feature/lean-execution",
       "claimed_at": "2026-08-21T20:18:00.751Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 13,
+      "milestone": 5,
+      "name": "Warm batched sequential executor",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "feature/lean-execution",
+      "claimed_at": "2026-08-21T20:18:03.975Z",
+      "status": "active"
     }
   ]
 }
