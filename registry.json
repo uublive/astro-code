@@ -175,6 +175,16 @@
       "branch": "feature/lean-execution",
       "claimed_at": "2026-08-21T20:18:03.975Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 14,
+      "milestone": 5,
+      "name": "Cheap mechanical integrator and clean fast-path",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "feature/lean-execution",
+      "claimed_at": "2026-08-21T20:18:07.413Z",
+      "status": "active"
     }
   ]
 }
