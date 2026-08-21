@@ -169,3 +169,8 @@ _2026-08-19_
 
 **Why:** Parity must be measured against the original's actual behavior, not asserted by a human checklist; normalization is limited to declared benign nondeterminism so parity can't be silently loosened.
 
+## ADR-026 — Sequential phases execute as ONE warm batched astro-executor (all tasks flattened in dependency order, one atomic stamped commit per task) when >=2 executable tasks; per-task is the escape hatch (execMode/lean_execution=false) and the worktree-hostile downgrade path
+_2026-08-21_
+
+**Why:** Eliminates the per-task cold-start + canon/CONTEXT/PLAN re-read that made small phases far slower than plain Claude Code; preserves ADR-017 stamps/resumability and falls back to per-task for any task the batch fails to commit.
+
