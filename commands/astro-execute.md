@@ -23,7 +23,8 @@ Execute phase `$ARGUMENTS`.
        args: { root: "<project root>", phase: "<phase slug>",
                models: <the JSON object from `ac config get models`>,
                effort: <the level from `ac phase effort <slug>` (see the --effort note below)>,
-               useWorktrees: <the boolean from `ac config get use_worktrees`> }
+               useWorktrees: <the boolean from `ac config get use_worktrees`>,
+               leanExecution: <the boolean from `ac config get lean_execution`> }
      })
      ```
      `useWorktrees` honors `config.use_worktrees`: set it `false` (e.g. `ac config set
@@ -32,6 +33,13 @@ Execute phase `$ARGUMENTS`.
      runs sequentially on-branch instead of fighting the harness. (Even when `true`,
      the workflow auto-downgrades a run to sequential after the first wave where a
      majority of worktree creations fail, so the noise happens at most once.)
+     `leanExecution` honors `config.lean_execution` (default **true**): a sequential
+     phase with 2+ executable tasks runs as **ONE warm/batched `astro-executor`** over
+     all tasks in dependency order (reads canon once, still one atomic stamped commit
+     per task) instead of a cold executor per task — small phases then run about as lean
+     as plain Claude Code. Turn it off with a persisted `ac config set lean_execution
+     false`, or a one-off `args.execMode: "per-task"` on this call, to restore the
+     original one-executor-per-task behavior.
      **Speed override:** if the user passed `--fast`, use the JSON from
      `ac models fast --preview` as the `models` arg instead (a one-off fast preset —
      sonnet everywhere except the opus verify gate — that is NOT persisted to config).
@@ -80,6 +88,9 @@ Execute phase `$ARGUMENTS`.
      one atomic commit, then re-verify — up to the level's budget (`light`=0 / `standard`=1
      / `deep`=3 cycles) and **bailing early to FAIL on no-progress** (HEAD unchanged, or the
      failing-criteria set didn't shrink).
+     The warm/batched executor described above is a **Workflow-tool optimization only** — at
+     this tier every task is already spawned one-at-a-time by construction (ADR-008), so
+     there's no per-task cold-start to eliminate and no `leanExecution` equivalent here.
    - **No subagents at all:** execute the tasks inline, in dependency order, one
      atomic commit each, then verify yourself.
 5. Clear the live status (`ac activity clear` — also clear it on any early stop or
