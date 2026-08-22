@@ -202,8 +202,11 @@ cost/speed, `.astrocode/config.json` → `models` assigns a tier per role:
 | researcher | sonnet   | `claude-sonnet-4-6`         | broad parallel reading, good enough |
 | executor   | sonnet   | `claude-sonnet-4-6`         | most tasks; bump to opus for hard phases |
 | verifier   | opus     | `claude-opus-4-8`           | a false PASS is the costliest error |
-| discover   | haiku    | `claude-haiku-4-5-20251001` | mechanical task/dependency parsing |
+| discover   | sonnet   | `claude-sonnet-4-6`         | mechanical task/dependency parsing |
+| integrator | haiku    | `claude-haiku-4-5`          | mechanical wave-fold: stamp-mapped cherry-picks; anything unclean is preserved and healed at executor tier (ADR-027) |
 
 Tiers use the short names `opus | sonnet | haiku` (what the agent tooling accepts);
 omit a role to inherit the session model. Set `ac config set models.executor opus`
 for a max-quality run, or push everything to `haiku`/`sonnet` for a cheap draft.
+`integrator` is the one exception: it hard-defaults to haiku even when unset, rather
+than inheriting the session model (ADR-027).
