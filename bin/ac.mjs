@@ -511,8 +511,9 @@ async function main() {
 
     case 'models': {
       // Speed switch: apply a whole per-role tier preset in one shot, instead of
-      // five `ac config set models.<role>` calls. The ladder is opus→sonnet only
-      // (no haiku). See lib/models.mjs for the profiles.
+      // six `ac config set models.<role>` calls. The ladder is opus→sonnet only,
+      // except the mechanical wave `integrator` role, which carve-out ADR-027
+      // permits down to haiku. See lib/models.mjs for the profiles.
       //   ac models                  print the current effective tiers
       //   ac models <profile>        apply the preset (persist to config.models)
       //   ac models <profile> --preview   print the preset JSON without writing

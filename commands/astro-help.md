@@ -42,7 +42,7 @@ devs never collide.
 - `/astro-status` — where am I, what's next · `/astro-decision` — record an ADR into the canon
 - `/astro-statusline` — set a rich statusline (busy/idle dot · task recap · model · context-fill bar · milestone/phase)
 
-**Go faster** (the speed switch — opus→sonnet ladder, no haiku):
+**Go faster** (the speed switch — opus→sonnet ladder, haiku scoped to the mechanical wave integrator):
 - `ac models fast` — persist the fast profile (sonnet everywhere except the opus verify gate)
 - `ac models balanced` (default) · `ac models max` (all opus) · `ac models` (show current)
 - one-off without persisting: `/astro-plan <n> --fast` or `/astro-execute <n> --fast`

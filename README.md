@@ -135,14 +135,17 @@ is the single source of truth: with no remote (or before `ac registry init`), a 
 later collide — set up an `origin` and run `ac registry init` first.
 
 **Models & speed.** `.astrocode/config.json → models` sets a tier per role
-(`opus`/`sonnet`); unset a role to inherit the session model. The fastest lever is the
-**one-command speed switch** — `ac models max|balanced|fast` applies a whole per-role
-preset at once (the ladder is opus→sonnet, no haiku):
-- **balanced** (default) — opus for `planner`+`verifier`, sonnet for the rest.
-- **fast** — sonnet everywhere **except** the `verifier` (kept opus), so going fast can
-  never silently cost correctness: the verify gate still runs the full test suite at full
-  quality. Big phases dominated by execution shrink the most.
-- **max** — every role on opus.
+(`opus`/`sonnet`/`haiku` for `integrator`); unset a role to inherit the session model.
+The fastest lever is the **one-command speed switch** — `ac models max|balanced|fast`
+applies a whole per-role preset at once (the ladder is opus→sonnet for every judgement
+role — haiku is scoped to the mechanical wave `integrator`, ADR-027):
+- **balanced** (default) — opus for `planner`+`verifier`, sonnet for the rest, haiku for
+  `integrator`.
+- **fast** — sonnet everywhere **except** the `verifier` (kept opus) and `integrator`
+  (haiku), so going fast can never silently cost correctness: the verify gate still runs
+  the full test suite at full quality. Big phases dominated by execution shrink the most.
+- **max** — every role on opus, except `integrator` (sonnet — mechanical work doesn't
+  need opus either).
 
 Per-run without persisting: `/astro-plan <n> --fast` / `/astro-execute <n> --fast`. Fine-tune
 a single role with `ac config set models.executor opus`, or use `/astro-config`. The
