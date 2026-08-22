@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 const COMMANDS = join(dirname(fileURLToPath(import.meta.url)), '..', 'commands');
 const EXECUTE_MD = join(COMMANDS, 'astro-execute.md');
 const ALEX_MD = join(COMMANDS, 'astro-alex.md');
+const CONFIG_MD = join(COMMANDS, 'astro-config.md');
 
 /**
  * Slice out the "No Workflow tool, but the Agent tool is available" tier from
@@ -187,5 +188,93 @@ test('astro-alex.md pins the fast lane to effort: "light"', () => {
     hasLight,
     `astro-alex.md must pin the fast lane to effort:"light" in its Workflow args ` +
       `(0 remediation cycles / single-pass — C10) — found no such pin.`,
+  );
+});
+
+// ── 6. Cheap-integrator-tier doc guards (phase 14 / ADR-027) ────────────────────────
+//
+// Phase 14 drops the wave integrator to `models.integrator` (haiku by default) with a
+// per-branch bail-to-heal fast-path, and documents `integrator` as the sixth per-role
+// model tier. These guards lock the doc text so a future reword can't silently regress
+// either contract; test-after by design (t3/t4 already landed the prose — see PLAN.md).
+// Assertions are text-shape tolerant (case-insensitive on the load-bearing tokens), not
+// brittle full-sentence matches.
+
+const configSrc = readFileSync(CONFIG_MD, 'utf8');
+
+test('astro-execute.md documents the models.integrator tier', () => {
+  const hasIntegratorTier = /models\.integrator/i.test(executeSrc);
+  assert.ok(
+    hasIntegratorTier,
+    `astro-execute.md must name "models.integrator" — the per-role config key that drives ` +
+      `the wave integrator's tier (ADR-027) — found no such reference.`,
+  );
+});
+
+test('astro-execute.md documents haiku as the integrator default', () => {
+  const hasHaiku = /haiku/i.test(executeSrc);
+  assert.ok(
+    hasHaiku,
+    `astro-execute.md must name "haiku" — the integrator's default tier (ADR-027) — ` +
+      `found no such reference.`,
+  );
+});
+
+test('astro-execute.md documents the per-branch preserve/heal outcome', () => {
+  // The fast-path bails per branch, not per wave: a bad branch is preserved and its
+  // task re-run through the heal ladder, while clean peers still land in the same pass.
+  const hasPreserved = /preserved?/i.test(executeSrc);
+  const hasHeal = /heal/i.test(executeSrc);
+  assert.ok(
+    hasPreserved && hasHeal,
+    `astro-execute.md must document the per-branch preserve/heal outcome — both ` +
+      `"preserve(d)" and "heal" (ADR-014/ADR-015/ADR-027) — found ` +
+      `preserved=${hasPreserved}, heal=${hasHeal}.`,
+  );
+});
+
+test('astro-config.md role reference names all six roles', () => {
+  // Extract the "## Roles, for reference" section so the assertion is scoped to the
+  // role list itself, not incidental mentions of role names elsewhere in the doc.
+  const startMarker = '## Roles, for reference';
+  const startIdx = configSrc.indexOf(startMarker);
+  assert.ok(
+    startIdx !== -1,
+    `astro-config.md: expected to find the "${startMarker}" section — it may have been ` +
+      `renamed or removed.`,
+  );
+  const rolesSection = configSrc.slice(startIdx);
+
+  const roles = ['planner', 'researcher', 'executor', 'verifier', 'discover', 'integrator'];
+  const missing = roles.filter((role) => !new RegExp(`\\b${role}\\b`, 'i').test(rolesSection));
+  assert.deepEqual(
+    missing,
+    [],
+    `astro-config.md's role reference must name all six roles (phase 14 adds "integrator" ` +
+      `as the sixth) — missing: ${missing.join(', ') || 'none'}.`,
+  );
+});
+
+test('astro-config.md no longer carries an unscoped "do not offer haiku" instruction', () => {
+  // Pre-phase-14 the doc forbade haiku for every role, unscoped. Post-phase-14 the
+  // prohibition must be scoped to the five *judgement* roles only — integrator is the
+  // documented exception (ADR-027) and its own guidance offers haiku as the default.
+  // Regression check: every "do not offer haiku" occurrence must have "judgement" (or
+  // "judgment") within 300 chars before it, scoping the prohibition to those roles.
+  const phrase = /do not\s+offer\s+haiku/gi;
+  let match;
+  const unscoped = [];
+  while ((match = phrase.exec(configSrc)) !== null) {
+    const before = configSrc.slice(Math.max(0, match.index - 300), match.index);
+    if (!/judg[e]?ment/i.test(before)) {
+      unscoped.push(configSrc.slice(Math.max(0, match.index - 40), match.index + 40));
+    }
+  }
+  assert.deepEqual(
+    unscoped,
+    [],
+    `astro-config.md must not carry an unscoped "do not offer haiku" instruction — every ` +
+      `occurrence must be scoped to the judgement roles (integrator is the ADR-027 ` +
+      `exception). Unscoped occurrences found near:\n\n${unscoped.join('\n---\n')}`,
   );
 });
