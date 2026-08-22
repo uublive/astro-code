@@ -2541,16 +2541,27 @@ function chainTasks(n, doneIds = []) {
  * tests can assert on count, label, and prompt content — the ONLY channel out of the
  * sandboxed script body, matching the injected-hooks contract (C5c: no real git/subprocess).
  *
+ * Phase-14 t2 additions (additive — every phase-13 caller above is unaffected): an
+ * `integ` option lets a test drive the wave integrator's return past the happy-path
+ * default (conflicts/staleBranches/advisories/tornDown), a `passed`-only fingerprint
+ * resolves TESTGATE_SCHEMA (checked AFTER `criteriaFound`, which the verifier's
+ * VERIFY_SCHEMA also carries `passed` alongside — so ordering here matters), and every
+ * `log()` line is now recorded and returned as `logs`.
+ *
  * @param {object} args               the workflow's top-level `args`
  * @param {object} opts
  * @param {Array<object>} opts.discoverTasks   the Discover agent's task list
  * @param {Array<string>|((ids:string[])=>string[])} [opts.batchCommitted]  what the batch
  *   call reports as committed; defaults to "every id the batch call itself carried" (the
  *   all-landed happy path). Pass an explicit array (C4) to simulate partial failure.
- * @returns {Promise<{ calls: Array<object>, result: object }>}
+ * @param {object} [opts.integ]  the wave integrator's INTEGRATE_SCHEMA return; defaults to
+ *   the clean happy path `{ integrated: true, branches: [] }` (every phase-13 caller's
+ *   behavior is unchanged).
+ * @returns {Promise<{ calls: Array<object>, logs: Array<string>, result: object }>}
  */
-async function runWorkflow(args, { discoverTasks, batchCommitted } = {}) {
+async function runWorkflow(args, { discoverTasks, batchCommitted, integ } = {}) {
   const calls = []
+  const logs = []
   const agent = async (prompt, opts = {}) => {
     calls.push({ prompt, opts })
     const props = (opts.schema && opts.schema.properties) || {}
@@ -2560,8 +2571,11 @@ async function runWorkflow(args, { discoverTasks, batchCommitted } = {}) {
       const committed = typeof batchCommitted === 'function' ? batchCommitted(ids) : batchCommitted || ids
       return { committed, summary: 'batch landed' }
     }
-    if ('integrated' in props) return { integrated: true, branches: [] }
+    if ('integrated' in props) return integ || { integrated: true, branches: [] }
     if ('criteriaFound' in props) return { passed: true, criteriaFound: true, summary: 'ok', criteria: [] }
+    // TESTGATE_SCHEMA carries ONLY `passed` (no criteriaFound) — must be checked
+    // after the verifier fingerprint above, or the verify call would never reach it.
+    if ('passed' in props) return { passed: true }
     // No schema: runOnBranch / runHealOnBranch's per-task executor prompt.
     return { summary: 'done' }
   }
@@ -2570,11 +2584,11 @@ async function runWorkflow(args, { discoverTasks, batchCommitted } = {}) {
     return Promise.all(thunks.map((fn) => fn()))
   }
   const phase = () => {}
-  const log = () => {}
+  const log = (m) => logs.push(String(m))
 
   const fn = loadWorkflowFn()
   const result = await fn(phase, agent, parallel, log, args)
-  return { calls, result }
+  return { calls, logs, result }
 }
 
 // "task-implementation executor call" per the Harness note: an Execute-phase,
@@ -2696,4 +2710,178 @@ test('t4 (phase 13, C5b): strategy:"parallel" with a wide wave uses parallel() a
     !calls.some((c) => c.opts && c.opts.label === 'exec:batch'),
     'strategy:"parallel" must never route through the single batch executor call',
   )
+})
+
+// ── Phase-14 t2 (ADR-027): integrator tier floor + tornDown bound ────────────────────
+//
+// Reuses the phase-13 runWorkflow harness (extended additively above with `integ` and
+// `logs`). A wide (parallel), 3-task, no-deps wave is used throughout so a per-branch
+// outcome is distinguishable from a per-wave one (CRITERIA "Harness note").
+
+const PHASE14_SLUG = '14-cheap-mechanical-integrator-and-clean-fast-path'
+const threeIndependentTasks = () => [
+  { id: 't1', title: 'Task 1', file: 'a.mjs', depends_on: [], done: false },
+  { id: 't2', title: 'Task 2', file: 'b.mjs', depends_on: [], done: false },
+  { id: 't3', title: 'Task 3', file: 'c.mjs', depends_on: [], done: false },
+]
+const byLabel = (calls, label) => calls.find((c) => c.opts && c.opts.label === label)
+
+test('t2 (phase 14, C1): the wave integrator floors to haiku when models.integrator is unset, an explicit override wins, and heal/testgate/teardown stay at the executor tier', async () => {
+  const discoverTasks = threeIndependentTasks()
+  const integ = {
+    integrated: false,
+    branches: ['worktree-t1', 'worktree-t3'],
+    conflicts: [{ branch: 'worktree-t2', taskId: 't2' }],
+    tornDown: ['worktree-t1', 'worktree-t3'],
+  }
+  const baseArgs = {
+    root: '/tmp/proj',
+    phase: PHASE14_SLUG,
+    strategy: 'parallel',
+    models: { executor: 'sonnet', verifier: 'opus', discover: 'sonnet' }, // no `integrator` key
+  }
+
+  const { calls } = await runWorkflow(baseArgs, { discoverTasks, integ })
+  assert.strictEqual(byLabel(calls, 'integrate:w1').opts.model, 'haiku', 'no models.integrator key -> the integrate call must floor to haiku')
+  assert.strictEqual(byLabel(calls, 'heal:t2').opts.model, 'sonnet', 'heal re-runs must stay at models.executor')
+  assert.strictEqual(byLabel(calls, 'testgate').opts.model, 'sonnet', 'the post-heal test gate must stay at models.executor')
+  assert.strictEqual(byLabel(calls, 'teardown:w1').opts.model, 'sonnet', 'teardown must stay at models.executor')
+
+  const overrideArgs = { ...baseArgs, models: { ...baseArgs.models, integrator: 'sonnet' } }
+  const { calls: overrideCalls } = await runWorkflow(overrideArgs, { discoverTasks, integ })
+  assert.strictEqual(byLabel(overrideCalls, 'integrate:w1').opts.model, 'sonnet', 'an explicit models.integrator override must win over the haiku floor')
+
+  const emptyArgs = { ...baseArgs, models: {} }
+  const { calls: emptyCalls } = await runWorkflow(emptyArgs, { discoverTasks, integ })
+  assert.strictEqual(byLabel(emptyCalls, 'integrate:w1').opts.model, 'haiku', 'models:{} (project predating the key) must still floor to haiku')
+})
+
+test('t2 (phase 14, C2): one bad branch does not cost the wave — exactly one integrate call, one data-driven heal call, the clean peers are left alone, and the wave reaches Verify', async () => {
+  const discoverTasks = threeIndependentTasks()
+  const args = { root: '/tmp/proj', phase: PHASE14_SLUG, strategy: 'parallel' }
+
+  const integConflictOnT2 = {
+    integrated: false,
+    branches: ['worktree-t1', 'worktree-t3'],
+    conflicts: [{ branch: 'worktree-t2', taskId: 't2' }],
+  }
+  const { calls, result } = await runWorkflow(args, { discoverTasks, integ: integConflictOnT2 })
+
+  const integrateCalls = calls.filter((c) => c.opts && c.opts.label && c.opts.label.startsWith('integrate:'))
+  assert.strictEqual(integrateCalls.length, 1, 'exactly one integrator call must settle the wave')
+  const healCalls = calls.filter((c) => c.opts && c.opts.label && c.opts.label.startsWith('heal:'))
+  assert.strictEqual(healCalls.length, 1, 'exactly one heal call, for the bad branch alone')
+  assert.strictEqual(healCalls[0].opts.label, 'heal:t2')
+  assert.deepStrictEqual(result.healed, ['t2'])
+  assert.strictEqual(result.verdict.passed, true, 'the run must still reach a passing verdict')
+
+  // Move the conflict to t1 instead — the single heal call must follow it (data-driven
+  // mapping, not a positional assumption about "the second branch").
+  const integConflictOnT1 = {
+    integrated: false,
+    branches: ['worktree-t2', 'worktree-t3'],
+    conflicts: [{ branch: 'worktree-t1', taskId: 't1' }],
+  }
+  const { calls: calls2 } = await runWorkflow(args, { discoverTasks, integ: integConflictOnT1 })
+  const healCalls2 = calls2.filter((c) => c.opts && c.opts.label && c.opts.label.startsWith('heal:'))
+  assert.strictEqual(healCalls2.length, 1)
+  assert.strictEqual(healCalls2[0].opts.label, 'heal:t1', 'the heal call must follow the conflict wherever it is reported')
+})
+
+test('t2 (phase 14, C3): a tornDown claim outside the cleanly-integrated set is caught as pure data and surfaced as an integration failure', async () => {
+  const discoverTasks = threeIndependentTasks()
+  const args = { root: '/tmp/proj', phase: PHASE14_SLUG, strategy: 'parallel' }
+
+  const badTeardown = { integrated: true, branches: ['worktree-t1'], tornDown: ['worktree-t1', 'worktree-t2'] }
+  const { calls, logs, result } = await runWorkflow(args, { discoverTasks, integ: badTeardown })
+  assert.ok(result.integrationFailed, 'an out-of-set tornDown claim must fail the wave')
+  const namesOffender =
+    (result.integrationFailed.note && result.integrationFailed.note.includes('worktree-t2')) ||
+    logs.some((l) => l.includes('worktree-t2'))
+  assert.ok(namesOffender, 'the note or a logged line must name the offending branch worktree-t2')
+  assert.ok(
+    !calls.some((c) => c.opts && c.opts.schema && 'criteriaFound' in (c.opts.schema.properties || {})),
+    'Verify (the verifier schema) must never be reached',
+  )
+
+  // Control (a): a strict subset — a partial teardown — must NOT fail.
+  const partialTeardown = {
+    integrated: true,
+    branches: ['worktree-t1', 'worktree-t2', 'worktree-t3'],
+    tornDown: ['worktree-t1'],
+  }
+  const { result: subsetResult } = await runWorkflow(args, { discoverTasks, integ: partialTeardown })
+  assert.strictEqual(subsetResult.integrationFailed, null, 'a strict-subset tornDown must not fail the wave')
+
+  // Control (b): no `tornDown` key at all — nothing was torn down.
+  const noTeardown = { integrated: true, branches: ['worktree-t1'] }
+  const { result: noneResult } = await runWorkflow(args, { discoverTasks, integ: noTeardown })
+  assert.strictEqual(noneResult.integrationFailed, null, 'an omitted tornDown key must not read as a failure')
+
+  // Extra hazard: a branch present in BOTH branches[] and conflicts[] and listed in
+  // tornDown must still fail — the check is keyed on the CLEAN set, not raw branches[].
+  const hazard = {
+    integrated: true,
+    branches: ['worktree-t1', 'worktree-t2'],
+    conflicts: [{ branch: 'worktree-t1', taskId: 't1' }],
+    tornDown: ['worktree-t1'],
+  }
+  const { result: hazardResult } = await runWorkflow(args, { discoverTasks, integ: hazard })
+  assert.ok(hazardResult.integrationFailed, 'a branch listed in both branches[] and conflicts[] must not be treated as cleanly torn down')
+})
+
+test('t2 (phase 14, C4): an unclaimed overflow advisory still integrates with a ⚠ log and still forces the test gate at the executor tier', async () => {
+  const discoverTasks = threeIndependentTasks()
+  const args = { root: '/tmp/proj', phase: PHASE14_SLUG, strategy: 'parallel', models: { executor: 'sonnet' } }
+
+  const advisoryOnly = {
+    integrated: true,
+    branches: ['worktree-t1', 'worktree-t2', 'worktree-t3'],
+    advisories: [{ branch: 'worktree-t1', taskId: 't1', extraFiles: ['z.mjs'] }],
+    tornDown: ['worktree-t1', 'worktree-t2', 'worktree-t3'],
+  }
+  const { calls, logs } = await runWorkflow(args, { discoverTasks, integ: advisoryOnly })
+  assert.ok(!calls.some((c) => c.opts && c.opts.label === 'heal:t1'), 'the advisory branch integrated — it must not heal')
+  assert.ok(
+    logs.some((l) => l.includes('⚠') && l.includes('worktree-t1') && l.includes('z.mjs')),
+    'a ⚠ log line must name the branch and the overflow file',
+  )
+  const gate = byLabel(calls, 'testgate')
+  assert.ok(gate, 'an advisory-only wave must still dispatch the post-wave test gate')
+  assert.strictEqual(gate.opts.model, 'sonnet', 'the test gate must run at the executor tier even though no heal fired')
+})
+
+test('t2 (phase 14, C8): the sequential/lean-batched path never dispatches an integrator, and its executor call is never cheapened to haiku', async () => {
+  const discoverTasks = threeIndependentTasks()
+  const { calls, result } = await runWorkflow(
+    { root: '/tmp/proj', phase: PHASE14_SLUG }, // no strategy -> sequential per ADR-026
+    { discoverTasks, batchCommitted: ['t1', 't2', 't3'] },
+  )
+  assert.ok(
+    !calls.some((c) => c.opts && c.opts.label && c.opts.label.startsWith('integrate:')),
+    'the sequential/lean path must never reach the integrator',
+  )
+  const execCallsHere = calls.filter((c) => c.opts && c.opts.label && c.opts.label.startsWith('exec:'))
+  assert.strictEqual(execCallsHere.length, 1)
+  assert.strictEqual(execCallsHere[0].opts.label, 'exec:batch')
+  assert.strictEqual(execCallsHere[0].opts.model, undefined, 'the batch executor must never be silently downgraded to the integrator tier')
+  assert.strictEqual(result.strategy, 'sequential')
+})
+
+test('t2 (phase 14): source guard — the integrate agent() options line reads models.integrator || \'haiku\', while heal/testgate/teardown still read models.executor', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const lines = wfSrc.split('\n')
+
+  const integrateLine = lines.find((l) => l.includes('label: `integrate:w'))
+  assert.ok(integrateLine, 'integrate:w<n> agent() options line not found')
+  assert.ok(
+    integrateLine.includes("model: models.integrator || 'haiku'"),
+    'the integrate call must read models.integrator || \'haiku\'',
+  )
+
+  for (const needle of ['label: `heal:', "label: 'testgate'", 'label: `teardown:w']) {
+    const line = lines.find((l) => l.includes(needle))
+    assert.ok(line, `${needle} agent() options line not found`)
+    assert.ok(line.includes('model: models.executor'), `${needle} must still read model: models.executor`)
+  }
 })

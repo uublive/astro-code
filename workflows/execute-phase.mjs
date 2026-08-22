@@ -42,7 +42,9 @@ const maxCycles = ({ light: 0, standard: 1, deep: 3 })[effort] ?? 1
 // escalates BOTH the executor and the verifier to opus for THIS phase only — a fresh
 // object, never a mutation of the persisted config (C4).  Every other level passes the
 // base tiers through untouched; discover is deliberately NOT escalated (the dial spends
-// on execute+verify only, ADR-022).
+// on execute+verify only, ADR-022).  `integrator` (phase-14, ADR-027) is likewise NEVER
+// escalated by `deep` — it stays a two-arm ternary on purpose (a third arm here is an
+// easy one-arm-only bug) and carries its own floor at the wave-integrator call site below.
 const models = effort === 'deep' ? { ...baseModels, executor: 'opus', verifier: 'opus' } : baseModels
 
 // Phase-07 / ADR-017: extract the zero-padded phase number from the slug as a
@@ -600,12 +602,20 @@ const runTeardown = (w, branches) =>
 //     Integrated (not rejected — the phase-04 t14 hooksPath fix was legitimate) but
 //     logged with a ⚠.  Each item carries extraFiles so the log can name the overflow.
 // Both are optional (the happy path has neither), so they are NOT in required[].
+//
+// Phase-14 t2 (ADR-027 decision 2): `tornDown` — the branches this run's integrator
+// actually deleted (`git branch -D` / `git worktree remove --force`).  Optional on
+// purpose: a wave that tore nothing down (e.g. it healed the whole wave, or a heal
+// hasn't reached teardown yet) must not read as a failure by omitting the field.
+// The script cross-checks it against the CLEANLY-integrated set immediately after
+// this call returns — pure data comparison, the script still runs no git (ADR-008).
 const INTEGRATE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
     integrated: { type: 'boolean' },
     branches: { type: 'array', items: { type: 'string' } },
+    tornDown: { type: 'array', items: { type: 'string' } },
     conflicts: {
       type: 'array',
       items: {
@@ -702,7 +712,12 @@ const integrateWave = (w, wave) =>
       `Return integrated=true with branches[] merged (and advisories[] for any ⚠ overflow), ` +
       `or integrated=false with conflicts[]/staleBranches[] (each: {branch,taskId}) and a note.` +
       OBEY,
-    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: INTEGRATE_SCHEMA },
+    // Phase-14 t2 (ADR-027 decision 7): a FLOOR, not the usual "unset = inherit the
+    // session model" every other role gets — inheriting here would run the integrator
+    // at the session tier (opus) for every project predating this key, the exact
+    // opposite of the goal.  Mirrors leanExecutionEnabled's default-on reasoning.  An
+    // explicit `ac config set models.integrator sonnet` (or a profile) still wins.
+    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.integrator || 'haiku', schema: INTEGRATE_SCHEMA },
   )
 
 // ── Phase-13 (ADR-026): warm batched sequential executor primitives ────────────
@@ -947,6 +962,43 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
     }
   }
   const integ = await integrateWave(w, wave)
+
+  // ── Phase-14 t2 (ADR-027 decision 2): tornDown bound — pure data, no git ──
+  //
+  // The integrator may destructively remove ONLY a branch it cherry-picked cleanly
+  // in THIS run. The script cannot see git (ADR-008) — its only enforcement is
+  // comparing the agent's own claims: tornDown[] must be a subset of the CLEANLY-
+  // integrated set, i.e. branches[] minus anything ALSO reported as a conflict or
+  // stale. Checked against that derived set (not raw branches[]) so a self-
+  // contradictory return — a branch listed in both branches[] and conflicts[] and
+  // then torn down — is still caught, the same defensiveness as the existing
+  // "keyed on the LISTS, not the flag" comment below. Run BEFORE the advisory/heal
+  // handling so an out-of-bounds claim never reaches heal or the test gate.
+  const conflictSet = new Set([
+    ...(((integ && integ.conflicts) || []).map((c) => c.branch)),
+    ...(((integ && integ.staleBranches) || []).map((s) => s.branch)),
+  ])
+  const cleanBranches = ((integ && integ.branches) || []).filter((b) => !conflictSet.has(b))
+  const badTeardown = ((integ && integ.tornDown) || []).filter((b) => !cleanBranches.includes(b))
+  if (badTeardown.length) {
+    log(
+      `✖ wave ${w + 1} teardown out of bounds: \`${badTeardown.join('`, `')}\`` +
+        ` reported torn down but not confirmed cleanly integrated this run`,
+    )
+    // Same shape as the two existing integrationFailed assignments below (taskId
+    // is unknown here — this is a script-level contract violation, not a specific
+    // task's heal failure) so the FAIL formatter further down keeps working.
+    integrationFailed = {
+      wave: w + 1,
+      taskId: null,
+      branch: badTeardown[0],
+      note:
+        `integrator reported tornDown=[${badTeardown.join(', ')}] without confirming a clean ` +
+        `pick this run — the delete already happened agent-side (the script runs no git, ` +
+        `ADR-008); the ref may still be recoverable via \`git reflog\` / dangling commits before GC`,
+    }
+    continue
+  }
 
   // ── Self-healing ladder (ADR-014 + CONTEXT.md phase-05/06) ───────────────
   //
