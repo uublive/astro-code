@@ -62,13 +62,25 @@ Execute phase `$ARGUMENTS`.
      — each atomic commit is visible to the next task and to the verifier; larger,
      wide phases run each wave's tasks **in parallel inside isolated worktrees** and
      then an **integrator agent folds the wave back onto the branch** before the next
-     wave (so dependencies see prior changes and nothing is stranded). Override with
+     wave (so dependencies see prior changes and nothing is stranded). The integrator
+     runs at the cheap `models.integrator` tier — **haiku by default, even when the
+     project config never mentions the role** (override with `ac config set
+     models.integrator sonnet`, or the `max` profile, which carries it as `sonnet`).
+     Its job is mechanical git (a stamp-mapped cherry-pick), so the bail a user
+     actually sees stays per-branch, not per-wave: a stale, peer-colliding, or
+     conflicted branch is **preserved and reported** while its clean peers still land
+     in the same pass, and only that branch's task is re-run through the heal ladder
+     at the full `models.executor` tier — heal, the post-heal test gate, and teardown
+     are never cheapened. Override with
      `args.strategy: "sequential" | "parallel"`, or tune the cutover with
      `args.seqBudget` (default 8 tasks). The verifier runs against the integrated
      branch, never a pristine `main`. It runs in the background — tell the user to
      **watch `/workflows`** for live wave-by-wave progress; you'll be notified on
      completion. If the result has `integrationFailed`, surface its conflict/cleanup
-     hint and stop (do not mark the phase verified).
+     hint and stop (do not mark the phase verified) — this also fires when the
+     integrator claims a teardown outside the branches it cleanly cherry-picked in
+     this run, which the script catches as a plain data check before trusting the
+     agent's report.
    - **No Workflow tool, but the Agent tool is available:** without the Workflow tool
      there is no worktree isolation or integrator, so tasks run sequentially — never
      spawn parallel executors that commit to the same working tree (ADR-008). Read the
