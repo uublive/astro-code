@@ -589,9 +589,11 @@ const runTeardown = (w, branches) =>
 // Each conflict item is an object with branch + taskId so the script can drive
 // runOnBranch(t) for exactly the right task when healing a wave conflict (ADR-014).
 // Keeping items as plain strings would lose the branch→task mapping and force
-// re-running the whole wave remainder unnecessarily.  taskId is nullable: the
-// integrator maps by commit message + changed files; if it cannot map confidently
-// it returns null and the script re-runs every wave task not explicitly confirmed
+// re-running the whole wave remainder unnecessarily.  taskId is nullable: phase-14 t7
+// (ADR-027 decision 3) maps it via a MECHANICAL read of the ADR-017 commit-subject
+// stamp `(phase NN tK)` — changed-file/message inference survives only as the
+// fallback for a stamp-less commit.  If neither maps confidently the integrator
+// returns null and the script re-runs every wave task not explicitly confirmed
 // as integrated.  additionalProperties:false at every level is required by canon.
 //
 // Phase-06 t3 additions (ADR-015 cause #1 stale base; ADR-016 cause #2 overflow):
@@ -665,11 +667,15 @@ const INTEGRATE_SCHEMA = {
 // branch is removed later by runTeardown — only after its re-run commit landed AND the
 // healed wave's test gate passed; a FAILED heal's branch stays for inspection.
 //
-// wave tasks are passed as an inlined JSON scalar so the integrator can map each
-// conflicted worktree-* branch to a taskId by commit message + changed files — without
-// this the integrator would always return taskId:null and force re-running the whole
-// wave remainder (wasteful in wide waves).  The scalar is small (id + title + file
-// only) to respect the Workflow-arg-size rule.
+// wave tasks are passed as an inlined JSON scalar so the integrator has a target SET
+// of taskIds to map each worktree-* branch against.  Phase-14 t7 (ADR-027 decision 3):
+// the mapping itself is a MECHANICAL grep of the ADR-017 `(phase NN tK)` commit-subject
+// stamp, not a judgement call about commit messages — this is what makes a haiku-tier
+// integrator safe rather than merely cheaper.  Changed-file/message inference survives
+// ONLY as the labelled fallback for a stamp-less commit.  Without a taskId the
+// integrator returns null and the script re-runs every wave task not confirmed
+// integrated (safe, if wasteful in wide waves) — see resolveHealList.  The scalar is
+// small (id + title + file only) to respect the Workflow-arg-size rule.
 //
 // Phase-06 t4 (ADR-015 cause #1 stale base; ADR-016 cause #2 overflow):
 //   The check order per branch is: staleness FIRST, then overflow classification,
@@ -683,34 +689,61 @@ const integrateWave = (w, wave) =>
       `(you have NO worktree of your own). The parallel executors each committed on a separate ` +
       `\`worktree-*\` branch forked from the current HEAD. Fold them onto the CURRENTLY checked-out ` +
       `branch so the next wave and the verifier see one combined tree.\n` +
-      `Wave task list (for branch→taskId mapping and declared-file comparison): ` +
+      `Wave task list (taskId mapping target set + declared-file comparison): ` +
       `${JSON.stringify(wave.map((t) => ({ id: t.id, title: t.title, file: t.file || '' })))}\n` +
-      `Do exactly this, in ${root}. Each branch is reported under exactly ONE outcome:\n` +
+      `Do exactly this, in ${root}. Each candidate branch is reported under exactly ONE outcome, ` +
+      `and once a branch is preserved you MUST CONTINUE to every remaining candidate — never ` +
+      `abort the wave on the first bad branch. A preserved branch's clean peers still land in ` +
+      `THIS SAME call: resolveHealList already re-runs every wave task not confirmed integrated, ` +
+      `so halting early would push correctly-landed work into an executor-tier heal re-run and ` +
+      `spend more than the cheap tier saved. Do NOT self-retry a preserved branch and do NOT ask ` +
+      `for a stronger model — that is exactly the textual rescue ADR-014/ADR-015 forbid; a bad ` +
+      `branch's task is re-run by the heal ladder, never by you.\n` +
       `1. List candidates: \`git for-each-ref --format='%(refname:short)' refs/heads/ | grep '^worktree-'\`. ` +
       `Keep only branches where \`git rev-list HEAD..<branch>\` is non-empty.\n` +
-      `2. For each candidate — checks IN ORDER (staleness first, then overflow, then cherry-pick):\n` +
-      `  2a. STALENESS (ADR-015 cause #1): \`git merge-base HEAD <branch>\` vs \`git rev-parse HEAD\`. ` +
+      `2. MAP each candidate to a taskId — MECHANICAL, never a judgement call about commit ` +
+      `messages: run \`git log --format=%s HEAD..<branch>\` and look for the stamp ` +
+      `\`(phase ${phaseNum} t<id>)\` among the commit subjects — the closing paren is required ` +
+      `(it is what stops \`t1\` matching \`t14\`). Equivalently, mirroring the Discover prompt's ` +
+      `idiom, you may grep per wave task id: \`git log --oneline --fixed-strings --grep ` +
+      `"(phase ${phaseNum} <taskId>)" HEAD..<branch>\`. Exactly ONE distinct stamp matching a ` +
+      `wave task id → that taskId. Zero, or more than one distinct stamp → taskId:null (never ` +
+      `guess — resolveHealList already falls back safely). FALLBACK, only for a branch with no ` +
+      `stamped commit at all: infer taskId from the commit message and changed files against the ` +
+      `wave task list above.\n` +
+      `3. For each candidate — checks IN ORDER (staleness first, then overflow, then cherry-pick):\n` +
+      `  3a. STALENESS (ADR-015 cause #1): \`git merge-base HEAD <branch>\` vs \`git rev-parse HEAD\`. ` +
       `If SHAs differ: STALE — do NOT cherry-pick (a clean pick proves nothing; phase-04 stacked ` +
-      `duplicate helpers with zero conflict markers). PRESERVE branch/worktree. Map to taskId. ` +
-      `Add \`{branch,taskId}\` to staleBranches[]. Skip to next candidate.\n` +
-      `  2b. OVERFLOW (ADR-016 cause #2): \`git diff --name-only <merge-base>..<branch>\` vs ` +
+      `duplicate helpers with zero conflict markers). PRESERVE branch/worktree — do NOT tear it ` +
+      `down. Add \`{branch,taskId}\` (the taskId from step 2) to staleBranches[]. CONTINUE to the ` +
+      `next candidate.\n` +
+      `  3b. OVERFLOW (ADR-016 cause #2): \`git diff --name-only <merge-base>..<branch>\` vs ` +
       `declared file(s) from the wave task list. Extra files (changed but not declared):\n` +
       `    - Any extra file claimed by ANOTHER wave task → COLLISION: do NOT cherry-pick, ` +
-      `PRESERVE branch, add \`{branch,taskId}\` to conflicts[], return integrated=false.\n` +
+      `PRESERVE branch — do NOT tear it down. Add \`{branch,taskId}\` to conflicts[], return ` +
+      `integrated=false, CONTINUE to the next candidate.\n` +
       `    - All extra files unclaimed by any wave peer → cherry-pick AND add ` +
       `\`{branch,taskId,extraFiles}\` to advisories[] (⚠ advisory; do NOT reject — the phase-04 ` +
       `t14 hooksPath fix was legitimate out-of-file work).\n` +
       `    - No extra files → proceed to cherry-pick.\n` +
-      `  2c. CHERRY-PICK: \`git cherry-pick <range>\`. On ANY conflict: run ` +
+      `  3c. CHERRY-PICK: \`git cherry-pick <range>\`. On ANY conflict: run ` +
       `\`git cherry-pick --abort\`, verify \`git status\` shows a clean working tree ` +
       `(nothing to commit) before continuing. PRESERVE that branch and its worktree — ` +
       `do NOT run \`git worktree remove\` or \`git branch -D\` on a conflicting branch. ` +
-      `Add it to conflicts[] with taskId (or null if unmappable). Return integrated=false.\n` +
-      `3. After a clean (non-stale, non-collision, conflict-free) cherry-pick, tear down: ` +
-      `\`git worktree remove --force <path>\`, \`git branch -D <branch>\`, \`git worktree prune\`.\n` +
-      `4. Confirm: \`git log --oneline -n 20\`.\n` +
-      `Return integrated=true with branches[] merged (and advisories[] for any ⚠ overflow), ` +
-      `or integrated=false with conflicts[]/staleBranches[] (each: {branch,taskId}) and a note.` +
+      `Add it to conflicts[] with the taskId from step 2 (or null if step 2 could not map it). ` +
+      `Return integrated=false, CONTINUE to the next candidate.\n` +
+      `4. TEARDOWN — BOUNDED: run \`git worktree remove --force <path>\`, \`git branch -D <branch>\`, ` +
+      `\`git worktree prune\` ONLY on a branch YOU cherry-picked cleanly in THIS run (non-stale, ` +
+      `non-collision, conflict-free). NEVER on a preserved/stale/conflicted branch and NEVER on a ` +
+      `pre-existing branch you did not pick this run. Add every branch you tear down to ` +
+      `tornDown[] — and tornDown[] must contain NOTHING else. The script cross-checks tornDown[] ` +
+      `against the branches you report cleanly integrated as pure data and fails the wave loudly ` +
+      `on any mismatch (ADR-008: it still runs no git).\n` +
+      `5. Confirm: \`git log --oneline -n 20\`.\n` +
+      `Return integrated=true with branches[] merged, tornDown[] listing exactly what you ` +
+      `deleted (empty/omitted if nothing was cleanly picked this run), and advisories[] for any ` +
+      `⚠ overflow; or integrated=false with conflicts[]/staleBranches[] (each: {branch,taskId}) ` +
+      `and a note.` +
       OBEY,
     // Phase-14 t2 (ADR-027 decision 7): a FLOOR, not the usual "unset = inherit the
     // session model" every other role gets — inheriting here would run the integrator

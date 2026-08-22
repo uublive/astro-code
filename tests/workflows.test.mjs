@@ -149,11 +149,14 @@ function extractIntegrateWaveBody(wfSrc) {
   // Find the start of the integrateWave const declaration.
   const startIdx = wfSrc.indexOf('const integrateWave')
   if (startIdx === -1) return null
-  // Extract a generous window (next ~2000 chars) that covers the full definition.
-  // The agent() call ends with `}` + `)` before the next top-level statement.
-  // We look for the closing of the outer agent() — the pattern `}\n  )` that
-  // ends the options object and closes agent().
-  const window = wfSrc.slice(startIdx, startIdx + 2500)
+  // Extract a generous window that covers the full definition. The agent() call
+  // ends with `}` + `)` before the next top-level statement. We look for the
+  // closing of the outer agent() — the pattern `}\n  )` that ends the options
+  // object and closes agent(). Phase-14 t7: the rewritten prompt (stamp mapping +
+  // explicit per-branch continue + bounded teardown) is longer than the pre-t7
+  // prompt, so the window was widened from 2500 to 6500 — widen again rather than
+  // truncate silently if a future task grows the prompt further.
+  const window = wfSrc.slice(startIdx, startIdx + 6500)
   return window
 }
 
@@ -1135,7 +1138,25 @@ test('t5: wave loop logs •/✖ for stale-base branches routed to heal', () => 
 function extractIntegratorPromptWindow(wfSrc) {
   const startIdx = wfSrc.indexOf('const integrateWave')
   if (startIdx === -1) return null
-  return wfSrc.slice(startIdx, startIdx + 3000)
+  // Phase-14 t7: widened from 3000 to 6500 alongside extractIntegrateWaveBody —
+  // the stamp-mapping + explicit continue + bounded-teardown rewrite pushed the
+  // prompt's tail (teardown/confirm/return) past the old 3000-char cutoff.
+  return wfSrc.slice(startIdx, startIdx + 6500)
+}
+
+/**
+ * Collapse the SOURCE-level template-literal joins (`` ` +\n      ` ``, the
+ * wrap-and-concatenate style CONVENTIONS.md mandates for long prompt strings)
+ * out of a window returned by extractIntegratorPromptWindow/extractIntegrateWaveBody,
+ * so a static regex can match a load-bearing phrase that happens to straddle two
+ * adjacent literal segments in the SOURCE even though it reads as one continuous
+ * sentence once the literals concatenate at runtime. Only the raw source join
+ * syntax is stripped (backtick + optional space + `+` + newline + indent +
+ * backtick) — no other transformation, so every other assertion against these
+ * windows keeps working unmodified.
+ */
+function joinTemplateLiteral(window) {
+  return window.replace(/`\s*\+\s*\n\s*`/g, '')
 }
 
 test('t6: integrator prompt runs git merge-base HEAD <branch> staleness check (ADR-015)', () => {
@@ -2884,4 +2905,101 @@ test('t2 (phase 14): source guard — the integrate agent() options line reads m
     assert.ok(line, `${needle} agent() options line not found`)
     assert.ok(line.includes('model: models.executor'), `${needle} must still read model: models.executor`)
   }
+})
+
+// ── Phase-14 t7 (ADR-027 decision 3): stamp mapping, explicit per-branch bail, ───────
+// ── bounded teardown reported in tornDown[] ──────────────────────────────────────────
+//
+// t2 added the `tornDown` schema field and the script-side cross-check; t7 is the
+// PROMPT side of the same change — replace the vague "map to taskId" instruction with
+// a mechanical ADR-017 stamp read, spell out the per-branch continue rule (it was
+// already the aggregate shape but never stated), and wire tornDown[] into the teardown
+// step so a clean integrator actually reports what it deleted for t2's cross-check to
+// bound against. ADR-016 overflow semantics (collision -> heal, unclaimed -> advisory)
+// are untouched — the t6 guards above already pin them and must keep passing verbatim.
+
+test('t7 (phase 14, C5): the integrator prompt maps branch->taskId via the ADR-017 stamp, and the stamp pattern tracks the phase slug (mechanically interpolated, not hardcoded)', async () => {
+  const discoverTasks = threeIndependentTasks()
+  const integ = { integrated: true, branches: ['worktree-t1', 'worktree-t2', 'worktree-t3'] }
+
+  const { calls: calls07 } = await runWorkflow(
+    { root: '/tmp/proj', phase: '07-some-phase', strategy: 'parallel' },
+    { discoverTasks, integ },
+  )
+  const { calls: calls14 } = await runWorkflow(
+    { root: '/tmp/proj', phase: PHASE14_SLUG, strategy: 'parallel' },
+    { discoverTasks, integ },
+  )
+
+  const prompt07 = byLabel(calls07, 'integrate:w1').prompt
+  const prompt14 = byLabel(calls14, 'integrate:w1').prompt
+
+  assert.ok(prompt07.includes('(phase 07 t'), 'the phase-07 run must carry the zero-padded (phase 07 t… stamp pattern')
+  assert.ok(prompt14.includes('(phase 14 t'), 'the phase-14 run must carry the zero-padded (phase 14 t… stamp pattern')
+  assert.ok(!prompt07.includes('(phase 14 t'), 'the phase-07 prompt must not leak the phase-14 stamp (proves interpolation, not a hardcoded pattern)')
+  assert.ok(!prompt14.includes('(phase 07 t'), 'the phase-14 prompt must not leak the phase-07 stamp')
+
+  // The prompt must still carry the wave's task ids so the mapping has a target set.
+  assert.ok(prompt14.includes('"id":"t1"'), 'the prompt must still carry the wave task ids as the mapping target set')
+
+  // The stamp rule must appear before any changed-file/message fallback, and that
+  // fallback must be explicitly labelled FALLBACK, never the primary rule.
+  const stampMentionIdx = prompt14.indexOf('(phase 14 t')
+  const fallbackIdx = prompt14.toUpperCase().indexOf('FALLBACK')
+  assert.ok(fallbackIdx !== -1, 'a changed-file/message inference path must be explicitly labelled FALLBACK')
+  assert.ok(
+    stampMentionIdx !== -1 && stampMentionIdx < fallbackIdx,
+    'the stamp rule must appear BEFORE the labelled changed-file/message fallback, not after it',
+  )
+})
+
+test('t7 (phase 14): static guard — teardown is restricted to branches cherry-picked cleanly THIS run and every one is reported in tornDown[]', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const rawBody = extractIntegratorPromptWindow(wfSrc)
+  assert.ok(rawBody, 'integrateWave definition not found in execute-phase.mjs')
+  const body = joinTemplateLiteral(rawBody)
+
+  assert.ok(/tornDown\[\]/.test(body), 'the prompt must instruct recording every torn-down branch in tornDown[]')
+  assert.ok(
+    /ONLY on a branch YOU cherry-picked cleanly/i.test(body),
+    'the teardown step must restrict destructive git to a branch cherry-picked cleanly in THIS run',
+  )
+  assert.ok(
+    /NEVER on a preserved\/stale\/conflicted branch/i.test(body),
+    'the teardown step must forbid tearing down a preserved/stale/conflicted branch',
+  )
+  assert.ok(
+    /NEVER on a pre-existing branch/i.test(body),
+    'the teardown step must forbid tearing down a pre-existing branch it did not pick this run',
+  )
+})
+
+test('t7 (phase 14): static guard — the per-branch bail is explicit: CONTINUE to remaining candidates, never abort the wave on the first bad branch', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const rawBody = extractIntegratorPromptWindow(wfSrc)
+  assert.ok(rawBody, 'integrateWave definition not found in execute-phase.mjs')
+  const body = joinTemplateLiteral(rawBody)
+
+  assert.ok(
+    /CONTINUE/.test(body) && /never abort the wave/i.test(body),
+    'the prompt must state explicitly that processing CONTINUES to the remaining candidates and the wave is never aborted on the first bad branch',
+  )
+  assert.ok(
+    /resolveHealList/.test(body),
+    'the continue rule must explain WHY (resolveHealList already re-runs every unconfirmed wave task) — high-density prompt voice',
+  )
+  assert.ok(
+    /ADR-014\/ADR-015|ADR-014\/015/.test(body),
+    'the prompt must forbid the textual-rescue self-retry/stronger-model move ADR-014/ADR-015 already forbid',
+  )
+})
+
+test('t7 (phase 14, C4 prompt half): the prompt still directs the declared-file comparison with both distinct overflow outcomes (unchanged, ADR-016)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const body = extractIntegratorPromptWindow(wfSrc)
+  assert.ok(body, 'integrateWave definition not found in execute-phase.mjs')
+
+  assert.ok(/git diff --name-only/.test(body), 'the prompt must still instruct git diff --name-only for the overflow comparison')
+  assert.ok(/COLLISION/.test(body) && /conflicts\[\]/.test(body), 'a peer-claimed overflow must still route to conflicts[]/heal')
+  assert.ok(/advisories\[\]/.test(body) && /⚠/.test(body), 'an unclaimed overflow must still integrate with a ⚠ advisory')
 })
