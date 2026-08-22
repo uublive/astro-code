@@ -174,3 +174,8 @@ _2026-08-21_
 
 **Why:** Eliminates the per-task cold-start + canon/CONTEXT/PLAN re-read that made small phases far slower than plain Claude Code; preserves ADR-017 stamps/resumability and falls back to per-task for any task the batch fails to commit.
 
+## ADR-027 — The wave integrator is the single documented exception to the opus→sonnet-only rule: models.integrator hard-defaults to haiku (a floor, not an inherit), and integrateWave bails per-BRANCH to the existing heal ladder at executor tier. Every profile (max sonnet, balanced/fast haiku) carries the role so a profile switch cannot leave it unset. Heal re-runs, teardown and the healed-wave test gate stay at models.executor.
+_2026-08-22_
+
+**Why:** The integrator is mechanical git, not judgment: with branch→task mapping reduced to an ADR-017 stamp grep, a schema-pinned return, destructive teardown restricted to this-run clean picks and cross-checked script-side via a tornDown subset assertion, and ADR-014/015 routing anything non-clean to drop-and-rerun, the cheap tier has no quality-critical decision left to get wrong. Pinning it to sonnet would have been a literal no-op — models.executor is already sonnet under balanced and fast — so the milestone's win required the carve-out. Bail is per-branch because resolveHealList re-runs every task not confirmed integrated, so stopping the wave early costs more in executor-tier heals than the cheap tier saves.
+
