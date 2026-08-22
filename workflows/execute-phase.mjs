@@ -705,6 +705,121 @@ const integrateWave = (w, wave) =>
     { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: INTEGRATE_SCHEMA },
   )
 
+// ── Phase-13 (ADR-026): warm batched sequential executor primitives ────────────
+//
+// BATCH_SCHEMA pins the batch call's return to the ONE field the recovery path is
+// load-bearing on: `committed` (the ids the batch executor actually landed a
+// stamped commit for). additionalProperties:false at every level is the canon
+// invariant (CONVENTIONS.md). `summary` is narration-only and left OPTIONAL —
+// mirrors TEARDOWN_SCHEMA/TESTGATE_SCHEMA, which likewise avoid a hollow required
+// field with no enforceable content; forcing `summary` would only make the agent
+// invent prose on an all-landed batch. `committed` IS required (even though it
+// may legitimately be `[]`) so a batch that returns nothing still yields a valid,
+// parseable array the caller can Set-diff — never an omitted field the caller
+// would have to null-guard twice.
+const BATCH_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    committed: { type: 'array', items: { type: 'string' } },
+    summary: { type: 'string' },
+  },
+  required: ['committed'],
+}
+
+/**
+ * Compute the subset of an ordered batch task list that a batch executor call
+ * did NOT report as committed — the set-diff recovery input for the per-task
+ * fallback (ADR-026 partial-failure = per-task fallback).
+ *
+ * WHY SET-BASED, NOT POSITIONAL (unlike missingFromWave's index-aligned
+ * `results[i]` above): missingFromWave's `results` is the POSITIONAL parallel()
+ * return — one slot per wave task in dispatch order, so index alignment is exact
+ * and cheap. A batch call instead returns ONE object for N tasks; the agent may
+ * report `committed` in any order, with the mechanically-derived stamp-grep ids
+ * in whatever sequence it ran the greps. Treating `committed` as position-aligned
+ * here would silently misattribute or drop correctly-landed tasks — the wrong
+ * data structure carried over from the wrong code path. Set membership is
+ * order-independent and dedup-safe by construction, so it is the only correct
+ * comparison for this shape.
+ *
+ * NULL-SAFETY (caller contract): the caller wraps the batch's `committed` as
+ * `(out && out.committed) || []` before calling this, so a failed/null batch
+ * return (schema validation failure, isolation hole) yields an EMPTY committed
+ * set here — every task in `orderedTasks` then counts as missing and the
+ * per-task fallback re-runs the whole batch rather than silently losing work
+ * (mirrors missingFromWave's HOLE-not-exception contract above).
+ *
+ * @param {Array<{id:string}>} orderedTasks  the tasks handed to the batch call, in order
+ * @param {Array<string>} committed          the ids the batch executor reported landed
+ * @returns {Array<object>} the subset of orderedTasks whose id is absent from committed
+ */
+function missingFromBatch(orderedTasks, committed) {
+  const c = new Set(committed)
+  return orderedTasks.filter((t) => !c.has(t.id))
+}
+
+// batchPrompt is the FOURTH executor prompt (sibling to execPrompt/healPrompt/
+// remediatePrompt) — and the only one that drives ONE astro-executor call over
+// MULTIPLE tasks instead of one call per task. It differs from execPrompt in
+// exactly three ways: (1) it opens with an emphatic MULTI-TASK-BATCH override of
+// the astro-executor persona's "exactly ONE task" framing (agents/astro-executor.md)
+// — without this override a warm executor would stop after task 1, believing it
+// had fulfilled its mandate; (2) it inlines the FULL ordered task list as a
+// trimmed JSON scalar (mirroring integrateWave's wave.map(...) inlining above) so
+// the executor sees every task and its dependency order in ONE prompt; (3) it
+// tells the executor to derive `committed` MECHANICALLY — the same stamp-grep
+// idiom the Discover prompt uses (line ~111) — rather than trusting its own
+// belief about what landed, so a batch that silently died mid-run (e.g. on task 3
+// of 4) still reports an honest partial `committed` the recovery path
+// (missingFromBatch) can act on. Everything else — test-first, the ADR-018
+// dynamic-import guidance, touch-only-declared-files, the per-task
+// `(phase <NN> <taskId>)` stamp, DO NOT squash — is execPrompt's per-task contract
+// reused VERBATIM, because the ADR-017 resumability guarantee must hold
+// identically whether a task ran solo or inside a batch.
+const batchPrompt = (orderedTasks) =>
+  `MULTI-TASK BATCH — implement ALL tasks below in dependency order, ONE commit per task; ` +
+  `do not stop after the first. Your default persona says you implement "exactly ONE task" — ` +
+  `that does NOT apply to this run: you must work through the ENTIRE ordered list below.\n\n` +
+  `Phase ${phaseSlug} in project ${root}. Ordered task list (dependency order — implement in ` +
+  `THIS order):\n` +
+  `${JSON.stringify(orderedTasks.map((t) => ({ id: t.id, title: t.title, file: t.file, depends_on: t.depends_on })))}\n\n` +
+  `For EACH task above, in the order listed:\n` +
+  `- Plan/task file: ${root}/.astrocode/phases/${phaseSlug}/PLAN.md (or the task's own \`file\` if set).\n` +
+  `- Make the change test-first where it adds behavior, run the tests, and make ONE atomic ` +
+  `commit with a clear message scoped to ONLY that task. Match the project canon exactly ` +
+  `(stack, naming, patterns). touch ONLY that task's declared file(s); if other changes are ` +
+  `genuinely required, say so in your summary.\n` +
+  `- If a task is a RED-test task whose import would crash at module load because the export ` +
+  `does not exist yet, use the dynamic-import pattern (\`await import(...)\` inside async test ` +
+  `bodies) — do NOT implement the missing export; that is a later task's job (ADR-018).\n` +
+  `- End that task's commit subject with the stamp \`(phase ${phaseNum} <taskId>)\` (replace ` +
+  `<taskId> with the task's own id) — this enables idempotent re-execution (ADR-017).\n` +
+  `- DO NOT squash tasks into one commit — each task gets its OWN atomic commit, in order, so ` +
+  `a re-run can detect exactly which tasks landed.\n\n` +
+  `After implementing every task, derive \`committed\` MECHANICALLY — do NOT rely on your own ` +
+  `belief about what landed. For EACH task id, run:\n` +
+  `  git log --oneline --fixed-strings --grep "(phase ${phaseNum} <taskId>)"\n` +
+  `If it returns at least one line, that task id belongs in committed[]; otherwise omit it. ` +
+  `Return committed=[the task ids whose stamp you found] and a short summary.` +
+  OBEY
+
+// runBatchOnBranch — a single agent() call carrying the WHOLE ordered task list
+// (matching the shape of every other run* wrapper above). Deliberately NO
+// isolation:'worktree' — the batch is a single serial writer directly on the
+// current branch (ADR-005/008), the same on-branch contract as
+// runOnBranch/runHealOnBranch; batching only ever fires in the sequential
+// strategy, where isolation buys nothing and only adds a worktree-creation
+// failure mode for no benefit.
+const runBatchOnBranch = (orderedTasks) =>
+  agent(batchPrompt(orderedTasks), {
+    label: 'exec:batch',
+    phase: 'Execute',
+    agentType: 'astro-executor',
+    model: models.executor,
+    schema: BATCH_SCHEMA,
+  })
+
 phase('Execute')
 const results = []
 // healedTaskIds accumulates the ids of every task that was successfully healed

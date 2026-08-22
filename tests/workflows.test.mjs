@@ -2281,3 +2281,189 @@ test('t5 (phase 10): execute-phase.mjs does not shadow a Workflow hook and prese
     assert.ok(!locals.includes(hook), `execute-phase.mjs local "${hook}" shadows the ${hook}() hook — rename it`)
   }
 })
+
+// ── t3 (phase 13, ADR-026): batch primitives — BATCH_SCHEMA, missingFromBatch, batchPrompt,
+// runBatchOnBranch — defined but NOT yet wired into the wave loop (that lands in t4). Tests
+// here extract-and-eval the constant/function literals directly out of the source text (the
+// Workflow script has no importable symbol) and grep the prompt text for its required
+// contract phrases, per the extract-and-eval pattern used throughout this file.
+
+test('t3 (phase 13): BATCH_SCHEMA is strict (additionalProperties:false) with committed:array<string> required, summary optional', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const schemaMatch = wfSrc.match(/const BATCH_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'BATCH_SCHEMA constant not found in execute-phase.mjs')
+
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  assert.strictEqual(schema.additionalProperties, false, 'BATCH_SCHEMA top-level must have additionalProperties:false')
+  assert.ok(schema.properties?.committed, 'BATCH_SCHEMA must have a committed property')
+  assert.strictEqual(schema.properties.committed.type, 'array', 'committed must be type:array')
+  assert.strictEqual(schema.properties.committed.items?.type, 'string', 'committed.items must be type:string')
+  assert.ok(Array.isArray(schema.required), 'BATCH_SCHEMA must have a required array')
+  assert.ok(schema.required.includes('committed'), 'BATCH_SCHEMA.required must include "committed"')
+  assert.ok(schema.properties?.summary, 'BATCH_SCHEMA should still declare a summary property')
+  assert.strictEqual(schema.properties.summary.type, 'string', 'summary must be type:string')
+  assert.ok(
+    !schema.required.includes('summary'),
+    'summary must stay OPTIONAL (narration-only — mirrors TEARDOWN_SCHEMA/TESTGATE_SCHEMA avoiding hollow required fields)',
+  )
+})
+
+test('t3 (phase 13): missingFromBatch is a Set-based diff — order-independent, dedup-safe, and null-safe on an empty committed set', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const fnMatch = wfSrc.match(/function missingFromBatch\([\s\S]*?\n\}/)
+  assert.ok(fnMatch, 'missingFromBatch function not found in execute-phase.mjs')
+
+  const missingFromBatch = runInNewContext(`(${fnMatch[0]})`)
+
+  const ordered = [{ id: 't1' }, { id: 't2' }, { id: 't3' }]
+
+  // Basic set-diff: t2 missing.
+  assert.deepStrictEqual(
+    missingFromBatch(ordered, ['t1', 't3']).map((t) => t.id),
+    ['t2'],
+    'missingFromBatch must return exactly the tasks whose id is absent from committed',
+  )
+
+  // Order-independence: committed listed out of order must not affect the result — proves
+  // the diff is Set-based, not positional (unlike missingFromWave's index-aligned results[i]).
+  assert.deepStrictEqual(
+    missingFromBatch(ordered, ['t3', 't1']).map((t) => t.id),
+    ['t2'],
+    'missingFromBatch must be order-independent (Set membership, not positional)',
+  )
+
+  // Dedup-safety: duplicate ids in committed must not break the diff.
+  assert.deepStrictEqual(
+    missingFromBatch(ordered, ['t1', 't1', 't3']).map((t) => t.id),
+    ['t2'],
+    'missingFromBatch must tolerate duplicate ids in committed',
+  )
+
+  // Null-safety: the caller wraps a failed/null batch return as [] before calling this —
+  // an empty committed set must therefore mark EVERY task missing (no silent work loss).
+  assert.deepStrictEqual(
+    missingFromBatch(ordered, []).map((t) => t.id),
+    ['t1', 't2', 't3'],
+    'an empty committed set (the caller-side null-guard result) must mark every task missing',
+  )
+
+  // Everything committed → nothing missing.
+  assert.deepStrictEqual(missingFromBatch(ordered, ['t1', 't2', 't3']), [], 'a fully-committed batch must yield an empty missing list')
+})
+
+test('t3 (phase 13): batchPrompt opens with a MULTI-TASK-BATCH override of the astro-executor "exactly ONE task" persona', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const startIdx = wfSrc.indexOf('const batchPrompt')
+  assert.ok(startIdx !== -1, 'batchPrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 3200)
+
+  assert.ok(window.includes('MULTI-TASK BATCH'), 'batchPrompt must open with an emphatic MULTI-TASK BATCH override')
+  assert.ok(
+    window.includes('implement ALL tasks below in dependency order'),
+    'batchPrompt must instruct the executor to implement ALL tasks in dependency order',
+  )
+  assert.ok(window.includes('ONE commit per task'), 'batchPrompt must state one commit per task')
+  assert.ok(window.includes('do not stop after the first'), 'batchPrompt must explicitly tell the executor not to stop after the first task')
+  assert.ok(window.includes('exactly ONE task'), 'batchPrompt must name and override the persona\'s "exactly ONE task" framing')
+})
+
+test('t3 (phase 13): batchPrompt inlines the ordered task list as a trimmed JSON scalar (id, title, file, depends_on)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const startIdx = wfSrc.indexOf('const batchPrompt')
+  assert.ok(startIdx !== -1, 'batchPrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 3200)
+
+  assert.ok(
+    window.includes(
+      'JSON.stringify(orderedTasks.map((t) => ({ id: t.id, title: t.title, file: t.file, depends_on: t.depends_on })))',
+    ),
+    'batchPrompt must inline orderedTasks as a trimmed JSON scalar carrying id/title/file/depends_on (mirrors integrateWave)',
+  )
+})
+
+test('t3 (phase 13): batchPrompt requires a per-task (phase NN <taskId>) stamp and forbids squashing commits, reusing execPrompt\'s contract', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const startIdx = wfSrc.indexOf('const batchPrompt')
+  assert.ok(startIdx !== -1, 'batchPrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 3200)
+
+  assert.ok(window.includes('(phase ${phaseNum} <taskId>)'), 'batchPrompt must require the per-task stamp `(phase ${phaseNum} <taskId>)`')
+  assert.ok(window.includes('DO NOT squash'), 'batchPrompt must explicitly forbid squashing multiple tasks into one commit')
+  assert.ok(window.includes('touch ONLY'), 'batchPrompt must carry the touch-only-declared-files instruction (execPrompt contract reused)')
+  assert.ok(window.includes('test-first'), 'batchPrompt must carry the test-first instruction (execPrompt contract reused)')
+  assert.ok(window.includes('dynamic-import pattern'), 'batchPrompt must carry the ADR-018 dynamic-import escape hatch guidance')
+  assert.ok(window.includes('ADR-018'), 'batchPrompt must cite ADR-018')
+})
+
+test('t3 (phase 13): batchPrompt instructs mechanical committed derivation via the same stamp-grep idiom as the Discover prompt', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const startIdx = wfSrc.indexOf('const batchPrompt')
+  assert.ok(startIdx !== -1, 'batchPrompt not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 3200)
+
+  assert.ok(window.includes('MECHANICALLY'), 'batchPrompt must instruct MECHANICAL derivation of committed (not self-belief)')
+  assert.ok(
+    window.includes('git log --oneline --fixed-strings --grep "(phase ${phaseNum} <taskId>)"'),
+    'batchPrompt must spell the exact stamp-grep command (same idiom as the Discover prompt)',
+  )
+  assert.ok(window.includes('committed=['), 'batchPrompt must instruct the agent to return committed=[...]')
+})
+
+test('t3 (phase 13): batchPrompt appends OBEY like every other executor prompt', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const startIdx = wfSrc.indexOf('const batchPrompt')
+  const endIdx = wfSrc.indexOf('// runBatchOnBranch')
+  assert.ok(startIdx !== -1, 'batchPrompt not found in execute-phase.mjs')
+  assert.ok(endIdx !== -1 && endIdx > startIdx, 'runBatchOnBranch comment not found after batchPrompt')
+
+  const body = wfSrc.slice(startIdx, endIdx).trimEnd()
+  assert.ok(body.endsWith('OBEY'), 'batchPrompt must append the OBEY constant at the end (same contract as execPrompt/healPrompt/remediatePrompt)')
+})
+
+test('t3 (phase 13): runBatchOnBranch dispatches a single agent() call labeled exec:batch with BATCH_SCHEMA, no worktree isolation', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const startIdx = wfSrc.indexOf('const runBatchOnBranch')
+  assert.ok(startIdx !== -1, 'runBatchOnBranch not found in execute-phase.mjs')
+  const window = wfSrc.slice(startIdx, startIdx + 500)
+
+  assert.ok(window.includes('agent(batchPrompt(orderedTasks)'), 'runBatchOnBranch must call agent(batchPrompt(orderedTasks), ...)')
+  assert.ok(window.includes("label: 'exec:batch'"), 'runBatchOnBranch must label its call exec:batch')
+  assert.ok(window.includes("phase: 'Execute'"), 'runBatchOnBranch must run in the Execute phase')
+  assert.ok(window.includes("agentType: 'astro-executor'"), 'runBatchOnBranch must use agentType astro-executor (no new agent type)')
+  assert.ok(window.includes('schema: BATCH_SCHEMA'), 'runBatchOnBranch must pass BATCH_SCHEMA')
+  assert.ok(
+    !window.includes("isolation: 'worktree'"),
+    'runBatchOnBranch must NOT request worktree isolation (single serial writer on-branch, ADR-005/008)',
+  )
+})
+
+test('t3 (phase 13): batch primitives are defined OUTSIDE the MIRROR region and are not yet wired into the wave loop (wiring lands in t4)', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+
+  const mirrorStart = wfSrc.indexOf('>>> MIRROR')
+  const mirrorEnd = wfSrc.indexOf('<<< MIRROR <<<')
+  assert.ok(mirrorStart !== -1 && mirrorEnd !== -1, 'MIRROR region markers not found')
+
+  for (const declPrefix of ['const BATCH_SCHEMA', 'function missingFromBatch', 'const batchPrompt', 'const runBatchOnBranch']) {
+    const idx = wfSrc.indexOf(declPrefix)
+    assert.ok(idx !== -1, `${declPrefix} not found`)
+    assert.ok(idx < mirrorStart || idx > mirrorEnd, `${declPrefix} must be defined OUTSIDE the MIRROR region`)
+  }
+
+  // Not yet wired: runBatchOnBranch is defined but never invoked at a call site, and
+  // missingFromBatch appears exactly once (its own declaration) — the wave loop does not
+  // yet call either (dead-but-valid per CONTEXT.md scope: "defined, not yet wired").
+  assert.ok(
+    !/runBatchOnBranch\(/.test(wfSrc),
+    'runBatchOnBranch must not be CALLED yet (wiring the sequential-batch call site is t4 — t3 only defines the primitives)',
+  )
+  const missingFromBatchOccurrences = (wfSrc.match(/missingFromBatch\(/g) || []).length
+  assert.strictEqual(
+    missingFromBatchOccurrences,
+    1,
+    'missingFromBatch must only appear in its own declaration — not yet called (wiring is t4)',
+  )
+})
