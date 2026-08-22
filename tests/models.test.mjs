@@ -1,31 +1,50 @@
 // Unit tests for the model-tier profiles in lib/models.mjs.
 //
-// These lock in the speed-switch contract: the opus→sonnet-only ladder (no haiku
-// anywhere — a hard project preference), and that the `fast` profile keeps the
-// verify gate on opus so "go faster" can never silently cost correctness.
+// These lock in the speed-switch contract: the opus→sonnet-only ladder for every
+// JUDGEMENT role (no haiku among them — a hard project preference), the sole
+// documented exception being `integrator` (ADR-027 — mechanical git bookkeeping,
+// not judgement), and that the `fast` profile keeps the verify gate on opus so
+// "go faster" can never silently cost correctness.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { profileModels, MODEL_PROFILES, PROFILE_NAMES } from '../lib/models.mjs';
 
+// Judgement roles only — `integrator` is deliberately excluded (ADR-027) or
+// "max is every role on opus" below would wrongly demand integrator === 'opus'.
 const ROLES = ['planner', 'researcher', 'executor', 'verifier', 'discover'];
 
-test('every profile defines all five roles', () => {
+test('every profile defines all five judgement roles plus integrator', () => {
   for (const name of PROFILE_NAMES) {
     const p = profileModels(name);
     for (const role of ROLES) {
       assert.ok(p[role], `${name}.${role} must be set`);
     }
+    assert.ok(p.integrator, `${name}.integrator must be set`);
   }
 });
 
-test('no profile uses haiku anywhere (sonnet is the floor)', () => {
+test('every profile defines the IDENTICAL key set (a profile switch can never leave a role unset)', () => {
+  const [first, ...rest] = PROFILE_NAMES.map((name) => Object.keys(profileModels(name)).sort());
+  for (const keys of rest) {
+    assert.deepEqual(keys, first, 'profiles must all carry the same roles');
+  }
+});
+
+test('no profile uses haiku for a judgement role (sonnet is the floor)', () => {
   for (const name of PROFILE_NAMES) {
-    const tiers = Object.values(profileModels(name));
-    assert.ok(!tiers.includes('haiku'), `${name} must not use haiku`);
+    const p = profileModels(name);
+    const tiers = ROLES.map((role) => p[role]);
+    assert.ok(!tiers.includes('haiku'), `${name} must not use haiku for a judgement role`);
     for (const t of tiers) {
-      assert.ok(t === 'opus' || t === 'sonnet', `${name} tier "${t}" must be opus or sonnet`);
+      assert.ok(t === 'opus' || t === 'sonnet', `${name} judgement tier "${t}" must be opus or sonnet`);
     }
   }
+});
+
+test('integrator is the sole haiku-tier role: max sonnet, balanced/fast haiku (ADR-027)', () => {
+  assert.equal(profileModels('max').integrator, 'sonnet');
+  assert.equal(profileModels('balanced').integrator, 'haiku');
+  assert.equal(profileModels('fast').integrator, 'haiku');
 });
 
 test('max is every role on opus', () => {
