@@ -2,6 +2,7 @@
   "version": 1,
   "max_concurrent_agents": 6,
   "use_worktrees": true,
+  "lean_execution": true,
   "registry_branch": "astro-registry",
   "registry_remote": "origin",
   "models": {

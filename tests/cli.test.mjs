@@ -11,7 +11,7 @@ import { paths } from '../lib/paths.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
 import { addPhase, loadRoadmap, renderRoadmapMd, renderRoadmap, slugify, findPhase, setPhaseStatus, isPhasePlanned } from '../lib/roadmap.mjs';
 import { claim } from '../lib/registry.mjs';
-import { loadConfig, updateConfig } from '../lib/config.mjs';
+import { loadConfig, updateConfig, leanExecutionEnabled } from '../lib/config.mjs';
 import { loadCanon, canonText, addDecision } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
 
@@ -140,6 +140,21 @@ test('config ships model tiers and is updatable', async () => {
   const next = await updateConfig(root, (c) => ({ ...c, models: { ...c.models, executor: 'opus' } }));
   assert.equal(next.models.executor, 'opus');
   assert.equal(loadConfig(root).models.executor, 'opus');
+});
+
+test('config template ships lean_execution: true', () => {
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  assert.equal(loadConfig(root).lean_execution, true);
+});
+
+test('leanExecutionEnabled defaults true and honors an explicit false (ADR-026)', async () => {
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  // unset key (or missing entirely, pre-phase-13 projects) stays on the fast batched path
+  assert.equal(leanExecutionEnabled(root), true);
+  await updateConfig(root, (c) => ({ ...c, lean_execution: false }));
+  assert.equal(leanExecutionEnabled(root), false);
 });
 
 test('config template scaffolds gitflow block disabled by default', () => {
