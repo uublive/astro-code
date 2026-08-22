@@ -847,7 +847,49 @@ let worktreesUnavailable = false
 if (executableTasks.length === 0 && tasks.length) {
   log(`⊡ all ${tasks.length} task(s) already stamped on branch — skipping Execute, going straight to Verify`)
 }
-for (let w = 0; w < waves.length && !integrationFailed; w++) {
+
+// Phase-13 (ADR-026): the lean/batched opt-out, read straight off `input` (no destructure,
+// mirroring `useWorktrees` above) — `execMode:'per-task'` is the explicit-override-wins idiom
+// (like `input.strategy`); the `!== false` default keeps callers that never pass `leanExecution`
+// (older commands, or a project predating the config key) on the fast batched path.
+const leanExecution = input.execMode === 'per-task' ? false : input.leanExecution !== false
+// Batching only pays off when there is no worktree isolation to lose (sequential strategy)
+// AND at least 2 executable tasks (a lone task gets zero benefit — runOnBranch is already
+// one call) AND the opt-out did not fire.  waves.flat() is already a valid, dependency-
+// respecting order (buildWaves' Kahn layering already produced it) — no new ordering logic
+// is needed, just flatten the waves the existing builder already built.
+const leanBatch = strategy === 'sequential' && executableTasks.length >= 2 && leanExecution
+if (leanBatch) {
+  log(`• lean batch: ONE warm executor over ${executableTasks.length} task(s) in dependency order (ADR-026)`)
+  const ordered = waves.flat()
+  const out = await runBatchOnBranch(ordered)
+  const committed = (out && out.committed) || []
+  // One results entry PER COMMITTED TASK — not one entry for the whole batch call — so
+  // `results.length` (the "tasks executed" count in the return literal below) stays
+  // consistent with every other path, where each entry already corresponds to one task.
+  for (const id of committed) results.push({ id, batch: true })
+  // Partial-failure = per-task fallback (ADR-026 decision 2): re-run EXACTLY the ids the
+  // batch did not report as committed via the existing runOnBranch(t) — conceptually
+  // mirrors missingFromWave's recovery above, but is NOT literal reuse: a batch call
+  // returns one object for N tasks, not a positional per-task result.
+  const missing = missingFromBatch(ordered, committed)
+  if (missing.length) {
+    log(
+      `⚠ batch executor committed ${committed.length}/${ordered.length} task(s) — ` +
+        `re-running the missing ${missing.length} on-branch: ${missing.map((t) => t.id).join(', ')}`,
+    )
+    for (const t of missing) {
+      const r2 = await runOnBranch(t)
+      if (r2) results.push(r2)
+    }
+  }
+}
+// leanBatch already handled every executable task above via ONE warm call (+ per-task
+// recovery for anything it missed) — skip the wave loop entirely rather than re-running
+// runOnBranch(t) a second time for tasks the batch already stamped.  The loop body itself
+// stays byte-for-byte untouched (surgical): the worktree-hostile downgrade path and the
+// parallel+integrator path are unaffected, they simply never run when leanBatch is true.
+for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
   const wave = waves[w]
   log(`wave ${w + 1}/${waves.length}: ${wave.map((t) => t.id).join(', ')}`)
   // A, or a single-task wave (nothing to parallelize), or worktrees proven

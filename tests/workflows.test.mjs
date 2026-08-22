@@ -2440,7 +2440,7 @@ test('t3 (phase 13): runBatchOnBranch dispatches a single agent() call labeled e
   )
 })
 
-test('t3 (phase 13): batch primitives are defined OUTSIDE the MIRROR region and are not yet wired into the wave loop (wiring lands in t4)', () => {
+test('t4 (phase 13): batch primitives are defined OUTSIDE the MIRROR region and are now wired into the (leanBatch-gated) wave loop', () => {
   const wfSrc = readFileSync(WF_FILE, 'utf8')
 
   const mirrorStart = wfSrc.indexOf('>>> MIRROR')
@@ -2453,17 +2453,247 @@ test('t3 (phase 13): batch primitives are defined OUTSIDE the MIRROR region and 
     assert.ok(idx < mirrorStart || idx > mirrorEnd, `${declPrefix} must be defined OUTSIDE the MIRROR region`)
   }
 
-  // Not yet wired: runBatchOnBranch is defined but never invoked at a call site, and
-  // missingFromBatch appears exactly once (its own declaration) — the wave loop does not
-  // yet call either (dead-but-valid per CONTEXT.md scope: "defined, not yet wired").
-  assert.ok(
-    !/runBatchOnBranch\(/.test(wfSrc),
-    'runBatchOnBranch must not be CALLED yet (wiring the sequential-batch call site is t4 — t3 only defines the primitives)',
-  )
-  const missingFromBatchOccurrences = (wfSrc.match(/missingFromBatch\(/g) || []).length
+  // Now wired (t4, superseding t3's "not yet wired" guard): runBatchOnBranch is called
+  // exactly once, at the hoisted batch call site ahead of the wave loop; missingFromBatch
+  // is called exactly once (its own declaration plus the one recovery call site).
   assert.strictEqual(
-    missingFromBatchOccurrences,
+    (wfSrc.match(/runBatchOnBranch\(/g) || []).length,
     1,
-    'missingFromBatch must only appear in its own declaration — not yet called (wiring is t4)',
+    'runBatchOnBranch must now be called exactly once, at the hoisted batch call site (t4 wiring)',
+  )
+  assert.strictEqual(
+    (wfSrc.match(/missingFromBatch\(/g) || []).length,
+    2,
+    'missingFromBatch must appear twice — its own declaration plus ONE call site driving the recovery diff (t4 wiring)',
+  )
+  // The wave loop body itself stays byte-for-byte untouched (surgical, CONTEXT.md/PLAN.md) —
+  // only its guard grows a `&& !leanBatch` clause so batch mode skips it entirely rather than
+  // re-running already-batched tasks per-task afterward.
+  assert.ok(
+    /for \(let w = 0; w < waves\.length && !integrationFailed && !leanBatch; w\+\+\) \{/.test(wfSrc),
+    'the wave loop guard must gate on !leanBatch',
+  )
+})
+
+// ── t4 (phase 13, ADR-026): behavioral wiring — CRITERIA C1–C4 and C5(b/c) ────────────────
+//
+// Per CRITERIA.md's "Harness note": execute-phase.mjs is a Workflow-tool script — a
+// top-level-await body ending in `return {…}` that reaches the outside world ONLY through
+// the injected hooks `phase`/`agent`/`parallel`/`log`. So it is directly drivable: strip the
+// leading `export ` off the `meta` line, wrap the body in an AsyncFunction(phase, agent,
+// parallel, log, args), inject recording stubs, run it, and inspect the recorded agent()
+// calls (prompt text + options) plus the returned object. No dynamic import of the script
+// (it has no importable symbol), no subprocess, no real git — C5c by construction.
+
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+
+/**
+ * Compile execute-phase.mjs's full body into a callable AsyncFunction — the shared basis
+ * for every C1–C5b harness test below.
+ */
+function loadWorkflowFn() {
+  const src = readFileSync(WF_FILE, 'utf8').replace(/^export const meta/m, 'const meta')
+  return new AsyncFunction('phase', 'agent', 'parallel', 'log', 'args', src)
+}
+
+/**
+ * Pull every `"id":"…"` out of a batchPrompt/integrateWave-style inlined JSON scalar, IN
+ * THE ORDER they appear — this is how a test independently verifies which tasks (and in
+ * what order) a given agent() call actually carried, without depending on any internal
+ * script variable.
+ */
+function idsFromPrompt(prompt) {
+  return [...prompt.matchAll(/"id":"([^"]+)"/g)].map((m) => m[1])
+}
+
+/**
+ * Build a small dependency-chain Discover fixture: n tasks t1..tn, each depending on the
+ * one before it (t1 has no deps), marked done per `doneIds`. A chain (rather than n
+ * independent tasks) doubles as an ordering proof — buildWaves' Kahn layering can only
+ * admit ti once ti-1 is complete, so waves.flat() has exactly one valid order, and any
+ * omission/reorder/duplication in what a test observes is a real defect, not an artifact
+ * of multiple equally-valid orders.
+ */
+function chainTasks(n, doneIds = []) {
+  return Array.from({ length: n }, (_, i) => ({
+    id: `t${i + 1}`,
+    title: `Task ${i + 1}`,
+    file: `file${i + 1}.mjs`,
+    depends_on: i === 0 ? [] : [`t${i}`],
+    done: doneIds.includes(`t${i + 1}`),
+  }))
+}
+
+/**
+ * Drive execute-phase.mjs end-to-end via the CRITERIA "Harness note" recipe.
+ *
+ * `discoverTasks` seeds the Discover agent() response. Every other injected agent() call
+ * is classified by its **schema's property fingerprint** (each *_SCHEMA in the script has
+ * a distinct property set, so this needs no string-matching on prompt text):
+ *   - `tasks`        → Discover            → `{ tasks: discoverTasks }`
+ *   - `committed`    → the ONE batch call  → `{ committed: <batchCommitted or "everything
+ *                                             the call itself carried">, summary }`
+ *   - `integrated`   → the wave integrator → `{ integrated: true, branches: [] }` (clean,
+ *                                             no conflicts/staleBranches/advisories)
+ *   - `criteriaFound`→ the verifier        → `{ passed: true, criteriaFound: true, … }`
+ * A call with NO schema (runOnBranch / runHealOnBranch — the per-task executor prompts)
+ * gets the default `{ summary: 'done' }`. Every call is recorded (prompt + options) so
+ * tests can assert on count, label, and prompt content — the ONLY channel out of the
+ * sandboxed script body, matching the injected-hooks contract (C5c: no real git/subprocess).
+ *
+ * @param {object} args               the workflow's top-level `args`
+ * @param {object} opts
+ * @param {Array<object>} opts.discoverTasks   the Discover agent's task list
+ * @param {Array<string>|((ids:string[])=>string[])} [opts.batchCommitted]  what the batch
+ *   call reports as committed; defaults to "every id the batch call itself carried" (the
+ *   all-landed happy path). Pass an explicit array (C4) to simulate partial failure.
+ * @returns {Promise<{ calls: Array<object>, result: object }>}
+ */
+async function runWorkflow(args, { discoverTasks, batchCommitted } = {}) {
+  const calls = []
+  const agent = async (prompt, opts = {}) => {
+    calls.push({ prompt, opts })
+    const props = (opts.schema && opts.schema.properties) || {}
+    if ('tasks' in props) return { tasks: discoverTasks }
+    if ('committed' in props) {
+      const ids = idsFromPrompt(prompt)
+      const committed = typeof batchCommitted === 'function' ? batchCommitted(ids) : batchCommitted || ids
+      return { committed, summary: 'batch landed' }
+    }
+    if ('integrated' in props) return { integrated: true, branches: [] }
+    if ('criteriaFound' in props) return { passed: true, criteriaFound: true, summary: 'ok', criteria: [] }
+    // No schema: runOnBranch / runHealOnBranch's per-task executor prompt.
+    return { summary: 'done' }
+  }
+  const parallel = async (thunks) => {
+    calls.push({ parallel: true, count: thunks.length })
+    return Promise.all(thunks.map((fn) => fn()))
+  }
+  const phase = () => {}
+  const log = () => {}
+
+  const fn = loadWorkflowFn()
+  const result = await fn(phase, agent, parallel, log, args)
+  return { calls, result }
+}
+
+// "task-implementation executor call" per the Harness note: an Execute-phase,
+// astro-executor agent() call whose LABEL starts with 'exec:' — the batch call
+// (`exec:batch`) or a per-task call (`exec:<id>`). This naturally excludes Discover/Verify
+// (no label), the integrator (`integrate:w<n>`), and heal re-runs (`heal:<id>`).
+const execCalls = (calls) => calls.filter((c) => c.opts && c.opts.label && c.opts.label.startsWith('exec:'))
+
+test('t4 (phase 13, C1): default sequential + >=2 not-done tasks -> exactly ONE executor call carrying ALL ids in waves.flat() order', async () => {
+  const discoverTasks = chainTasks(3)
+  const { calls, result } = await runWorkflow(
+    { root: '/tmp/proj', phase: '13-warm-batched-sequential-executor', strategy: 'sequential' },
+    { discoverTasks },
+  )
+
+  const exec = execCalls(calls)
+  assert.strictEqual(exec.length, 1, 'expected exactly ONE task-implementation executor call')
+  assert.strictEqual(exec[0].opts.label, 'exec:batch', 'the one call must be the batch call')
+  assert.deepStrictEqual(
+    idsFromPrompt(exec[0].prompt),
+    ['t1', 't2', 't3'],
+    'the batch prompt must enumerate every executable task id, in dependency order, with none omitted/reordered/duplicated',
+  )
+  // C5c: the run completed to a verdict using ONLY the injected stubs.
+  assert.ok(result && result.verdict, 'the workflow must complete and return a verdict using only the injected stubs')
+})
+
+test('t4 (phase 13, C2): args.execMode:"per-task" restores N single-task executor calls (no batch call)', async () => {
+  const discoverTasks = chainTasks(3)
+  const { calls } = await runWorkflow(
+    { root: '/tmp/proj', phase: '13-warm-batched-sequential-executor', strategy: 'sequential', execMode: 'per-task' },
+    { discoverTasks },
+  )
+
+  const exec = execCalls(calls)
+  assert.strictEqual(exec.length, 3, 'execMode:"per-task" must yield N (=3) single-task executor calls')
+  assert.deepStrictEqual(
+    exec.map((c) => c.opts.label).sort(),
+    ['exec:t1', 'exec:t2', 'exec:t3'],
+    'each call must carry exactly one task id, never a single call carrying all tasks',
+  )
+})
+
+test('t4 (phase 13, C2): args.leanExecution:false restores N single-task executor calls (no batch call)', async () => {
+  const discoverTasks = chainTasks(3)
+  const { calls } = await runWorkflow(
+    { root: '/tmp/proj', phase: '13-warm-batched-sequential-executor', strategy: 'sequential', leanExecution: false },
+    { discoverTasks },
+  )
+
+  const exec = execCalls(calls)
+  assert.strictEqual(exec.length, 3, 'leanExecution:false must yield N (=3) single-task executor calls')
+  assert.deepStrictEqual(
+    exec.map((c) => c.opts.label).sort(),
+    ['exec:t1', 'exec:t2', 'exec:t3'],
+    'each call must carry exactly one task id, never a single call carrying all tasks',
+  )
+})
+
+test('t4 (phase 13, C3): a done task is excluded from the batch; the remaining not-done tasks keep the per-task stamp + no-squash contract', async () => {
+  // 4-task chain t1->t2->t3->t4, t1 already done (its stamp was found on the branch).
+  const discoverTasks = chainTasks(4, ['t1'])
+  const { calls } = await runWorkflow(
+    { root: '/tmp/proj', phase: '13-warm-batched-sequential-executor', strategy: 'sequential' },
+    { discoverTasks },
+  )
+
+  const exec = execCalls(calls)
+  assert.strictEqual(exec.length, 1, 'expected exactly ONE batch call')
+  assert.strictEqual(exec[0].opts.label, 'exec:batch')
+  assert.deepStrictEqual(
+    idsFromPrompt(exec[0].prompt),
+    ['t2', 't3', 't4'],
+    'the batch must carry exactly the three not-done ids, in dependency order, with the done id (t1) absent',
+  )
+  assert.ok(
+    exec[0].prompt.includes('(phase 13 <taskId>)'),
+    'the batch prompt must require the per-task stamp `(phase 13 <taskId>)` (phaseNum interpolated from the phase slug)',
+  )
+  assert.ok(exec[0].prompt.includes('DO NOT squash'), 'the batch prompt must forbid squashing tasks into one commit')
+})
+
+test('t4 (phase 13, C4): a batch that under-reports commits triggers a per-task re-run of exactly the missing task(s)', async () => {
+  const discoverTasks = [
+    { id: 't1', title: 'Task 1', file: 'a.mjs', depends_on: [], done: false },
+    { id: 't2', title: 'Task 2', file: 'b.mjs', depends_on: [], done: false },
+    { id: 't3', title: 'Task 3', file: 'c.mjs', depends_on: [], done: false },
+  ]
+  const { calls } = await runWorkflow(
+    { root: '/tmp/proj', phase: '13-warm-batched-sequential-executor', strategy: 'sequential' },
+    { discoverTasks, batchCommitted: ['t1', 't3'] },
+  )
+
+  const exec = execCalls(calls)
+  assert.strictEqual(exec.length, 2, 'expected the batch call PLUS exactly one per-task recovery call')
+  assert.strictEqual(exec[0].opts.label, 'exec:batch', 'the first exec call must be the batch call')
+  assert.strictEqual(exec[1].opts.label, 'exec:t2', 'the recovery call must carry exactly the missing task (t2)')
+  assert.ok(
+    !exec.some((c) => c.opts.label === 'exec:t1' || c.opts.label === 'exec:t3'),
+    't1 and t3 (already reported committed) must NOT be re-run',
+  )
+})
+
+test('t4 (phase 13, C5b): strategy:"parallel" with a wide wave uses parallel() and makes NO batch call', async () => {
+  const discoverTasks = [
+    { id: 't1', title: 'Task 1', file: 'a.mjs', depends_on: [], done: false },
+    { id: 't2', title: 'Task 2', file: 'b.mjs', depends_on: [], done: false },
+  ]
+  const { calls } = await runWorkflow(
+    { root: '/tmp/proj', phase: '13-warm-batched-sequential-executor', strategy: 'parallel' },
+    { discoverTasks },
+  )
+
+  assert.ok(
+    calls.some((c) => c.parallel === true),
+    'strategy:"parallel" with a width->=2 wave must invoke the parallel() stub',
+  )
+  assert.ok(
+    !calls.some((c) => c.opts && c.opts.label === 'exec:batch'),
+    'strategy:"parallel" must never route through the single batch executor call',
   )
 })
