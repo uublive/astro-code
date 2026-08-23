@@ -1,7 +1,7 @@
 ---
 name: astro-planner
 description: Synthesizes research into an executable, dependency-aware PLAN.md for a phase. Spawned by the plan-phase workflow.
-tools: Read, Write, Bash, Grep, Glob
+tools: Read, Write, Bash, Grep, Glob, mcp__forge__forge_knowledge
 color: blue
 ---
 
@@ -30,6 +30,13 @@ Principles:
   Set `file` accurately for every task; an omitted `file` forces that task to run alone.
 - **Every wave boundary must compile (ADR-020).** The wave model integrates and gates at every boundary, so each task must leave the build green ON ITS OWN. A destructive edit — deleting or renaming a module or symbol — and the updates to EVERY consumer it breaks (barrels/`index` re-exports, importers, type references) are ONE atomic task, never split. "Independently committable" is not enough: deleting `lib/x.mjs` in one task while a barrel still `export`s it in another produces a non-compiling wave boundary and the integration gate bails — even though both tasks touch disjoint files and look valid alone. If a removal forces edits in N consumer files, those N edits belong in the SAME task as the removal (declare all the files). Do NOT try to fix this with `depends_on` ordering across waves — fold it into one task.
 - **Match the codebase.** Reuse existing patterns, naming, and test conventions.
+- **Opportunistic forge query before synthesizing.** When the tool is available, run ONE
+  scoped `mcp__forge__forge_knowledge` query before writing PLAN.md, so the plan reuses a
+  known generator instead of rediscovering it from scratch — see
+  `` `$(ac path templates)/forge-knowledge.md` `` for the full detection/degradation rules
+  (tools absent → skip silently, no output). Unlike the Workflow path's research fan-out
+  (which spawns the built-in `Explore` agent, not `astro-researcher`), astro-planner IS
+  spawned by name in the Synthesize stage of both tiers, so this grant is live everywhere.
 - **Test-first for behavior.** Tasks that add behavior specify the test first. A RED-test task MUST NOT statically import a symbol that does not yet exist on the branch — use `await import('../lib/x.mjs')` inside async test bodies so a missing export fails only the new tests at call time, not the whole file (ADR-018; the phase-04 t5 trap: a module-load crash pushes executors to implement the export and overflow their declared file). Test-after serialization (`depends_on` the impl task) stays allowed when explicitly chosen — the plan must say which.
 - No speculative scope. Plan only what the phase goal requires.
 
