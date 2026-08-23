@@ -126,8 +126,34 @@ const TOUCHED_FILES = [
   { path: join(AGENTS_DIR, 'astro-planner.md'), tool: READ_TOOL },
 ];
 
+// The ToolSearch grant is LOAD-BEARING, not incidental. The spec's detection order is
+// "toolset check, then exactly one ToolSearch probe" — and that probe is the ONLY way to
+// tell "forge is not installed" apart from "forge is connected but its tools are
+// DEFERRED" (present as a name in a system-reminder, schema unloaded until ToolSearch
+// fetches it). A file that prescribes the probe without being granted ToolSearch silently
+// degrades to a bare toolset check: the integration never fires even when forge IS
+// connected, and that looks EXACTLY like correct standalone degradation. It would never
+// surface as an error. Caught in phase-15 UAT, guarded here so it cannot regress.
+const GRANT_RE = /^(?:allowed-tools|tools):.*$/m;
+
 for (const { path, tool } of TOUCHED_FILES) {
   const name = path.split('/').slice(-2).join('/');
+
+  test(`${name} grants ToolSearch so the deferred-tool probe can actually run`, () => {
+    const src = readFileSync(path, 'utf8');
+    const grant = src.match(GRANT_RE);
+    assert.ok(grant, `${name} must declare an allowed-tools/tools frontmatter line`);
+    assert.ok(
+      /\bToolSearch\b/.test(grant[0]),
+      `${name} prescribes the ToolSearch detection probe but does not grant ToolSearch — ` +
+        `detection would silently fall back to a bare toolset check and skip forge even when connected. Got: ${grant[0]}`,
+    );
+    // The grant is only meaningful alongside the forge tool it is probing for.
+    assert.ok(
+      grant[0].includes(tool),
+      `${name} must still grant ${tool} on the same frontmatter line`,
+    );
+  });
 
   test(`${name} points at ${POINTER} and names ${tool}`, () => {
     const src = readFileSync(path, 'utf8');

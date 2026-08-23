@@ -1,7 +1,7 @@
 ---
 description: Plan a phase — fan out parallel researchers, then synthesize an executable PLAN.md
 argument-hint: <phase number or slug>
-allowed-tools: Bash, Read, Write, Workflow, mcp__forge__forge_knowledge
+allowed-tools: Bash, Read, Write, Workflow, ToolSearch, mcp__forge__forge_knowledge
 ---
 
 Plan phase `$ARGUMENTS` by running the parallel planning workflow.

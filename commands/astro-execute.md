@@ -1,7 +1,7 @@
 ---
 description: Execute a phase wave-by-wave on the working branch — sequential, or parallel worktrees+integrator, then verify
 argument-hint: <phase number or slug>
-allowed-tools: Bash, Read, Write, Workflow, mcp__forge__forge_capture_knowledge
+allowed-tools: Bash, Read, Write, Workflow, ToolSearch, mcp__forge__forge_capture_knowledge
 ---
 
 Execute phase `$ARGUMENTS`.

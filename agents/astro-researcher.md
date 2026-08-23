@@ -1,7 +1,7 @@
 ---
 name: astro-researcher
 description: Read-only investigation of a phase from one angle (codebase patterns, external best practices, or risks). Spawned in parallel by the plan-phase workflow.
-tools: Read, Bash, Grep, Glob, WebSearch, WebFetch, mcp__forge__forge_knowledge
+tools: Read, Bash, Grep, Glob, WebSearch, WebFetch, ToolSearch, mcp__forge__forge_knowledge
 color: cyan
 ---
 

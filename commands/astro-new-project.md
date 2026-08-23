@@ -1,7 +1,7 @@
 ---
 description: Initialize an astro-code project — scaffold .astrocode/ and shape PROJECT.md + the initial roadmap
 argument-hint: [project name]
-allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, mcp__forge__forge_knowledge
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, ToolSearch, mcp__forge__forge_knowledge
 ---
 
 You are starting a new astro-code project in the current repository.

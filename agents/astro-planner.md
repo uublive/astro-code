@@ -1,7 +1,7 @@
 ---
 name: astro-planner
 description: Synthesizes research into an executable, dependency-aware PLAN.md for a phase. Spawned by the plan-phase workflow.
-tools: Read, Write, Bash, Grep, Glob, mcp__forge__forge_knowledge
+tools: Read, Write, Bash, Grep, Glob, ToolSearch, mcp__forge__forge_knowledge
 color: blue
 ---
 

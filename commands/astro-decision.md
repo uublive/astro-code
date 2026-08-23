@@ -1,7 +1,7 @@
 ---
 description: Record an architectural decision (ADR-lite) so it's respected by future agents, not relitigated
 argument-hint: <decision title>
-allowed-tools: Bash, AskUserQuestion, mcp__forge__forge_capture_knowledge
+allowed-tools: Bash, AskUserQuestion, ToolSearch, mcp__forge__forge_capture_knowledge
 ---
 
 Capture a decision into the project canon.

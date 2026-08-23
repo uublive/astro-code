@@ -1,7 +1,7 @@
 ---
 description: Talk through a phase before planning — adaptive questions that surface decisions and edge cases, captured to CONTEXT.md
 argument-hint: <phase number or slug>
-allowed-tools: Bash, Read, Grep, Glob, Write, AskUserQuestion, mcp__forge__forge_knowledge
+allowed-tools: Bash, Read, Grep, Glob, Write, AskUserQuestion, ToolSearch, mcp__forge__forge_knowledge
 ---
 
 Discuss phase `$ARGUMENTS` with the developer before any plan is written. The goal is

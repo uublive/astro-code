@@ -1,7 +1,7 @@
 ---
 description: Verify a phase actually achieves its goal (goal-backward, not just "tasks ran")
 argument-hint: <phase number or slug>
-allowed-tools: Bash, Read, Agent, mcp__forge__forge_capture_knowledge
+allowed-tools: Bash, Read, Agent, ToolSearch, mcp__forge__forge_capture_knowledge
 ---
 
 Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-accept`).
