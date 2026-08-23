@@ -515,14 +515,21 @@ const runHealOnBranch = (t, preservedBranch) =>
 //
 // output is NOT required — a passing suite has no useful failure output to return,
 // and requiring it would force the agent to emit an empty string every time.
+// `ranSuite` (ADR-028) separates "the suite ran and failed" from "this project has
+// no runnable suite at all".  Without it the agent faces a question with no correct
+// answer — `passed` is forced by the schema, so a project with no tests yields a
+// coin-flip verdict, and a `false` there aborts the whole phase over a suite that
+// never existed.  It is REQUIRED, not optional: an omitted flag would default-read
+// as "a suite ran", reintroducing exactly the ambiguity it exists to remove.
 const TESTGATE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
+    ranSuite: { type: 'boolean' },
     passed: { type: 'boolean' },
     output: { type: 'string' },
   },
-  required: ['passed'],
+  required: ['ranSuite', 'passed'],
 }
 
 // runTestSuite — run the full test suite in `root` via an executor agent.
@@ -539,7 +546,15 @@ const runTestSuite = () =>
     `Run the full test suite for the project at ${root}.\n` +
       `Use \`node --test\` (or the equivalent test command for this project) to run ` +
       `all tests under ${root}. Do NOT skip any tests.\n` +
-      `Return passed:true if every test passed, passed:false otherwise.\n` +
+      `FIRST decide whether a runnable suite EXISTS at all (a test runner/config, a tests ` +
+      `directory, a \`test\` script — anything that defines tests for this project).\n` +
+      `- No runnable suite exists → ranSuite:false, passed:true. Say so in output. This is ` +
+      `NOT a failure; some projects legitimately have no tests yet.\n` +
+      `- A suite exists → ranSuite:true, and passed:true only if every test passed.\n` +
+      `CRITICAL: a suite that EXISTS but fails to load, collect, or compile (an import error, ` +
+      `a missing module, a collection error) is ranSuite:true + passed:false — a REAL failure. ` +
+      `Do NOT report that as "no suite". The distinction is between "there are no tests here" ` +
+      `and "the tests are broken"; only the first is benign.\n` +
       `If passed:false, populate output with the failure summary (test names + error messages) ` +
       `so the caller can surface it in the integration-failure report.`,
     { label: 'testgate', phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: TESTGATE_SCHEMA },
@@ -1196,10 +1211,22 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
   //
   // A failing suite is treated as an integration failure and stops the phase
   // loudly — this is the guard that would have caught the phase-04 wave-2 bad
-  // merge before it poisoned later waves.
+  // merge before it poisoned later waves.  A project with NO suite is a third
+  // outcome the gate reports separately (ADR-028) — see below.
   if ((ladderFired || overflowFlagged) && !integrationFailed) {
     const gate = await runTestSuite()
-    if (!gate || !gate.passed) {
+    // ADR-028 — three outcomes, not two. `ranSuite:false` means the project has no
+    // suite to run: the gate can prove nothing, but it also has nothing to report,
+    // so the wave proceeds UNPROVEN behind a loud advisory rather than aborting a
+    // phase over tests that never existed. A suite that EXISTS and fails — including
+    // a load/collect/compile error — still stops the phase exactly as before.
+    //
+    // The no-suite path deliberately joins the SAME branch as a green gate, because
+    // that branch owns healed-branch teardown. Short-circuiting before it would
+    // strand `worktree-*` branches and then false-FAIL the verifier's
+    // `git rev-list HEAD..worktree-*` check — re-opening the phase-05 UAT gap.
+    const noSuite = !!gate && gate.ranSuite === false
+    if (!noSuite && (!gate || !gate.passed)) {
       integrationFailed = {
         wave: w + 1,
         taskId: null,
@@ -1216,7 +1243,15 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
         `✖ wave ${w + 1} test gate failed after heal — stopping before verify`,
       )
     } else {
-      log(`✓ wave ${w + 1} test gate passed after heal (${healedTaskIds.length} task(s) healed)`)
+      if (noSuite) {
+        log(
+          `⚠ wave ${w + 1} test gate SKIPPED — this project has no runnable test suite, so the ` +
+            `healed wave is UNPROVEN (${healedTaskIds.length} task(s) healed). The end-of-phase ` +
+            `verifier is the only remaining backstop for this wave.`,
+        )
+      } else {
+        log(`✓ wave ${w + 1} test gate passed after heal (${healedTaskIds.length} task(s) healed)`)
+      }
       // Only now — re-run commits landed AND the suite is green — is a healed
       // task's preserved branch truly superseded. Tearing down earlier would
       // destroy the only copy of the dropped attempt while its replacement was

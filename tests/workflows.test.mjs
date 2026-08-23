@@ -485,10 +485,12 @@ test('runTestSuite is defined and calls agent with agentType:astro-executor, pha
   )
 
   // Extract a window around the runTestSuite definition.
-  // Use 1500 chars to capture the full agent() call including options object.
-  const startIdx = wfSrc.indexOf('runTestSuite')
+  // Anchor on the DEFINITION (not the doc comment above it) and size the window to
+  // capture the full agent() call including the options object — ADR-028 lengthened
+  // the prompt between the two.
+  const startIdx = wfSrc.indexOf('const runTestSuite')
   assert.ok(startIdx !== -1, 'runTestSuite not found in execute-phase.mjs')
-  const window = wfSrc.slice(startIdx, startIdx + 1500)
+  const window = wfSrc.slice(startIdx, startIdx + 2600)
 
   // Must call agent().
   assert.ok(
@@ -518,10 +520,11 @@ test('runTestSuite is defined and calls agent with agentType:astro-executor, pha
 test('runTestSuite prompt instructs running the full test suite and returning passed + failure output', () => {
   const wfSrc = readFileSync(WF_FILE, 'utf8')
 
-  const startIdx = wfSrc.indexOf('runTestSuite')
+  // Anchor on the DEFINITION, not the first mention (the doc comment above it),
+  // and size the window to the full prompt — which ADR-028 lengthened.
+  const startIdx = wfSrc.indexOf('const runTestSuite')
   assert.ok(startIdx !== -1, 'runTestSuite not found in execute-phase.mjs')
-  // Generous window to capture the full prompt template literal.
-  const window = wfSrc.slice(startIdx, startIdx + 1000)
+  const window = wfSrc.slice(startIdx, startIdx + 2000)
 
   // Must tell the agent to run the test suite.
   assert.ok(
@@ -650,7 +653,9 @@ test('wave loop calls runTestSuite after a healed wave and sets integrationFaile
 
   // After the test gate, a failed suite (gate.passed === false) must set integrationFailed.
   // We check the region around the await runTestSuite() call for the failure branch.
-  const gateWindow = wfSrc.slice(awaitTestIdx, awaitTestIdx + 600)
+  // Window widened for ADR-028: the three-outcome branch carries a comment block
+  // between the call and the assignment. The assertions below are unchanged.
+  const gateWindow = wfSrc.slice(awaitTestIdx, awaitTestIdx + 1600)
   assert.ok(
     /passed/.test(gateWindow),
     'runTestSuite result must be checked for the passed field',
@@ -2580,7 +2585,7 @@ function chainTasks(n, doneIds = []) {
  *   behavior is unchanged).
  * @returns {Promise<{ calls: Array<object>, logs: Array<string>, result: object }>}
  */
-async function runWorkflow(args, { discoverTasks, batchCommitted, integ } = {}) {
+async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate } = {}) {
   const calls = []
   const logs = []
   const agent = async (prompt, opts = {}) => {
@@ -2594,9 +2599,11 @@ async function runWorkflow(args, { discoverTasks, batchCommitted, integ } = {}) 
     }
     if ('integrated' in props) return integ || { integrated: true, branches: [] }
     if ('criteriaFound' in props) return { passed: true, criteriaFound: true, summary: 'ok', criteria: [] }
-    // TESTGATE_SCHEMA carries ONLY `passed` (no criteriaFound) — must be checked
-    // after the verifier fingerprint above, or the verify call would never reach it.
-    if ('passed' in props) return { passed: true }
+    // TESTGATE_SCHEMA is now the ONLY schema carrying `ranSuite` (ADR-028), so that is
+    // an exact fingerprint rather than a by-elimination one. The looser `passed` check
+    // stays as a backstop and must remain AFTER the verifier's `criteriaFound`, whose
+    // VERIFY_SCHEMA also carries `passed`.
+    if ('ranSuite' in props || 'passed' in props) return gate || { ranSuite: true, passed: true }
     // No schema: runOnBranch / runHealOnBranch's per-task executor prompt.
     return { summary: 'done' }
   }
@@ -3002,4 +3009,125 @@ test('t7 (phase 14, C4 prompt half): the prompt still directs the declared-file 
   assert.ok(/git diff --name-only/.test(body), 'the prompt must still instruct git diff --name-only for the overflow comparison')
   assert.ok(/COLLISION/.test(body) && /conflicts\[\]/.test(body), 'a peer-claimed overflow must still route to conflicts[]/heal')
   assert.ok(/advisories\[\]/.test(body) && /⚠/.test(body), 'an unclaimed overflow must still integrate with a ⚠ advisory')
+})
+
+// ── ADR-028: the healed-wave test gate has THREE outcomes, not two ────────────
+//
+// The gate's prompt used to ask a question with no correct answer in a project that
+// has no tests: `passed` is schema-REQUIRED, so the agent had to guess, and a guess of
+// `false` aborted the whole phase over a suite that never existed. Worse, the guess was
+// non-deterministic — the same repo could pass one run and fail the next.
+//
+// `ranSuite` splits the benign case ("there are no tests here") from the real failure
+// ("the tests are broken", including a suite that fails to LOAD/COMPILE — the ADR-020
+// non-compiling wave boundary, which must still stop the phase).
+//
+// A wide wave (3 INDEPENDENT tasks — chainTasks would serialize them into width-1 waves
+// and never reach the integrator) plus a conflicted branch fires the heal ladder, which
+// is the only thing that makes the gate run at all.
+
+const wideTasks = (n) =>
+  Array.from({ length: n }, (_, i) => ({
+    id: `t${i + 1}`,
+    title: `Task ${i + 1}`,
+    file: `file${i + 1}.mjs`,
+    depends_on: [],
+    done: false,
+  }))
+
+const HEAL_ARGS = { root: '/tmp/proj', phase: '03-some-phase', strategy: 'parallel' }
+const HEAL_INTEG = {
+  integrated: false,
+  branches: ['worktree-t1', 'worktree-t3'],
+  conflicts: [{ branch: 'worktree-t2', taskId: 't2' }],
+  tornDown: ['worktree-t1', 'worktree-t3'],
+}
+
+test('ADR-028: TESTGATE_SCHEMA requires ranSuite:boolean alongside passed', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const schemaMatch = wfSrc.match(/const TESTGATE_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(schemaMatch, 'TESTGATE_SCHEMA constant not found in execute-phase.mjs')
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+
+  assert.strictEqual(
+    schema.properties?.ranSuite?.type, 'boolean',
+    'TESTGATE_SCHEMA.properties.ranSuite must be type:boolean',
+  )
+  // REQUIRED, not optional: an omitted flag would default-read as "a suite ran",
+  // reintroducing the ambiguity the field exists to remove.
+  assert.ok(
+    schema.required.includes('ranSuite'),
+    'TESTGATE_SCHEMA.required must include "ranSuite"',
+  )
+  assert.ok(
+    schema.required.includes('passed'),
+    'TESTGATE_SCHEMA.required must still include "passed"',
+  )
+})
+
+test('ADR-028: the gate prompt distinguishes "no suite exists" from "the suite is broken"', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const startIdx = wfSrc.indexOf('const runTestSuite')
+  assert.ok(startIdx !== -1, 'runTestSuite not found')
+  const window = wfSrc.slice(startIdx, startIdx + 2000)
+
+  assert.ok(/ranSuite:false/.test(window), 'the prompt must tell the agent when to return ranSuite:false')
+  // The load/compile carve-out is the whole point: a suite that EXISTS but cannot be
+  // collected is a REAL failure, not an absent suite.
+  assert.ok(
+    /load, collect, or compile/i.test(window) && /ranSuite:true \+ passed:false/.test(window),
+    'the prompt must classify a suite that fails to load/collect/compile as ranSuite:true + passed:false',
+  )
+})
+
+test('ADR-028: no runnable suite -> the wave proceeds UNPROVEN with an advisory, not an integration failure', async () => {
+  const { result, logs } = await runWorkflow(HEAL_ARGS, {
+    discoverTasks: wideTasks(3),
+    integ: HEAL_INTEG,
+    gate: { ranSuite: false, passed: true, output: 'no test runner or tests/ directory in this project' },
+  })
+
+  assert.strictEqual(
+    result.integrationFailed, null,
+    'a project with NO test suite must not be reported as an integration failure',
+  )
+  assert.ok(result.verdict, 'the phase must continue through to verification')
+  assert.ok(
+    logs.some((l) => l.includes('test gate SKIPPED') && l.includes('UNPROVEN')),
+    'the skip must be surfaced loudly — silently passing an unprovable gate is the phase-04 trap',
+  )
+})
+
+test('ADR-028: the no-suite path still tears down healed branches (phase-05 UAT gap)', async () => {
+  const { calls } = await runWorkflow(HEAL_ARGS, {
+    discoverTasks: wideTasks(3),
+    integ: HEAL_INTEG,
+    gate: { ranSuite: false, passed: true },
+  })
+
+  // Short-circuiting the no-suite case before the teardown step would strand the healed
+  // task's `worktree-*` branch, which the end-of-phase verifier reads as un-integrated
+  // work via `git rev-list HEAD..worktree-*` — turning a benign skip into a false FAIL.
+  assert.ok(
+    calls.some((c) => c.opts && c.opts.label === 'teardown:w1'),
+    'healed branches must still be torn down when the gate is skipped for a missing suite',
+  )
+})
+
+test('ADR-028: a suite that EXISTS and fails still stops the phase', async () => {
+  const { result, logs } = await runWorkflow(HEAL_ARGS, {
+    discoverTasks: wideTasks(3),
+    integ: HEAL_INTEG,
+    gate: { ranSuite: true, passed: false, output: 'ImportError: cannot import name apply_documents' },
+  })
+
+  assert.ok(result.integrationFailed, 'a real test failure must still be an integration failure')
+  assert.match(
+    result.integrationFailed.note, /ImportError: cannot import name apply_documents/,
+    'the failure output must be surfaced in the integration-failure note',
+  )
+  assert.ok(
+    logs.some((l) => l.includes('test gate failed after heal')),
+    'the hard failure must still log the stop-before-verify line',
+  )
 })
