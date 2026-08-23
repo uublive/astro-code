@@ -1,7 +1,7 @@
 ---
 description: Execute a phase wave-by-wave on the working branch — sequential, or parallel worktrees+integrator, then verify
 argument-hint: <phase number or slug>
-allowed-tools: Bash, Read, Write, Workflow
+allowed-tools: Bash, Read, Write, Workflow, mcp__forge__forge_capture_knowledge
 ---
 
 Execute phase `$ARGUMENTS`.
@@ -118,6 +118,22 @@ Execute phase `$ARGUMENTS`.
    - **`verdict.passed` false** → surface `verdict.summary` (and, when present,
      `stoppedReason: 'no-progress' | 'max-cycles'` from the verify→remediate loop) and
      stop; leave the phase unverified.
+   - **Opportunistic capture — after the verdict above is already reported, never
+     before, and never changes or gates it.** Capture only on a surprise that changed
+     the approach, gated on signals the workflow's returned object **already carries**
+     (no workflow change): `healed` non-empty (a heal exposed a structural trap),
+     `remediationCycles > 0` (a verify FAIL revealed a wrong assumption), or
+     `stoppedReason` `'no-progress'` / `'max-cycles'` (an approach abandoned mid-phase).
+     A run that simply **went to plan — none of these fired — captures nothing**; no
+     output, no line. When one did fire, lift the generator the same way
+     `/astro-decision` does: strip every project noun, filename, number and proper name;
+     if nothing project-agnostic survives, **capture nothing and say so in one line**
+     rather than force a generalization. Otherwise call
+     `mcp__forge__forge_capture_knowledge` and print ONE line summarizing what was
+     staged to the human-approval queue — no confirmation prompt, and a failed capture
+     never fails this command. See `` `$(ac path templates)/forge-knowledge.md` `` for
+     the full detection/degradation rules and capture contract (tools absent → skip
+     silently, no output).
 
 Execution + the in-workflow verifier produce a **verified** phase at best — never
 **complete**. Only human UAT (`/astro-accept`) closes a phase.
