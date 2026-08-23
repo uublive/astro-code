@@ -184,3 +184,10 @@ _2026-08-23_
 
 **Why:** passed was schema-required with no way to say 'this project has no tests', so the gate agent had to guess and a guess of false aborted the whole phase over a suite that never existed — non-deterministically, since the same repo could pass one run and fail the next. Failing closed is wrong here because the gate protects against a bad heal, and a project with no tests has nothing to protect; the end-of-phase verifier remains the backstop. The no-suite path deliberately shares the green-gate branch so teardown still runs — short-circuiting would strand worktree-* branches and false-FAIL the verifier's rev-list check (the phase-05 UAT gap). A suite that exists but cannot be collected stays a hard failure (ADR-020 non-compiling wave boundary).
 
+## ADR-029 — The ac CLI validates flags against a per-verb allowlist on the shared/destructive verbs (canon push, decision add, registry init, phase accept, phase reject) and dies on anything unknown; ac canon push gains a real --dry-run that reads the registry via snapshot() and publishes nothing.
+_2026-08-23_
+
+**Why:** parseArgs collected any --x into flags and no verb ever validated them, so an unknown or typo'd flag was silently discarded and the command ran with DEFAULT behavior. Combined with --dry-run not existing, that made 'ac canon push --dry-run' perform a real publish to the branch the whole team reads — the safest-sounding invocation was the most dangerous one, and it was hit in practice on the ocp project. The check runs before any side-effecting work so a typo can never half-apply. Scoped per-verb rather than globally because blanket enforcement would break existing invocations on read-only verbs for no safety gain.
+
+**Rejected:** Global unknown-flag rejection for every verb (breaks harmless stray flags on read-only commands); implementing --dry-run alone (leaves every other typo silently degrading to default behavior); warn-only on unknown flags (a warning on stderr is exactly what gets missed in an agent transcript)
+
