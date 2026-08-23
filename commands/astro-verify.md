@@ -1,7 +1,7 @@
 ---
 description: Verify a phase actually achieves its goal (goal-backward, not just "tasks ran")
 argument-hint: <phase number or slug>
-allowed-tools: Bash, Read, Agent
+allowed-tools: Bash, Read, Agent, mcp__forge__forge_capture_knowledge
 ---
 
 Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-accept`).
@@ -23,5 +23,19 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    for UAT sign-off (reference the phase by its number, e.g. `/astro-accept 3`). Once the verifier agent has returned, you may add an optional nudge:
    state is saved to `.astrocode/`, so `/clear` before `/astro-accept` keeps context lean
    and loses nothing. On FAIL: list exactly what's missing and stop — do not mark it verified.
+4. **Opportunistic capture — after the verdict above is already reported, never before,
+   and never changes it (a capture can never turn a PASS into a FAIL or vice versa).**
+   Capture only on a surprise that changed the approach: a **FAIL whose missing-list
+   evidence revealed a wrong assumption** the plan had made, not merely unfinished work.
+   A clean PASS captures nothing. A FAIL that is just incomplete work (nothing about the
+   *approach* was wrong) also captures nothing — state that explicitly rather than
+   forcing a capture. When the surprise condition holds, lift the generator the same way
+   `/astro-decision` does: strip every project noun, filename, number and proper name; if
+   nothing project-agnostic survives, **capture nothing and say so in one line** rather
+   than force a generalization. Otherwise call `mcp__forge__forge_capture_knowledge` and
+   print ONE line summarizing what was staged to the human-approval queue — no
+   confirmation prompt, and a failed capture never fails this command. See
+   `` `$(ac path templates)/forge-knowledge.md` `` for the full detection/degradation
+   rules and capture contract (tools absent → skip silently, no output).
 
 Verification is the machine gate; it never closes the phase on its own.
