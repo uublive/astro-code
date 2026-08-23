@@ -191,3 +191,10 @@ _2026-08-23_
 
 **Rejected:** Global unknown-flag rejection for every verb (breaks harmless stray flags on read-only commands); implementing --dry-run alone (leaves every other typo silently degrading to default behavior); warn-only on unknown flags (a warning on stderr is exactly what gets missed in an agent transcript)
 
+## ADR-030 — Optional external-service integrations live ONLY in the prose layer (commands/agents) and reach the service ONLY through MCP tools — never through lib/, bin/, workflows/, imports, subprocesses, or config keys; absence of the tools is silent, a failing call says so once
+_2026-08-23_
+
+**Why:** Keeps the tool standalone-by-construction rather than standalone-by-intention: if no executable code path can reference the service, there is nothing to break when it is absent, and REQ-001's dependency-free substrate stays structurally true. Detection must probe deferred tools (toolset check, then one ToolSearch) because a connected-but-unloaded MCP tool is otherwise indistinguishable from an uninstalled one, and that failure mode looks exactly like correct degradation. Absence is expected and must be invisible; a configured-but-broken server is a real problem and must not stay silent.
+
+**Rejected:** Importing or shelling to the service (hard dependency); a config key toggling the integration (a second source of truth that drifts from actual tool availability); restating the integration rules in each command (drift bait — they live once in templates/ and are referenced); treating a failed call the same as an absent tool (hides a broken server indefinitely)
+
