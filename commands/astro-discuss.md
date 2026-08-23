@@ -1,7 +1,7 @@
 ---
 description: Talk through a phase before planning — adaptive questions that surface decisions and edge cases, captured to CONTEXT.md
 argument-hint: <phase number or slug>
-allowed-tools: Bash, Read, Grep, Glob, Write, AskUserQuestion
+allowed-tools: Bash, Read, Grep, Glob, Write, AskUserQuestion, mcp__forge__forge_knowledge
 ---
 
 Discuss phase `$ARGUMENTS` with the developer before any plan is written. The goal is
@@ -11,7 +11,10 @@ about — and to capture the answers so planning is grounded, not guessed.
 1. **Get grounded.** Surface the live status (`ac activity '✎ discussing'`), then read
    `.astrocode/PROJECT.md`, the phase's roadmap entry/goal, the canon (`ac canon`), and
    skim the relevant code (Grep/Glob/Read) so your questions are specific to THIS
-   project, not generic.
+   project, not generic. Then, opportunistically, run ONE scoped
+   `mcp__forge__forge_knowledge` query built from the phase goal — see
+   `` `$(ac path templates)/forge-knowledge.md` `` for the full detection/degradation
+   rules (tools absent → skip silently, no output).
 2. **Map the gray areas.** Generate the decisions that are *specific to THIS phase* —
    real forks where more than one path is reasonable, not generic categories. Let the
    domain drive them (something users SEE / CALL / RUN / READ, or data being ORGANIZED).
@@ -20,7 +23,11 @@ about — and to capture the answers so planning is grounded, not guessed.
    - approach/trade-offs where more than one path is reasonable,
    - edge cases, failure modes, and data/permission concerns,
    - anything the goal leaves ambiguous or assumes.
-   Skip anything the code or canon already answers — never re-ask a settled decision.
+   Skip anything the code or canon already answers — never re-ask a settled decision. If
+   the forge brain already settled a fork, say so in one line ("the brain already
+   settled X — not re-asking") and proceed instead of dropping it silently — the
+   developer can override on the spot. A brain opinion is never grounds to silently
+   drop a question the code/canon do NOT already answer.
 3. **Discuss in rounds, and let the user steer.** Ask the **2–4 questions that actually
    matter** with `AskUserQuestion` — concrete pickable options, the recommended one
    first. Then, after **every** round, explicitly ask whether to keep going:
