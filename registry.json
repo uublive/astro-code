@@ -185,6 +185,15 @@
       "branch": "feature/lean-execution",
       "claimed_at": "2026-08-21T20:18:07.413Z",
       "status": "active"
+    },
+    {
+      "type": "milestone",
+      "number": 6,
+      "name": "Optional forge-brain integration",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "feature/lean-execution",
+      "claimed_at": "2026-08-23T06:59:11.757Z",
+      "status": "active"
     }
   ]
 }
