@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "milestone": 5,
+  "milestone": 6,
   "phases": [
     {
       "number": 11,
@@ -24,6 +24,12 @@
       "number": 14,
       "name": "Cheap mechanical integrator and clean fast-path",
       "slug": "14-cheap-mechanical-integrator-and-clean-fast-path",
+      "status": "verified"
+    },
+    {
+      "number": 15,
+      "name": "Opportunistic forge knowledge graph read and write",
+      "slug": "15-opportunistic-forge-knowledge-graph-read-and-write",
       "status": "verified"
     }
   ]

@@ -1,11 +1,11 @@
 {
   "version": 1,
   "project": "astro-code",
-  "active_milestone": 5,
-  "active_phase": "14-cheap-mechanical-integrator-and-clean-fast-path",
+  "active_milestone": 6,
+  "active_phase": "15-opportunistic-forge-knowledge-graph-read-and-write",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-08-22T16:59:17.858Z",
+  "updated_at": "2026-08-23T15:38:17.660Z",
   "activity": null
 }
