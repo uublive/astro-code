@@ -173,6 +173,15 @@ on the same orphan branch and injected into every plan/execute agent. `ac decisi
 appends to the shared log (ADR ids never collide across devs); `ac canon pull` refreshes
 your local mirror.
 
+**Forge knowledge graph (opportunistic, optional).** If a FORGEMASTER knowledge-graph MCP
+server happens to be connected, astro-code opportunistically *consumes* it — querying
+before `/astro-discuss`, `/astro-plan`, and `/astro-new-project` decide, and staging a
+lifted, project-agnostic generator after `/astro-decision` records an ADR. With no server
+connected, every one of those steps is a silent no-op — nothing printed, nothing missing.
+This does not change the "no MCP server" pillar below: astro-code still never *hosts* one,
+it only optionally reads from someone else's. See
+[`templates/forge-knowledge.md`](./templates/forge-knowledge.md) for the full spec.
+
 **Existing project?** `/astro-adopt` maps the repo once and drafts `PROJECT.md` +
 `CONVENTIONS.md` from the real code, then plans what's next — a one-time bootstrap, not
 an always-synced codebase map.
