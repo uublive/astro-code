@@ -43,6 +43,34 @@ const die = (msg) => {
   console.error(`✖ ${msg}`);
   process.exit(1);
 };
+
+// Unknown flags used to parse into `flags` and then be silently discarded, so a typo
+// — or an invented flag like `--dry-run` — degraded to the DEFAULT behavior with no
+// warning at all. For verbs that publish to the shared registry branch or close out a
+// phase, that makes the safest-SOUNDING invocation the most dangerous one: someone
+// reaching for `ac canon push --dry-run` published to the whole team's branch.
+//
+// Enforced per-verb rather than globally: these are the commands with shared or
+// hard-to-reverse side effects, where being wrong is expensive. A stray flag on a
+// read-only verb (`ac status --verbose`) stays harmless, so it stays permitted —
+// blanket enforcement would break existing invocations for no safety gain.
+const ALLOWED_FLAGS = {
+  'canon push': ['dry-run'],
+  'decision add': ['why', 'rejected'],
+  'registry init': ['force'],
+  'phase accept': ['by', 'force'],
+  'phase reject': ['reason'],
+};
+
+function checkFlags(key, flags) {
+  const allowed = ALLOWED_FLAGS[key];
+  if (!allowed) return;
+  const unknown = Object.keys(flags).filter((f) => !allowed.includes(f));
+  if (!unknown.length) return;
+  const got = unknown.map((f) => `--${f}`).join(', ');
+  const ok = allowed.length ? `accepted: ${allowed.map((f) => `--${f}`).join(', ')}` : 'this command takes no flags';
+  die(`unknown flag${unknown.length > 1 ? 's' : ''} for \`ac ${key}\`: ${got} (${ok})`);
+}
 const root = () => findRoot() || die('no .astrocode/ found — run `ac init` first');
 const json = (obj) => console.log(JSON.stringify(obj, null, 2));
 
@@ -94,7 +122,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
   ac models [max|balanced|fast] [--preview]  apply a per-role model preset (speed switch)
-  ac canon [pull | push]              print canon; pull/push shares it on the orphan branch
+  ac canon [pull | push [--dry-run]]  print canon; pull/push shares it on the orphan branch
   ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision (shared)
   ac decision list                    list recorded decisions
   ac stats [--since ISO|--session ID] token usage (fresh vs cache) + wall-clock from transcripts
@@ -391,6 +419,7 @@ async function main() {
         console.log(`✓ phase ${ph.number} "${ph.name}" → verified (run /astro-accept for UAT to close)`);
       } else if (sub === 'accept') {
         if (!ph) die('usage: ac phase accept <phase> [--by name] [--force]');
+        checkFlags('phase accept', flags);
         if (ph.status !== 'verified' && !flags.force) {
           die(`phase ${ph.number} is "${ph.status}", not verified — run /astro-verify first (or pass --force)`);
         }
@@ -400,6 +429,7 @@ async function main() {
         console.log(`✓ phase ${ph.number} "${ph.name}" accepted by ${by} → complete`);
       } else if (sub === 'reject') {
         if (!ph) die('usage: ac phase reject <phase> --reason "…"');
+        checkFlags('phase reject', flags);
         const reason = typeof flags.reason === 'string' ? flags.reason : '';
         await setPhaseStatus(r, ph.slug, 'rejected');
         await updateState(r, (s) => ({ ...s, blockers: [...(s.blockers || []), { phase: ph.slug, reason, at: new Date().toISOString() }] }));
@@ -449,6 +479,7 @@ async function main() {
     case 'registry': {
       const r = root();
       if (pos[0] === 'init') {
+        checkFlags('registry init', flags);
         const res = initRegistry({ root: r, force: !!flags.force });
         if (!res.ok) die(res.error);
         if (res.created) console.log(`✓ registry initialized on ${res.branch} — backfilled ${res.claims} claim(s)`);
@@ -548,9 +579,17 @@ async function main() {
         if (!res.ok) console.error('• no coordinated remote — canon is local-only');
         else console.log(`✓ pulled ${res.pulled.length ? res.pulled.join(', ') : 'nothing'} from ${res.branch}`);
       } else if (pos[0] === 'push') {
-        const res = canonPush(r);
+        checkFlags('canon push', flags);
+        const res = canonPush(r, { dryRun: flags['dry-run'] === true });
         if (!res.ok) die(res.error || 'no coordinated remote — cannot push canon');
-        else console.log(`✓ published ${res.pushed.join(', ')} to ${res.branch}`);
+        else if (res.dryRun) {
+          const what = !res.remoteExists
+            ? `would CREATE CONVENTIONS.md on ${res.branch}`
+            : res.wouldChange
+              ? `would UPDATE CONVENTIONS.md on ${res.branch}`
+              : `CONVENTIONS.md on ${res.branch} is already identical — a real push would change nothing`;
+          console.log(`◆ dry run: ${what}. NOTHING was published.`);
+        } else console.log(`✓ published ${res.pushed.join(', ')} to ${res.branch}`);
       } else {
         const text = canonText(r);
         process.stdout.write((text || '(no canon yet — fill in .astrocode/CONVENTIONS.md)') + '\n');
@@ -563,6 +602,7 @@ async function main() {
       if (pos[0] === 'add') {
         const title = pos.slice(1).join(' ').trim();
         if (!title) die('usage: ac decision add "<title>" [--why "…"] [--rejected "…"]');
+        checkFlags('decision add', flags);
         const res = await addDecision(r, {
           title,
           why: typeof flags.why === 'string' ? flags.why : '',
