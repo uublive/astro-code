@@ -194,6 +194,16 @@
       "branch": "feature/lean-execution",
       "claimed_at": "2026-08-23T06:59:11.757Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 15,
+      "milestone": 6,
+      "name": "Opportunistic forge knowledge graph read and write",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "feature/lean-execution",
+      "claimed_at": "2026-08-23T06:59:14.870Z",
+      "status": "active"
     }
   ]
 }
