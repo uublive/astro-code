@@ -4,7 +4,7 @@
 // touches the real user/profile directories.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, existsSync, lstatSync, readlinkSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync } from 'node:fs';
+import { mkdtempSync, existsSync, lstatSync, readlinkSync, mkdirSync, writeFileSync, readFileSync, readdirSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -127,6 +127,36 @@ test('install honors a bare CLAUDE_CONFIG_DIR (no jean-claude)', async () => {
     const { installClaude } = await import(`../lib/install.mjs?p=${encodeURIComponent(profile)}`);
     installClaude(FRAMEWORK);
     assert.ok(lstatSync(join(profile, 'commands', 'astro-status.md')).isSymbolicLink());
+  });
+});
+
+test('install ships templates/forge-knowledge.md, and registers ONLY real commands/agents (no phantom slash command / subagent)', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-home-'));
+  await withEnv({ home: fakeHome, configDir: undefined }, async () => {
+    const { installClaude } = await import(`../lib/install.mjs?forge=${encodeURIComponent(fakeHome)}`);
+    installClaude(FRAMEWORK);
+
+    // The shared spec ships to the home templates tree — an installed user must not
+    // hold a pointer (in a command/agent) to a file they don't actually have (C3).
+    const shipped = join(fakeHome, '.astro', 'code', 'templates', 'forge-knowledge.md');
+    assert.ok(existsSync(shipped), 'forge-knowledge.md ships under ~/.astro/code/templates');
+    assert.ok(readFileSync(shipped, 'utf8').trim().length > 0, 'shipped spec is non-empty');
+
+    // The registered dirs (symlinked into the Claude config dir) must contain EXACTLY
+    // the repo's real commands/agents — nothing phantom, nothing missing.
+    const configDir = join(fakeHome, '.claude');
+    const realCommands = readdirSync(join(FRAMEWORK, 'commands')).filter((f) => f.endsWith('.md')).sort();
+    const realAgents = readdirSync(join(FRAMEWORK, 'agents')).filter((f) => f.endsWith('.md')).sort();
+    const registeredCommands = readdirSync(join(configDir, 'commands')).filter((f) => f.endsWith('.md')).sort();
+    const registeredAgents = readdirSync(join(configDir, 'agents')).filter((f) => f.endsWith('.md')).sort();
+    assert.deepEqual(registeredCommands, realCommands, 'registered commands == repo commands/*.md, exactly');
+    assert.deepEqual(registeredAgents, realAgents, 'registered agents == repo agents/*.md, exactly');
+
+    // Belt-and-suspenders: the shared spec's basename must not appear in either
+    // registered dir — `symlinkInto`/`copyDir` filter only on `.md`, so a shared partial
+    // placed in commands/ or agents/ would silently register as a phantom command/agent.
+    assert.ok(!registeredCommands.includes('forge-knowledge.md'), 'forge-knowledge.md is not a registered command');
+    assert.ok(!registeredAgents.includes('forge-knowledge.md'), 'forge-knowledge.md is not a registered agent');
   });
 });
 
