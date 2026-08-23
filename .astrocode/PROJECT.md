@@ -35,6 +35,31 @@ anatomy (manifest v4, recipe, `src/` + vendored `tools/`, EXAMPLES, report gener
 built and publishable, at **feature parity** with the original — parity verified against
 the source's real behavior, not assumed.
 
+## Milestone 5 — Lean execution path
+
+Scale execution overhead to the size of the work so a small phase runs about as lean as
+plain Claude Code, while wide phases keep their parallel worktrees. The tax today is
+**N cold subagents**: even in the sequential strategy, `execute-phase.mjs` spawns one
+fresh `astro-executor` per task, each re-reading canon + CONTEXT + PLAN + repo. Two
+changes (Change 3 — a proportional/downgraded verify tier — was explicitly rejected to
+keep the anti-false-PASS gate intact):
+
+1. **Warm batched sequential executor** (phase 13): when the strategy is sequential and
+   there are ≥2 executable tasks, hand the whole dependency-ordered task list to ONE
+   `astro-executor` that reads the canon once and makes one atomic, stamped commit per
+   task — N cold starts → 1. Behind a `lean_execution` config default (escape hatch to
+   per-task). Preserves ADR-017 stamps/resumability, ADR-021 plan-blind verify,
+   ADR-008/005 (no script-run git, no parallel same-tree), and a partial-failure
+   fallback to per-task so no task is silently dropped.
+2. **Cheap mechanical integrator + clean fast-path** (phase 14): the per-wave integrator
+   agent (parallel path only) drops to a cheap model tier (`models.integrator`, default
+   haiku) with a clean-cherry-pick fast-path; conflicts still route to the existing heal
+   ladder at the executor tier. Small phases never reach it (Change 1 keeps them
+   sequential).
+
+Developed on the `feature/lean-execution` branch so the whole line can be dropped if it
+doesn't pan out.
+
 ## Requirements
 
 <!-- One line per requirement. Use stable IDs (REQ-001) so phases can map to them. -->

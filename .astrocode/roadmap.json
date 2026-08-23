@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "milestone": 4,
+  "milestone": 5,
   "phases": [
     {
       "number": 11,
@@ -12,6 +12,18 @@
       "number": 12,
       "name": "Kit conversion command (source to standard kit)",
       "slug": "12-kit-conversion-command-source-to-standard-kit",
+      "status": "verified"
+    },
+    {
+      "number": 13,
+      "name": "Warm batched sequential executor",
+      "slug": "13-warm-batched-sequential-executor",
+      "status": "verified"
+    },
+    {
+      "number": 14,
+      "name": "Cheap mechanical integrator and clean fast-path",
+      "slug": "14-cheap-mechanical-integrator-and-clean-fast-path",
       "status": "verified"
     }
   ]

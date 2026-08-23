@@ -1,11 +1,11 @@
 {
   "version": 1,
   "project": "astro-code",
-  "active_milestone": 4,
-  "active_phase": "12-kit-conversion-command-source-to-standard-kit",
+  "active_milestone": 5,
+  "active_phase": "14-cheap-mechanical-integrator-and-clean-fast-path",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-08-19T14:37:13.378Z",
+  "updated_at": "2026-08-22T16:59:17.858Z",
   "activity": null
 }
