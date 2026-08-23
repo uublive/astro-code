@@ -1,7 +1,7 @@
 ---
 description: Plan a phase — fan out parallel researchers, then synthesize an executable PLAN.md
 argument-hint: <phase number or slug>
-allowed-tools: Bash, Read, Write, Workflow
+allowed-tools: Bash, Read, Write, Workflow, mcp__forge__forge_knowledge
 ---
 
 Plan phase `$ARGUMENTS` by running the parallel planning workflow.
@@ -18,8 +18,17 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    cases — but proceed if the user declines (trivial phases can skip). **Never create or
    seed `CONTEXT.md` yourself** — only `/astro-discuss` writes it; seeding a stub here is
    exactly what defeats this gate. Refresh the team canon best-effort (`ac canon pull`) so
-   the agents read the latest. The workflow's agents read the canon + CONTEXT.md from disk
-   — you do NOT pass them as args.
+   the agents read the latest. Then, opportunistically, run ONE scoped
+   `mcp__forge__forge_knowledge` query built from the phase goal — see
+   `` `$(ac path templates)/forge-knowledge.md` `` for the full detection/degradation rules
+   (tools absent → skip silently, no output). This fires here, in the command body, so it
+   runs in every tier (Workflow, Agent-fallback, inline) — not only on the
+   `astro-researcher` agent grant, which the preferred Workflow path never spawns
+   (`workflows/plan-phase.mjs` uses the built-in `Explore` agent). The result is **not**
+   passed as a `Workflow` arg — `args` stay small JSON scalars only (step 3) — surface it
+   instead as one line to the user ("the brain already settled X — not re-asking") so the
+   plan does not relitigate what the brain already settled. The workflow's agents read the
+   canon + CONTEXT.md from disk — you do NOT pass them as args.
 3. Mark the live status so the statusline/banner show it: `ac activity '⚙ researching · plan'`.
    Run the planning fan-out. Use the **best available** mechanism (graceful fallback):
    - **Workflow tool available (preferred):** keep `args` to small scalars only — pass
