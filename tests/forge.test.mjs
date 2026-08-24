@@ -18,6 +18,7 @@ const SPEC_PATH = join(ROOT, 'templates', 'forge-knowledge.md');
 
 const READ_TOOL = 'mcp__forge__forge_knowledge';
 const WRITE_TOOL = 'mcp__forge__forge_capture_knowledge';
+const LIST_TOOL = 'mcp__forge__forge_knowledge_list';
 const POINTER = 'templates/forge-knowledge.md';
 // Every touched caller points at the spec via `` `$(ac path templates)/forge-knowledge.md` ``
 // (resolved at run time, never hardcoded) rather than the literal joined path — match either
@@ -48,6 +49,68 @@ test('templates/forge-knowledge.md documents the ToolSearch detection probe', ()
   assert.ok(
     specSrc.includes('ToolSearch('),
     `templates/forge-knowledge.md must document the "ToolSearch(" detection probe — found no such text.`,
+  );
+});
+
+// The probe must name EVERY tool astro-code can call. A tool left out of the probe stays
+// deferred and uncallable even when forge is connected — the exact silent failure the
+// probe exists to prevent, just narrowed to one tool. This caught forge_knowledge_list,
+// which the spec did not know about until connected-mode UAT surfaced it.
+test('the ToolSearch probe names every tool the spec grants', () => {
+  const probe = specSrc.match(/ToolSearch\("select:[^"]*"\)/);
+  assert.ok(probe, 'templates/forge-knowledge.md must contain a concrete ToolSearch("select:…") probe');
+  for (const tool of [READ_TOOL, LIST_TOOL, WRITE_TOOL]) {
+    assert.ok(
+      probe[0].includes(tool),
+      `the ToolSearch probe must name ${tool}, or that tool stays deferred and uncallable. Probe: ${probe[0]}`,
+    );
+  }
+});
+
+test('templates/forge-knowledge.md names the browse tool and separates it from search', () => {
+  assert.ok(
+    specSrc.includes(LIST_TOOL),
+    `templates/forge-knowledge.md must literally contain "${LIST_TOOL}" — found no such text.`,
+  );
+  // Naming it is not enough: a caller has to know WHICH read tool to reach for, or the
+  // distinction collapses and the browse tool never gets used on purpose.
+  assert.ok(
+    /browse/i.test(specSrc) && /search/i.test(specSrc),
+    'templates/forge-knowledge.md must distinguish the browse tool from the search tool, not merely list both.',
+  );
+});
+
+// Deliberately reads the FRONTMATTER GRANT LINE, not the whole file. A caller that names
+// a tool in its prose while lacking the grant is precisely the "names a tool it lacks"
+// defect — a whole-file `includes()` would pass on the prose mention alone and prove
+// nothing about whether the tool can actually be called.
+const grantLine = (dir, f) => (readFileSync(join(dir, f), 'utf8').match(/^(?:allowed-tools|tools):.*$/m) || [''])[0];
+
+test('the browse tool is granted only where the spec says it is used', () => {
+  const granted = readdirSync(COMMANDS_DIR)
+    .filter((f) => f.endsWith('.md'))
+    .filter((f) => grantLine(COMMANDS_DIR, f).includes(LIST_TOOL));
+  assert.deepStrictEqual(
+    granted.sort(),
+    ['astro-new-project.md'],
+    `${LIST_TOOL} is a browse-by-category tool with exactly one documented caller ` +
+      `(/astro-new-project, which has no phase goal to search against). Granting it more ` +
+      `widely invites a search-then-browse pair per caller, which the READ protocol forbids.`,
+  );
+  // And no agent holds it — agents always have a concrete goal to search against.
+  const agentHits = readdirSync(AGENTS_DIR)
+    .filter((f) => f.endsWith('.md'))
+    .filter((f) => grantLine(AGENTS_DIR, f).includes(LIST_TOOL));
+  assert.deepStrictEqual(agentHits, [], 'no agent should hold the browse tool');
+});
+
+test('astro-new-project names the browse tool in prose AND holds the grant for it', () => {
+  const src = readFileSync(join(COMMANDS_DIR, 'astro-new-project.md'), 'utf8');
+  assert.ok(src.includes(LIST_TOOL), 'astro-new-project.md must mention the browse tool in its prose');
+  assert.ok(
+    grantLine(COMMANDS_DIR, 'astro-new-project.md').includes(LIST_TOOL),
+    `astro-new-project.md names ${LIST_TOOL} in prose but does not grant it — the call would ` +
+      `silently never happen, which is indistinguishable from correct degradation.`,
   );
 });
 

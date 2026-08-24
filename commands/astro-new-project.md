@@ -1,7 +1,7 @@
 ---
 description: Initialize an astro-code project — scaffold .astrocode/ and shape PROJECT.md + the initial roadmap
 argument-hint: [project name]
-allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, ToolSearch, mcp__forge__forge_knowledge
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, ToolSearch, mcp__forge__forge_knowledge, mcp__forge__forge_knowledge_list
 ---
 
 You are starting a new astro-code project in the current repository.
@@ -11,9 +11,14 @@ You are starting a new astro-code project in the current repository.
 2. Interview the user for a first **vision** draft — what they're building and why.
    This is the seam: run it before anything else in the interview, because the next
    step needs something to query from.
-3. Opportunistically, run ONE scoped `mcp__forge__forge_knowledge` query built from
-   that vision draft — see `` `$(ac path templates)/forge-knowledge.md` `` for the
-   full detection/degradation rules (tools absent → skip silently, no output). The
+3. Opportunistically, make ONE scoped read built from that vision draft — see
+   `` `$(ac path templates)/forge-knowledge.md` `` for the full detection/degradation
+   rules (tools absent → skip silently, no output). This is the one caller where
+   **browse** may beat search: `mcp__forge__forge_knowledge_list` filtered by `type`
+   (`Preference`, `Principle`) surfaces the owner's standing stack and working
+   preferences when there is no phase goal yet to search against, where
+   `mcp__forge__forge_knowledge` needs a question to answer. Pick whichever fits the
+   draft — one call, never both. The
    placement is fixed here, between the vision draft and the requirements/constraints
    interview: earlier the query has nothing to be built from; later it cannot inform
    the interview it exists to shape. Use the result the same way `/astro-discuss`

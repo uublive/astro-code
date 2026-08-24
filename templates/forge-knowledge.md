@@ -10,21 +10,25 @@ the two copies will diverge and one of them will be wrong. This is the single so
 truth for read, write, and degradation; a reader must be able to answer everything below
 without opening any other file.
 
-## The two tools
+## The three tools
 
-- **Read:** `mcp__forge__forge_knowledge`
+- **Read — search:** `mcp__forge__forge_knowledge` — a natural-language question or phrase.
+  Returns matching nodes. **This is the default read.**
+- **Read — browse:** `mcp__forge__forge_knowledge_list` — enumerate what EXISTS by
+  `type` / `tag` / `recency`. Use it when there is no specific question yet, only a
+  category worth sweeping (see the READ protocol below).
 - **Write:** `mcp__forge__forge_capture_knowledge`
 
-Both ids were recovered from Claude Code's local history, not guessed from a live
-connection — the server slug is `forge` and it exposes 76 tools in total, of which these
-two are the only ones astro-code ever names. If forge ever renames either tool, the
+All three ids are confirmed against a live connection — the server slug is `forge`, and
+these three are the only ones astro-code ever names. If forge ever renames one, the
 integration degrades to a silent no-op by design; that is not a bug to route around here,
 it is the same "absence is invisible" path described below.
 
-A caller only ever invokes the tool its own frontmatter grants: read-only callers hold
-`mcp__forge__forge_knowledge`, write-only callers hold `mcp__forge__forge_capture_knowledge`,
-and a role that has no business writing to the queue (every parallel executor, every
-read-only judgement role) holds neither.
+A caller only ever invokes the tools its own frontmatter grants: read-only callers hold
+the two read tools, write-only callers hold `mcp__forge__forge_capture_knowledge`, and a
+role that has no business writing to the queue (every parallel executor, every read-only
+judgement role) holds neither. No caller holds both a read tool and the write tool by
+accident — the split is the point.
 
 ## Detection order (load-bearing)
 
@@ -33,9 +37,12 @@ command run**:
 
 1. **Check the live toolset** for `mcp__forge__forge_knowledge`. If it is there, forge is
    connected — proceed.
-2. **If it is not there, run exactly one probe:**
-   `ToolSearch("select:mcp__forge__forge_knowledge,mcp__forge__forge_capture_knowledge")`
-   before concluding the tools are absent.
+2. **If it is not there, run exactly one probe** — one identical probe string for every
+   caller, naming **all three** tools so there is a single form to keep correct:
+   `ToolSearch("select:mcp__forge__forge_knowledge,mcp__forge__forge_knowledge_list,mcp__forge__forge_capture_knowledge")`
+   before concluding the tools are absent. Omitting a tool from the probe leaves it
+   deferred and uncallable even though forge is connected — the same silent failure this
+   step exists to prevent, just narrowed to one tool.
 
 This second step is not optional and not a nicety. In this harness an MCP tool can be
 **connected but deferred** — visible only as a bare name in a system-reminder until
@@ -65,11 +72,21 @@ These are deliberately asymmetric, and the asymmetry is the point:
 
 ## READ protocol
 
-- **One scoped query per caller**, built from the phase goal (or the project vision, for
+- **One scoped read per caller**, built from the phase goal (or the project vision, for
   `/astro-new-project` before a phase exists). Fold in only what is relevant to that
   specific decision point.
+- **Search or browse — pick ONE, not both.** The budget is one read call per caller
+  regardless of which tool serves it:
+  - `mcp__forge__forge_knowledge` (search) is the **default**, and the right choice
+    whenever there is an actual question — a phase goal, a fork being weighed, a decision
+    about to be made. `/astro-discuss`, `/astro-plan` and the research agents all use this.
+  - `mcp__forge__forge_knowledge_list` (browse) fits the one case where there is no
+    question yet, only a category worth sweeping: `/astro-new-project` shaping a scaffold
+    from the owner's standing `Preference` and `Principle` nodes, before any phase or goal
+    exists to search against. Filter by `type`; do not page through the whole graph.
 - **No multi-query fan-out.** Three parallel researchers already means three calls; a
-  per-angle split on top of that would triple the call volume for no proportional gain.
+  per-angle split, or a search-then-browse pair per caller, would multiply call volume for
+  no proportional gain.
 - **Using the result:** state in ONE line what the brain already settled — the shape is
   "the brain already settled X — not re-asking" — then proceed. The developer can override
   on the spot. **Never silently drop a question or a fork just because the brain has an
