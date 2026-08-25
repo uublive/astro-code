@@ -163,3 +163,58 @@ test('ADR-029: a real canonPush still publishes (the dry-run guard is opt-in)', 
   assert.deepStrictEqual(res.pushed, ['CONVENTIONS.md']);
   assert.notStrictEqual(registryTip(bare), tip, 'a real push must move the registry branch');
 });
+
+// ── ADR-033: acceptance provenance — who signed, and of what kind ─────────────
+//
+// REQ-006 is the two-gate guarantee: the AI verifier reaches `verified`, only a human
+// `/astro-accept` reaches `complete`. `accepted_by` used to default to the repo's git
+// identity, so an autonomous agent accepting on the operator's behalf was recorded AS the
+// operator — a machine sign-off and a human one had the identical shape, making the
+// guarantee unauditable from the record. Found during an unattended benchmark run.
+
+async function verifiedPhase() {
+  const dir = mkWorkdir(null);
+  await addPhase(dir, { number: 1, name: 'Do a thing' });
+  await setPhaseStatus(dir, findPhase(dir, '1').slug, 'verified');
+  return dir;
+}
+
+test('ADR-033: a plain accept records accepted_kind "human"', async () => {
+  const dir = await verifiedPhase();
+  const res = run(['phase', 'accept', '1'], dir);
+  assert.strictEqual(res.status, 0, res.stderr);
+  const ph = findPhase(dir, '1');
+  assert.strictEqual(ph.status, 'complete');
+  assert.strictEqual(ph.accepted_kind, 'human', 'an undeclared accept asserts a human made the judgement');
+});
+
+test('ADR-033: --agent records accepted_kind "agent" and the agent as signer', async () => {
+  const dir = await verifiedPhase();
+  const res = run(['phase', 'accept', '1', '--agent', 'FORGEMASTER'], dir);
+  assert.strictEqual(res.status, 0, res.stderr);
+  const ph = findPhase(dir, '1');
+  assert.strictEqual(ph.accepted_kind, 'agent');
+  assert.strictEqual(ph.accepted_by, 'FORGEMASTER', 'the agent must be the recorded signer, not the git identity');
+  // The distinction is worthless if a human reading the terminal cannot see it.
+  assert.match(res.stdout, /AGENT/, 'a machine sign-off must be visible in the output, not just in the file');
+});
+
+test('ADR-033: the two signer kinds are distinguishable in the record', async () => {
+  const human = await verifiedPhase();
+  run(['phase', 'accept', '1'], human);
+  const agent = await verifiedPhase();
+  run(['phase', 'accept', '1', '--agent', 'bot'], agent);
+  assert.notStrictEqual(
+    findPhase(human, '1').accepted_kind,
+    findPhase(agent, '1').accepted_kind,
+    'a machine sign-off and a human sign-off must not be the same shape — that is the defect ADR-033 fixes',
+  );
+});
+
+test('ADR-033: --agent is allowlisted, and a typo of it is still rejected', async () => {
+  const dir = await verifiedPhase();
+  const bad = run(['phase', 'accept', '1', '--agnet', 'bot'], dir);
+  assert.notStrictEqual(bad.status, 0, 'a typo must not silently fall back to a human sign-off');
+  assert.match(bad.stderr, /unknown flag/i);
+  assert.strictEqual(findPhase(dir, '1').status, 'verified', 'the rejected accept must not have closed the phase');
+});

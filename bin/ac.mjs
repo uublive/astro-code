@@ -58,7 +58,7 @@ const ALLOWED_FLAGS = {
   'canon push': ['dry-run'],
   'decision add': ['why', 'rejected'],
   'registry init': ['force'],
-  'phase accept': ['by', 'force'],
+  'phase accept': ['by', 'force', 'agent'],
   'phase reject': ['reason'],
 };
 
@@ -110,6 +110,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase context <phase>            discuss-gate status: missing | stub | ready
   ac phase verify <phase>             mark a phase verified (AI gate passed)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
+  ac phase accept <p> --agent <name>  machine-signed sign-off (records accepted_kind=agent)
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac flow init                        ensure main + develop exist (gitflow, opt-in)
@@ -418,15 +419,42 @@ async function main() {
         await setPhaseStatus(r, ph.slug, 'verified');
         console.log(`✓ phase ${ph.number} "${ph.name}" → verified (run /astro-accept for UAT to close)`);
       } else if (sub === 'accept') {
-        if (!ph) die('usage: ac phase accept <phase> [--by name] [--force]');
+        if (!ph) die('usage: ac phase accept <phase> [--by name | --agent name] [--force]');
         checkFlags('phase accept', flags);
         if (ph.status !== 'verified' && !flags.force) {
           die(`phase ${ph.number} is "${ph.status}", not verified — run /astro-verify first (or pass --force)`);
         }
-        const by = typeof flags.by === 'string' ? flags.by : gitIdentity(r).owner;
-        await setPhaseStatus(r, ph.slug, 'complete', { accepted_by: by, accepted_at: new Date().toISOString() });
+        // ADR-033 — record WHO SIGNED, and of what KIND.
+        //
+        // REQ-006 is the two-gate guarantee: the AI verifier reaches `verified`, and only a
+        // human `/astro-accept` reaches `complete`. Until now `accepted_by` defaulted to the
+        // repo's git identity, so an autonomous agent accepting on the operator's behalf was
+        // recorded as the operator — indistinguishable from a human sign-off, which made the
+        // guarantee unauditable from the record. `--by` did not help: it only renames the
+        // signer, so a machine signature and a human one had the exact same shape.
+        //
+        // This CANNOT be auto-detected. When the operator accepts, their assistant runs this
+        // command for them; when an autonomous agent accepts, the same. Both are an agent
+        // invoking `ac` — the only difference is whether a human actually made the judgement,
+        // which lives outside the process. So provenance is DECLARED, never sniffed. Pretending
+        // to detect it would manufacture false confidence in the one record REQ-006 rests on.
+        //
+        // Default stays `human`: every acceptance to date was genuinely made by the operator,
+        // and defaulting to "unknown" would retroactively cast doubt on records that are correct.
+        // The burden sits on the agent path — /astro-accept instructs a stand-in signer to pass
+        // `--agent`, and the reject path is untouched (a rejection claims no authority).
+        const agentSigner = typeof flags.agent === 'string' ? flags.agent : null;
+        const by = agentSigner || (typeof flags.by === 'string' ? flags.by : gitIdentity(r).owner);
+        const kind = agentSigner ? 'agent' : 'human';
+        await setPhaseStatus(r, ph.slug, 'complete', {
+          accepted_by: by,
+          accepted_kind: kind,
+          accepted_at: new Date().toISOString(),
+        });
         await updateState(r, (s) => ({ ...s, active_phase: s.active_phase === ph.slug ? null : s.active_phase }));
-        console.log(`✓ phase ${ph.number} "${ph.name}" accepted by ${by} → complete`);
+        console.log(
+          `✓ phase ${ph.number} "${ph.name}" accepted by ${by}${agentSigner ? ' (AGENT — machine-signed, not human UAT)' : ''} → complete`,
+        );
       } else if (sub === 'reject') {
         if (!ph) die('usage: ac phase reject <phase> --reason "…"');
         checkFlags('phase reject', flags);
