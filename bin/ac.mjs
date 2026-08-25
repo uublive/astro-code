@@ -153,6 +153,26 @@ async function main() {
         vision: typeof flags.vision === 'string' ? flags.vision : '',
       });
       console.log(res.created ? `✓ ${res.message}` : `• ${res.message}`);
+      // ADR-035 — keep harness-created agent worktrees out of the user's index.
+      //
+      // Parallel executors are materialised under `.claude/worktrees/` as live git repos, so
+      // a `git add -A` during a parallel phase commits them as embedded repos (reproduced in
+      // benchmark #2). And `git add -A` mid-phase is NOT user error: committing plan artifacts
+      // promptly is the correct defence against the shared-tree stash hazard, so users will do
+      // it. Lives HERE and not in initPlanning() deliberately — lib must not write outside
+      // `.astrocode/`; doing so dirtied the tree for every lib consumer and made `ac flow
+      // branch` refuse straight after a scaffold.
+      if (res.created) {
+        try {
+          const gi = join(cwd, '.gitignore');
+          const existing = existsSync(gi) ? readFileSync(gi, 'utf8') : '';
+          if (!/^\.claude\/worktrees\/?\s*$/m.test(existing)) {
+            const block = '# astro-code: harness-created agent worktrees — never commit these\n.claude/worktrees/\n';
+            writeFileSync(gi, existing ? existing.replace(/\n*$/, '\n') + '\n' + block : block);
+            console.log('✓ .gitignore: ignoring .claude/worktrees/');
+          }
+        } catch { /* best-effort — an unwritable .gitignore must never fail init */ }
+      }
       return;
     }
 
@@ -572,7 +592,7 @@ async function main() {
       // Speed switch: apply a whole per-role tier preset in one shot, instead of
       // six `ac config set models.<role>` calls. The ladder is opus→sonnet only,
       // except the mechanical wave `integrator` role, which carve-out ADR-027
-      // permits down to haiku. See lib/models.mjs for the profiles.
+      // permitted, but ADR-035 reverted it — no role runs haiku. See lib/models.mjs for the profiles.
       //   ac models                  print the current effective tiers
       //   ac models <profile>        apply the preset (persist to config.models)
       //   ac models <profile> --preview   print the preset JSON without writing

@@ -43,7 +43,13 @@ about — and to capture the answers so planning is grounded, not guessed.
 4. **Capture.** Write `.astrocode/phases/<slug>/CONTEXT.md`: the decisions reached,
    the chosen scope, and any open questions/assumptions. Keep it tight — it's the brief
    the planner will obey. The **first line MUST be** the provenance marker
-   `<!-- astro-discuss: captured -->` (an invisible HTML comment) — this is how
+   `<!-- astro-discuss: captured -->` — or, when an agent answered the questions on the
+   operator's behalf rather than relaying a human's answers,
+   `<!-- astro-discuss: captured by agent: <name> -->`. Same gate either way; the
+   provenance is recorded, not hidden (ADR-035, mirroring ADR-033 one step upstream).
+   A plan-blind bar derived from an agent-written brief is less independent than one
+   derived from a human's, and `ac phase context` cannot tell them apart — so the file
+   has to say. This is an invisible HTML comment — it is how
    `/astro-plan` knows the phase was actually discussed, not just that a file exists.
    Do not omit it; do not add it to a file you didn't genuinely discuss.
 5. **Promote firm choices.** If a decision is architectural (affects more than this

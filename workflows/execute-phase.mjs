@@ -426,6 +426,44 @@ function resolveHealList(wave, conflicts, integratedTaskIds, branchForTask) {
 // <<< MIRROR <<<
 
 const tasks = disc.tasks
+
+// ADR-035 — a phase that discovers ZERO tasks is a HARD FAILURE, never a quiet no-op.
+//
+// Benchmark #2: a wave integrator ran an unscoped `git stash -u` in the shared tree and
+// swept away another phase's completed PLAN.md/CRITERIA.md/ACCEPTANCE.md. The next
+// execute run then found no plan, discovered nothing, and returned
+// `{tasks:0, waves:0, executed:0, strategy:"sequential", integrationFailed:null}` —
+// every field benign, indistinguishable from a small sequential phase that simply had
+// little to do. Four steps, each reporting success, on top of destroyed work.
+//
+// There is no legitimate reason to reach here with zero tasks: /astro-execute already
+// refuses to start without a PLAN.md, so an empty discovery means the plan is missing,
+// unreadable, or was destroyed between planning and execution. Failing loudly here is
+// the difference between "the phase did nothing" being visible and being invisible.
+// (An ALL-STAMPED re-run is a different case entirely and is handled downstream at
+// `executableTasks.length === 0 && tasks.length` — that path still short-circuits to
+// Verify, because those tasks genuinely landed.)
+if (!Array.isArray(tasks) || tasks.length === 0) {
+  const reason =
+    `Discover found ZERO tasks for phase ${phaseSlug}. A phase always has tasks — ` +
+    `/astro-execute will not start without a PLAN.md — so this means the plan is missing, ` +
+    `unreadable, or was destroyed after planning (check \`git stash list\` and \`git status\`; ` +
+    `plan artifacts are untracked, so a stash/clean in the shared tree can remove them). ` +
+    `Refusing to report a benign no-op over work that may have been lost.`
+  log(`✖ ${reason}`)
+  return {
+    phase: phaseSlug,
+    tasks: 0,
+    waves: 0,
+    executed: 0,
+    skipped: [],
+    healed: [],
+    remediationCycles: 0,
+    stoppedReason: 'no-tasks',
+    integrationFailed: null,
+    verdict: { passed: false, criteriaFound: false, summary: `FAIL — ${reason}`, criteria: [] },
+  }
+}
 // Phase-07 / ADR-017: tasks Discover marked done (stamp found on branch) pre-seed
 // buildWaves so their dependents are immediately "ready" in wave 1 and the stamped
 // tasks themselves never appear in any wave (CONTEXT.md § "Wave building: done task
@@ -787,7 +825,20 @@ const integrateWave = (w, wave) =>
       `tornDown[] — and tornDown[] must contain NOTHING else. The script cross-checks tornDown[] ` +
       `against the branches you report cleanly integrated as pure data and fails the wave loudly ` +
       `on any mismatch (ADR-008: it still runs no git).\n` +
-      `5. Confirm: \`git log --oneline -n 20\`.\n` +
+      `5. Confirm: \`git log --oneline -n 20\`.\n\n` +
+      `NEVER run a bare \`git stash\`, \`git stash -u\`, \`git clean\`, \`git reset --hard\` or ` +
+      `\`git checkout .\` here (ADR-035). You are in the SHARED main working tree, and the ` +
+      `untracked files in it include OTHER phases' completed PLAN.md / CRITERIA.md / ` +
+      `ACCEPTANCE.md. An unscoped \`git stash -u\` has already destroyed a finished plan in this ` +
+      `framework, and every downstream step still reported success. If you must set something ` +
+      `aside, scope it AND restore it in the same step: \`git stash push -- <explicit path>\` … ` +
+      `\`git stash pop\`. If the tree is too dirty to proceed without a broad stash, STOP and ` +
+      `return integrated=false with a note — aborting is always cheaper than destroying work ` +
+      `you cannot see.\n\n` +
+      `\`branches[]\` means the SOURCE \`worktree-*\` branches you cherry-picked cleanly in THIS ` +
+      `run. It is NOT the branch you picked ONTO — never put \`main\`/the working branch in it. ` +
+      `The script cross-checks tornDown[] against it, so naming the target here reads as "you ` +
+      `deleted branches you never confirmed picking" and fails the wave.\n` +
       `Return integrated=true with branches[] merged, tornDown[] listing exactly what you ` +
       `deleted (empty/omitted if nothing was cleanly picked this run), and advisories[] for any ` +
       `⚠ overflow; or integrated=false with conflicts[]/staleBranches[] (each: {branch,taskId}) ` +
@@ -798,7 +849,7 @@ const integrateWave = (w, wave) =>
     // at the session tier (opus) for every project predating this key, the exact
     // opposite of the goal.  Mirrors leanExecutionEnabled's default-on reasoning.  An
     // explicit `ac config set models.integrator sonnet` (or a profile) still wins.
-    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.integrator || 'haiku', schema: INTEGRATE_SCHEMA },
+    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.integrator || 'sonnet', schema: INTEGRATE_SCHEMA },
   )
 
 // ── Phase-13 (ADR-026): warm batched sequential executor primitives ────────────
@@ -892,7 +943,12 @@ const batchPrompt = (orderedTasks) =>
   `- End that task's commit subject with the stamp \`(phase ${phaseNum} <taskId>)\` (replace ` +
   `<taskId> with the task's own id) — this enables idempotent re-execution (ADR-017).\n` +
   `- DO NOT squash tasks into one commit — each task gets its OWN atomic commit, in order, so ` +
-  `a re-run can detect exactly which tasks landed.\n\n` +
+  `a re-run can detect exactly which tasks landed.\n` +
+  `- The stamp is NOT optional and NOT cosmetic (ADR-035). The wave integrator maps a branch ` +
+  `back to its task by grepping for it, so an unstamped commit is an unmappable branch — in ` +
+  `benchmark #2 four of five commits in one wave shipped unstamped and two were not even ` +
+  `conventional-commit shaped. Before you report a task as committed, re-read its subject and ` +
+  `confirm the stamp is literally present.\n\n` +
   `After implementing every task, derive \`committed\` MECHANICALLY — do NOT rely on your own ` +
   `belief about what landed. For EACH task id, run:\n` +
   `  git log --oneline --fixed-strings --grep "(phase ${phaseNum} <taskId>)"\n` +

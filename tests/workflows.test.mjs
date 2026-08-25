@@ -2761,7 +2761,7 @@ const threeIndependentTasks = () => [
 ]
 const byLabel = (calls, label) => calls.find((c) => c.opts && c.opts.label === label)
 
-test('t2 (phase 14, C1): the wave integrator floors to haiku when models.integrator is unset, an explicit override wins, and heal/testgate/teardown stay at the executor tier', async () => {
+test('t2 (phase 14, C1): the wave integrator floors to sonnet when models.integrator is unset (ADR-035), an explicit override wins, and heal/testgate/teardown stay at the executor tier', async () => {
   const discoverTasks = threeIndependentTasks()
   const integ = {
     integrated: false,
@@ -2777,18 +2777,18 @@ test('t2 (phase 14, C1): the wave integrator floors to haiku when models.integra
   }
 
   const { calls } = await runWorkflow(baseArgs, { discoverTasks, integ })
-  assert.strictEqual(byLabel(calls, 'integrate:w1').opts.model, 'haiku', 'no models.integrator key -> the integrate call must floor to haiku')
+  assert.strictEqual(byLabel(calls, 'integrate:w1').opts.model, 'sonnet', 'no models.integrator key -> the integrate call must floor to sonnet (ADR-035 — no role runs haiku)')
   assert.strictEqual(byLabel(calls, 'heal:t2').opts.model, 'sonnet', 'heal re-runs must stay at models.executor')
   assert.strictEqual(byLabel(calls, 'testgate').opts.model, 'sonnet', 'the post-heal test gate must stay at models.executor')
   assert.strictEqual(byLabel(calls, 'teardown:w1').opts.model, 'sonnet', 'teardown must stay at models.executor')
 
   const overrideArgs = { ...baseArgs, models: { ...baseArgs.models, integrator: 'sonnet' } }
   const { calls: overrideCalls } = await runWorkflow(overrideArgs, { discoverTasks, integ })
-  assert.strictEqual(byLabel(overrideCalls, 'integrate:w1').opts.model, 'sonnet', 'an explicit models.integrator override must win over the haiku floor')
+  assert.strictEqual(byLabel(overrideCalls, 'integrate:w1').opts.model, 'sonnet', 'an explicit models.integrator override must win over the sonnet floor')
 
   const emptyArgs = { ...baseArgs, models: {} }
   const { calls: emptyCalls } = await runWorkflow(emptyArgs, { discoverTasks, integ })
-  assert.strictEqual(byLabel(emptyCalls, 'integrate:w1').opts.model, 'haiku', 'models:{} (project predating the key) must still floor to haiku')
+  assert.strictEqual(byLabel(emptyCalls, 'integrate:w1').opts.model, 'sonnet', 'models:{} (project predating the key) must still floor to sonnet')
 })
 
 test('t2 (phase 14, C2): one bad branch does not cost the wave — exactly one integrate call, one data-driven heal call, the clean peers are left alone, and the wave reaches Verify', async () => {
@@ -2903,15 +2903,15 @@ test('t2 (phase 14, C8): the sequential/lean-batched path never dispatches an in
   assert.strictEqual(result.strategy, 'sequential')
 })
 
-test('t2 (phase 14): source guard — the integrate agent() options line reads models.integrator || \'haiku\', while heal/testgate/teardown still read models.executor', () => {
+test('t2 (phase 14): source guard — the integrate agent() options line reads models.integrator || \'sonnet\', while heal/testgate/teardown still read models.executor', () => {
   const wfSrc = readFileSync(WF_FILE, 'utf8')
   const lines = wfSrc.split('\n')
 
   const integrateLine = lines.find((l) => l.includes('label: `integrate:w'))
   assert.ok(integrateLine, 'integrate:w<n> agent() options line not found')
   assert.ok(
-    integrateLine.includes("model: models.integrator || 'haiku'"),
-    'the integrate call must read models.integrator || \'haiku\'',
+    integrateLine.includes("model: models.integrator || 'sonnet'"),
+    'the integrate call must read models.integrator || \'sonnet\'',
   )
 
   for (const needle of ['label: `heal:', "label: 'testgate'", 'label: `teardown:w']) {
@@ -3230,4 +3230,68 @@ test('ADR-031: the batch executor prompt carries the bar', async () => {
     CRITERIA_RE.test(batch.prompt),
     'the batched executor — the path small phases actually take — must see the acceptance bar',
   )
+})
+
+// ── ADR-035: the integrator's destructive surface, and the zero-task hole ─────
+//
+// Benchmark #2. The wave integrator is the ONLY role that runs git in the SHARED main
+// working tree, where untracked files include other phases' completed plan artifacts. At
+// the haiku tier it ran a bare `git stash -u` and never popped it, destroying a finished
+// PLAN.md/CRITERIA.md/ACCEPTANCE.md. The next execute run then found no plan and returned
+// {tasks:0, waves:0, executed:0, stoppedReason:"single-pass", integrationFailed:null} —
+// every field benign. Four steps, each reporting success, on top of destroyed work.
+
+test('ADR-035: the integrator prompt forbids unscoped destructive git in the shared tree', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const i = wfSrc.indexOf('const integrateWave')
+  assert.ok(i !== -1, 'integrateWave not found')
+  const body = wfSrc.slice(i, i + 6000)
+  assert.ok(/git stash -u/.test(body) && /NEVER/.test(body), 'must explicitly forbid a bare `git stash -u`')
+  assert.ok(/git clean/.test(body) && /reset --hard/.test(body), 'must forbid the other unscoped destroyers too')
+  // Forbidding without offering the correct form just pushes it to improvise.
+  assert.ok(/git stash push -- /.test(body), 'must give the scoped form it should use instead')
+  assert.ok(/SHARED/.test(body), 'must say WHY — it is the shared working tree, not a worktree')
+})
+
+test('ADR-035: the integrator prompt says branches[] means SOURCES, not the target', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const i = wfSrc.indexOf('const integrateWave')
+  const body = wfSrc.slice(i, i + 6000)
+  // Filling branches[] with `main` made the tornDown cross-check read as data loss and
+  // aborted a phase whose work had actually integrated.
+  assert.ok(
+    /NOT the branch you picked ONTO|never put .?main/i.test(body),
+    'the prompt must rule out naming the target branch in branches[]',
+  )
+})
+
+test('ADR-035: zero discovered tasks is a hard FAIL, never a benign no-op', async () => {
+  const { result, logs } = await runWorkflow(
+    { root: '/tmp/proj', phase: '99-empty', strategy: 'sequential' },
+    { discoverTasks: [] },
+  )
+  assert.strictEqual(result.verdict.passed, false, 'a zero-task run must not report success')
+  assert.strictEqual(result.stoppedReason, 'no-tasks', 'it must be distinguishable from a real sequential run')
+  assert.strictEqual(result.tasks, 0)
+  assert.match(result.verdict.summary, /destroyed|missing|unreadable/i, 'the summary must point at the likely cause')
+  assert.ok(logs.some((l) => /ZERO tasks/i.test(l)), 'it must be visible in the log, not only in the return value')
+})
+
+test('ADR-035: a zero-task run never reaches the executor or the verifier', async () => {
+  const { calls } = await runWorkflow(
+    { root: '/tmp/proj', phase: '99-empty', strategy: 'sequential' },
+    { discoverTasks: [] },
+  )
+  assert.strictEqual(execCalls(calls).length, 0, 'nothing to execute')
+  const verify = calls.find((c) => c.opts && c.opts.schema && 'criteriaFound' in (c.opts.schema.properties || {}))
+  assert.ok(!verify, 'it must bail before verify — a self-derived bar on an empty phase is noise')
+})
+
+test('ADR-035: the batch prompt makes the ADR-017 stamp non-optional', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const i = wfSrc.indexOf('const batchPrompt')
+  const body = wfSrc.slice(i, i + 4000)
+  assert.ok(/NOT optional/i.test(body), 'the stamp must be stated as non-optional')
+  // It is load-bearing because the integrator maps branch->task by grepping for it.
+  assert.ok(/unmappable|maps a branch/i.test(body), 'the prompt must say WHY the stamp matters')
 })

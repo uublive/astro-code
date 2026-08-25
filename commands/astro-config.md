@@ -1,5 +1,5 @@
 ---
-description: Choose which model (opus/sonnet/haiku) runs each role — planner, researcher, executor, verifier, discover, integrator
+description: Choose which model (opus/sonnet) runs each role — planner, researcher, executor, verifier, discover, integrator
 allowed-tools: Bash, AskUserQuestion
 ---
 

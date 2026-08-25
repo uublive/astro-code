@@ -41,10 +41,25 @@ test('no profile uses haiku for a judgement role (sonnet is the floor)', () => {
   }
 });
 
-test('integrator is the sole haiku-tier role: max sonnet, balanced/fast haiku (ADR-027)', () => {
+// ADR-035 reverts ADR-027: no role runs haiku, integrator included. The carve-out argued
+// the integrator was "mechanical git with no quality-critical decision left to get wrong".
+// Benchmark #2 inverted that premise — haiku's cherry-pick JUDGEMENT was sound, but it ran
+// a bare `git stash -u` in the shared working tree and never popped it (destroying a
+// completed phase plan), and filled `branches` with the target instead of the sources
+// (aborting a phase whose work had integrated fine). It is the role with the largest
+// destructive surface, not the smallest. And it bought nothing: `executor` is already
+// sonnet under balanced and fast.
+test('ADR-035: NO profile uses haiku for any role, integrator included', () => {
+  for (const name of PROFILE_NAMES) {
+    const tiers = Object.values(profileModels(name));
+    assert.ok(!tiers.includes('haiku'), `${name} must not use haiku for ANY role (ADR-035)`);
+  }
+});
+
+test('integrator tier per profile: sonnet everywhere (ADR-035)', () => {
   assert.equal(profileModels('max').integrator, 'sonnet');
-  assert.equal(profileModels('balanced').integrator, 'haiku');
-  assert.equal(profileModels('fast').integrator, 'haiku');
+  assert.equal(profileModels('balanced').integrator, 'sonnet');
+  assert.equal(profileModels('fast').integrator, 'sonnet');
 });
 
 test('max is every role on opus', () => {

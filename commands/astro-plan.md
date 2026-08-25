@@ -56,6 +56,20 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    checks the result against it, so it must not be shaped by the plan) — then the result
    is `.astrocode/phases/<slug>/PLAN.md` (+ `ACCEPTANCE.md`) with numbered,
    dependency-aware tasks conforming to the canon and aimed at every criterion.
+3b. **Commit the plan artifacts (ADR-035).** `plan-phase.mjs` writes `CRITERIA.md`,
+   `PLAN.md` and `ACCEPTANCE.md` and leaves them UNTRACKED. Untracked files in the shared
+   working tree are one `git stash -u` / `git clean` away from gone — that is exactly how a
+   completed plan was destroyed in benchmark #2, with every downstream step still reporting
+   success. Commit them now:
+
+   ```
+   git add .astrocode/phases/<slug>/ && git commit -m "plan(<slug>): pre-registered criteria + executable plan"
+   ```
+
+   Do this BEFORE suggesting `/astro-execute`. It also means the pre-registered bar is in
+   git history before any implementation exists, which is what makes ADR-021's plan-blind
+   claim auditable after the fact rather than merely asserted.
+
 4. Clear the live status (`ac activity clear`), then summarize the plan and suggest
    `/astro-execute <number>` (reference the phase by its number, e.g. `/astro-execute 1`).
    Clear it too if planning fails or you stop early.

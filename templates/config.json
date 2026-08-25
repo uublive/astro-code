@@ -6,13 +6,13 @@
   "registry_branch": "astro-registry",
   "registry_remote": "origin",
   "models": {
-    "_comment": "Per-role model tier: opus | sonnet, except integrator which is haiku (the sole haiku-tier role, ADR-027). Switch all at once with `ac models max|balanced|fast`. Remove a role to inherit the session model.",
+    "_comment": "Per-role model tier: opus | sonnet for EVERY role — haiku is excluded everywhere, including integrator (ADR-035 reverts the ADR-027 carve-out). Switch all at once with `ac models max|balanced|fast`. Remove a role to inherit the session model.",
     "planner": "opus",
     "researcher": "sonnet",
     "executor": "sonnet",
     "verifier": "opus",
     "discover": "sonnet",
-    "integrator": "haiku"
+    "integrator": "sonnet"
   },
   "gitflow": {
     "enabled": false,
