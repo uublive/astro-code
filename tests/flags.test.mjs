@@ -21,7 +21,7 @@ import { initPlanning } from '../lib/planning.mjs';
 import { paths } from '../lib/paths.mjs';
 import { addPhase, findPhase, setPhaseStatus } from '../lib/roadmap.mjs';
 import { initRegistry } from '../lib/registry.mjs';
-import { canonPush, canonPull } from '../lib/canon.mjs';
+import { canonPush, canonPull, addDecision } from '../lib/canon.mjs';
 
 const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
 const AC = join(FRAMEWORK, 'bin', 'ac.mjs');
@@ -217,4 +217,47 @@ test('ADR-033: --agent is allowlisted, and a typo of it is still rejected', asyn
   assert.notStrictEqual(bad.status, 0, 'a typo must not silently fall back to a human sign-off');
   assert.match(bad.stderr, /unknown flag/i);
   assert.strictEqual(findPhase(dir, '1').status, 'verified', 'the rejected accept must not have closed the phase');
+});
+
+// ── ADR-034: `ac canon pull` must never destroy a local-only ADR ──────────────
+//
+// Found by the v0.11.0 benchmark. The chain: astro-code's own planner emitted a task
+// writing an ADR straight into DECISIONS.md; `ac canon pull` (mandated by /astro-execute)
+// overwrote the file from the registry and printed success; canonPush refuses to publish
+// DECISIONS.md, so there was no repair path; and `ac decision add` then REISSUED the same
+// id. Three steps, each reporting success, ending in silent data loss.
+
+test('ADR-034: canon pull preserves an ADR the registry has never seen', async () => {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare);
+  assert.strictEqual(initRegistry({ root: dir }).ok, true);
+
+  // Seed the SHARED branch through the supported path — addDecision is the only writer
+  // that publishes DECISIONS.md. canonPush deliberately never does.
+  const seeded = await addDecision(dir, { title: 'from the registry', why: 'shared' });
+  assert.strictEqual(seeded.source, 'remote', 'the seed decision must have landed on the registry branch');
+
+  // Now diverge exactly the way the benchmark did: an ADR written straight into the file,
+  // never through `ac decision add`, so the registry has never seen it.
+  const localOnly = readFileSync(paths(dir).decisions, 'utf8') +
+    '\n## ADR-099 — written by hand, never pushed\n_2026-01-02_\n\n**Why:** it exists only here.\n';
+  writeFileSync(paths(dir).decisions, localOnly);
+
+  const res = canonPull(dir);
+  assert.strictEqual(res.ok, true);
+  const after = readFileSync(paths(dir).decisions, 'utf8');
+  assert.match(after, /ADR-099/, 'a local-only ADR must survive a pull — losing it is silent data destruction');
+  assert.match(after, /written by hand, never pushed/, 'its body must survive too, not just the heading');
+  assert.ok(
+    (res.preserved || []).includes('ADR-099'),
+    'the pull must REPORT what it preserved — silence is what let the old overwrite go unnoticed',
+  );
+});
+
+test('ADR-034: a pull with no local divergence reports nothing preserved', () => {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare);
+  assert.strictEqual(initRegistry({ root: dir }).ok, true);
+  const res = canonPull(dir);
+  assert.deepStrictEqual(res.preserved || [], [], 'the common case must stay quiet');
 });

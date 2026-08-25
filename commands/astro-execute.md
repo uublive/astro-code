@@ -116,9 +116,22 @@ Execute phase `$ARGUMENTS`.
 
    If all three hold, launch `plan-phase.mjs` for that phase too, as a second
    background Workflow, using the same `models`/`root` args. Both run concurrently and
-   you are notified separately. If any condition fails — no next phase, `missing`/`stub`
-   context, already planned — skip silently and say nothing; a phase that has not been
-   discussed must NEVER be auto-planned, which would defeat the discuss gate.
+   you are notified separately. A phase that has not been discussed must NEVER be
+   auto-planned — that would defeat the discuss gate.
+
+   **When the gate is NOT met, say so in exactly one line** — e.g.
+   `pipeline: phase 3 is undiscussed, not planning ahead` or `pipeline: no phase after
+   this one`. Do not skip silently. Benchmarking v0.11.0 showed why: "correctly gated
+   off", "the model skipped this step", and "the feature is broken" all produced no
+   output whatsoever and were indistinguishable. One line makes the gate observable
+   without making absence noisy.
+
+   **Ordering trap — read this.** Under the naive loop (`discuss N → plan N → execute N →
+   accept N`) phase N+1 is still undiscussed when execute N runs, so this gate NEVER
+   passes and pipelining never happens. To actually get the win, run `/astro-discuss` for
+   the next phase BEFORE `/astro-execute` on the current one — or discuss several phases
+   up front. Suggest this to the user when the gate reports "undiscussed": it is the
+   difference between the feature working and being permanently off.
 
    Do **not** set `ac activity` for the pipelined plan: there is one activity slot and
    the executing phase owns it. Skip this entirely if the user passed `--no-pipeline`.

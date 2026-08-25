@@ -329,3 +329,29 @@ test('ADR-032: /astro-phase carries sizing guidance with an explicit upper bound
     'the sizing guidance must bound itself — a phase whose criteria are not one coherent bar is too big',
   );
 });
+
+// ── ADR-034: the pipeline gate must be observable, and its ordering trap documented ──
+//
+// v0.11.0 benchmark: pipelining fired zero times because the documented per-phase order
+// leaves phase N+1 undiscussed when execute N runs. The gate is correct; it was simply
+// unreachable — and being silent when unmet made "gated off", "skipped" and "broken"
+// indistinguishable.
+
+test('ADR-034: the pipeline gate reports when it does NOT fire', () => {
+  const src = cmd('astro-execute.md');
+  assert.ok(
+    /exactly one line/i.test(src) && /Do not skip silently/i.test(src),
+    'the pipeline step must emit one line when the gate is not met — silence made the feature untestable',
+  );
+});
+
+test('ADR-034: the ordering trap is documented where it bites', () => {
+  const src = cmd('astro-execute.md');
+  assert.ok(/ordering trap/i.test(src), 'astro-execute.md must name the ordering trap');
+  assert.ok(
+    /BEFORE `\/astro-execute`|before .{0,20}execute/i.test(src),
+    'it must say the next phase has to be discussed BEFORE executing the current one',
+  );
+  // And the status command should steer the user there proactively.
+  assert.ok(/ADR-032|pipeline/i.test(cmd('astro-status.md')), 'astro-status.md should keep the pipeline fed');
+});

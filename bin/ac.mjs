@@ -605,7 +605,17 @@ async function main() {
       if (pos[0] === 'pull') {
         const res = canonPull(r);
         if (!res.ok) console.error('• no coordinated remote — canon is local-only');
-        else console.log(`✓ pulled ${res.pulled.length ? res.pulled.join(', ') : 'nothing'} from ${res.branch}`);
+        else {
+          console.log(`✓ pulled ${res.pulled.length ? res.pulled.join(', ') : 'nothing'} from ${res.branch}`);
+          // ADR-034: a preserved entry means the local file diverged from the registry.
+          // Silence here is what let the old overwrite destroy work unnoticed.
+          if (res.preserved && res.preserved.length) {
+            console.error(
+              `⚠ kept ${res.preserved.length} local-only decision(s) the registry has never seen: ${res.preserved.join(', ')} — ` +
+                `re-add them via \`ac decision add\` so they reach the team (DECISIONS.md is never bulk-pushed).`,
+            );
+          }
+        }
       } else if (pos[0] === 'push') {
         checkFlags('canon push', flags);
         const res = canonPush(r, { dryRun: flags['dry-run'] === true });
