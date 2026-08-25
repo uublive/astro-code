@@ -123,6 +123,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
   ac models [max|balanced|fast] [--preview]  apply a per-role model preset (speed switch)
+  ac preflight                        warn if HEAD diverged from upstream (silent when in sync)
   ac canon [pull | push [--dry-run]]  print canon; pull/push shares it on the orphan branch
   ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision (shared)
   ac decision list                    list recorded decisions
@@ -173,6 +174,42 @@ async function main() {
           }
         } catch { /* best-effort — an unwritable .gitignore must never fail init */ }
       }
+      return;
+    }
+
+    // ADR-036 — warn when local HEAD has diverged from its upstream before a parallel run.
+    //
+    // The harness creates each parallel executor's worktree by forking `origin/<branch>`,
+    // NOT local HEAD. So every commit that exists locally but not on the remote makes an
+    // entire wave's branches read as STALE at integration time: ADR-015 refuses to
+    // cherry-pick them (correctly — a clean pick proves nothing off a stale base), the heal
+    // ladder re-runs every task sequentially, and the phase still reports PASS. Benchmark #2
+    // lost 17 task-executions this way across three phases; the one phase that launched with
+    // HEAD == upstream healed 0 of 11.
+    //
+    // astro-code cannot fix the fork base — `isolation: 'worktree'` exposes no control and
+    // the workflow script runs no git (ADR-008). But the condition is one cheap comparison,
+    // and the ONLY trace it otherwise leaves is `executed` exceeding `tasks` in a JSON
+    // payload nobody reads. Advisory by design: exit 0 always, print NOTHING when clean, and
+    // never block a run the operator meant to make.
+    case 'preflight': {
+      const r = root();
+      if (!isRepo(r)) return;
+      const head = git(['rev-parse', 'HEAD'], { cwd: r });
+      const up = git(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'], { cwd: r });
+      if (head.status !== 0 || up.status !== 0) return; // no upstream to compare — nothing to say
+      const upstream = up.stdout.trim();
+      const upSha = git(['rev-parse', upstream], { cwd: r });
+      if (upSha.status !== 0 || upSha.stdout.trim() === head.stdout.trim()) return; // in sync
+      const ahead = git(['rev-list', '--count', `${upstream}..HEAD`], { cwd: r }).stdout.trim() || '?';
+      const behind = git(['rev-list', '--count', `HEAD..${upstream}`], { cwd: r }).stdout.trim() || '?';
+      console.error(
+        `⚠ HEAD has diverged from ${upstream} (ahead ${ahead}, behind ${behind}).\n` +
+          `  Parallel executor worktrees fork from ${upstream}, not from local HEAD — so an entire\n` +
+          `  wave can come back STALE, get re-run through the heal ladder, and still report PASS.\n` +
+          `  Fix: \`git push\` (or pull) so they match, and avoid committing while a phase runs.\n` +
+          `  Or skip the parallel path entirely: \`ac config set use_worktrees false\`.`,
+      );
       return;
     }
 

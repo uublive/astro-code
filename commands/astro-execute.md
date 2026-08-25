@@ -12,6 +12,14 @@ Execute phase `$ARGUMENTS`.
    number, e.g. `/astro-plan 3`).
 2. Mark the phase active and surface the live status: `ac state set active_phase <slug>`
    then `ac activity '⚙ executing'` (the statusline/banner pick it up).
+2b. **Pre-flight the fork base:** run `ac preflight`. It prints nothing when local `HEAD`
+   matches its upstream, and otherwise warns that parallel executor worktrees fork from the
+   REMOTE, not from `HEAD` — so a whole wave can come back STALE, be re-run through the heal
+   ladder, and still report PASS. If it warns, **relay it and suggest `git push` before
+   continuing**; it is advisory, so proceed if the user prefers. Benchmark #2 lost 17
+   task-executions to this across three phases; the one phase that launched in sync healed
+   0 of 11.
+
 3. Refresh the team canon best-effort (`ac canon pull`). The workflow's agents read
    the canon + CONTEXT.md from disk — you do NOT pass them as args.
 4. Run the execution fan-out. Use the **best available** mechanism (graceful fallback):

@@ -261,3 +261,62 @@ test('ADR-034: a pull with no local divergence reports nothing preserved', () =>
   const res = canonPull(dir);
   assert.deepStrictEqual(res.preserved || [], [], 'the common case must stay quiet');
 });
+
+// ── ADR-036: `ac preflight` — surface the worktree fork-base divergence ───────
+//
+// The harness forks each parallel executor's worktree from the REMOTE branch, not local
+// HEAD, so any unpushed commit makes a whole wave read STALE at integration: ADR-015
+// refuses the cherry-pick, the heal ladder re-runs every task, and the phase still reports
+// PASS. Benchmark #2 lost 17 task-executions this way; the one phase that launched in sync
+// healed 0 of 11. astro-code cannot fix the fork base, but it can stop the condition being
+// invisible — its only other trace is `executed` exceeding `tasks` in a payload nobody reads.
+
+function repoWithUpstream() {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare);
+  writeFileSync(join(dir, 'a.txt'), 'a');
+  git(['add', '-A'], { cwd: dir });
+  git(['commit', '-qm', 'init'], { cwd: dir });
+  git(['push', '-q', '-u', 'origin', 'HEAD'], { cwd: dir });
+  return dir;
+}
+
+test('ADR-036: preflight is SILENT and exit 0 when HEAD matches upstream', () => {
+  const dir = repoWithUpstream();
+  const res = run(['preflight'], dir);
+  assert.strictEqual(res.status, 0);
+  assert.strictEqual(res.stdout.trim() + res.stderr.trim(), '', 'the common case must produce no output at all');
+});
+
+test('ADR-036: preflight warns — but never blocks — when HEAD is ahead of upstream', () => {
+  const dir = repoWithUpstream();
+  writeFileSync(join(dir, 'b.txt'), 'b');
+  git(['add', '-A'], { cwd: dir });
+  git(['commit', '-qm', 'unpushed'], { cwd: dir });
+
+  const res = run(['preflight'], dir);
+  // Advisory, not a gate: the operator may have meant to run this way.
+  assert.strictEqual(res.status, 0, 'preflight must never block a run the operator intended');
+  assert.match(res.stderr, /diverged/i);
+  assert.match(res.stderr, /ahead 1/, 'it must quantify the divergence, not just assert it');
+  assert.match(res.stderr, /git push/, 'it must name the one-line fix');
+  assert.match(res.stderr, /STALE/, 'it must say what actually goes wrong, or it reads as pedantry');
+});
+
+test('ADR-036: preflight is silent when there is no upstream to compare against', () => {
+  const dir = mkWorkdir(null);
+  writeFileSync(join(dir, 'a.txt'), 'a');
+  git(['add', '-A'], { cwd: dir });
+  git(['commit', '-qm', 'init'], { cwd: dir });
+  const res = run(['preflight'], dir);
+  assert.strictEqual(res.status, 0);
+  assert.strictEqual(res.stderr.trim(), '', 'no upstream means nothing to compare — not a warning');
+});
+
+test('ADR-036: /astro-execute runs preflight before launching', () => {
+  const src = readFileSync(join(FRAMEWORK, 'commands', 'astro-execute.md'), 'utf8');
+  assert.ok(/ac preflight/.test(src), 'astro-execute.md must call `ac preflight`');
+  const pre = src.indexOf('ac preflight');
+  const fan = src.indexOf('Run the execution fan-out');
+  assert.ok(pre !== -1 && fan !== -1 && pre < fan, 'the check must come BEFORE the fan-out, or it warns too late to act on');
+});
