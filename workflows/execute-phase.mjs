@@ -66,6 +66,37 @@ const OBEY =
   `\n\nRead and OBEY: ${root}/.astrocode/CONVENTIONS.md and ${root}/.astrocode/DECISIONS.md (project canon), ` +
   `plus ${root}/.astrocode/phases/${phaseSlug}/CONTEXT.md (this phase's decisions, if present).`
 
+// ADR-031 — the implementer sees the BAR it will be judged against.
+//
+// CRITERIA.md is pre-registered, goal-derived and plan-blind (ADR-021), written BEFORE the
+// plan exists, and the planner already aims every task at it. The EXECUTOR, however, never
+// saw it: it implemented against PLAN.md and was then judged against a bar it could not
+// read. Measured on a real project, HALF of all execute runs failed first-pass verification
+// and cost 2.1x as a result (47min vs 22min mean) — not because the verifier was strict,
+// but because the implementer was working blind to the acceptance test.
+//
+// This does NOT weaken the gate. ADR-021 constrains the VERIFIER — it must stay plan-blind
+// and gather its own evidence — and says nothing about the implementer. Showing the
+// acceptance test to whoever writes the code is ordinary engineering, not teaching to the
+// test.
+//
+// The "implement the GOAL, not the criterion text" caution is load-bearing: a criterion is
+// one falsifiable OBSERVATION of the goal, not a spec to satisfy narrowly. Gaming the
+// observation while missing the intent still fails, because the verifier re-derives its
+// evidence adversarially and never replays this file.
+//
+// Appended to the three IMPLEMENTER prompts only (execPrompt / healPrompt / batchPrompt) —
+// deliberately NOT to OBEY, which also feeds the integrator, teardown and test gate, none
+// of which implement anything and none of which should be steered by the bar.
+const BAR =
+  `\n\nACCEPTANCE BAR (read-only): ${root}/.astrocode/phases/${phaseSlug}/CRITERIA.md — the ` +
+  `pre-registered, goal-derived criteria this phase is verified against (if present; absent is ` +
+  `fine, just proceed). Read it BEFORE you start and make sure your work would satisfy every ` +
+  `criterion your task touches. Implement the GOAL, not the criterion text: each criterion is ` +
+  `one falsifiable observation of the goal, so special-casing to satisfy its literal wording ` +
+  `while missing the intent still FAILS — the verifier gathers its own evidence independently ` +
+  `and never replays this file. Never edit CRITERIA.md.`
+
 // Phase-07 / ADR-017: TASK_SCHEMA items gain `done: boolean` (required).
 // WHY required AND boolean: without a strict schema the Discover agent can omit
 // `done` entirely (returns {} or null) and the skip-wiring would treat the
@@ -469,7 +500,8 @@ const execPrompt = (t) =>
   `enables idempotent re-execution (ADR-017): a later re-run of /astro-execute will detect ` +
   `the stamp and skip this task rather than re-executing it. ` +
   `Return a short summary of what you changed.` +
-  OBEY
+  OBEY +
+  BAR
 
 const runOnBranch = (t) =>
   agent(execPrompt(t), { label: `exec:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
@@ -498,7 +530,8 @@ const healPrompt = (t, preservedBranch) =>
   `The stamp \`(phase ${phaseNum} ${t.id})\` must appear at the end of the commit subject — ` +
   `it enables idempotent re-execution (ADR-017) so future re-runs skip this healed task. ` +
   `Return a short summary of what you changed.` +
-  OBEY
+  OBEY +
+  BAR
 
 const runHealOnBranch = (t, preservedBranch) =>
   agent(healPrompt(t, preservedBranch), { label: `heal:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
@@ -865,7 +898,8 @@ const batchPrompt = (orderedTasks) =>
   `  git log --oneline --fixed-strings --grep "(phase ${phaseNum} <taskId>)"\n` +
   `If it returns at least one line, that task id belongs in committed[]; otherwise omit it. ` +
   `Return committed=[the task ids whose stamp you found] and a short summary.` +
-  OBEY
+  OBEY +
+  BAR
 
 // runBatchOnBranch — a single agent() call carrying the WHOLE ordered task list
 // (matching the shape of every other run* wrapper above). Deliberately NO
@@ -1352,10 +1386,32 @@ if (integrationFailed) {
 // runVerify — the ADR-021 adversarial, plan-blind goal verification, now returning the
 // structured VERIFY_SCHEMA verdict so ONE call serves the first verify AND every
 // re-verify in the loop (no forked verifier prompt).
-const runVerify = () =>
+// ADR-031 — `focusIds` REDIRECTS the re-verify's depth; it never narrows its COVERAGE.
+//
+// The obvious optimization — on a re-verify, only re-check the criteria that failed — is
+// WRONG here, and the loop below depends on it being wrong. The stop-on-no-progress bail
+// compares the COMPLETE failing-criteria set across cycles precisely so that a remediation
+// which fixes one criterion while incidentally breaking another reads as net-no-progress
+// and bails. Re-checking only the previously-failing ids would make that regression
+// invisible and could return passed=true on a phase the cycle just broke — the exact
+// false-PASS mode ADR-020/021 exist to prevent.
+//
+// So every criterion is still independently observed on every cycle. `focusIds` only tells
+// the verifier where the remediation actually touched, so it spends its deepest adversarial
+// effort there rather than re-deriving all evidence uniformly from scratch.
+const runVerify = (focusIds = []) =>
   agent(
     `Verify phase "${phaseSlug}" of the project at ${root}. The work is committed on the ` +
       `CURRENT branch — verify against HEAD/the working tree, NOT a fresh checkout of main.\n\n` +
+      (focusIds.length
+        ? `THIS IS A RE-VERIFY after a remediation pass that targeted: ${focusIds.join(', ')}. ` +
+          `Spend your DEEPEST adversarial effort on those criteria — they are the ones just ` +
+          `changed and the most likely to be superficially patched. But you MUST still ` +
+          `independently observe EVERY criterion and report a verdict for all of them: the ` +
+          `remediation may have broken a criterion that previously passed, and a regression it ` +
+          `introduced is invisible unless you check. Never carry forward a previous PASS on ` +
+          `trust.\n\n`
+        : '') +
       `Your job is to PROVE THE WORK IS WRONG. A false PASS is the costliest error — assume the ` +
       `work is broken until you have run the evidence yourself.\n\n` +
       `Check ONLY against: the phase goal, and ${root}/.astrocode/phases/${phaseSlug}/CRITERIA.md ` +
@@ -1455,7 +1511,9 @@ if (!integrationFailed) {
       }
 
       // Re-verify with the SAME adversarial, schema'd verifier (no forked prompt).
-      verdict = await runVerify()
+      // beforeIds only REDIRECTS depth to what the pass just touched — coverage stays
+      // total, so an incidental regression still surfaces (see runVerify's note).
+      verdict = await runVerify([...beforeIds])
       if (verdict.passed) {
         log(`✓ remediation cycle ${cycle + 1} closed the phase — verified`)
         break

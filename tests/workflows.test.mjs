@@ -2273,9 +2273,11 @@ test('t5 (phase 10): stop-on-no-progress — HEAD-unchanged check precedes the r
   // Ordering: the HEAD-moved (no-progress #1) check must precede the re-verify so a
   // no-commit pass bails BEFORE consuming another verify + more budget (C6).
   const headMovedIdx = loopWindow.indexOf('headMoved')
-  const reVerifyIdx = loopWindow.indexOf('verdict = await runVerify()')
+  // ADR-031 gave runVerify a focusIds argument (depth redirect, NOT a coverage narrowing),
+  // so match the call rather than its exact old zero-arg form.
+  const reVerifyIdx = loopWindow.search(/verdict = await runVerify\(/)
   assert.ok(headMovedIdx !== -1, 'the loop must compute a headMoved / HEAD-unchanged signal')
-  assert.ok(reVerifyIdx !== -1, 'the loop must re-verify with runVerify()')
+  assert.ok(reVerifyIdx !== -1, 'the loop must re-verify with runVerify(…)')
   assert.ok(headMovedIdx < reVerifyIdx, 'the HEAD-unchanged (no-progress) check must precede the re-verify — bail before spending more budget')
 
   // Both no-progress bails set stoppedReason and break.
@@ -2446,7 +2448,12 @@ test('t3 (phase 13): batchPrompt appends OBEY like every other executor prompt',
   assert.ok(endIdx !== -1 && endIdx > startIdx, 'runBatchOnBranch comment not found after batchPrompt')
 
   const body = wfSrc.slice(startIdx, endIdx).trimEnd()
-  assert.ok(body.endsWith('OBEY'), 'batchPrompt must append the OBEY constant at the end (same contract as execPrompt/healPrompt/remediatePrompt)')
+  // ADR-031 appends BAR after OBEY on the three IMPLEMENTER prompts. The contract this
+  // guards is "batchPrompt carries the canon like its siblings", not the literal tail.
+  assert.ok(
+    /OBEY(\s*\+\s*BAR)?$/.test(body),
+    'batchPrompt must append the OBEY constant (optionally followed by BAR) at the end — same contract as execPrompt/healPrompt/remediatePrompt',
+  )
 })
 
 test('t3 (phase 13): runBatchOnBranch dispatches a single agent() call labeled exec:batch with BATCH_SCHEMA, no worktree isolation', () => {
@@ -3129,5 +3136,98 @@ test('ADR-028: a suite that EXISTS and fails still stops the phase', async () =>
   assert.ok(
     logs.some((l) => l.includes('test gate failed after heal')),
     'the hard failure must still log the stop-before-verify line',
+  )
+})
+
+// ── ADR-031: the implementer sees the acceptance bar; re-verify keeps full coverage ──
+//
+// Measured on a real project: half of all execute runs failed first-pass verification and
+// cost 2.1x as a result (47min vs 22min mean). Root cause was structural, not strictness —
+// execPrompt/healPrompt/batchPrompt never referenced CRITERIA.md, so the implementer was
+// judged against a bar it could not read. ADR-021 constrains the VERIFIER (plan-blind,
+// gathers its own evidence); it never required the implementer to be criteria-blind.
+
+const CRITERIA_RE = /CRITERIA\.md/
+
+test('ADR-031: all three implementer prompts point at CRITERIA.md', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  for (const name of ['execPrompt', 'healPrompt', 'batchPrompt']) {
+    const i = wfSrc.indexOf(`const ${name} =`)
+    assert.ok(i !== -1, `${name} not found`)
+    // Window to the next top-level `const ` definition, so we read only this prompt.
+    const rest = wfSrc.slice(i + 10)
+    const end = rest.search(/\nconst \w+ =/)
+    const body = rest.slice(0, end === -1 ? 2500 : end)
+    assert.ok(
+      CRITERIA_RE.test(body) || /\bBAR\b/.test(body),
+      `${name} must carry the acceptance bar — an implementer judged against a bar it cannot read ` +
+        `is why half of all execute runs needed remediation.`,
+    )
+  }
+})
+
+test('ADR-031: the bar warns against implementing to the criterion text', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const i = wfSrc.indexOf('const BAR =')
+  assert.ok(i !== -1, 'BAR constant not found')
+  const bar = wfSrc.slice(i, i + 1400)
+  assert.ok(/GOAL, not the criterion/i.test(bar), 'BAR must tell the implementer to implement the goal, not the criterion text')
+  assert.ok(/never edit|do not edit/i.test(bar), 'BAR must forbid editing CRITERIA.md')
+})
+
+test('ADR-031: the bar is NOT appended to non-implementer prompts', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  // OBEY feeds the integrator, teardown and test gate too. Putting the bar there would
+  // steer agents that implement nothing.
+  // Tight window: the OBEY definition only, stopping at the blank line that ends it.
+  // A loose slice runs into BAR's own explanatory comment, which naturally names CRITERIA.md.
+  const obeyIdx = wfSrc.indexOf('const OBEY =')
+  const after = wfSrc.slice(obeyIdx)
+  const obey = after.slice(0, after.indexOf('\n\n'))
+  assert.ok(!CRITERIA_RE.test(obey), 'the acceptance bar must not be folded into OBEY')
+})
+
+test('ADR-031: re-verify redirects depth but never narrows coverage', async () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const i = wfSrc.indexOf('const runVerify =')
+  const body = wfSrc.slice(i, i + 2200)
+  assert.ok(/focusIds/.test(body), 'runVerify must accept a focus list')
+  // The load-bearing half: coverage must stay total, or a remediation that fixes one
+  // criterion while breaking another returns passed=true on a phase it just broke.
+  assert.ok(
+    /EVERY criterion/i.test(body) && /(regression|previously passed|broken)/i.test(body),
+    'the re-verify branch must still require every criterion to be observed, and say why',
+  )
+  assert.ok(
+    /never carry forward a previous PASS|on trust/i.test(body),
+    'the re-verify branch must forbid carrying a previous PASS forward on trust',
+  )
+})
+
+test('ADR-031: a clean first-pass verify is unchanged (no focus preamble)', async () => {
+  const discoverTasks = chainTasks(2)
+  const { calls } = await runWorkflow(
+    { root: '/tmp/proj', phase: '31-x', strategy: 'sequential' },
+    { discoverTasks },
+  )
+  const verify = calls.find((c) => c.opts && c.opts.schema && 'criteriaFound' in (c.opts.schema.properties || {}))
+  assert.ok(verify, 'a verify call must happen')
+  assert.ok(
+    !/THIS IS A RE-VERIFY/.test(verify.prompt),
+    'a first-pass verify must not carry the re-verify preamble',
+  )
+})
+
+test('ADR-031: the batch executor prompt carries the bar', async () => {
+  const discoverTasks = chainTasks(3)
+  const { calls } = await runWorkflow(
+    { root: '/tmp/proj', phase: '31-x', strategy: 'sequential' },
+    { discoverTasks },
+  )
+  const batch = calls.find((c) => c.opts && c.opts.label === 'exec:batch')
+  assert.ok(batch, 'the batch call must happen')
+  assert.ok(
+    CRITERIA_RE.test(batch.prompt),
+    'the batched executor — the path small phases actually take — must see the acceptance bar',
   )
 })

@@ -30,7 +30,8 @@ test('the execute-phase Verify spawn is CRITERIA.md-based, plan-blind, adversari
   const vi = execPhase.indexOf("phase('Verify')");
   assert.ok(vi !== -1, "phase('Verify') not found");
   // Window spans the Verify section (both the integrationFailed branch and the else spawn).
-  const window = execPhase.slice(vi, vi + 4000);
+  // Widened for ADR-031's re-verify focus preamble; assertions below are unchanged.
+  const window = execPhase.slice(vi, vi + 6000);
   assert.match(window, /CRITERIA\.md/, 'spawn prompt must reference CRITERIA.md');
   assert.match(window, /do NOT read[^.\n]*PLAN\.md/i, 'spawn prompt must forbid reading PLAN.md');
   assert.match(window, /assume[^.\n]*FAIL/i, 'spawn prompt must be adversarial (assume FAIL)');
