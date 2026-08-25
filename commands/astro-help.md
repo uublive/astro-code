@@ -27,7 +27,7 @@ devs never collide.
 - `/astro-autonomous <n>` — runs discuss→plan→execute in one go, then **stops** for you (still need `/astro-accept`)
 
 **Fast lane for off-the-cuff work:**
-- `/astro-alex "<long unplanned prompt>"` — captures the raw prompt verbatim, distills a
+- `/astro-fast "<long unplanned prompt>"` — captures the raw prompt verbatim, distills a
   lean traceable spec (+ a "to clarify" list so nothing is lost), then executes straight
   through — sequential atomic commits + one verify pass, no research/plan fan-out.
   Executor defaults to Opus (`--model sonnet|haiku` to override); a **scope guard**

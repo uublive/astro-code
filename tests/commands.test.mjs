@@ -6,13 +6,13 @@
 // must make this suite go red — that is the whole point of this file.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const COMMANDS = join(dirname(fileURLToPath(import.meta.url)), '..', 'commands');
 const EXECUTE_MD = join(COMMANDS, 'astro-execute.md');
-const ALEX_MD = join(COMMANDS, 'astro-alex.md');
+const ALEX_MD = join(COMMANDS, 'astro-fast.md');
 const CONFIG_MD = join(COMMANDS, 'astro-config.md');
 
 /**
@@ -139,7 +139,7 @@ test('astro-execute.md fallback tier does not instruct batching in a single mess
 //   • astro-execute.md must document the `--effort` one-off, thread `effort` into the
 //     Workflow args, and read the now-STRUCTURED verdict (`verdict.summary` /
 //     `verdict.passed`) instead of a bare string.
-//   • astro-alex.md must keep the fast lane pinned to `effort: "light"` (0 remediation
+//   • astro-fast.md must keep the fast lane pinned to `effort: "light"` (0 remediation
 //     cycles / single-pass) so it never inherits a phase's deeper budget (C10).
 // Test-after: t6/t7 have already landed the prose; these assert its shape.
 
@@ -180,13 +180,13 @@ test('astro-execute.md reads the structured verdict (verdict.summary / verdict.p
   );
 });
 
-test('astro-alex.md pins the fast lane to effort: "light"', () => {
+test('astro-fast.md pins the fast lane to effort: "light"', () => {
   // The fast lane always runs single-pass: it must pass effort:"light" explicitly in its
   // Workflow call so it never inherits a phase's stored (deeper) budget (C10).
   const hasLight = /effort:\s*"light"/.test(alexSrc);
   assert.ok(
     hasLight,
-    `astro-alex.md must pin the fast lane to effort:"light" in its Workflow args ` +
+    `astro-fast.md must pin the fast lane to effort:"light" in its Workflow args ` +
       `(0 remediation cycles / single-pass — C10) — found no such pin.`,
   );
 });
@@ -276,5 +276,56 @@ test('astro-config.md no longer carries an unscoped "do not offer haiku" instruc
     `astro-config.md must not carry an unscoped "do not offer haiku" instruction — every ` +
       `occurrence must be scoped to the judgement roles (integrator is the ADR-027 ` +
       `exception). Unscoped occurrences found near:\n\n${unscoped.join('\n---\n')}`,
+  );
+});
+
+// ── ADR-032: pipelined planning, phase sizing, and the /astro-fast rename ─────────
+//
+// These three came out of measuring a real project: execution is the long pole (49min
+// mean vs 12min for planning), fixed per-phase overhead dominates small phases, and the
+// fast lane's old name (/astro-alex) did not say what it was for.
+
+const CMD_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'commands');
+const cmd = (n) => readFileSync(join(CMD_DIR, n), 'utf8');
+
+// The old name is spelled via a variable so a future blanket rename cannot silently
+// rewrite the very literal this guard exists to look for.
+const OLD_FAST_NAME = ['astro', 'alex'].join('-');
+
+test('ADR-032: /astro-fast exists and the old name is fully gone', () => {
+  assert.ok(existsSync(join(CMD_DIR, 'astro-fast.md')), 'commands/astro-fast.md must exist');
+  assert.ok(
+    !existsSync(join(CMD_DIR, `${OLD_FAST_NAME}.md`)),
+    `the old ${OLD_FAST_NAME}.md must be gone, not left as a stale duplicate`,
+  );
+  // A dangling reference is worse than the rename: it points at a command that no longer
+  // registers, so the suggestion silently does nothing.
+  for (const f of readdirSync(CMD_DIR).filter((x) => x.endsWith('.md'))) {
+    assert.ok(!cmd(f).includes(OLD_FAST_NAME), `commands/${f} still references the old ${OLD_FAST_NAME} name`);
+  }
+});
+
+test('ADR-032: /astro-execute pipelines the next phase plan, gated on the discuss gate', () => {
+  const src = cmd('astro-execute.md');
+  assert.ok(/pipeline/i.test(src), 'astro-execute.md must document pipelined planning');
+  assert.ok(/plan-phase\.mjs/.test(src), 'the pipelined step must name the plan workflow it launches');
+  // Load-bearing: auto-planning an undiscussed phase would defeat the discuss gate that
+  // /astro-plan enforces via `ac phase context`.
+  assert.ok(
+    /ac phase context/.test(src) && /ready/.test(src),
+    'the pipelined plan MUST be gated on `ac phase context` printing ready — never auto-plan an undiscussed phase',
+  );
+  assert.ok(/--no-pipeline/.test(src), 'there must be a documented opt-out');
+  // One activity slot: the executing phase owns it.
+  assert.ok(/activity/.test(src), 'the pipelined step must say what happens to the live status');
+});
+
+test('ADR-032: /astro-phase carries sizing guidance with an explicit upper bound', () => {
+  const src = cmd('astro-phase.md');
+  assert.ok(/fewer, larger phases/i.test(src), 'astro-phase.md must state the fewer-larger-phases preference');
+  // Without the counterweight this reads as "always merge", which breaks verification.
+  assert.ok(
+    /one coherent goal/i.test(src) && /(too big|do NOT merge)/i.test(src),
+    'the sizing guidance must bound itself — a phase whose criteria are not one coherent bar is too big',
   );
 });

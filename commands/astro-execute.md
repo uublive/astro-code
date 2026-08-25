@@ -105,6 +105,30 @@ Execute phase `$ARGUMENTS`.
      there's no per-task cold-start to eliminate and no `leanExecution` equivalent here.
    - **No subagents at all:** execute the tasks inline, in dependency order, one
      atomic commit each, then verify yourself.
+4b. **Pipeline the next phase's planning (ADR-032).** Execution is the long pole — a
+   measured 49min mean against 12min for planning — and planning phase N+1 needs
+   *nothing* from executing phase N. So immediately after launching the execute
+   workflow, and in the SAME turn, check whether the next phase is ready to plan:
+
+   - `ac roadmap list` — is there a phase after this one with status `pending`?
+   - `ac phase context <next>` — does it print `ready` (genuinely discussed)?
+   - is it still unplanned (no `PLAN.md` in its phase dir)?
+
+   If all three hold, launch `plan-phase.mjs` for that phase too, as a second
+   background Workflow, using the same `models`/`root` args. Both run concurrently and
+   you are notified separately. If any condition fails — no next phase, `missing`/`stub`
+   context, already planned — skip silently and say nothing; a phase that has not been
+   discussed must NEVER be auto-planned, which would defeat the discuss gate.
+
+   Do **not** set `ac activity` for the pipelined plan: there is one activity slot and
+   the executing phase owns it. Skip this entirely if the user passed `--no-pipeline`.
+
+   Two things this deliberately does not do: it never *starts* a phase (planning is
+   read-only against the repo and writes only into the next phase's own directory), and
+   it never reorders the human gates — you still report the execute verdict first, and
+   `/astro-accept` still closes phases one at a time. If execution fails, the pipelined
+   plan is simply wasted work, which is cheap and harmless.
+
 5. Clear the live status (`ac activity clear` — also clear it on any early stop or
    `integrationFailed`), then report the verdict. `verdict` is now a **structured object**
    — read `verdict.passed` (boolean) for PASS/FAIL and `verdict.summary` for the

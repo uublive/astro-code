@@ -60,7 +60,7 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)
 /astro-execute <phase>    wave-based parallel execution, then verify
 /astro-autonomous <phase> run a whole phase end-to-end (discuss→plan→execute→verify), then stop
-/astro-alex "<prompt>"    fast lane for a long, off-the-cuff prompt: capture → distill → execute
+/astro-fast "<prompt>"    fast lane for a long, off-the-cuff prompt: capture → distill → execute
 /astro-verify <phase>     AI gate: confirm the phase goal is met (goal-backward)
 /astro-accept <phase>     human gate: UAT sign-off, then close the phase
 /astro-milestone          start the next milestone cycle
@@ -103,7 +103,7 @@ about scope, approach, and edge cases, then writes the decisions to the phase's
 `CONTEXT.md` — which `/astro-plan` reads and obeys. Optional but recommended; trivial
 phases can skip it.
 
-**The fast lane (off-the-cuff work).** `/astro-alex "<a long, unplanned prompt>"` is for
+**The fast lane (off-the-cuff work).** `/astro-fast "<a long, unplanned prompt>"` is for
 the way some people work — a big freehand request dumped in one go that shouldn't need
 four commands to land. It **captures the raw prompt verbatim** (the source of truth),
 **distills a lean spec** you can eyeball — a checklist of changes, each traced back to

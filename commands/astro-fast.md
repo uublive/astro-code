@@ -7,7 +7,7 @@ allowed-tools: Bash, Read, Write, Grep, Glob, Workflow, AskUserQuestion
 Handle a **long, unplanned, off-the-cuff** request end-to-end without the heavy
 `discuss → plan → execute` loop. Built for the way some people work: a big freehand
 prompt, dumped in one go, that shouldn't be lost and shouldn't need four commands to
-land. `astro-alex` **captures** the raw request verbatim, **distills** a lean spec you
+land. `astro-fast` **captures** the raw request verbatim, **distills** a lean spec you
 can eyeball, guards against scope it shouldn't fast-path, then goes **straight to
 execution** — atomic commits + a single verify pass, no research/planning fan-out.
 
@@ -37,17 +37,17 @@ prompt (one `AskUserQuestion` or just prompt for it) — never invent one.
    the slug from `ac roadmap list`. Mark it live:
    `ac state set active_phase <slug>` then `ac activity '✍ alex · capturing'`.
    - If `ac phase add` refuses (no `origin` / registry not initialized), relay its exact
-     hint (`ac registry init` once, after adding an `origin`) and stop — `astro-alex`
+     hint (`ac registry init` once, after adding an `origin`) and stop — `astro-fast`
      rides the same coordinated numbering as every other phase.
 
 3. **Capture the raw prompt verbatim (source of truth).** Write the user's request,
    **unmodified**, to `.astrocode/phases/<slug>/PROMPT.md`. The **first line MUST be**
-   the provenance marker `<!-- astro-alex: raw prompt -->`. Do not paraphrase, reorder,
+   the provenance marker `<!-- astro-fast: raw prompt -->`. Do not paraphrase, reorder,
    fix typos, or trim it — this file is the ground truth every later artifact traces to.
 
 4. **Distill a lean SPEC.** Read `PROMPT.md`, skim the relevant code (Grep/Glob/Read)
    and the canon (`ac canon`), then write `.astrocode/phases/<slug>/SPEC.md` with the
-   **first line** `<!-- astro-alex: spec -->` and exactly these sections:
+   **first line** `<!-- astro-fast: spec -->` and exactly these sections:
    - `## Changes` — a numbered checklist of concrete edits. Each item is a task the
      executor can implement in one atomic commit, written as:
      ```
@@ -113,7 +113,7 @@ prompt (one `AskUserQuestion` or just prompt for it) — never invent one.
    is the whole point of this command; a deeper verify→remediate budget only applies when a
    run explicitly opts into it, never by inheriting another phase's effort. `strategy:"sequential"` + `useWorktrees:false` is the **no-fan-out** guarantee: tasks
    run one at a time on the working branch, each an atomic commit stamped `(phase NN
-   tK)` (so a re-run of `astro-alex`/`/astro-execute` skips what already landed), then a
+   tK)` (so a re-run of `astro-fast`/`/astro-execute` skips what already landed), then a
    single adversarial verify pass: the fast lane has no `CRITERIA.md`, so the verifier
    **self-derives goal criteria from the phase goal** and checks the result against those
    by running the evidence — it must NOT treat `SPEC.md` as the bar (SPEC is a plan-shaped
@@ -134,7 +134,7 @@ prompt (one `AskUserQuestion` or just prompt for it) — never invent one.
    - **PASS** (`verdict.passed` true) → run `ac phase verify <slug>` (marks it **verified**
      — the AI gate). Then tell the user: the phase is done and waiting on human UAT
      (`/astro-accept <number>`), **and re-print the `## To clarify / unclassified` items** so
-     the open questions are addressed rather than forgotten. `astro-alex` never auto-accepts
+     the open questions are addressed rather than forgotten. `astro-fast` never auto-accepts
      its own work.
    - **FAIL / integration conflict** (`verdict.passed` false, or `integrationFailed`) →
      surface `verdict.summary` (the reasons), leave the phase unverified, and stop. The fast
