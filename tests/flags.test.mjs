@@ -391,3 +391,81 @@ test('ADR-037 (B5): the discuss gate accepts BOTH the human and the agent marker
   writeFileSync(ctx, '# Phase 1, never discussed\n');
   assert.strictEqual(phaseContextStatus(dir, slug), 'stub', 'the gate must still reject an undiscussed file');
 });
+
+// ── ADR-039: `ac decision add` destroyed local-only ADRs ──────────────────────
+//
+// ADR-034 fixed this hazard in canonPull and left it in addDecision — the far more common
+// path. `base` was seeded from the SHARED copy whenever one existed, ignoring the local file
+// entirely, then the result was written over it: a project with 101 local ADRs and 3 in the
+// registry lost 98 on the next add, silently, behind a success line. Numbering then restarted
+// from the registry count and REISSUED ids that already existed locally.
+
+async function seededRegistry() {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare);
+  assert.strictEqual(initRegistry({ root: dir }).ok, true);
+  assert.strictEqual((await addDecision(dir, { title: 'registry entry', why: 'shared' })).source, 'remote');
+  return dir;
+}
+
+const LOCAL_LOG = `# Decisions
+
+## ADR-001 — first real decision
+_2026-01-01_
+
+**Why:** BODY-ONE
+
+## ADR-002 — second real decision
+_2026-01-02_
+
+**Why:** BODY-TWO
+`;
+
+test('ADR-039: adding a decision never destroys a local-only ADR', async () => {
+  const dir = await seededRegistry();
+  writeFileSync(paths(dir).decisions, LOCAL_LOG);
+
+  const res = await addDecision(dir, { title: 'brand new', why: 'must lose nothing' });
+  const after = readFileSync(paths(dir).decisions, 'utf8');
+
+  assert.match(after, /BODY-ONE/, 'a local ADR body must survive an add');
+  assert.match(after, /BODY-TWO/, 'every local ADR body must survive');
+  assert.match(after, /registry entry/, 'the shared entry must survive too');
+  assert.match(after, /brand new/, 'and the new decision must land');
+  assert.strictEqual(res.source, 'remote');
+});
+
+test('ADR-039: a local ADR sharing an id with a DIFFERENT shared one is kept, renumbered, and reported', async () => {
+  const dir = await seededRegistry();
+  writeFileSync(paths(dir).decisions, LOCAL_LOG);
+  const res = await addDecision(dir, { title: 'brand new', why: 'x' });
+
+  // The registry already owns ADR-001 with different content. Keying on id alone silently
+  // dropped the local one — both are real decisions, so both must survive.
+  assert.ok(res.renumbered.length >= 1, 'the collision must be reported, not silently resolved');
+  assert.strictEqual(res.renumbered[0].from, 'ADR-001');
+  assert.notStrictEqual(res.renumbered[0].to, 'ADR-001');
+  const after = readFileSync(paths(dir).decisions, 'utf8');
+  assert.match(after, /BODY-ONE/, 'the colliding local decision must still be present');
+  assert.match(after, /registry entry/, 'and so must the shared one it collided with');
+});
+
+test('ADR-039: the new id never reuses an id already present locally', async () => {
+  const dir = await seededRegistry();
+  writeFileSync(paths(dir).decisions, LOCAL_LOG);
+  const res = await addDecision(dir, { title: 'brand new', why: 'x' });
+  // Numbering used to restart from the registry's count (1 entry -> ADR-002), colliding with
+  // the local ADR-002 that already existed.
+  assert.ok(!['ADR-001', 'ADR-002'].includes(res.id), `new id ${res.id} must not reuse an existing local id`);
+  const ids = [...readFileSync(paths(dir).decisions, 'utf8').matchAll(/^##\s+(ADR-\d+)/gm)].map((m) => m[1]);
+  assert.strictEqual(new Set(ids).size, ids.length, 'the resulting log must have no duplicate ids');
+});
+
+test('ADR-039: an identical entry on both sides is not duplicated', async () => {
+  const dir = await seededRegistry();
+  const shared = readFileSync(paths(dir).decisions, 'utf8'); // exactly what the registry holds
+  writeFileSync(paths(dir).decisions, shared);
+  await addDecision(dir, { title: 'brand new', why: 'x' });
+  const ids = [...readFileSync(paths(dir).decisions, 'utf8').matchAll(/^##\s+(ADR-\d+)/gm)].map((m) => m[1]);
+  assert.strictEqual(new Set(ids).size, ids.length, 'a matching entry must dedupe, not double');
+});

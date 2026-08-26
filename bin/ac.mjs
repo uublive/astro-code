@@ -672,6 +672,12 @@ async function main() {
                 `re-add them via \`ac decision add\` so they reach the team (DECISIONS.md is never bulk-pushed).`,
             );
           }
+          if (res.renumbered && res.renumbered.length) {
+            console.error(
+              `⚠ ${res.renumbered.length} local decision(s) shared an id with a DIFFERENT registry decision and were renumbered to keep both: ` +
+                res.renumbered.map((r) => `${r.from}→${r.to}`).join(', '),
+            );
+          }
         }
       } else if (pos[0] === 'push') {
         checkFlags('canon push', flags);
@@ -705,6 +711,17 @@ async function main() {
         });
         const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
         console.log(`✓ ${res.id} — ${res.title} (${res.date}) ${tag}`);
+        // ADR-039: an add that had to rescue local-only entries means the working tree had
+        // decisions the registry has never seen. Silence here is what let them be destroyed.
+        if (res.preserved && res.preserved.length) {
+          console.error(`⚠ carried ${res.preserved.length} local-only decision(s) into the shared log: ${res.preserved.join(', ')}`);
+        }
+        if (res.renumbered && res.renumbered.length) {
+          console.error(
+            `⚠ ${res.renumbered.length} local decision(s) collided with a DIFFERENT shared decision of the same id and were renumbered to keep both: ` +
+              res.renumbered.map((r) => `${r.from}→${r.to}`).join(', '),
+          );
+        }
       } else if (pos[0] === 'list') {
         const { decisions } = loadCanon(r);
         process.stdout.write((decisions || '(no decisions yet)') + '\n');
