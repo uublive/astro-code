@@ -1,6 +1,6 @@
 {
   "name": "astro-code",
-  "version": "0.12.2",
+  "version": "0.12.3",
   "description": "A lean, multi-developer, Claude-Code-4.8-native evolution of GSD.",
   "type": "module",
   "bin": {

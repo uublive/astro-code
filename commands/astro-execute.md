@@ -151,6 +151,21 @@ Execute phase `$ARGUMENTS`.
    `/astro-accept` still closes phases one at a time. If execution fails, the pipelined
    plan is simply wasted work, which is cheap and harmless.
 
+4c. **Sweep for leaked refs (ADR-038).** After the workflow returns, run:
+
+   ```
+   git worktree list && git for-each-ref --format='%(refname:short)' refs/heads/ | grep -E '^(worktree-|main-sync)' || true
+   ```
+
+   A completed run should leave no `worktree-*` worktree or branch. Benchmark #3 found one
+   of each surviving a run that reported `integrationFailed: null` and clean teardown — and
+   nothing surfaced it, because `.gitignore` (correctly) hides `.claude/worktrees/`, so
+   `git status` stays clean. It was caught only because a verifier volunteered it.
+
+   If anything survives: report it, and for each branch show `git rev-list HEAD..<branch>`
+   so the user can see whether HEAD already supersedes it. **Do not delete anything
+   automatically** — a preserved branch may be the only copy of a failed heal (ADR-014).
+
 5. Clear the live status (`ac activity clear` — also clear it on any early stop or
    `integrationFailed`), then report the verdict. `verdict` is now a **structured object**
    — read `verdict.passed` (boolean) for PASS/FAIL and `verdict.summary` for the

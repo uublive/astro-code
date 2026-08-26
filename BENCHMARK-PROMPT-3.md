@@ -40,8 +40,8 @@ Start clean.
 ```bash
 cd /Users/buu/Development/astro-code
 git log --oneline -1 && grep '"version"' package.json
-cat ~/.astro/code/version          # MUST read 0.12.0 — this is what actually runs
-node --test 2>&1 | tail -5          # expect 453 pass / 0 fail
+cat ~/.astro/code/version          # MUST read 0.12.3 — this is what actually runs
+node --test 2>&1 | tail -5          # expect 466 pass / 0 fail
 ```
 
 `~/Development` does not exist in the container; use the `/Users/buu/Development` path.
@@ -95,7 +95,13 @@ for (const f of readdirSync(TD)) if (f.endsWith('.jsonl')) txt += readFileSync(`
 
 const unesc = (s) => s.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
 const seen = new Set(), rows = []
-for (const raw of txt.split('<task-notification>').slice(1)) {
+for (const rawFull of txt.split('<task-notification>').slice(1)) {
+  // BOUND the blob at its closing tag. Without this each row absorbs everything up to the
+  // NEXT notification — and because /astro-execute pipelines, an exec launch is followed in
+  // the same turn by a plan launch whose tool result contains "Research a phase from several
+  // angles", so the classifier below matched the FOLLOWING workflow and relabelled exec runs
+  // as plan runs. In run #3 that reported 33% remediation where the truth was 20%.
+  const raw = rawFull.split('</task-notification>')[0]
   const d = raw.match(/<duration_ms>(\d+)<\/duration_ms>/); if (!d) continue
   const id = raw.match(/<task-id>([^<]+)<\/task-id>/)
   const key = (id ? id[1] : '') + ':' + d[1]
@@ -103,7 +109,8 @@ for (const raw of txt.split('<task-notification>').slice(1)) {
   seen.add(key)
   const b = unesc(raw)
   rows.push({
-    kind: /Research a phase/.test(b) ? 'plan' : /Execute a phase/.test(b) ? 'exec' : 'other',
+    // Test Execute FIRST — defensive, so a stray mention cannot steal an exec row.
+    kind: /Execute a phase/.test(b) ? 'exec' : /Research a phase/.test(b) ? 'plan' : 'other',
     min: +(d[1] / 60000).toFixed(1),
     tokens: +((raw.match(/<subagent_tokens>(\d+)</) || [])[1] || 0),
     rem: +((b.match(/"remediationCycles":(\d+)/) || [])[1] ?? -1),
@@ -127,11 +134,17 @@ console.log('strategies     ', exec.map(r => `${r.strategy}(${r.tasks}t/${r.exec
 console.log('stops          ', [...new Set(exec.map(r=>r.stop))].join(','))
 ```
 
-**Two sanity gates.** `parse failures` must be `0`. And the deduped **`plan + exec`** count
-must equal the number of directories under `<TD>/*/subagents/workflows/` **when nothing is
-in flight** — compare `plan + exec`, *not* all rows: bare `Agent` calls (`/astro-adopt`'s
-mapper, and every Agent-fallback tier) emit a notification but have no workflow directory,
-and counting them makes the gate mis-fire.
+**Three sanity gates.**
+
+1. `parse failures` must be `0`.
+2. The deduped **`plan + exec`** count must equal the number of directories under
+   `<TD>/*/subagents/workflows/` **when nothing is in flight** — compare `plan + exec`, *not*
+   all rows: bare `Agent` calls (`/astro-adopt`'s mapper, every Agent-fallback tier) emit a
+   notification but have no workflow directory, and counting them makes the gate mis-fire.
+3. **Check the plan/exec SPLIT against ground truth**, not just the total. Count your own
+   `/astro-plan` and `/astro-execute` invocations and compare. Gate 2 passed in run #3 while
+   the split was wrong — it only checks the sum, so a misclassification is invisible to it,
+   and the headline metric was off by 13 points with a green gate.
 
 **`WASTED EXECS` is the confound tracker.** It should be ~0 if §0.2 was honoured. If it is
 not, the timing numbers are inflated and you must say so before quoting a rate.

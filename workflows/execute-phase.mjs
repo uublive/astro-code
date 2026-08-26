@@ -62,6 +62,22 @@ const phaseNum = (phaseSlug.match(/^(\d+)/) || [])[1] || phaseSlug
 
 // Agents read the canon + discussion brief from disk (absolute paths into the main
 // repo, so worktree executors see them regardless of git state).
+// ADR-038 — the stash prohibition reaches EXECUTORS too, not just the integrator.
+//
+// ADR-035 forbade unscoped destructive git in the integrator because it works in the shared
+// tree. Benchmark #3 found an executor running `git stash -u && git rebase main && git stash
+// pop` inside its own worktree. That is not the ADR-035 regression — but `refs/stash` is
+// REPOSITORY-wide, not per-worktree, and the `&&` chain means a rebase conflict skips the
+// pop and strands an unscoped stash (untracked files included) on the shared stack: exactly
+// where run #2's destroyed plan went. It worked only because that rebase happened to be clean.
+const NO_BROAD_STASH =
+  `\n\nGIT SAFETY: never run a bare \`git stash\` / \`git stash -u\`, \`git clean\`, ` +
+  `\`git reset --hard\` or \`git checkout .\`. The stash stack is REPOSITORY-wide even from ` +
+  `inside a worktree, so an unscoped stash can capture — and a failed pop can strand — files ` +
+  `belonging to other phases. Scope it and restore it: \`git stash push -- <explicit path>\` … ` +
+  `\`git stash pop\`. Never chain a stash to a command that can fail (\`stash && rebase && pop\`) ` +
+  `— a conflict skips the pop and leaves the stash stranded.`
+
 const OBEY =
   `\n\nRead and OBEY: ${root}/.astrocode/CONVENTIONS.md and ${root}/.astrocode/DECISIONS.md (project canon), ` +
   `plus ${root}/.astrocode/phases/${phaseSlug}/CONTEXT.md (this phase's decisions, if present).`
@@ -121,7 +137,15 @@ const TASK_SCHEMA = {
           depends_on: { type: 'array', items: { type: 'string' } },
           done: { type: 'boolean' },
         },
-        required: ['id', 'title', 'depends_on', 'done'],
+        // ADR-038 — `file` is REQUIRED. Benchmark #3: Discover omitted it for every task of
+        // one 24-task phase (and supplied it for all 17 of another, same models, same plan
+        // format). A task with no `file` claims the `*` wildcard, the wildcard collides with
+        // everything including another wildcard, so buildWaves admitted exactly one task per
+        // wave — 24 singleton waves, maxWidth 1, and the strategy rule silently chose
+        // `sequential` for a phase four times the parallel threshold. It reported `passed`
+        // and nothing said why. Requiring the field turns a silent capability loss into a
+        // schema violation the agent must fix, the same move ADR-035 made for `tasks: 0`.
+        required: ['id', 'title', 'file', 'depends_on', 'done'],
       },
     },
   },
@@ -518,7 +542,33 @@ const strategy =
     : !useWorktrees || tasks.length <= SEQ_BUDGET || maxWidth < 2
       ? 'sequential'
       : 'parallel'
-log(`strategy: ${strategy} (${tasks.length} task(s), widest wave ${maxWidth}, budget ${SEQ_BUDGET}, worktrees ${useWorktrees})`)
+// ADR-038 — name the REASON, not just the outcome. `maxWidth < 2` is the only path to
+// sequential once the budget is cleared, and it is reachable two very different ways: a
+// genuinely serial dependency chain (correct) or every task claiming the `*` wildcard
+// because Discover omitted `file` (a silent capability loss). Both used to print the same
+// line. `strategyReason` is also returned to the caller, so a benchmark asking "did the
+// parallel path engage?" can distinguish them without reading the log.
+const wildcardTasks = executableTasks.filter((t) => !String(t.file || '').trim()).length
+const strategyReason =
+  input.strategy === 'sequential' || input.strategy === 'parallel'
+    ? `explicit args.strategy=${input.strategy}`
+    : !useWorktrees
+      ? 'use_worktrees=false'
+      : tasks.length <= SEQ_BUDGET
+        ? `${tasks.length} task(s) <= seqBudget ${SEQ_BUDGET}`
+        : maxWidth < 2
+          ? wildcardTasks
+            ? `widest wave is 1 — ${wildcardTasks} task(s) declare NO file and claim the '*' wildcard, which collides with everything (ADR-038)`
+            : 'widest wave is 1 — the dependency graph is genuinely serial'
+          : `widest wave ${maxWidth} > 1 and ${tasks.length} > seqBudget ${SEQ_BUDGET}`
+log(`strategy: ${strategy} — ${strategyReason} (worktrees ${useWorktrees}, ${deferredForFiles} same-file deferral(s))`)
+if (strategy === 'sequential' && wildcardTasks && tasks.length > SEQ_BUDGET) {
+  log(
+    `⚠ this phase was large enough to run in parallel but was DOWNGRADED to sequential: ` +
+      `${wildcardTasks} of ${executableTasks.length} task(s) declare no \`file\`, so every one claims the ` +
+      `'*' wildcard and no two can share a wave. This is a capability loss, not a property of the phase.`,
+  )
+}
 
 // execPrompt carries the file-ownership hygiene sentence (phase-06 t3 / ADR-016):
 // executors must declare up-front if they touch files outside their declared set.
@@ -539,7 +589,8 @@ const execPrompt = (t) =>
   `the stamp and skip this task rather than re-executing it. ` +
   `Return a short summary of what you changed.` +
   OBEY +
-  BAR
+  BAR +
+  NO_BROAD_STASH
 
 const runOnBranch = (t) =>
   agent(execPrompt(t), { label: `exec:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
@@ -569,7 +620,8 @@ const healPrompt = (t, preservedBranch) =>
   `it enables idempotent re-execution (ADR-017) so future re-runs skip this healed task. ` +
   `Return a short summary of what you changed.` +
   OBEY +
-  BAR
+  BAR +
+  NO_BROAD_STASH
 
 const runHealOnBranch = (t, preservedBranch) =>
   agent(healPrompt(t, preservedBranch), { label: `heal:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
@@ -953,9 +1005,18 @@ const batchPrompt = (orderedTasks) =>
   `belief about what landed. For EACH task id, run:\n` +
   `  git log --oneline --fixed-strings --grep "(phase ${phaseNum} <taskId>)"\n` +
   `If it returns at least one line, that task id belongs in committed[]; otherwise omit it. ` +
+  `This grep IS the stamp check (ADR-038): a task whose stamp you cannot find is NOT committed, ` +
+  `however sure you are that you wrote the code — benchmark #3 saw a batched run produce 25 ` +
+  `commits with ZERO stamps while reporting every task as committed. If the grep comes back ` +
+  `empty for a task you believe you finished, AMEND that commit to add the stamp ` +
+  `(\`git commit --amend\`) and re-run the grep, rather than reporting it committed unstamped. ` +
+  `An unstamped commit is invisible to the integrator's branch→task mapping and to re-run ` +
+  `resumability, so it is worse than a missing commit: it silently costs the whole phase its ` +
+  `ability to resume. ` +
   `Return committed=[the task ids whose stamp you found] and a short summary.` +
   OBEY +
-  BAR
+  BAR +
+  NO_BROAD_STASH
 
 // runBatchOnBranch — a single agent() call carrying the WHOLE ordered task list
 // (matching the shape of every other run* wrapper above). Deliberately NO
@@ -1614,6 +1675,9 @@ return {
   tasks: tasks.length,
   waves: waves.length,
   strategy,
+  strategyReason,
+  wildcardTasks,
+  deferredForFiles,
   effort,
   executed: results.length,
   skipped: skippedTaskIds,

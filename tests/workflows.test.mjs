@@ -2451,8 +2451,8 @@ test('t3 (phase 13): batchPrompt appends OBEY like every other executor prompt',
   // ADR-031 appends BAR after OBEY on the three IMPLEMENTER prompts. The contract this
   // guards is "batchPrompt carries the canon like its siblings", not the literal tail.
   assert.ok(
-    /OBEY(\s*\+\s*BAR)?$/.test(body),
-    'batchPrompt must append the OBEY constant (optionally followed by BAR) at the end — same contract as execPrompt/healPrompt/remediatePrompt',
+    /OBEY(\s*\+\s*BAR)?(\s*\+\s*NO_BROAD_STASH)?$/.test(body),
+    'batchPrompt must append OBEY (optionally followed by BAR / NO_BROAD_STASH) at the end — same contract as execPrompt/healPrompt/remediatePrompt',
   )
 })
 
@@ -3294,4 +3294,67 @@ test('ADR-035: the batch prompt makes the ADR-017 stamp non-optional', () => {
   assert.ok(/NOT optional/i.test(body), 'the stamp must be stated as non-optional')
   // It is load-bearing because the integrator maps branch->task by grepping for it.
   assert.ok(/unmappable|maps a branch/i.test(body), 'the prompt must say WHY the stamp matters')
+})
+
+// ── ADR-038: silent capability loss, unstamped batches, repo-wide stashes ─────
+//
+// Benchmark #3. Each of these was invisible in the output: a 24-task phase quietly ran
+// sequentially, a batched run reported 25 tasks committed with zero stamps, and an executor
+// chained an unscoped stash to a command that could fail.
+
+test('ADR-038: TASK_SCHEMA requires `file` — a missing one silently costs parallelism', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const m = wfSrc.match(/const TASK_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  assert.ok(m, 'TASK_SCHEMA not found')
+  const schema = runInNewContext(`(${m[1]})`)
+  const req = schema.properties.tasks.items.required
+  assert.ok(req.includes('file'), 'file must be REQUIRED: without it every task claims the "*" wildcard, the wildcard collides with everything, and a large phase collapses to width-1 waves and runs sequentially')
+  for (const k of ['id', 'title', 'depends_on', 'done']) assert.ok(req.includes(k), `${k} must stay required`)
+})
+
+test('ADR-038: the strategy decision reports its REASON, and distinguishes the two sequential causes', async () => {
+  // Genuinely serial chain, above the budget: sequential for a legitimate reason.
+  const serial = await runWorkflow(
+    { root: '/tmp/p', phase: '38-x', seqBudget: 2 },
+    { discoverTasks: chainTasks(4) },
+  )
+  assert.ok(serial.result.strategyReason, 'the returned object must carry strategyReason')
+  assert.match(serial.result.strategyReason, /serial|widest wave/i)
+  assert.strictEqual(serial.result.wildcardTasks, 0, 'chainTasks declare files, so nothing claims the wildcard')
+
+  // Same size, but every task missing `file` — a capability loss, and it must SAY so.
+  const noFile = chainTasks(4).map((t) => ({ ...t, file: '' }))
+  const wild = await runWorkflow({ root: '/tmp/p', phase: '38-x', seqBudget: 2 }, { discoverTasks: noFile })
+  assert.strictEqual(wild.result.wildcardTasks, 4, 'tasks with no file must be counted')
+  assert.match(wild.result.strategyReason, /wildcard/i, 'the reason must name the wildcard cause, not just "widest wave is 1"')
+  assert.ok(
+    wild.logs.some((l) => /DOWNGRADED/.test(l) && /capability loss/i.test(l)),
+    'a large phase downgraded by missing file fields must warn loudly — it reported `passed` and said nothing before',
+  )
+})
+
+test('ADR-038: the batch prompt treats the stamp grep as the commit test, and says to amend', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const i = wfSrc.indexOf('const batchPrompt')
+  const body = wfSrc.slice(i, i + 5000)
+  assert.ok(/grep IS the stamp check/i.test(body), 'the grep must be stated as the authority over the agent\'s belief')
+  assert.ok(/--amend/.test(body), 'it must give the repair action, not just forbid the outcome')
+  assert.ok(/resum/i.test(body), 'it must say what an unstamped commit actually costs')
+})
+
+test('ADR-038: executor prompts forbid repo-wide stashes and chained stash-pop', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const i = wfSrc.indexOf('const NO_BROAD_STASH')
+  assert.ok(i !== -1, 'NO_BROAD_STASH not defined')
+  const body = wfSrc.slice(i, i + 1400)
+  assert.ok(/REPOSITORY-wide/i.test(body), 'must explain that refs/stash is shared even from a worktree')
+  assert.ok(/stash push -- /.test(body), 'must give the scoped form')
+  assert.ok(/skips the pop|can fail/i.test(body), 'must call out the && chain, which is how it actually stranded')
+  // It has to be wired into the implementer prompts, not merely defined.
+  for (const name of ['execPrompt', 'healPrompt', 'batchPrompt']) {
+    const j = wfSrc.indexOf(`const ${name} =`)
+    const rest = wfSrc.slice(j + 10)
+    const end = rest.search(/\nconst \w+ =/)
+    assert.ok(/NO_BROAD_STASH/.test(rest.slice(0, end === -1 ? 3000 : end)), `${name} must append NO_BROAD_STASH`)
+  }
 })
