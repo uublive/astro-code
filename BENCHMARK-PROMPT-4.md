@@ -1,13 +1,15 @@
-# astro-code benchmark #3 — answer the remediation question
+# astro-code benchmark #4 — answer the remediation question
 
 Note: save this in your board agenda, as soon as you create session I will set it to AUTO
 
 
-Two runs so far. #1 was greenfield and all-sequential, so it exercised nothing hard and
+Three runs so far. #1 was greenfield and all-sequential, so it exercised nothing hard and
 correctly declined to claim it had validated anything. #2 hit the parallel path for the
 first time and found real defects, but its own numbers were unusable: 17 task-executions
 were thrown away to a harness bug, one phase was operator-contaminated, two runs aborted on
-unrelated defects, and n was 3–5.
+unrelated defects, and n was 3–5. #3 produced the first defensible figure — 13% over n=8, the
+single remediation resolving in one cycle — but surfaced six more defects, five of which are
+now fixed in v0.12.3.
 
 **This run exists to produce a remediation rate that means something**, and to confirm the
 fixes #2 produced. Everything below is shaped by that.
@@ -41,7 +43,7 @@ Start clean.
 cd /Users/buu/Development/astro-code
 git log --oneline -1 && grep '"version"' package.json
 cat ~/.astro/code/version          # MUST read 0.12.3 — this is what actually runs
-node --test 2>&1 | tail -5          # expect 466 pass / 0 fail
+node --test 2>&1 | tail -5          # expect 464 pass / 0 fail
 ```
 
 `~/Development` does not exist in the container; use the `/Users/buu/Development` path.
@@ -169,7 +171,14 @@ axis matters as much as the rate.
 
 ---
 
-## 5. Verify the v0.12.0 fixes
+## 5. Verify the v0.12.x fixes
+
+0. **Read `strategyReason` on every exec run, not just `strategy`** (new in v0.12.3). A
+   sequential result is now self-explaining: it names whether the dependency graph was
+   genuinely serial, or whether tasks declared no `file` and collapsed onto the `*`
+   wildcard. Quote the reason verbatim for any sequential run, and report `wildcardTasks` —
+   it must be 0, since `file` is now schema-required. In run #3 a 24-task phase ran
+   sequentially for this reason and nothing in the output said so.
 
 1. **Integrator at sonnet.** Confirm no `haiku` in the effective config or in any spawned
    agent's model. Report the integrator's per-branch behaviour and quote a `note`.
@@ -190,9 +199,13 @@ axis matters as much as the rate.
    `ac phase accept <n> --agent "FORGEMASTER"` and confirm `accepted_kind: "agent"`. Since
    you are authoring the discussions too, use the agent form of the CONTEXT.md marker:
    `<!-- astro-discuss: captured by agent: FORGEMASTER -->`.
-9. **ADR-017 stamps.** Every task commit subject must end with `(phase NN tK)`. Run #2 had
-   four of five unstamped in one wave. Report the stamped/unstamped split — the integrator
-   maps branches to tasks by grepping for it.
+9. **ADR-017 stamps — COUNT the commits, do not trust the report.** Every task commit
+   subject must end with `(phase NN tK)`. Run #3's batched phase reported all 25 tasks
+   committed while 0 of 25 carried a stamp, and astro-code's own test stayed green because it
+   asserts the prompt text rather than the commits. So verify with
+   `git log --oneline <range> | grep -c '(phase '` against the task count, per phase, and
+   report the split. v0.12.3 tells the batch executor to amend an unstamped commit — check
+   whether it actually does.
 
 ---
 
