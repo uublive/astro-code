@@ -320,3 +320,74 @@ test('ADR-036: /astro-execute runs preflight before launching', () => {
   const fan = src.indexOf('Run the execution fan-out');
   assert.ok(pre !== -1 && fan !== -1 && pre < fan, 'the check must come BEFORE the fan-out, or it warns too late to act on');
 });
+
+// ── ADR-037: the two fixes that shipped looking fixed ─────────────────────────
+//
+// Benchmark #3 found both. Each had a passing suite and a plausible manual check that
+// could not see the defect — the same shape as every other silent failure in this repo.
+
+test('ADR-037 (B4): canon pull rescues the ADR BODY, not just its heading', async () => {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare);
+  assert.strictEqual(initRegistry({ root: dir }).ok, true);
+  // Seed the SHARED branch first — addDecision is the only writer that publishes
+  // DECISIONS.md. Without it the registry has no copy, canonPull skips the whole
+  // preservation block, and the local file survives untouched for the WRONG reason.
+  assert.strictEqual((await addDecision(dir, { title: 'seed', why: 'shared' })).source, 'remote');
+  // A local-only ADR at EOF — the COMMON case, DECISIONS.md being append-only, and the
+  // case the old `$` under /m always truncated. It only worked when another heading followed.
+  writeFileSync(
+    paths(dir).decisions,
+    '# Decisions\n\n## ADR-998 — canary\n_2026-08-25_\n\n**Why:** UNIQUEBODYMARKER\n\n**Rejected:** the alternative\n',
+  );
+  const res = canonPull(dir);
+  assert.strictEqual(res.ok, true);
+  const after = readFileSync(paths(dir).decisions, 'utf8');
+  assert.match(after, /ADR-998/, 'the heading must survive');
+  // The heading alone is what the old code kept, while still reporting a full rescue — so
+  // grepping for the id (the obvious check) passed either way. Assert the substance.
+  assert.match(after, /UNIQUEBODYMARKER/, 'the **Why:** body must survive — a heading with no reasoning is not a rescued ADR');
+  assert.match(after, /the alternative/, 'the **Rejected:** body must survive too');
+});
+
+test('ADR-037 (B4): a rescued ADR followed by another heading keeps its body too', async () => {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare);
+  assert.strictEqual(initRegistry({ root: dir }).ok, true);
+  assert.strictEqual((await addDecision(dir, { title: 'seed', why: 'shared' })).source, 'remote');
+  writeFileSync(
+    paths(dir).decisions,
+    '# Decisions\n\n## ADR-998 — first\n_2026-01-01_\n\n**Why:** FIRSTBODY\n\n## ADR-999 — second\n_2026-01-02_\n\n**Why:** SECONDBODY\n',
+  );
+  canonPull(dir);
+  const after = readFileSync(paths(dir).decisions, 'utf8');
+  assert.match(after, /FIRSTBODY/);
+  assert.match(after, /SECONDBODY/);
+  // And it must not swallow the following heading into the previous entry.
+  assert.match(after, /## ADR-999 — second/);
+});
+
+test('ADR-037 (B5): the discuss gate accepts BOTH the human and the agent marker', async () => {
+  const { phaseContextStatus, contextAuthor } = await import('../lib/planning.mjs');
+  const dir = mkWorkdir(null);
+  await addPhase(dir, { number: 1, name: 'Do a thing' });
+  const slug = findPhase(dir, '1').slug;
+  const ctx = join(paths(dir).phases, slug, 'CONTEXT.md');
+
+  writeFileSync(ctx, '<!-- astro-discuss: captured -->\n# Phase 1\n');
+  assert.strictEqual(phaseContextStatus(dir, slug), 'ready', 'the human form must gate to ready');
+
+  // ADR-035 told agents to write this form; the gate then rejected it, so an
+  // agent-discussed phase read as `stub` and ADR-032's pipeline gate could never pass.
+  writeFileSync(ctx, '<!-- astro-discuss: captured by agent: FORGEMASTER -->\n# Phase 1\n');
+  assert.strictEqual(phaseContextStatus(dir, slug), 'ready', 'the ADR-035 agent form must ALSO gate to ready');
+  assert.strictEqual(contextAuthor(readFileSync(ctx, 'utf8')), 'FORGEMASTER', 'the agent name must be extractable');
+
+  // Provenance is recorded, not hidden: the human form reports no agent author.
+  writeFileSync(ctx, '<!-- astro-discuss: captured -->\n# Phase 1\n');
+  assert.strictEqual(contextAuthor(readFileSync(ctx, 'utf8')), null);
+
+  // A file without the marker is still a stub — the gate must not have been widened away.
+  writeFileSync(ctx, '# Phase 1, never discussed\n');
+  assert.strictEqual(phaseContextStatus(dir, slug), 'stub', 'the gate must still reject an undiscussed file');
+});

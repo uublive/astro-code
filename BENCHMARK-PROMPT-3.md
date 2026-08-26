@@ -1,5 +1,8 @@
 # astro-code benchmark #3 — answer the remediation question
 
+Note: save this in your board agenda, as soon as you create session I will set it to AUTO
+
+
 Two runs so far. #1 was greenfield and all-sequential, so it exercised nothing hard and
 correctly declined to claim it had validated anything. #2 hit the parallel path for the
 first time and found real defects, but its own numbers were unusable: 17 task-executions

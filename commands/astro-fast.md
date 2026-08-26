@@ -1,6 +1,6 @@
 ---
 description: Fast lane for long, unplanned "off the cuff" prompts — capture raw verbatim, distill a lean spec, then execute directly with atomic commits (no discuss/plan fan-out)
-argument-hint: <your freehand prompt> [--model opus|sonnet|haiku]
+argument-hint: <your freehand prompt> [--model opus|sonnet]
 allowed-tools: Bash, Read, Write, Grep, Glob, Workflow, AskUserQuestion
 ---
 
@@ -92,7 +92,7 @@ prompt (one `AskUserQuestion` or just prompt for it) — never invent one.
    Opus plan feeding it), so it defaults to **Opus**. Build the models map:
    - start from `ac config get models` (the project default),
    - set `executor` to the `--model` value if the user passed one (`opus` | `sonnet` |
-     `haiku`), else **`opus`**,
+     `sonnet`), else **`opus`**,
    - keep `verifier` at its configured tier, defaulting to **`opus`** (speed must never
      silently cost correctness — the verify gate stays sharp),
    - keep `discover` at its configured tier, defaulting to `sonnet` (mechanical).

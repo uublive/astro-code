@@ -30,7 +30,7 @@ devs never collide.
 - `/astro-fast "<long unplanned prompt>"` — captures the raw prompt verbatim, distills a
   lean traceable spec (+ a "to clarify" list so nothing is lost), then executes straight
   through — sequential atomic commits + one verify pass, no research/plan fan-out.
-  Executor defaults to Opus (`--model sonnet|haiku` to override); a **scope guard**
+  Executor defaults to Opus (`--model sonnet` to override); a **scope guard**
   escalates anything systemic back to the full loop. Verified at best — `/astro-accept` closes it.
 
 **Set up & navigate:**
@@ -42,7 +42,7 @@ devs never collide.
 - `/astro-status` — where am I, what's next · `/astro-decision` — record an ADR into the canon
 - `/astro-statusline` — set a rich statusline (busy/idle dot · task recap · model · context-fill bar · milestone/phase)
 
-**Go faster** (the speed switch — opus→sonnet ladder, haiku scoped to the mechanical wave integrator):
+**Go faster** (the speed switch — an opus→sonnet ladder; no role runs haiku, ADR-035):
 - `ac models fast` — persist the fast profile (sonnet everywhere except the opus verify gate)
 - `ac models balanced` (default) · `ac models max` (all opus) · `ac models` (show current)
 - one-off without persisting: `/astro-plan <n> --fast` or `/astro-execute <n> --fast`
