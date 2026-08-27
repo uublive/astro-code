@@ -2592,7 +2592,7 @@ function chainTasks(n, doneIds = []) {
  *   behavior is unchanged).
  * @returns {Promise<{ calls: Array<object>, logs: Array<string>, result: object }>}
  */
-async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate } = {}) {
+async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate, audit } = {}) {
   const calls = []
   const logs = []
   const agent = async (prompt, opts = {}) => {
@@ -2604,6 +2604,7 @@ async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate } 
       const committed = typeof batchCommitted === 'function' ? batchCommitted(ids) : batchCommitted || ids
       return { committed, summary: 'batch landed' }
     }
+    if ('missing' in props) return audit || { missing: [] }   // ADR-040 stamp audit
     if ('integrated' in props) return integ || { integrated: true, branches: [] }
     if ('criteriaFound' in props) return { passed: true, criteriaFound: true, summary: 'ok', criteria: [] }
     // TESTGATE_SCHEMA is now the ONLY schema carrying `ranSuite` (ADR-028), so that is
@@ -3256,7 +3257,11 @@ test('ADR-035: the integrator prompt forbids unscoped destructive git in the sha
 test('ADR-035: the integrator prompt says branches[] means SOURCES, not the target', () => {
   const wfSrc = readFileSync(WF_FILE, 'utf8')
   const i = wfSrc.indexOf('const integrateWave')
-  const body = wfSrc.slice(i, i + 6000)
+  // Slice to the END of the integrator prompt, not a fixed byte count: a magic window
+  // asserts POSITION when the claim is PRESENCE, so any legitimate addition to the prompt
+  // fails a test about something else entirely (ADR-040's one-line correction did exactly
+  // that, 62 bytes past a 6000-char cut).
+  const body = wfSrc.slice(i, wfSrc.indexOf('INTEGRATE_SCHEMA', i) + 1 || undefined)
   // Filling branches[] with `main` made the tornDown cross-check read as data loss and
   // aborted a phase whose work had actually integrated.
   assert.ok(
@@ -3357,4 +3362,114 @@ test('ADR-038: executor prompts forbid repo-wide stashes and chained stash-pop',
     const end = rest.search(/\nconst \w+ =/)
     assert.ok(/NO_BROAD_STASH/.test(rest.slice(0, end === -1 ? 3000 : end)), `${name} must append NO_BROAD_STASH`)
   }
+})
+
+// ── ADR-040: the executor fast-forwards its own worktree before starting ──────
+//
+// Benchmark #4. ADR-036 concluded astro-code could not fix the stale fork base because the
+// SCRIPT runs no git — true, and beside the point: the EXECUTOR has Bash and stands in the
+// worktree. That run honoured ADR-036's precondition on all 16 launches and still discarded
+// 74 of 223 executions, with two worktrees IN THE SAME WAVE disagreeing about their base.
+
+test('ADR-040: the exec prompt tells the worktree executor to fast-forward before it starts', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const m = wfSrc.match(/const SYNC_WORKTREE\s*=\s*([\s\S]*?)\n\nconst OBEY/)
+  assert.ok(m, 'SYNC_WORKTREE not found')
+  const body = m[1]
+  assert.match(body, /merge --ff-only/, 'must use ff-only, the only conflict-free form')
+  assert.doesNotMatch(body, /git rebase|git pull/, 'rebase/pull were rejected by ADR-040')
+  // The ordering is the whole safety argument: before any work, the branch has no commits
+  // of its own, so the fast-forward cannot conflict.
+  assert.match(body, /BEFORE YOU READ OR WRITE ANYTHING/, 'must run before any work')
+  assert.match(body, /worktree list/, 'must say how to find the working branch')
+})
+
+test('ADR-040: a refused fast-forward is a hard stop, never a silent merge', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const body = wfSrc.match(/const SYNC_WORKTREE\s*=\s*([\s\S]*?)\n\nconst OBEY/)[1]
+  assert.match(body, /Not possible to fast-forward/, 'must name the refusal git actually prints')
+  assert.match(body, /STOP and report/, 'a branch with its own commits at task start must abort')
+  assert.match(body, /Already up to date/, 'the no-op case must be named as normal, not as failure')
+})
+
+test('ADR-040: a still-missing dependency must be reported, never worked around', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const body = wfSrc.match(/const SYNC_WORKTREE\s*=\s*([\s\S]*?)\n\nconst OBEY/)[1]
+  // The silent-drop hole (5 of 13 runs) is only acceptable while the alternative is worse:
+  // a duplicate implementation that cherry-picks cleanly is the phase-04 trap ADR-015 exists
+  // for. So the executor must still refuse to commit — but say so.
+  assert.match(body, /make NO commit/i, 'a blocked task must not commit')
+  assert.match(body, /duplicate/i, 'must forbid re-implementing an absent dependency')
+})
+
+test('ADR-040: only the parallel exec prompt syncs — heal runs on-branch and must not', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const exec = wfSrc.match(/const execPrompt\s*=[\s\S]*?\n\nconst runOnBranch/)[0]
+  const heal = wfSrc.match(/const healPrompt\s*=[\s\S]*?\n\nconst runHealOnBranch/)[0]
+  assert.match(exec, /SYNC_WORKTREE/, 'execPrompt must carry the sync')
+  assert.doesNotMatch(heal, /SYNC_WORKTREE/, 'healPrompt runs in the main tree — syncing is a no-op there')
+})
+
+test('ADR-040: the integrator no longer asserts branches were forked from current HEAD', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  // The old text stated the false premise as fact. ADR-015's staleness check is what
+  // establishes it, and it stays — the sync makes it rare, not redundant.
+  assert.doesNotMatch(wfSrc, /branch forked from the current HEAD/,
+    'the integrator must not assert a fork base the harness does not guarantee')
+  assert.match(wfSrc, /STALENESS \(ADR-015 cause #1\)/, 'the staleness check must remain')
+})
+
+// ── ADR-041: a planned task that never landed must FAIL the phase ─────────────
+//
+// Benchmark #4: in 3 of the 4 phases that had one, the integration/barrel task produced no
+// commit and the run still reported skipped:[], stoppedReason:"passed", verdict PASS. The
+// planner had started defensively coding around it. Nothing compared `executed` to `tasks`.
+
+test('ADR-041: a task with no stamped commit fails the phase', async () => {
+  const { result, logs } = await runWorkflow(
+    { root: '/tmp/p', phase: '40-x', strategy: 'sequential' },
+    { discoverTasks: chainTasks(3), audit: { missing: ['t2'] } },
+  )
+  assert.ok(result.integrationFailed, 'a task that never landed must not pass silently')
+  assert.strictEqual(result.integrationFailed.taskId, 't2')
+  assert.match(result.integrationFailed.note, /completeness audit/i)
+  // The message must not pretend to know which of the two causes it was.
+  assert.match(result.integrationFailed.note, /no commit/i, 'must name the dropped-work cause')
+  assert.match(result.integrationFailed.note, /unstamped|without the ADR-017 stamp/i, 'must name the unstamped cause too')
+  assert.strictEqual(result.verdict.passed, false, 'the verdict must be a failure')
+  assert.ok(logs.some((l) => /completeness audit FAILED/.test(l)), 'and it must be visible in the log')
+})
+
+test('ADR-041: a complete phase passes the audit and says so', async () => {
+  const { result, logs } = await runWorkflow(
+    { root: '/tmp/p', phase: '40-x', strategy: 'sequential' },
+    { discoverTasks: chainTasks(3), audit: { missing: [] } },
+  )
+  assert.strictEqual(result.integrationFailed, null, 'a complete phase must not be failed by the audit')
+  assert.ok(logs.some((l) => /completeness audit: all/.test(l)), 'the passing case must be visible too — a silent gate is untestable from outside')
+})
+
+test('ADR-041: the audit never reaches verify when integration already failed', async () => {
+  const { calls } = await runWorkflow(
+    { root: '/tmp/p', phase: '40-x', strategy: 'parallel' },
+    {
+      discoverTasks: [
+        { id: 't1', title: 'T1', file: 'a.mjs', depends_on: [], done: false },
+        { id: 't2', title: 'T2', file: 'b.mjs', depends_on: [], done: false },
+      ],
+      integ: { integrated: false, branches: [], conflicts: [{ branch: 'worktree-x', taskId: 't1' }], tornDown: [] },
+      gate: { ranSuite: true, passed: false, output: 'boom' },
+    },
+  )
+  // Auditing stamps on a tree the work never reached would report noise, not signal.
+  assert.ok(!calls.some((c) => c.opts && c.opts.label === 'stamp-audit'), 'no audit after an integration failure')
+})
+
+test('ADR-041: an audit naming an unknown id is ignored, not trusted', async () => {
+  const { result } = await runWorkflow(
+    { root: '/tmp/p', phase: '40-x', strategy: 'sequential' },
+    { discoverTasks: chainTasks(2), audit: { missing: ['t99'] } },
+  )
+  // A confused auditor must not be able to fail a phase over a task that was never planned.
+  assert.strictEqual(result.integrationFailed, null, 'phantom ids must be filtered against the real task list')
 })

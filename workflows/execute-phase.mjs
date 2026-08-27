@@ -78,6 +78,38 @@ const NO_BROAD_STASH =
   `\`git stash pop\`. Never chain a stash to a command that can fail (\`stash && rebase && pop\`) ` +
   `— a conflict skips the pop and leaves the stash stranded.`
 
+// ADR-040 — a parallel executor fast-forwards its own worktree onto the working branch
+// before it does anything else.
+//
+// The harness forks each worktree from the REMOTE branch, not local HEAD, and origin is
+// frozen for the duration of a phase. So every wave after the first starts N commits behind
+// the tip, comes back STALE at integration, and is discarded and re-run — 74 wasted
+// executions in benchmark #4. Worse, a pure-integration task whose dependencies live in
+// earlier waves finds nothing legitimate to commit from that base, commits nothing, and the
+// run reports PASS: the silent barrel-drop.
+//
+// ff-only is the only conflict-free form, and it is safe precisely because it runs BEFORE any
+// work: the branch has no commits of its own yet, so a fast-forward cannot conflict. Once the
+// executor has committed, the same command would refuse — which is exactly the signal we want,
+// not something to force past. rebase and pull are rejected: both can rewrite or merge, and
+// ADR-015 exists because textual cleanliness off a stale base proves nothing.
+const SYNC_WORKTREE =
+  `\n\nSYNC FIRST (ADR-040) — BEFORE YOU READ OR WRITE ANYTHING in this worktree:\n` +
+  `1. Find the working branch: \`git worktree list\` — it is the branch checked out in the ` +
+  `MAIN tree (${root}), not your own \`worktree-*\` branch.\n` +
+  `2. \`git merge --ff-only <that branch>\`\n` +
+  `Your worktree was forked from the REMOTE, which is frozen during a phase, so it very likely ` +
+  `starts behind the tip and cannot see work earlier waves already landed. This pulls it level.\n` +
+  `- "Already up to date" is NORMAL — you were current. Proceed.\n` +
+  `- "Not possible to fast-forward" means your branch already carries commits of its own. That ` +
+  `must not happen before you start: STOP and report it rather than merging or rebasing past it.\n` +
+  `ff-only or nothing: never rebase, never pull, never merge non-ff. Each of those can rewrite ` +
+  `or blend history, and ADR-015 exists because textual cleanliness off a stale base proves nothing.\n` +
+  `If after syncing a dependency you were promised is STILL absent, make NO commit and say so ` +
+  `plainly in your summary. Do NOT re-implement it: a duplicate implementation cherry-picks ` +
+  `cleanly and silently stacks two copies (the phase-04 trap ADR-015 exists for). Reporting the ` +
+  `gap is the correct outcome; inventing the dependency is not.`
+
 const OBEY =
   `\n\nRead and OBEY: ${root}/.astrocode/CONVENTIONS.md and ${root}/.astrocode/DECISIONS.md (project canon), ` +
   `plus ${root}/.astrocode/phases/${phaseSlug}/CONTEXT.md (this phase's decisions, if present).`
@@ -590,7 +622,8 @@ const execPrompt = (t) =>
   `Return a short summary of what you changed.` +
   OBEY +
   BAR +
-  NO_BROAD_STASH
+  NO_BROAD_STASH +
+  SYNC_WORKTREE
 
 const runOnBranch = (t) =>
   agent(execPrompt(t), { label: `exec:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
@@ -825,7 +858,9 @@ const integrateWave = (w, wave) =>
   agent(
     `You are the WAVE INTEGRATOR for phase ${phaseSlug}, running in the MAIN working tree of ${root} ` +
       `(you have NO worktree of your own). The parallel executors each committed on a separate ` +
-      `\`worktree-*\` branch forked from the current HEAD. Fold them onto the CURRENTLY checked-out ` +
+      `\`worktree-*\` branch (ADR-040: each executor fast-forwards onto the working branch before ` +
+      `starting, so most are level — but the harness does not guarantee the fork base, which is why ` +
+      `the staleness check below stays). Fold them onto the CURRENTLY checked-out ` +
       `branch so the next wave and the verifier see one combined tree.\n` +
       `Wave task list (taskId mapping target set + declared-file comparison): ` +
       `${JSON.stringify(wave.map((t) => ({ id: t.id, title: t.title, file: t.file || '' })))}\n` +
@@ -1478,6 +1513,77 @@ const REMEDIATE_SCHEMA = {
     summary: { type: 'string' },
   },
   required: ['headBefore', 'headAfter'],
+}
+
+// ADR-041 — COMPLETENESS GATE: prove every executable task actually landed.
+//
+// Benchmark #4: in 3 of the 4 phases that had one, the task whose only job was wiring
+// everything into the public entry point produced NO commit — and the run reported
+// `skipped: []`, `stoppedReason: "passed"`, `verdict.passed: true`. The planner had begun
+// defensively coding around it ("phase 3's and phase 4's barrel tasks may or may not have
+// run"), which is the clearest possible sign the framework was lying to its own callers.
+//
+// Mechanism: a pure-integration task depends on work living in other worktrees, so from a
+// stale fork base there is nothing legitimate to commit. The executor honestly commits
+// nothing — and NOTHING downstream checked. `executed` was returned but never compared
+// against `tasks`.
+//
+// This is the ADR-035 `tasks: 0` move applied per-task instead of per-phase. It cannot run
+// in the script (ADR-008: no git here), so one cheap agent greps the ADR-017 stamps — the
+// same mechanical check the batch executor already performs on itself.
+const STAMP_AUDIT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    missing: { type: 'array', items: { type: 'string' } },
+    note: { type: 'string' },
+  },
+  required: ['missing'],
+}
+
+const runStampAudit = (ids) =>
+  agent(
+    `COMPLETENESS AUDIT for phase ${phaseSlug} in ${root}. Purely mechanical — do not fix ` +
+      `anything, do not commit, do not judge quality.\n` +
+      `For EACH task id below, run exactly:\n` +
+      `  git log --oneline --fixed-strings --grep "(phase ${phaseNum} <id>)"\n` +
+      `Ids: ${JSON.stringify(ids)}\n` +
+      `Return missing=[every id whose grep produced NO output]. An id you cannot prove landed ` +
+      `belongs in missing[] — never omit one because you believe the work happened. If every ` +
+      `id is found, return missing=[].`,
+    { label: 'stamp-audit', phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: STAMP_AUDIT_SCHEMA },
+  )
+
+if (!integrationFailed && executableTasks.length) {
+  const audit = await runStampAudit(executableTasks.map((t) => t.id))
+  const missing = (audit && Array.isArray(audit.missing) ? audit.missing : []).filter((id) =>
+    executableTasks.some((t) => t.id === id),
+  )
+  if (missing.length) {
+    // Two causes, and the message must not pretend to know which: the task produced no
+    // commit at all (work silently dropped — the benchmark-#4 defect), or it committed
+    // without the ADR-017 stamp (which independently breaks the integrator's branch→task
+    // mapping and re-run resumability). Either way the phase cannot be called complete,
+    // because there is no evidence the task landed — and ADR-021's whole stance is that
+    // absence of evidence is failure, not success.
+    integrationFailed = {
+      wave: waves.length,
+      taskId: missing[0],
+      branch: null,
+      note:
+        `completeness audit: ${missing.length} of ${executableTasks.length} task(s) have no ` +
+        `\`(phase ${phaseNum} tK)\` commit on the branch — ${missing.join(', ')}. Either the task ` +
+        `produced no commit (work silently dropped: a pure-integration task whose dependencies ` +
+        `lived in other worktrees can find nothing legitimate to commit from a stale fork base), ` +
+        `or it committed without the ADR-017 stamp (which also breaks branch→task mapping and ` +
+        `re-run resumability). Check \`git log --oneline\` for the work itself before re-running: ` +
+        `if the change IS present but unstamped, amend the stamp; if it is absent, the task never ` +
+        `ran and a re-execute will pick it up.`,
+    }
+    log(`✖ completeness audit FAILED — ${missing.length} task(s) never landed a stamped commit: ${missing.join(', ')}`)
+  } else {
+    log(`✓ completeness audit: all ${executableTasks.length} executable task(s) landed a stamped commit`)
+  }
 }
 
 phase('Verify')
