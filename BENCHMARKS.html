@@ -1,0 +1,214 @@
+<title>astro-code Benchmarks</title>
+<style>
+  :root{--paper:#EEF1F5;--surface:#FFF;--surface-2:#F6F8FA;--ink:#171A21;--ink-2:#454C59;--ink-3:#6B7484;
+    --rule:#D3DAE3;--rule-soft:#E4E9EF;--accent:#2B4C7E;--accent-soft:#DCE5F1;
+    --good:#2C6E52;--warn:#A87A00;--crit:#9C2B22;--good-bg:#E1EFE8;--warn-bg:#F5ECD5;--crit-bg:#F6E2E0;
+    --serif:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --paper:#101319;--surface:#181C24;--surface-2:#1F242E;--ink:#E7EAF0;--ink-2:#B2BAC7;--ink-3:#818B9B;
+    --rule:#2C333F;--rule-soft:#232935;--accent:#7FA6DC;--accent-soft:#243247;
+    --good:#6FBF97;--warn:#EFC75A;--crit:#E07A72;--good-bg:#1B2E26;--warn-bg:#332B15;--crit-bg:#33201E}}
+  :root[data-theme="dark"]{--paper:#101319;--surface:#181C24;--surface-2:#1F242E;--ink:#E7EAF0;--ink-2:#B2BAC7;
+    --ink-3:#818B9B;--rule:#2C333F;--rule-soft:#232935;--accent:#7FA6DC;--accent-soft:#243247;
+    --good:#6FBF97;--warn:#EFC75A;--crit:#E07A72;--good-bg:#1B2E26;--warn-bg:#332B15;--crit-bg:#33201E}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.62}
+  .wrap{max-width:1080px;margin:0 auto;padding:56px 28px 96px}
+  .col{max-width:68ch}
+  h1,h2{font-family:var(--serif);font-weight:600;text-wrap:balance;margin:0}
+  h1{font-size:clamp(2.1rem,4.4vw,3.1rem);line-height:1.1;letter-spacing:-.015em}
+  h2{font-size:1.55rem;line-height:1.2;margin-bottom:.5rem}
+  p{margin:0 0 1rem}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);margin:0 0 .9rem}
+  .lede{font-size:1rem;color:var(--ink-2);margin-top:.9rem;max-width:64ch}
+  header{border-bottom:2px solid var(--ink);padding-bottom:2.2rem;margin-bottom:2.6rem}
+  section{margin:3.4rem 0 0}
+  .sec-head{display:flex;align-items:baseline;gap:.85rem;border-bottom:1px solid var(--rule);padding-bottom:.5rem;margin-bottom:1.5rem}
+  .sec-head .k{font-family:var(--mono);font-size:.72rem;color:var(--ink-3);letter-spacing:.1em}
+  .hero{background:var(--surface);border:1px solid var(--rule);border-radius:3px;padding:1.9rem 2rem;margin-top:1.8rem}
+  .duo{display:flex;flex-wrap:wrap;gap:2.6rem}
+  .duo>div{flex:1;min-width:230px}
+  .big{font-family:var(--mono);font-size:clamp(2.4rem,6vw,3.6rem);line-height:1;letter-spacing:-.03em}
+  .from{color:var(--ink-3)}.to{color:var(--good)}.arrow{color:var(--ink-3)}.flatv{color:var(--ink-2)}
+  .cap{font-size:.86rem;color:var(--ink-3);margin-top:.5rem;max-width:34ch}
+  .cap b{color:var(--ink);font-weight:600}
+  .thesis{margin:1.6rem 0 0;padding-top:1.3rem;border-top:1px solid var(--rule);font-size:.98rem;color:var(--ink-2)}
+  figure{margin:0}
+  .multiples{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1.6rem}
+  .spark{background:var(--surface);border:1px solid var(--rule);border-radius:3px;padding:1rem 1.1rem .9rem}
+  .spark svg{width:100%;height:auto;display:block;overflow:visible}
+  .grid{stroke:var(--rule-soft);stroke-width:1}
+  .ax{fill:var(--ink-3);font-family:var(--mono);font-size:10px}
+  .ln{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+  .pt{fill:var(--surface);stroke:var(--accent);stroke-width:2}.pt.last{fill:var(--accent)}
+  .ln.bad{stroke:var(--crit)}.pt.bad{stroke:var(--crit)}.pt.bad.last{fill:var(--crit)}
+  .ln.neutral{stroke:var(--ink-3)}.pt.neutral{stroke:var(--ink-3)}.pt.neutral.last{fill:var(--ink-3)}
+  .ln.good{stroke:var(--good)}.pt.good{stroke:var(--good)}.pt.good.last{fill:var(--good)}
+  .val{fill:var(--ink);font-family:var(--mono);font-size:13px;font-weight:700}
+  figcaption{font-size:.84rem;color:var(--ink-3);margin:.7rem 0 0}
+  figcaption b{color:var(--ink-2)}figcaption b.up{color:var(--crit)}figcaption b.dn{color:var(--good)}figcaption b.flat{color:var(--ink-3)}
+  .scroll{overflow-x:auto;margin:1.2rem 0}
+  table{border-collapse:collapse;width:100%;font-size:.88rem;min-width:600px}
+  th,td{text-align:left;padding:.6rem .8rem;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+  th{font-family:var(--mono);font-size:.7rem;text-transform:uppercase;letter-spacing:.09em;color:var(--ink-3);font-weight:600;border-bottom:1px solid var(--rule)}
+  td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  td.w{white-space:normal;min-width:180px}
+  tbody tr:hover{background:var(--surface-2)}
+  .muted{color:var(--ink-3)}.up{color:var(--crit)}.dn{color:var(--good)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:.66rem;letter-spacing:.06em;text-transform:uppercase;padding:.16rem .45rem;border-radius:2px;white-space:nowrap;font-weight:600;border:1px solid}
+  .p-crit{color:var(--crit);background:var(--crit-bg);border-color:var(--crit)}
+  .p-warn{color:var(--warn);background:var(--warn-bg);border-color:var(--warn)}
+  .p-good{color:var(--good);background:var(--good-bg);border-color:var(--good)}
+  .p-open{color:var(--ink-2);background:var(--surface-2);border-color:var(--rule)}
+  .note{font-size:.84rem;color:var(--ink-3);margin:.6rem 0 0;max-width:72ch}
+  .note strong{color:var(--ink-2)}
+  .keylist{display:grid;gap:.35rem;font-size:.9rem;color:var(--ink-2);margin:0;padding:0;list-style:none}
+  .keylist li{display:grid;grid-template-columns:104px 1fr;gap:.9rem;padding:.3rem 0;border-bottom:1px solid var(--rule-soft)}
+  .keylist li:last-child{border-bottom:none}
+  .keylist .t{font-family:var(--mono);font-size:.72rem;color:var(--ink-3);padding-top:.12rem}
+  code{font-family:var(--mono);font-size:.86em;background:var(--surface-2);padding:.1em .32em;border-radius:2px}
+  footer{margin-top:4rem;padding-top:1.4rem;border-top:1px solid var(--rule);font-size:.82rem;color:var(--ink-3)}
+  @media (max-width:620px){.keylist li{grid-template-columns:1fr;gap:.15rem}}
+</style>
+
+<div class="wrap">
+<header class="col">
+  <p class="eyebrow">astro-code · benchmark log · Aug 2026</p>
+  <h1>astro-code Benchmarks</h1>
+  <p class="lede">Five end-to-end runs measuring whether the framework is getting better. Verifier rejections fell ninefold, wasted work is now zero — and throughput still has not moved.</p>
+</header>
+
+<section>
+  <div class="hero">
+    <div class="duo">
+      <div>
+        <div class="big"><span class="from">35%</span> <span class="arrow">→</span> <span class="to">0%</span></div>
+        <div class="cap"><b>Wasted executions</b> · run 4 → run 5, parallel path</div>
+      </div>
+      <div>
+        <div class="big"><span class="from">96k</span> <span class="arrow">→</span> <span class="to">59k</span></div>
+        <div class="cap"><b>Tokens per task</b> · 39% cheaper</div>
+      </div>
+      <div>
+        <div class="big"><span class="from">3.61</span> <span class="arrow">→</span> <span class="flatv">3.43</span></div>
+        <div class="cap"><b>Minutes per task</b> · barely moved</div>
+      </div>
+    </div>
+    <p class="thesis">ADR-040 eliminated the waste completely. It bought <strong>39% lower cost and 5% more speed</strong> — which means the waste was costing tokens, not time.</p>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head"><h2>Did ADR-040 work?</h2><span class="k">parallel runs only</span></div>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Parallel path only</th><th>Run 3</th><th>Run 4</th><th>Run 5</th><th class="w">Result</th></tr></thead>
+    <tbody>
+      <tr><td>Heals fired</td><td class="n">48</td><td class="n up">75</td><td class="n dn"><strong>0</strong></td><td class="w">Eliminated.</td></tr>
+      <tr><td>Wasted executions</td><td class="n">5%</td><td class="n up">35%</td><td class="n dn"><strong>0%</strong></td><td class="w">Eliminated.</td></tr>
+      <tr><td>Tokens / task</td><td class="n">92k</td><td class="n">96k</td><td class="n dn"><strong>59k</strong></td><td class="w"><strong>39% cheaper.</strong></td></tr>
+      <tr><td>Minutes / task</td><td class="n">2.90</td><td class="n">3.61</td><td class="n">3.43</td><td class="w">Barely moved — 5%.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note"><strong>This corrects an earlier claim on this page.</strong> Waste was said to be why speed never improved. Removing <em>all</em> of it moved throughput 5% — so that was wrong. Parallel wall-clock is bounded by the critical path, the slowest task in each wave, not by how many executions run. The waste was costing tokens, not time. It is still the largest efficiency gain in the series; it is just not a speed fix, and speed is bottlenecked somewhere nobody has measured yet.</p>
+  <p class="note"><strong>Caveat:</strong> 2 parallel runs and 22 tasks, against run 4's 11 runs and 166 tasks. Zero heals is a clean binary result — none fired at all — but the per-task rates are thin.</p>
+</section>
+
+<section>
+  <div class="sec-head"><h2>Five measures</h2><span class="k">whole-run, all five</span></div>
+  <div class="multiples">
+  <figure class="spark"><svg viewBox="0 0 380 200" role="img" aria-label="Remediation rate">
+    <line class="grid" x1="52" y1="150" x2="360" y2="150"/><text class="ax" x="44" y="153.5" text-anchor="end">0%</text>
+    <line class="grid" x1="52" y1="108.7" x2="360" y2="108.7"/><text class="ax" x="44" y="112.2" text-anchor="end">15%</text>
+    <line class="grid" x1="52" y1="67.3" x2="360" y2="67.3"/><text class="ax" x="44" y="70.8" text-anchor="end">30%</text>
+    <line class="grid" x1="52" y1="26" x2="360" y2="26"/><text class="ax" x="44" y="29.5" text-anchor="end">45%</text>
+    <path class="ln" d="M52 150 L129 39.8 L206 119.7 L283 130.7 L360 94.9"/>
+    <circle class="pt" cx="52" cy="150" r="3.5"/><circle class="pt" cx="129" cy="39.8" r="3.5"/><circle class="pt" cx="206" cy="119.7" r="3.5"/><circle class="pt" cx="283" cy="130.7" r="3.5"/><circle class="pt last" cx="360" cy="94.9" r="5"/>
+    <text class="val" x="360" y="81.9" text-anchor="middle">20%</text>
+    <text class="ax" x="52" y="170" text-anchor="middle">run 1</text><text class="ax" x="129" y="170" text-anchor="middle">run 2</text><text class="ax" x="206" y="170" text-anchor="middle">run 3</text><text class="ax" x="283" y="170" text-anchor="middle">run 4</text><text class="ax" x="360" y="170" text-anchor="middle">run 5</text>
+  </svg><figcaption>Remediation rate. <b class="flat">20% is 1 of 5 runs — n too small to read.</b></figcaption></figure>
+
+  <figure class="spark"><svg viewBox="0 0 380 200" role="img" aria-label="First-pass task rate">
+    <line class="grid" x1="52" y1="150" x2="360" y2="150"/><text class="ax" x="44" y="153.5" text-anchor="end">60%</text>
+    <line class="grid" x1="52" y1="108.7" x2="360" y2="108.7"/><text class="ax" x="44" y="112.2" text-anchor="end">73%</text>
+    <line class="grid" x1="52" y1="67.3" x2="360" y2="67.3"/><text class="ax" x="44" y="70.8" text-anchor="end">87%</text>
+    <line class="grid" x1="52" y1="26" x2="360" y2="26"/><text class="ax" x="44" y="29.5" text-anchor="end">100%</text>
+    <path class="ln good" d="M52 26 L129 125.3 L206 94.4 L283 128.4 L360 26"/>
+    <circle class="pt good" cx="52" cy="26" r="3.5"/><circle class="pt good" cx="129" cy="125.3" r="3.5"/><circle class="pt good" cx="206" cy="94.4" r="3.5"/><circle class="pt good" cx="283" cy="128.4" r="3.5"/><circle class="pt good last" cx="360" cy="26" r="5"/>
+    <text class="val" x="360" y="13" text-anchor="middle">100%</text>
+    <text class="ax" x="52" y="170" text-anchor="middle">run 1</text><text class="ax" x="129" y="170" text-anchor="middle">run 2</text><text class="ax" x="206" y="170" text-anchor="middle">run 3</text><text class="ax" x="283" y="170" text-anchor="middle">run 4</text><text class="ax" x="360" y="170" text-anchor="middle">run 5</text>
+  </svg><figcaption>First-pass task rate. <b class="dn">Back to 100% — nothing needed re-running.</b></figcaption></figure>
+
+  <figure class="spark"><svg viewBox="0 0 380 200" role="img" aria-label="Minutes per task">
+    <line class="grid" x1="52" y1="150" x2="360" y2="150"/><text class="ax" x="44" y="153.5" text-anchor="end">1.5</text>
+    <line class="grid" x1="52" y1="108.7" x2="360" y2="108.7"/><text class="ax" x="44" y="112.2" text-anchor="end">2.1</text>
+    <line class="grid" x1="52" y1="67.3" x2="360" y2="67.3"/><text class="ax" x="44" y="70.8" text-anchor="end">2.6</text>
+    <line class="grid" x1="52" y1="26" x2="360" y2="26"/><text class="ax" x="44" y="29.5" text-anchor="end">3.2</text>
+    <path class="ln neutral" d="M52 77.6 L129 27.8 L206 41.9 L283 31.3 L360 128.4"/>
+    <circle class="pt neutral" cx="52" cy="77.6" r="3.5"/><circle class="pt neutral" cx="129" cy="27.8" r="3.5"/><circle class="pt neutral" cx="206" cy="41.9" r="3.5"/><circle class="pt neutral" cx="283" cy="31.3" r="3.5"/><circle class="pt neutral last" cx="360" cy="128.4" r="5"/>
+    <text class="val" x="360" y="115.4" text-anchor="middle">1.8</text>
+    <text class="ax" x="52" y="170" text-anchor="middle">run 1</text><text class="ax" x="129" y="170" text-anchor="middle">run 2</text><text class="ax" x="206" y="170" text-anchor="middle">run 3</text><text class="ax" x="283" y="170" text-anchor="middle">run 4</text><text class="ax" x="360" y="170" text-anchor="middle">run 5</text>
+  </svg><figcaption>Minutes per task. <b class="flat">1.77 is flattered by resumption runs — parallel-only it is 3.43.</b></figcaption></figure>
+
+  <figure class="spark"><svg viewBox="0 0 380 200" role="img" aria-label="Tokens per task">
+    <line class="grid" x1="52" y1="150" x2="360" y2="150"/><text class="ax" x="44" y="153.5" text-anchor="end">0k</text>
+    <line class="grid" x1="52" y1="108.7" x2="360" y2="108.7"/><text class="ax" x="44" y="112.2" text-anchor="end">33k</text>
+    <line class="grid" x1="52" y1="67.3" x2="360" y2="67.3"/><text class="ax" x="44" y="70.8" text-anchor="end">67k</text>
+    <line class="grid" x1="52" y1="26" x2="360" y2="26"/><text class="ax" x="44" y="29.5" text-anchor="end">100k</text>
+    <path class="ln neutral" d="M52 108.7 L129 59 L206 54.9 L283 59 L360 112.8"/>
+    <circle class="pt neutral" cx="52" cy="108.7" r="3.5"/><circle class="pt neutral" cx="129" cy="59" r="3.5"/><circle class="pt neutral" cx="206" cy="54.9" r="3.5"/><circle class="pt neutral" cx="283" cy="59" r="3.5"/><circle class="pt neutral last" cx="360" cy="112.8" r="5"/>
+    <text class="val" x="360" y="99.8" text-anchor="middle">30k</text>
+    <text class="ax" x="52" y="170" text-anchor="middle">run 1</text><text class="ax" x="129" y="170" text-anchor="middle">run 2</text><text class="ax" x="206" y="170" text-anchor="middle">run 3</text><text class="ax" x="283" y="170" text-anchor="middle">run 4</text><text class="ax" x="360" y="170" text-anchor="middle">run 5</text>
+  </svg><figcaption>Tokens per task. <b class="dn">Halved. Parallel-only: 96k → 59k.</b></figcaption></figure>
+
+  <figure class="spark"><svg viewBox="0 0 380 200" role="img" aria-label="Wasted work">
+    <line class="grid" x1="52" y1="150" x2="360" y2="150"/><text class="ax" x="44" y="153.5" text-anchor="end">0%</text>
+    <line class="grid" x1="52" y1="108.7" x2="360" y2="108.7"/><text class="ax" x="44" y="112.2" text-anchor="end">13%</text>
+    <line class="grid" x1="52" y1="67.3" x2="360" y2="67.3"/><text class="ax" x="44" y="70.8" text-anchor="end">27%</text>
+    <line class="grid" x1="52" y1="26" x2="360" y2="26"/><text class="ax" x="44" y="29.5" text-anchor="end">40%</text>
+    <path class="ln bad" d="M52 150 L129 51.5 L206 98.4 L283 48.5 L360 150"/>
+    <circle class="pt bad" cx="52" cy="150" r="3.5"/><circle class="pt bad" cx="129" cy="51.5" r="3.5"/><circle class="pt bad" cx="206" cy="98.4" r="3.5"/><circle class="pt bad" cx="283" cy="48.5" r="3.5"/><circle class="pt bad last" cx="360" cy="150" r="5"/>
+    <text class="val" x="360" y="137" text-anchor="middle">0%</text>
+    <text class="ax" x="52" y="170" text-anchor="middle">run 1</text><text class="ax" x="129" y="170" text-anchor="middle">run 2</text><text class="ax" x="206" y="170" text-anchor="middle">run 3</text><text class="ax" x="283" y="170" text-anchor="middle">run 4</text><text class="ax" x="360" y="170" text-anchor="middle">run 5</text>
+  </svg><figcaption>Wasted work, share of tasks. <b class="dn">Zero — first time on the parallel path.</b></figcaption></figure>
+  </div>
+  <p class="note">Run 5 was deliberately small — 2 phases of 11 tasks — and only <strong>2 of its 5 execute runs were parallel</strong>; the other three were resumptions doing 0–1 tasks. Those inflate the task count and deflate min/task, which is why the parallel-only table above is the honest comparison.</p>
+</section>
+
+<section>
+  <div class="sec-head"><h2>Did ADR-041 fire?</h2><span class="k">yes</span></div>
+  <div class="col">
+  <p class="note" style="font-size:.94rem">The completeness gate caught a task with no stamped commit and refused the phase:</p>
+  </div>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Signal</th><th class="w">Observed</th></tr></thead>
+    <tbody>
+      <tr><td>Audit message</td><td class="w"><code>completeness audit: 1 of 1 task(s) have no (phase 02 tK) commit on the branch — t11</code></td></tr>
+      <tr><td>Outcome</td><td class="w"><code>stoppedReason: "integration-failed"</code> — phase not verified</td></tr>
+      <tr><td>Cause named</td><td class="w">Both possibilities given: work never committed, or committed without the stamp</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="note">In run 4 this exact condition passed silently with <code>skipped: []</code> and a PASS verdict, three times. It is now loud.</p>
+</section>
+
+<section>
+  <div class="sec-head"><h2>Status</h2><span class="k">after run 5</span></div>
+  <ul class="keylist">
+    <li><span class="t">Settled</span><span>ADR-031 works — remediation 64% → single digits across four comparable runs.</span></li>
+    <li><span class="t">Settled</span><span>ADR-040 works — wasted executions and heals both to zero, tokens 39% cheaper.</span></li>
+    <li><span class="t">Settled</span><span>ADR-041 works — a dropped task now fails the phase instead of passing.</span></li>
+    <li><span class="t">Open</span><span><strong>Speed.</strong> Five runs, no improvement. Removing all waste moved it 5%, so the bottleneck is the critical path, not redundant work. Nothing has measured it yet.</span></li>
+    <li><span class="t">Open</span><span><strong>Defect escape rate</strong> — still never measured. The only metric that says whether verification is right rather than how it ran.</span></li>
+    <li><span class="t">Next</span><span>If speed is the goal, measure wave width and critical-path duration — not execution counts.</span></li>
+  </ul>
+</section>
+
+<footer class="col">
+  <p>Deduplicated by task-id from session transcripts; one denominator throughout — execute runs carrying at least one planned task. Waste is summed per run, never netted across runs. Acceptance machine-signed in all five runs, so the two-gate guarantee is weakened by design for benchmarking.</p>
+</footer>
+</div>
