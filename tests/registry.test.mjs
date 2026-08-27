@@ -203,3 +203,69 @@ test('`ac registry init` backfills archived milestones as complete and continues
   const m = claim({ root: dir, type: 'milestone' });
   assert.equal(m.number, 2);
 });
+
+// ── ADR-042: a base that cannot be read must never become a base of "nothing" ──
+//
+// Twice, `ac decision add` destroyed a live shared registry: registry.json (172 claims) and
+// DECISIONS.md (109 ADRs) deleted, every step reporting success. Cause: readTree returned an
+// empty Map when `ls-tree` FAILED, which transact could not distinguish from "no files". It
+// built the next tree from that empty base, added only its own update, and committed it WITH
+// the real tip as parent — so the push fast-forwarded cleanly and was accepted.
+
+test('ADR-042: readTree returns null when the tree cannot be read, never an empty map', async () => {
+  const { readTree } = await import('../lib/shared.mjs');
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare, 'reader');
+  // A well-formed sha that is not in the object store: ls-tree fails.
+  const bogus = '0'.repeat(40);
+  assert.strictEqual(readTree(dir, bogus), null, 'an unreadable tree must be null — empty means "this branch has no files"');
+  // And a falsy tip is genuinely "nothing here yet", which IS an empty map.
+  assert.ok(readTree(dir, null) instanceof Map, 'no tip is a real empty state, not a failure');
+  assert.strictEqual(readTree(dir, null).size, 0);
+});
+
+test('ADR-042: transact refuses to write when the existing tree reads as empty', async () => {
+  const { transact } = await import('../lib/shared.mjs');
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare, 'alice');
+  assert.strictEqual(initRegistry({ root: dir }).ok, true);
+
+  // Reproduce the incident's shape: a tip that exists but whose tree holds nothing.
+  const empty = git(['mktree'], { cwd: dir, input: '' }).stdout.trim();
+  const commit = git(['commit-tree', empty, '-m', 'wiped'], { cwd: dir }).stdout.trim();
+  git(['push', '--force', bare, `${commit}:refs/heads/astro-registry`], { cwd: dir });
+
+  const res = transact(dir, { remote: 'origin', branch: 'astro-registry', message: 'should refuse' },
+    () => ({ updates: { 'DECISIONS.md': '# Decisions\n\n## ADR-001 — only me\n' } }));
+
+  assert.strictEqual(res.ok, false, 'writing onto an apparently-empty registry must be refused, not committed');
+  assert.match(res.error, /reads as empty|could not be read/i);
+  assert.match(res.error, /partial fetch|unreadable/i, 'the error must name the likely cause, not just say no');
+});
+
+test('ADR-042: a genuinely new branch is still writable', async () => {
+  const { transact } = await import('../lib/shared.mjs');
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare, 'bob');
+  // No registry init: the branch does not exist at all, which is a real empty state.
+  const res = transact(dir, { remote: 'origin', branch: 'astro-registry', message: 'first write' },
+    () => ({ updates: { 'registry.json': '{"version":1,"claims":[]}\n' } }));
+  assert.strictEqual(res.ok, true, 'bootstrapping a brand-new branch must still work — the guard is about UNREADABLE, not absent');
+});
+
+test('ADR-042: a normal write preserves every sibling file', async () => {
+  const { transact, snapshot } = await import('../lib/shared.mjs');
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare, 'carol');
+  assert.strictEqual(initRegistry({ root: dir }).ok, true);
+  transact(dir, { remote: 'origin', branch: 'astro-registry', message: 'seed' },
+    () => ({ updates: { 'CONVENTIONS.md': '# Conventions\n', 'DECISIONS.md': '# Decisions\n' } }));
+
+  transact(dir, { remote: 'origin', branch: 'astro-registry', message: 'touch one file' },
+    () => ({ updates: { 'DECISIONS.md': '# Decisions\n\n## ADR-001 — x\n' } }));
+
+  const { files } = snapshot(dir, { remote: 'origin', branch: 'astro-registry' });
+  assert.ok(files['registry.json'], 'registry.json must survive a DECISIONS.md write — this is what was destroyed');
+  assert.ok(files['CONVENTIONS.md'], 'CONVENTIONS.md must survive too');
+  assert.match(files['DECISIONS.md'], /ADR-001/);
+});

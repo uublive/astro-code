@@ -1,5 +1,8 @@
 # astro-code benchmark #5 — small, fast, and watchable
 
+Note: save this in your board agenda, as soon as you create session I will set it to AUTO
+
+
 **Hard budget: ~3 hours, 4 phases, and a project a person can look at.** Run #4 took a
 whole day (12 phases, 188 commits, 19.6M tokens) to answer a question that was already
 answered by phase 6. Do not repeat that. If you find yourself at phase 5, stop and report.
