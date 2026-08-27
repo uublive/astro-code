@@ -70,18 +70,41 @@ Use the corrected extractor from `BENCHMARK-PROMPT-4.md` §3 verbatim — it bou
 at `</task-notification>`, unescapes the payload, and dedups by task-id. Do not rewrite it.
 Three of five briefs shipped a broken script; this one is known good.
 
+**One denominator for every rate: execute runs carrying at least one planned task.** Run #4's
+figures below were recomputed on that rule, so they differ slightly from earlier reports
+(remediation read 6% and min/task 2.89 under looser denominators). Use the same rule or the
+comparison is meaningless.
+
 Report, in this order:
 
-| metric | run #4 | run #5 | what it means |
-|---|---|---|---|
-| `WASTED EXECS` | **74** | ? | **the headline.** ADR-040 should collapse this |
-| `min/task` (total exec minutes ÷ total tasks) | **2.84** | ? | throughput — flat across runs 3→4, should now improve |
-| remediation rate | 6% | ? | expected to stay low; not the question this time |
-| `healed` total | 75 | ? | stale-branch re-runs; should fall with WASTED EXECS |
+| metric | run #1 | run #2 | run #3 | run #4 | run #5 | pass condition |
+|---|---|---|---|---|---|---|
+| `WASTED EXECS` | 0 | 17 | 36 | **74** | ? | **the headline** — should collapse toward 0 |
+| first-pass task rate | 100% | 68% | 78% | **67%** | ? | should climb well above 67% |
+| `min/task` | 2.26 | 2.88 | 2.69 | **2.84** | ? | should drop below 2.69, ideally toward 2.26 |
+| remediation rate | 0% | 40% | 11% | **7%** | ? | should stay ≤ 10%; not the question this time |
+| `healed` total | 0 | — | 48 | **75** | ? | falls with WASTED EXECS |
+| tokens / task | — | — | — | **87k** | ? | cost, which time does not capture |
 
-`min/task` is the number that has never moved. Run 3 was 2.89, run 4 was 2.84 — the
-remediation rate fell 13% → 6% while throughput stayed flat, because the stale-fork tax ate
-the gain. That is what ADR-040 is aimed at.
+**First-pass task rate** = tasks landing with no heal and no remediation, ÷ total tasks. It
+is the sharpest signal here and it is *not* the remediation rate: run #4 had the best
+remediation rate of the series (7%) and its **worst** first-pass rate (67%). A third of
+individual tasks needed re-running while only 7% of runs got rejected — those measure
+different things, and only one has been improving.
+
+**Throughput has never moved in four runs** (2.26 → 2.88 → 2.69 → 2.84) while remediation
+fell ninefold. The stale-fork tax ate every gain. ADR-040 is the first change aimed at it,
+so run #5 is the first run where min/task *should* fall. If waste collapses and min/task
+still does not move, say so plainly — that means the bottleneck is somewhere nobody has
+looked yet, which is a more valuable finding than a confirmation.
+
+Also record, cheaply, two things nobody has ever tracked:
+
+- **Ceremony tax** — for one phase, the elapsed minutes from `/astro-discuss` starting to
+  its first task commit landing. Everything before the first commit is overhead.
+- **Defect escapes** — any defect found during phase N that an *earlier* phase's verifier
+  should have caught. One line each. This is the only measure of whether verification
+  actually works, and it cannot be reconstructed afterwards.
 
 ---
 
