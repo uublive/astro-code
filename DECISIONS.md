@@ -282,3 +282,10 @@ _2026-08-27_
 
 **Rejected:** A guard asserting no sibling is dropped (unreachable as written — transact seeds  from , so with an empty base there is nothing to detect a drop against; shipping a safety net that cannot fire is the exact failure pattern this project keeps hitting); force-pushing a repaired tree automatically (the operator must see that the remote diverged); treating an unreadable base as empty and retrying (the retry loop re-reads the same failing source, so it would destroy on a later attempt instead)
 
+## ADR-043 — Number allocation floors on the local roadmaps, and an unreachable remote is never reported as an uninitialised registry
+_2026-08-28_
+
+**Why:** Allocation read the shared registry alone, so any drift between it and the local roadmaps handed out a number the roadmap already used. Not hypothetical: an ADR-042-era write deleted registry.json from SALESCRAFT's branch while its roadmaps ran to phase 46, so the next allocation was phase 1 — and addPhase did not even reject it, because milestones 1-2 were archived on another machine and nothing local held a 1 to collide with. nextNumber now takes the max of the registry and the local high-water mark. Separately, fetchTip flattened 'cannot reach the remote' and 'the remote has no such branch' to the same null, so claim() answered both with 'run ac registry init' — the one command that rebuilds a team registry from one developer's disk. probeBranch (ls-remote --exit-code) tells them apart; init now refuses on an unreachable remote, --force included.
+
+**Rejected:** Rolling back the claim when addPhase throws: it treats the symptom, still burns a number, and leaves the duplicate reachable by any other caller of claim().
+
