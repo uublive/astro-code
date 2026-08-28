@@ -90,6 +90,34 @@ test('renderRoadmapMd handles the empty roadmap', () => {
   assert.match(renderRoadmapMd({ milestone: 1, phases: [] }), /No phases yet/);
 });
 
+// ADR-044 — ROADMAP.md is generated, so a hand-typed "(parked: awaiting specs)" was
+// wiped by the next render. A phase note is the durable place for that intent.
+test('ADR-044: a phase note survives every render that used to wipe it', async () => {
+  const { setPhaseNote, setPhaseStatus: setStatus } = await import('../lib/roadmap.mjs');
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  await addPhase(root, { number: 1, name: 'alpha', milestone: 1 });
+  const md = () => readFileSync(paths(root).roadmapMd, 'utf8');
+
+  await setPhaseNote(root, '01-alpha', 'parked: awaiting specs');
+  assert.match(md(), /parked: awaiting specs/);
+
+  // Each of these rebuilds ROADMAP.md from roadmap.json — the renders that used to lose it.
+  await setStatus(root, '01-alpha', 'executing');
+  assert.match(md(), /parked: awaiting specs/, 'a status change must not drop the note');
+  await addPhase(root, { number: 2, name: 'beta', milestone: 1 });
+  assert.match(md(), /parked: awaiting specs/, 'adding a sibling phase must not drop the note');
+  renderRoadmap(root);
+  assert.match(md(), /parked: awaiting specs/, 'an explicit render must not drop the note');
+
+  // The generated-file warning is what stops the next person hand-editing it again.
+  assert.match(md(), /generated from roadmap\.json/);
+
+  await setPhaseNote(root, '01-alpha', '');
+  assert.doesNotMatch(md(), /parked: awaiting specs/, 'an empty note clears it');
+  assert.equal(loadRoadmap(root).phases.find((p) => p.slug === '01-alpha').note, undefined);
+});
+
 test('init scaffolds the canon files', () => {
   const root = fresh();
   initPlanning(root, { name: 'demo' });

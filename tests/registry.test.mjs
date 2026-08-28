@@ -269,3 +269,64 @@ test('ADR-042: a normal write preserves every sibling file', async () => {
   assert.ok(files['CONVENTIONS.md'], 'CONVENTIONS.md must survive too');
   assert.match(files['DECISIONS.md'], /ADR-001/);
 });
+
+// ── ADR-043: drift must not hand out a number the roadmap is already using ──
+//
+// SALESCRAFT's registry.json was deleted from the orphan branch by an ADR-042-era write.
+// The branch still existed and still held DECISIONS.md, so every guard passed — but the
+// registry now parsed as zero claims while the local roadmaps ran to phase 46. The next
+// allocation was phase 1, and `addPhase` did not even reject it, because milestones 1-2
+// were archived on another machine and nothing local held a 1 to collide with.
+
+test('ADR-043: allocation floors on the local roadmaps, so a gutted registry cannot reissue a used number', async () => {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare, 'alice');
+  assert.strictEqual(initRegistry({ root: dir }).ok, true);
+
+  // Grow the roadmap the way a real project does, through the registry.
+  for (let i = 0; i < 3; i++) claim({ root: dir, type: 'phase', milestone: 1, name: `p${i}` });
+  const rmPath = paths(dir).roadmap;
+  const rm = JSON.parse(readFileSync(rmPath, 'utf8'));
+  rm.phases = [1, 2, 3].map((n) => ({ number: n, name: `p${n}`, slug: `0${n}-p${n}`, status: 'complete' }));
+  writeFileSync(rmPath, JSON.stringify(rm, null, 2));
+
+  // Now reproduce the incident: registry.json deleted, siblings intact, branch healthy.
+  const { transact, snapshot } = await import('../lib/shared.mjs');
+  const wipe = transact(dir, { remote: 'origin', branch: 'astro-registry', message: 'simulate ADR-042 loss' },
+    () => ({ updates: { 'registry.json': null, 'DECISIONS.md': '# Decisions\n' } }));
+  assert.strictEqual(wipe.ok, true);
+  assert.strictEqual(snapshot(dir, { remote: 'origin', branch: 'astro-registry' }).files['registry.json'], undefined);
+
+  // Pre-fix this returned 1 — a duplicate of a phase the roadmap already owns.
+  const next = claim({ root: dir, type: 'phase', milestone: 1, name: 'after the loss' });
+  assert.strictEqual(next.source, 'remote', next.error || '');
+  assert.strictEqual(next.number, 4, 'must clear the local high-water mark (3), not restart at 1');
+});
+
+test('ADR-043: an unreachable remote is not reported as an uninitialised registry', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-unreachable-'));
+  git(['init', '--quiet'], { cwd: dir });
+  git(['config', 'user.email', 'x@example.com'], { cwd: dir });
+  git(['config', 'user.name', 'x'], { cwd: dir });
+  // A configured remote that cannot be contacted — the expired-credential case.
+  git(['remote', 'add', 'origin', join(dir, 'does-not-exist.git')], { cwd: dir });
+  initPlanning(dir, { name: 'proj-unreachable' });
+
+  const res = claim({ root: dir, type: 'phase', milestone: 1, name: 'anything' });
+  assert.strictEqual(res.source, 'error');
+  assert.strictEqual(res.unreachable, true);
+  assert.ok(!res.needsInit, 'an unreachable remote must not be flagged as needing init');
+  assert.match(res.error, /cannot reach/i);
+  assert.match(res.error, /do NOT run `ac registry init`/i, 'the message must steer away from the destructive command');
+
+  // And init itself must refuse rather than rebuild a possibly-intact registry from disk.
+  const bad = initRegistry({ root: dir });
+  assert.strictEqual(bad.ok, false, 'init must refuse when it could not read the remote');
+  assert.match(bad.error, /refusing to initialize/i);
+  const forced = initRegistry({ root: dir, force: true });
+  assert.strictEqual(forced.ok, false, '--force must refuse too — force is exactly the panic reaction to this state');
+
+  const reg = readRegistry(dir);
+  assert.strictEqual(reg.available, false, 'an unread remote must never present as an empty registry');
+  assert.strictEqual(reg.unreachable, true);
+});

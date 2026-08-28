@@ -11,7 +11,7 @@ import { findRoot, paths } from '../lib/paths.mjs';
 import { initPlanning, phaseContextStatus } from '../lib/planning.mjs';
 import { profileModels, PROFILE_NAMES } from '../lib/models.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
-import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, setPhaseEffort, isPhasePlanned } from '../lib/roadmap.mjs';
+import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, setPhaseEffort, setPhaseNote, isPhasePlanned } from '../lib/roadmap.mjs';
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry } from '../lib/registry.mjs';
@@ -113,6 +113,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase accept <p> --agent <name>  machine-signed sign-off (records accepted_kind=agent)
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
+  ac phase note <phase> ["<text>"]    read/set/clear a durable phase note (survives ROADMAP.md renders)
   ac flow init                        ensure main + develop exist (gitflow, opt-in)
   ac flow                             create+switch to feature/m<N> off develop
   ac flow pr                          push the feature branch and print the develop PR URL
@@ -221,7 +222,8 @@ async function main() {
       console.log(`Project:   ${st.project ?? '?'}`);
       console.log(`Status:    ${st.status ?? '?'}`);
       console.log(`Milestone: ${rm.milestone}   (active phase: ${st.active_phase ?? '—'})`);
-      const regState = !reg.available ? 'no origin remote — add one, then `ac registry init`'
+      const regState = reg.unreachable ? `unreachable — could not read ${registryBranch(r)} from origin (not the same as empty)`
+        : !reg.available ? 'no origin remote — add one, then `ac registry init`'
         : reg.registry.claims.length ? `${registryBranch(r)} @ origin (team-coordinated)`
         : 'origin present, not initialized — run `ac registry init`';
       console.log(`Registry:  ${regState}`);
@@ -440,7 +442,19 @@ async function main() {
         const milestone = Number(flags.milestone) || st.active_milestone || rm.milestone || 1;
         const res = claim({ root: r, type: 'phase', milestone, name });
         if (res.source === 'error') die(res.error);
-        const phase = await addPhase(r, { number: res.number, name, milestone });
+        // The number is already committed to the shared registry by the time we get
+        // here, so a local failure cannot be silent: say which number was spent and
+        // that it will not be reissued, rather than dying on a bare stack trace.
+        let phase;
+        try {
+          phase = await addPhase(r, { number: res.number, name, milestone });
+        } catch (e) {
+          die(
+            `${e.message}\n` +
+            `  phase ${res.number} was already claimed on ${res.branch} and stays claimed — it will not be ` +
+            `handed out again. Your roadmap and the registry disagree; run \`ac registry show\` to compare.`,
+          );
+        }
         console.log(`✓ phase ${phase.number} "${name}" (milestone ${milestone}) [registry: ${res.branch}]`);
         warnNameMatches(res.matches, gitIdentity(r).owner);
         return;
@@ -542,8 +556,26 @@ async function main() {
           await setPhaseEffort(r, ph.slug, level);
           console.log(`✓ phase ${ph.number} "${ph.name}" → ${level}`);
         }
+      } else if (sub === 'note') {
+        // Durable free-text status for a phase (ADR-044).
+        //   ac phase note <n>            READ: print the current note (empty if none)
+        //   ac phase note <n> "<text>"   WRITE: persist it; the renderer emits it
+        //   ac phase note <n> ""         CLEAR
+        // ROADMAP.md is generated, so this is the only place such a note survives.
+        if (!ph) die('usage: ac phase note <phase> ["<text>"]');
+        if (pos.length < 3) {
+          console.log(ph.note ?? '');
+        } else {
+          const text = pos.slice(2).join(' ');
+          const updated = await setPhaseNote(r, ph.slug, text);
+          console.log(
+            updated.note
+              ? `✓ phase ${ph.number} "${ph.name}" note: ${updated.note}`
+              : `✓ phase ${ph.number} "${ph.name}" note cleared`,
+          );
+        }
       } else {
-        die('usage: ac phase <add|check|context|verify|accept|reject|effort> …');
+        die('usage: ac phase <add|check|context|verify|accept|reject|effort|note> …');
       }
       return;
     }
@@ -574,8 +606,12 @@ async function main() {
       if (pos[0] !== 'show') die('usage: ac registry <show|init [--force]>');
       const reg = readRegistry(r);
       if (!reg.available) {
-        console.error('no coordinated remote — add an origin, then `ac registry init`');
-        json({ available: false });
+        console.error(
+          reg.unreachable
+            ? `cannot reach \`${reg.remote}\` to read ${reg.branch} — the registry may be intact; this is a connectivity failure, not an empty registry`
+            : 'no coordinated remote — add an origin, then `ac registry init`',
+        );
+        json({ available: false, unreachable: !!reg.unreachable });
       } else {
         json(reg.registry);
       }
