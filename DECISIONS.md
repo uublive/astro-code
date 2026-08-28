@@ -289,3 +289,10 @@ _2026-08-28_
 
 **Rejected:** Rolling back the claim when addPhase throws: it treats the symptom, still burns a number, and leaves the duplicate reachable by any other caller of claim().
 
+## ADR-044 — Durable phase notes, because ROADMAP.md is generated and hand-edits are always lost
+_2026-08-28_
+
+**Why:** ROADMAP.md is rebuilt from roadmap.json by phase add, verify, accept, effort and roadmap render, so a hand-typed '(parked: awaiting specs)' survived only until the next of those ran. Phases now carry an optional note field, set with ac phase note, that the renderer emits — the intent lives in the canonical file instead of the generated one. The rendered file also carries a generated-by comment so the next person does not hand-edit it either.
+
+**Rejected:** Parsing hand-written text back out of ROADMAP.md on render: makes a generated artifact an input, and silently loses anything the parser does not recognise.
+
