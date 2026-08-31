@@ -72,14 +72,23 @@ export function readContext(root, nowSeconds) {
     if (age <= ACTIVITY_TTL_SECONDS) activity = a.text;
   }
 
+  // `done` is phases the HUMAN accepted (`complete`); `verified` is phases the
+  // AI checked but that are still waiting on /astro-accept. Conflating the two
+  // reads as "nothing finished" on a milestone where everything passed.
+  const verified = phases.filter((p) => p.status === 'verified').length;
+
   return {
     project: state.project || roadmap.project || null,
     status: state.status || null,
     milestone: roadmap.milestone ?? null,
     phase: phase ? { number: phase.number, slug: phase.slug, name: phase.name, status: phase.status } : null,
+    // Ordered phase list, for the statusline's "what comes next" track.
+    phases: phases
+      .map((p) => ({ number: p.number, status: p.status }))
+      .sort((a, b) => a.number - b.number),
     planned: phase ? existsSync(join(root, '.astrocode', 'phases', phase.slug, 'PLAN.md')) : false,
     discussed: phase ? phaseDiscussed(root, phase.slug) : false,
-    done, total: phases.length, blockers, activity,
+    done, verified, total: phases.length, blockers, activity,
   };
 }
 
@@ -131,21 +140,74 @@ export function nextAction(ctx) {
   }
 }
 
-// The one-line statusline segment (ANSI colour OK). Empty when there's nothing
-// to say (no milestone and no phase).
-export function renderSegment(ctx) {
-  if (!ctx || (ctx.milestone == null && !ctx.phase)) return '';
+/**
+ * The milestone's phases as a window around the current one:
+ *
+ *   ‹4 (P15)              — 4 phases behind, on the last one, nothing queued
+ *   ‹2 (P13) P14 P15      — 2 behind, two still to come
+ *   ‹2 (P13) P14 P15 +5   — …and five more beyond those
+ *
+ * The point is answering "is there anything after this?" at a glance. It
+ * replaces the phase slug, which was the widest thing on the line and told you
+ * a name you already know. Each number is coloured by its OWN status, so the
+ * track doubles as a progress read-out. `lookahead` shrinks on narrow screens.
+ */
+export function phaseTrack(ctx, lookahead = 2) {
+  const phase = ctx?.phase;
+  if (!phase) return '';
+  const all = Array.isArray(ctx.phases) ? ctx.phases : [];
+  const idx = all.findIndex((p) => p.number === phase.number);
+  const current = paint(`(P${phase.number})`, statusColor(phase.status));
+  if (idx < 0) return current;             // not in the list — show it alone
+
+  const parts = [];
+  if (idx > 0) parts.push(paint(`‹${idx}`, ANSI.dim));
+  parts.push(current);
+  const after = all.slice(idx + 1);
+  const shown = lookahead > 0 ? after.slice(0, lookahead) : [];
+  for (const p of shown) parts.push(paint(`P${p.number}`, statusColor(p.status)));
+  const rest = after.length - shown.length;
+  if (rest > 0) parts.push(paint(`+${rest}`, ANSI.dim));
+  return parts.join(' ');
+}
+
+/**
+ * The project segment split at its natural seam:
+ *
+ *   identity — ⊡ astro v0.14.0 · M6 · ‹4 (P15)   (WHERE you are)
+ *   state    — ▸ verified · 5▸ 0✓ · ⚠1           (HOW it's going)
+ *
+ * One line joins them. A narrow screen puts them on separate rows, so the
+ * identity half — the version/milestone/phase you navigate by — survives
+ * intact instead of being sliced.
+ */
+export function renderSegmentParts(ctx, { lookahead = 2 } = {}) {
+  if (!ctx || (ctx.milestone == null && !ctx.phase)) return { identity: '', state: '' };
   const col = ctx.phase ? statusColor(ctx.phase.status) : ANSI.dim;
-  const brand = `${paint('⊡', col)} ${paint('astro', ANSI.magenta)}` +
-    (ctx.version ? paint(` v${ctx.version}`, ANSI.dim) : '');
-  const parts = [brand];
-  if (ctx.milestone != null) parts.push(`M${ctx.milestone}`);
-  if (ctx.phase) parts.push(`P${ctx.phase.number} ${phaseLabel(ctx.phase)}`);
-  if (ctx.activity) parts.push(paint(ctx.activity, ANSI.yellow));     // live verb wins
-  else if (ctx.phase) parts.push(`▸ ${ctx.phase.status}`);
-  if (ctx.total) parts.push(`${ctx.done}/${ctx.total}`);
-  if (ctx.blockers) parts.push(paint(`⚠${ctx.blockers}`, ANSI.red));
-  return parts.join(' · ');
+  const identity = [
+    `${paint('⊡', col)} ${paint('astro', ANSI.magenta)}` +
+      (ctx.version ? paint(` v${ctx.version}`, ANSI.dim) : ''),
+  ];
+  if (ctx.milestone != null) identity.push(`M${ctx.milestone}`);
+  const track = phaseTrack(ctx, lookahead);
+  if (track) identity.push(track);
+
+  const state = [];
+  if (ctx.activity) state.push(paint(ctx.activity, ANSI.yellow));     // live verb wins
+  else if (ctx.phase) state.push(`▸ ${ctx.phase.status}`);
+  // Verified (AI-checked) vs accepted (human-signed-off) are different facts and
+  // a single done/total hid the gap — five phases awaiting /astro-accept read as
+  // "0 done" before this.
+  if (ctx.total) {
+    state.push(`${paint(`${ctx.verified ?? 0}▸`, ANSI.dim)} ${paint(`${ctx.done ?? 0}✓`, ANSI.dim)}`);
+  }
+  if (ctx.blockers) state.push(paint(`⚠${ctx.blockers}`, ANSI.red));
+  return { identity: identity.join(' · '), state: state.join(' · ') };
+}
+
+export function renderSegment(ctx, opts = {}) {
+  const { identity, state } = renderSegmentParts(ctx, opts);
+  return [identity, state].filter(Boolean).join(' · ');
 }
 
 // --- busy / idle activity dot -------------------------------------------------
@@ -321,4 +383,82 @@ export function renderBanner(ctx) {
   if (ctxLine.length) lines.push('   ' + ctxLine.join(' · '));
   lines.push('   next: ' + nextAction(ctx));
   return lines.join('\n');
+}
+
+// --- terminal width & narrow-screen layout -----------------------------------
+// Claude Code CAPTURES the statusline's stdout rather than wiring it to the tty,
+// so `process.stdout.columns` and `tput cols` are both blind in here. It exports
+// COLUMNS/LINES with the real terminal size instead — that env var is the ONLY
+// way a statusline can know how much room it has. Unknown width means "assume
+// roomy": we must never reflow a desktop line on a guess.
+export function termWidth(env = process.env) {
+  const n = parseInt(env.COLUMNS, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+const ANSI_CODE = /\x1b\[[0-9;]*m/;
+const ANSI_CODE_G = /\x1b\[[0-9;]*m/g;
+
+/** Printable width — colour codes occupy no columns on screen. */
+export function visibleWidth(s) {
+  return [...String(s || '').replace(ANSI_CODE_G, '')].length;
+}
+
+/** Truncate to `max` printable columns, copying colour codes through verbatim. */
+export function truncateVisible(s, max) {
+  const str = String(s || '');
+  if (max <= 0) return '';
+  if (visibleWidth(str) <= max) return str;
+  let out = '';
+  let count = 0;
+  let i = 0;
+  while (i < str.length) {
+    const m = ANSI_CODE.exec(str.slice(i));
+    if (m && m.index === 0) { out += m[0]; i += m[0].length; continue; }
+    if (count >= max - 1) break;
+    out += str[i];
+    count += 1;
+    i += 1;
+  }
+  return `${out}…\x1b[0m`;
+}
+
+export const STATUS_SEP = '  ·  ';
+
+/**
+ * One line when it fits, rows when it doesn't.
+ *
+ * `wide` is the desktop order — used verbatim whenever the whole line fits, so
+ * a roomy terminal renders exactly as it always has. `groups` is the fallback
+ * row split for a narrow screen (an iPad, a phone, a split pane), each row
+ * hard-truncated to the terminal width so nothing is silently cut mid-segment.
+ *
+ * Claude Code renders each output line as its own status row.
+ */
+export function packStatus({ wide, groups, width, sep = STATUS_SEP }) {
+  // An empty `wide` means the caller already knows the single line is out —
+  // go straight to rows rather than "fitting" an empty string and returning it.
+  const segs = (wide || []).filter(Boolean);
+  const one = segs.join(sep);
+  if (segs.length && (!width || visibleWidth(one) <= width)) return [one];
+  return (groups || [])
+    .map((g) => fitRow((g || []).filter(Boolean), width, sep))
+    .filter(Boolean);
+}
+
+/**
+ * Fill one row with whole segments. A segment that would overflow is DROPPED,
+ * not sliced — half of `⎇ feature-branch` tells you less than nothing, and the
+ * segments are ordered so the droppable ones sit at the end. Only when the
+ * leading segment alone overruns the row is it truncated, since something has
+ * to give.
+ */
+function fitRow(segments, width, sep = STATUS_SEP) {
+  if (!segments.length) return '';
+  let row = truncateVisible(segments[0], width);
+  for (const seg of segments.slice(1)) {
+    const candidate = `${row}${sep}${seg}`;
+    if (visibleWidth(candidate) <= width) row = candidate;
+  }
+  return row;
 }

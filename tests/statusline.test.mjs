@@ -14,8 +14,9 @@ import { spawnSync } from 'node:child_process';
 
 import {
   findAstroRoot, readContext, renderSegment, renderBanner, nextAction, renderResumeNote, ACTIVITY_TTL_SECONDS,
-  modelLimit, readContextTokens, readRecap, progressBar, renderClaudeSegment, renderRecap, truncate,
+  modelLimit, readContextTokens, readRecap, progressBar, renderClaudeSegment, renderRecap, truncate, phaseTrack,
   isBusy, renderStatus, SESSION_STALE_SECONDS,
+  termWidth, visibleWidth, truncateVisible, packStatus, renderSegmentParts, STATUS_SEP,
 } from '../hooks/_astro-ctx.mjs';
 
 const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -77,9 +78,10 @@ test('renderSegment shows ⊡, milestone, phase, progress, blockers', () => {
   const seg = renderSegment(readContext(root, NOW));
   assert.match(seg, /⊡ astro/);
   assert.match(seg, /M1/);
-  assert.match(seg, /P3 close-ci-gates/);
+  assert.match(seg, /‹2 \(P3\) P4/, 'windowed track: 2 behind, current, one queued');
+  assert.doesNotMatch(seg, /close-ci-gates/, 'the slug is no longer on the status line');
   assert.match(seg, /▸ pending/);
-  assert.match(seg, /2\/4/);
+  assert.match(seg, /0▸ 2✓/, 'verified vs human-accepted, not one blended count');
   assert.match(seg, /⚠1/);
 });
 
@@ -141,12 +143,32 @@ test('nextAction routes by phase status + discussed/planned flags (discuss → p
   assert.equal(nextAction(readContext(verifying, NOW)), '/astro-accept 3');
 });
 
-test('a numeric slug prefix is dropped for display (P3 already shows the number)', () => {
+test('a numeric slug prefix is dropped where the name IS shown (banner/resume note)', () => {
+  // The status line no longer carries the slug, but the banner and resume note
+  // still do — that is where the redundant `03-` prefix must be stripped.
   const root = project({ roadmap: { milestone: 2, phases: [
     { number: 3, slug: '03-close-ci-gates', name: 'Close CI gates', status: 'pending' }] } });
-  const seg = renderSegment(readContext(root, NOW));
-  assert.match(seg, /P3 close-ci-gates/);
-  assert.doesNotMatch(seg, /03-close/);
+  const note = renderResumeNote(readContext(root, NOW));
+  assert.match(note, /P3 close-ci-gates/);
+  assert.doesNotMatch(note, /03-close/);
+});
+
+test('the phase track windows around the current phase and counts the rest', () => {
+  const track = (phases, number, lookahead) => phaseTrack({
+    phase: { number, status: phases.find((p) => p.number === number).status },
+    phases,
+  }, lookahead);
+  const many = Array.from({ length: 12 }, (_, i) => ({ number: i + 1, status: 'pending' }));
+
+  // on the LAST phase: nothing queued, and the line says so by showing nothing
+  assert.match(track(many, 12, 2), /‹11 \(P12\)$/);
+  // mid-milestone: neighbours shown, remainder collapsed to a count
+  assert.match(track(many, 3, 2), /‹2 \(P3\) P4 P5 \+7/);
+  // a narrow screen shrinks the look-ahead, never the current phase
+  assert.match(track(many, 3, 1), /‹2 \(P3\) P4 \+8/);
+  assert.match(track(many, 3, 0), /‹2 \(P3\) \+9/);
+  // first phase: no "behind" marker at all
+  assert.match(track(many, 1, 1), /^\(P1\) P2 \+10/);
 });
 
 test('renderBanner is plain multi-line with the creature logo + next action', () => {
@@ -316,10 +338,10 @@ test('the statusline hook renders the project segment from a Claude stdin blob',
     encoding: 'utf8',
   });
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /⊡ astro · M1 · P3 close-ci-gates/);
+  assert.match(r.stdout, /⊡ astro · M1 · ‹2 \(P3\)/);
 });
 
-test('the statusline hook composes recap + model + context bar from stdin + transcript', () => {
+test('the statusline hook composes model + context bar from stdin + transcript', () => {
   const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
   const fakeHome = mkdtempSync(join(tmpdir(), 'ac-sl-home-'));
   const tp = join(fakeHome, 'transcript.jsonl');
@@ -338,8 +360,171 @@ test('the statusline hook composes recap + model + context bar from stdin + tran
     encoding: 'utf8',
   });
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /❯ ship the statusline/, 'recap first');
+  // No task recap: it echoed the prompt the user had just typed, which is
+  // already on screen right above the status line.
+  assert.ok(!r.stdout.includes('ship the statusline'), 'the prompt is NOT echoed back');
   assert.match(r.stdout, /Opus 4\.8/, 'model');
   assert.match(r.stdout, /10% · 100k\/1M/, 'context-fill bar (Opus 4.8 → 1M window)');
-  assert.match(r.stdout, /⊡ astro · M1 · P3 close-ci-gates/, 'astro segment still there');
+  assert.match(r.stdout, /⊡ astro · M1 · ‹2 \(P3\)/, 'astro segment still there');
 });
+
+// --- narrow screens: iPad, phone, split pane ---------------------------------
+// A single status line loses its TAIL when the terminal is narrow, and the astro
+// segment sits near the tail — so milestone/phase/version were exactly what got
+// cut on an iPad. These pin the reflow that fixes it.
+
+test('termWidth reads COLUMNS — the only width a statusline can see', () => {
+  // Claude Code CAPTURES stdout, so process.stdout.columns/`tput cols` are blind
+  // in a statusline; it exports COLUMNS instead. Unknown width must mean "roomy",
+  // never a guessed number, or a desktop line would reflow for no reason.
+  assert.equal(termWidth({ COLUMNS: '80' }), 80);
+  assert.equal(termWidth({ COLUMNS: '0' }), 0);
+  assert.equal(termWidth({ COLUMNS: 'wide' }), 0);
+  assert.equal(termWidth({}), 0, 'no COLUMNS → 0 → treated as unlimited');
+});
+
+test('visibleWidth ignores colour codes', () => {
+  assert.equal(visibleWidth('abc'), 3);
+  assert.equal(visibleWidth('\x1b[31mabc\x1b[0m'), 3, 'ANSI occupies no columns');
+  assert.equal(visibleWidth(''), 0);
+});
+
+test('truncateVisible cuts by printable width and keeps colour intact', () => {
+  assert.equal(truncateVisible('abcdef', 10), 'abcdef', 'short enough → untouched');
+  const cut = truncateVisible('abcdefghij', 5);
+  assert.equal(visibleWidth(cut), 5, 'result occupies exactly the budget');
+  assert.ok(cut.includes('…'));
+  // A coloured string must not be cut by byte offset — that would eat the codes.
+  const coloured = truncateVisible('\x1b[31mabcdefghij\x1b[0m', 5);
+  assert.equal(visibleWidth(coloured), 5);
+  assert.ok(coloured.startsWith('\x1b[31m'), 'opening colour survives');
+});
+
+test('packStatus keeps ONE line whenever it fits — desktop is unchanged', () => {
+  const wide = ['aaa', 'bbb', 'ccc'];
+  const groups = [['aaa'], ['bbb'], ['ccc']];
+  assert.deepEqual(packStatus({ wide, groups, width: 200 }), [wide.join(STATUS_SEP)]);
+  assert.deepEqual(packStatus({ wide, groups, width: 0 }), [wide.join(STATUS_SEP)],
+    'unknown width must not reflow');
+});
+
+test('packStatus splits into rows when narrow, each row within the budget', () => {
+  const wide = ['aaaaaaaaaa', 'bbbbbbbbbb', 'cccccccccc'];
+  const groups = [['aaaaaaaaaa'], ['bbbbbbbbbb'], ['cccccccccc']];
+  const rows = packStatus({ wide, groups, width: 12 });
+  assert.equal(rows.length, 3);
+  for (const r of rows) assert.ok(visibleWidth(r) <= 12, `row within budget: ${r}`);
+});
+
+test('a row drops a whole segment rather than slicing it', () => {
+  // Half of "⎇ feature-branch" is worse than none of it, so overflow drops the
+  // segment; only a leading segment that alone overruns is truncated.
+  const rows = packStatus({
+    wide: ['keepme', 'dropme'],
+    groups: [['keepme', 'dropme']],
+    width: 8,
+  });
+  assert.deepEqual(rows, ['keepme'], 'the segment that does not fit is dropped whole');
+});
+
+test('renderSegmentParts splits identity from state; renderSegment still joins them', () => {
+  const ctx = {
+    milestone: 6,
+    phase: { number: 15, slug: '15-a-very-long-phase-slug-indeed', status: 'verified' },
+    version: '0.14.0', done: 0, total: 5,
+  };
+  const { identity, state } = renderSegmentParts(ctx);
+  assert.match(identity, /astro/);
+  assert.match(identity, /v0\.14\.0/);
+  assert.match(identity, /M6/);
+  assert.match(identity, /P15/);
+  assert.match(state, /verified/);
+  assert.ok(!identity.includes('verified'), 'state must not leak into identity');
+  // The joined form is what the single-line layout has always rendered.
+  assert.equal(renderSegment(ctx), [identity, state].join(' · '));
+});
+
+
+
+test('on an iPad-width terminal the statusline still shows version, milestone and phase', () => {
+  // The actual regression: at 60 columns every row must fit, and the identity
+  // the user navigates by must be present and NOT sliced away.
+  const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
+  const home = mkdtempSync(join(tmpdir(), 'ac-sl-narrow-'));
+  mkdirSync(join(home, '.astro', 'code'), { recursive: true });
+  writeFileSync(join(home, '.astro', 'code', 'version'), '0.14.0\n');
+  const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
+
+  const render = (columns) => spawnSync(process.execPath, [hook, join(home, '.claude')], {
+    input: JSON.stringify({ session_id: 's', workspace: { current_dir: root } }),
+    env: { ...process.env, HOME: home, NO_COLOR: '1', COLUMNS: String(columns) },
+    encoding: 'utf8',
+  }).stdout;
+
+  for (const columns of [45, 60, 80, 110]) {
+    const out = render(columns);
+    const rows = out.split('\n');
+    for (const row of rows) {
+      assert.ok(visibleWidth(row) <= columns,
+        `at ${columns} cols a row overflowed (${visibleWidth(row)}): ${row}`);
+    }
+    assert.match(out, /astro v0\.14\.0/, `version visible at ${columns} cols`);
+    assert.match(out, /M\d/, `milestone visible at ${columns} cols`);
+    assert.match(out, /P\d/, `phase visible at ${columns} cols`);
+  }
+});
+
+test('a roomy terminal still renders exactly one line', () => {
+  const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
+  const home = mkdtempSync(join(tmpdir(), 'ac-sl-wide-'));
+  mkdirSync(join(home, '.astro', 'code'), { recursive: true });
+  const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
+  const out = spawnSync(process.execPath, [hook, join(home, '.claude')], {
+    input: JSON.stringify({ session_id: 's', workspace: { current_dir: root } }),
+    env: { ...process.env, HOME: home, NO_COLOR: '1', COLUMNS: '300' },
+    encoding: 'utf8',
+  }).stdout;
+  assert.equal(out.split('\n').length, 1, 'no reflow when there is room');
+});
+
+test('packStatus with an empty `wide` goes straight to rows', () => {
+  // The caller passes [] to mean "I already know one line will not fit". An
+  // earlier version treated the empty string as a fitting line and returned
+  // nothing at all, blanking the statusline on narrow terminals.
+  const rows = packStatus({ wide: [], groups: [['aaa'], ['bbb']], width: 40 });
+  assert.deepEqual(rows, ['aaa', 'bbb']);
+});
+
+test('one line when it fits, two rows when it does not — identity always intact', () => {
+  // The rule is width-driven, not a fixed threshold: a line that fits stays one
+  // line; a line that does not becomes two READABLE rows rather than one crammed
+  // row. Either way the identity half (version/milestone/phase) is never sliced.
+  const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
+  const home = mkdtempSync(join(tmpdir(), 'ac-sl-rows-'));
+  mkdirSync(join(home, '.astro', 'code'), { recursive: true });
+  writeFileSync(join(home, '.astro', 'code', 'version'), '0.14.0\n');
+  const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
+
+  const render = (columns) => spawnSync(process.execPath, [hook, join(home, '.claude')], {
+    input: JSON.stringify({ session_id: 's', workspace: { current_dir: root } }),
+    env: { ...process.env, HOME: home, NO_COLOR: '1', COLUMNS: String(columns) },
+    encoding: 'utf8',
+  }).stdout;
+
+  const wide = render(300);
+  assert.equal(wide.split('\n').length, 1, 'a roomy terminal keeps one line');
+  // Pick narrow widths from the fixture's own single-line length, so the test
+  // does not depend on how long this fixture's phase slug happens to be.
+  for (const columns of [40, 50]) {
+    const out = render(columns);
+    assert.ok(out.split('\n').length >= 2, `at ${columns} cols it should use rows:\n${out}`);
+    for (const row of out.split('\n')) {
+      assert.ok(visibleWidth(row) <= columns,
+        `row overflowed at ${columns} (${visibleWidth(row)}): ${row}`);
+    }
+    assert.match(out, /astro v0\.14\.0/, `version survives at ${columns}`);
+    assert.match(out, /M\d/, `milestone survives at ${columns}`);
+    assert.match(out, /P\d/, `phase survives at ${columns}`);
+  }
+});
+

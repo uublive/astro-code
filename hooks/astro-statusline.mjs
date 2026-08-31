@@ -15,8 +15,8 @@ import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import {
   findAstroRoot, readContext, renderSegment,
-  readContextTokens, readRecap, renderRecap, renderClaudeSegment, modelLimit,
-  isBusy, renderStatus,
+  readContextTokens, renderClaudeSegment, modelLimit,
+  isBusy, renderStatus, termWidth, visibleWidth, packStatus, renderSegmentParts, STATUS_SEP,
 } from './_astro-ctx.mjs';
 
 const HOME = join(homedir(), '.astro', 'code');
@@ -67,13 +67,15 @@ if (prev && typeof prev.command === 'string' && prev.command) {
   base = (r.stdout || '').replace(/\n+$/, '');
 }
 
-// (2) recap of what Claude is doing + (3) model + (4) context-fill bar, all read
-// from Claude's own live session (stdin model + the transcript it points at).
-let recap = '';
+// (2) model + context-fill bar, read from Claude's own live session (stdin
+// model + the transcript it points at).
+//
+// There is deliberately NO task recap here: it echoed the prompt the user had
+// just typed, which is already on screen directly above the status line — it
+// spent the most columns of any segment to say the least.
 let claude = '';
 if (data) {
   const tp = data.transcript_path;
-  recap = renderRecap(readRecap(tp));
   const tokens = readContextTokens(tp);
   let limit = modelLimit(data.model);
   // Safety net: a real request can never exceed its context window, so if the measured
@@ -86,12 +88,19 @@ if (data) {
 
 // (5) the astro project segment — current milestone/phase/status + live activity.
 // The cwd comes from Claude's stdin blob; from it we walk up to the `.astrocode/`.
-let project = '';
+let projCtx = null;
 const cwd = data?.workspace?.current_dir || data?.cwd || process.cwd();
+const cols = termWidth();
 try {
   const projRoot = findAstroRoot(cwd);
-  if (projRoot) project = renderSegment({ ...readContext(projRoot, Math.floor(Date.now() / 1000)), version: readVersion() });
+  if (projRoot) projCtx = { ...readContext(projRoot, Math.floor(Date.now() / 1000)), version: readVersion() };
 } catch { /* not inside an astro-code project */ }
+
+// The phase track shrinks by dropping look-ahead entries, so a narrow screen
+// loses "what's queued after next" before it loses where you actually are.
+const projectAt = (lookahead) => (projCtx
+  ? renderSegmentParts(projCtx, { lookahead })
+  : { identity: '', state: '' });
 
 // (6) git branch + (7) session cost — cheap, always-useful context.
 let branch = '';
@@ -110,6 +119,46 @@ if (cache && cache.update_available) {
   update = `⬆ astro-code ${cache.behind} behind — /astro-update`;
 }
 
-const parts = [base, recap, claude, project, branch, cost, update].filter(Boolean);
-// The dot leads the line (no separator) so it reads as a single indicator char.
-process.stdout.write((status ? status + ' ' : '') + parts.join('  ·  '));
+// One line while it fits; stacked rows when it doesn't. On a narrow screen (an
+// iPad, a phone, a split pane) the single line loses its TAIL — and the astro
+// segment sits near the tail, so milestone/phase/version were precisely what got
+// cut. The row layout leads with project state instead and demotes the recap,
+// which is the longest segment and the easiest to lose.
+//
+// `wide` is the historical order, used verbatim whenever the line fits, so a
+// roomy terminal renders exactly as before. Width comes from COLUMNS (Claude
+// Code exports it; stdout is captured, so nothing else can measure the tty).
+const dot = status ? status + ' ' : '';
+const pad = ' '.repeat(visibleWidth(dot));
+const rowWidth = cols ? Math.max(1, cols - visibleWidth(dot)) : 0;
+
+// A roomy terminal keeps the single line it has always had. Anything narrower
+// gets two rows — identity on the first, everything else on the second. Two
+// readable rows beat one crammed row: we do NOT shave the phase slug down just
+// to avoid wrapping, only enough that a row never has to be sliced.
+// The track shrinks by showing fewer upcoming phases, never by slicing.
+const lookahead = cols === 0 || cols >= 110 ? 3 : cols >= 70 ? 2 : 1;
+const { identity, state } = projectAt(lookahead);
+const project = [identity, state].filter(Boolean).join(' · ');
+
+// Phase state rides with the identity when there's room, and drops to the next
+// row when there isn't — rather than being silently dropped for lack of space.
+const stateFitsRow1 = !rowWidth ||
+  visibleWidth([identity, state].filter(Boolean).join(STATUS_SEP)) <= rowWidth;
+
+const lines = packStatus({
+  wide: [base, claude, project, branch, cost, update],
+  groups: [
+    // where am I — the answer the statusline exists to give, never sliced
+    stateFitsRow1 ? [identity, state] : [identity],
+    stateFitsRow1 ? [branch, claude, cost] : [state, branch, claude, cost],
+    [base, update],
+  ],
+  width: rowWidth,
+});
+
+process.stdout.write(
+  lines.length
+    ? lines.map((l, i) => (i === 0 ? dot + l : pad + l)).join('\n')
+    : dot.trimEnd(),
+);
