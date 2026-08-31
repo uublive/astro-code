@@ -65,6 +65,11 @@ The scaffold source of truth is `$(ac path templates)/kit/` — referred to as
    tools/build_kit.sh`, and sanity-check `python3 tools/validate_manifest.py
    kit.json` exits 0. Always go through `$(ac path templates)/kit/` — never
    hardcode the template tree, so this stays in lockstep with `astro-kit-new`.
+   `tools/` also brings `kit_test.py`; run `/astro-kit-test` (or `python3
+   tools/kit_test.py`) as the whole-kit check each time the recipe, manifest,
+   `EXAMPLES.md`, or a script changes during the conversion. It complements
+   `parity_check.py`: parity proves the converted scripts still match the
+   original's output, kit_test proves the kit around them is well-formed.
 
 6. **Capture golden fixtures from the source's REAL outputs.** Pick representative,
    preferably deterministic/offline inputs. Before writing anything captured to

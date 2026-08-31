@@ -7,3 +7,7 @@ node_modules/
 # transient state — never commit locks or temp writes
 .astrocode/.lock/
 **/*.tmp-*
+
+# python bytecode from the kit tools (kit_run_local.py imports kit_test.py)
+__pycache__/
+*.pyc

@@ -21,12 +21,19 @@ kits scaffolded before this command existed. New kits also ship their own copy a
    user to run this from the kit's root and stop. Show the kit id + version
    (`registry-entry.json`'s `id`, else `kit.json`'s `name`).
 
-2. **Build fresh (recommended).** If `./tools/build_kit.sh` exists, run it so
+2. **Test offline first.** Run `python3 tools/kit_test.py` (or
+   `$(ac path templates)/kit/tools/kit_test.py` for kits scaffolded before it
+   existed). It is offline and takes about a second. If it fails, surface the
+   failures and stop — publishing is the slowest possible way to discover that a
+   recipe phase produces none of the declared artifacts. If the kit predates the
+   checker and it cannot run, say so and continue rather than blocking.
+
+3. **Build fresh (recommended).** If `./tools/build_kit.sh` exists, run it so
    `kit.json` / `registry-entry.json` carry the current version and sha, and the
    manifest passes local v4 validation. If it fails, surface the errors and stop —
    don't publish a kit that doesn't build.
 
-3. **Dry run first.** Run the publisher with `--dry-run` to build the package and
+4. **Dry run first.** Run the publisher with `--dry-run` to build the package and
    surface any manifest problems before touching the network:
    `python3 "$(ac path templates)/kit/tools/publish_kit.py" --kit-root . --dry-run`.
    It prints the kit id, version, file count, size, and sha256, and **warns** if
@@ -34,7 +41,7 @@ kits scaffolded before this command existed. New kits also ship their own copy a
    If it warns about placeholders, tell the user the kit isn't finished and ask
    whether to continue anyway.
 
-4. **Collect connection details.** You need the instance **base URL**, the **admin
+5. **Collect connection details.** You need the instance **base URL**, the **admin
    email**, and the **admin password** (upload requires the admin role). Take the
    base URL from `$ARGUMENTS` if given. For the rest, prefer environment variables
    so the password never lands in argv or the transcript — the publisher reads
@@ -43,14 +50,14 @@ kits scaffolded before this command existed. New kits also ship their own copy a
    password by prefixing the single command with `ASTRO_ADMIN_PASSWORD='…'` rather
    than as a `--password` flag, so it isn't a separate argv entry.
 
-5. **Publish.** Run the publisher once:
+6. **Publish.** Run the publisher once:
    ```
    ASTRO_ADMIN_PASSWORD='<password>' python3 "$(ac path templates)/kit/tools/publish_kit.py" \
      --kit-root . --base <URL> --email <admin-email> [--note "<what changed>"]
    ```
    Offer to include a short `--note` describing this version (stored on the upload).
 
-6. **Interpret the result** (the publisher's exit code tells you which):
+7. **Interpret the result** (the publisher's exit code tells you which):
    - **0 / published** — report id, version, server sha256, size, and uploader.
      The kit is live immediately (`GET /api/kits` now lists it).
    - **5 / version already exists (HTTP 409)** — the instance already has this

@@ -50,10 +50,15 @@ The scaffold source of truth is `$(ac path templates)/kit/` — referred to as
      flesh things out. Create empty `src/scripts/`, `src/reference/`, `src/schemas/`
      (with `.gitkeep`).
    - `$KIT_TPL/tools/` → `tools/` **verbatim** (build_kit.sh, _zip_src.py,
-     publish_kit.py, validate_manifest.py, _schema_engine.py, schemas/).
+     publish_kit.py, validate_manifest.py, kit_test.py, kit_run_local.py,
+     _schema_engine.py, schemas/).
      `chmod +x tools/build_kit.sh`.
    - Sanity-check the scaffold now: `python3 tools/validate_manifest.py kit.json`
      must exit 0. Fix before continuing.
+   - Then `python3 tools/kit_test.py` for the whole-kit Tier 1 check. A fresh
+     scaffold has failures by construction (no recipe phases fleshed out yet) —
+     that is the point: it is the kit's to-do list, and it goes green as the kit
+     gets built.
 
 4. **Init the project.** Run `ac init --name "<kit-id>"`. Write
    `.astrocode/PROJECT.md`: **vision** = what the kit lets Astro do end-to-end and
@@ -89,6 +94,11 @@ The scaffold source of truth is `$(ac path templates)/kit/` — referred to as
 8. Show `ac status` and point to `/astro-discuss 1` (then `/astro-plan 1`) — always
    reference phases by **number**. If the kit was scaffolded into a subdirectory,
    remind the user to reopen the session there first.
+
+Throughout the build loop, run `/astro-kit-test` (or `python3 tools/kit_test.py`)
+whenever the manifest, a recipe, `EXAMPLES.md`, or a script changes — it is offline and
+takes about a second, so there is no reason to defer it to the end. It is the fastest
+way to catch a deliverable that no phase produces.
 
 Keep PROJECT.md tight. The kit is DONE when the "Build & definition of done" list in
 `KIT-CONTRACT.md` fully holds. Once it's green, `/astro-kit-publish` packages it

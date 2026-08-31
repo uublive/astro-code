@@ -81,6 +81,11 @@ Loaded by Astro to understand how to invoke the kit. Required sections:
 
 A kit is DONE when all of these hold:
 
+- `python3 tools/kit_test.py` exits 0 — the Tier 1 offline check, which covers the
+  machine-checkable half of this list in one run (manifest, recipe shape, artifact
+  reachability, EXAMPLES sections, script compilation, parity fixtures). Run it
+  continuously while building, not once at the end. **A green Tier 1 means the kit
+  is well-formed, NOT that it works** — only running it proves that.
 - `python3 tools/validate_manifest.py kit.json` exits 0
 - `./tools/build_kit.sh` succeeds: builds `dist/kit.zip` (root-relative paths,
   `CLAUDE.md` at zip root), fills `sha256` + `contents[]` in `kit.json`, and
