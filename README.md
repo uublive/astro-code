@@ -55,6 +55,7 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-kit-new [kit-id]   start a new Astro kit: scaffold manifest v4 + recipe + build tooling, then the normal loop
 /astro-kit-publish        publish a kit to a hosted Astro instance (zip with kit.json inside → its kit registry)
 /astro-kit-convert [src]  convert an existing non-kit implementation into a standard Astro kit at verified feature parity
+/astro-kit-test           test a kit WITHOUT publishing: offline static checks, or --tier2 against a local Astro
 /astro-phase <name>       add a phase (claims its number)
 /astro-discuss <phase>    talk through decisions/edge cases → CONTEXT.md (before planning)
 /astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)
@@ -68,6 +69,7 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-config             pick the model (opus/sonnet/haiku) per role
 /astro-decision           record an architectural decision into the canon
 /astro-status             where am I, and what's next?
+/astro-statusline         set a rich Claude Code statusline (milestone/phase track, context bar)
 /astro-help               short guide: the loop, the commands, and how to go fast
 ```
 
