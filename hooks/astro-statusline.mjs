@@ -63,7 +63,7 @@ let base = '';
 const chain = readJson(join(HOME, 'statusline-chain.json')) || {};
 const prev = chain[configDir];
 if (prev && typeof prev.command === 'string' && prev.command) {
-  const r = spawnSync(prev.command, { shell: true, input, encoding: 'utf8' });
+  const r = spawnSync(prev.command, { shell: true, input, encoding: 'utf8', windowsHide: true });
   base = (r.stdout || '').replace(/\n+$/, '');
 }
 
@@ -105,7 +105,7 @@ const projectAt = (lookahead) => (projCtx
 // (6) git branch + (7) session cost — cheap, always-useful context.
 let branch = '';
 try {
-  const r = spawnSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' });
+  const r = spawnSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', windowsHide: true });
   const b = (r.stdout || '').trim();
   if (b && b !== 'HEAD') branch = `⎇ ${b}`;
 } catch { /* not a git repo */ }

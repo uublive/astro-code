@@ -833,7 +833,7 @@ async function main() {
         cost: { total_cost_usd: 0.42 },
       };
       const hook = join(HOME_ROOT, 'hooks', 'astro-statusline.mjs');
-      const r = spawnSync(process.execPath, [hook, ''], { input: JSON.stringify(blob), encoding: 'utf8', env: { ...process.env, HOME: previewHome } });
+      const r = spawnSync(process.execPath, [hook, ''], { input: JSON.stringify(blob), encoding: 'utf8', windowsHide: true, env: { ...process.env, HOME: previewHome } });
       process.stdout.write((r.stdout || '(empty)') + '\n');
       return;
     }
@@ -911,7 +911,7 @@ async function main() {
       // if the global CLI is a copy (not running from the clone), reinstall it
       if (resolve(FRAMEWORK_ROOT) !== resolve(clone)) {
         console.log('refreshing global `ac` (npm install -g) …');
-        const npm = spawnSync('npm', ['install', '-g', clone], { encoding: 'utf8' });
+        const npm = spawnSync('npm', ['install', '-g', clone], { encoding: 'utf8', windowsHide: true });
         if (npm.status !== 0) console.error(`⚠ npm install -g failed — run it manually in ${clone}:\n${(npm.stderr || '').trim()}`);
         else console.log('✓ global `ac` refreshed');
       }

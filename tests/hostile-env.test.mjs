@@ -4,7 +4,7 @@
 // loud degradation: a clear refusal or a documented fallback, never a silent wrong thing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { git } from '../lib/git.mjs';
@@ -12,6 +12,10 @@ import { initPlanning } from '../lib/planning.mjs';
 import { paths } from '../lib/paths.mjs';
 import { readJSON, atomicWriteJSON } from '../lib/util.mjs';
 import { flowBranch } from '../lib/flow.mjs';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
 import { claim } from '../lib/registry.mjs';
 
 // A real git repo on `main` with one commit (so HEAD is valid), scaffolded with
@@ -77,4 +81,34 @@ test('claim() refuses with an actionable hint when there is no remote (no silent
   assert.equal(res.source, 'error', 'no remote must be an error, not a number');
   assert.equal(res.number, null, 'no number is allocated without the shared registry');
   assert.match(res.error, /remote|registry/i, 'the error points at the missing remote/registry');
+});
+
+// --- Windows: no stray console windows ---------------------------------------
+// Node defaults `windowsHide` to false, so on Windows EVERY spawn can flash or
+// leave an empty console window. The status line shells out on every render, so
+// the symptom users actually report is "empty terminals keep appearing while I
+// work". This scans the source rather than trusting review: a new spawn added
+// without the flag reintroduces the bug silently on a platform we don't test on.
+test('every child_process spawn sets windowsHide (no stray consoles on Windows)', () => {
+  const files = [
+    'hooks/astro-statusline.mjs', 'hooks/astro-update.mjs', 'hooks/astro-update-worker.mjs',
+    'lib/git.mjs', 'lib/flow.mjs', 'bin/ac.mjs',
+  ];
+  const offenders = [];
+  for (const rel of files) {
+    const src = readFileSync(join(FRAMEWORK, rel), 'utf8');
+    const lines = src.split('\n');
+    lines.forEach((line, i) => {
+      if (!/\bspawnSync\(|\bspawn\(/.test(line)) return;
+      if (/^\s*(\/\/|\*)/.test(line)) return;          // a comment mentioning spawn
+      if (/^import\b/.test(line.trim())) return;        // the import itself
+      // the options object may span the next few lines
+      const window = lines.slice(i, i + 14).join('\n');
+      if (!window.includes('windowsHide')) {
+        offenders.push(`${rel}:${i + 1}  ${line.trim().slice(0, 70)}`);
+      }
+    });
+  }
+  assert.deepEqual(offenders, [],
+    `these spawns would open a console window on Windows:\n${offenders.join('\n')}`);
 });

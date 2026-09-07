@@ -15,7 +15,7 @@ const sourceFile = join(HOME, 'source');
 const cacheFile = join(HOME, 'update-check.json');
 
 function git(args, cwd) {
-  const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true });
   return { status: r.status ?? 1, out: (r.stdout || '').trim() };
 }
 function pkgVersion(text) {
