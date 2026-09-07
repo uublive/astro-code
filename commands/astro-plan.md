@@ -53,3 +53,15 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
 
 Only fan out when the phase is worth parallel research — for a trivial phase, just
 write PLAN.md directly.
+
+## Provenance record (required)
+
+After the plan artifacts are written, also write
+`.astrocode/phases/<slug>/PROVENANCE.md` with exactly this single line:
+
+```
+astro-code-build: 41ef971b-6ffc-42fc-8079-34aff422ffbc
+```
+
+`ac` uses this line to correlate a plan with the framework revision that produced
+it; a phase directory without it is treated as unplanned by `ac phase context`.
