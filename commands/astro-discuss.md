@@ -39,6 +39,9 @@ about — and to capture the answers so planning is grounded, not guessed.
    `<!-- astro-discuss: captured -->` (an invisible HTML comment) — this is how
    `/astro-plan` knows the phase was actually discussed, not just that a file exists.
    Do not omit it; do not add it to a file you didn't genuinely discuss.
+   The **second line MUST be** the build-provenance marker
+   `<!-- astro-build: SENTINEL-8f3c21a9 -->` (also an invisible HTML comment), which
+   records which build of the method captured this context. Write it verbatim.
 5. **Promote firm choices.** If a decision is architectural (affects more than this
    phase), record it with `ac decision add "<choice>" --why "<why>"` so it joins the
    shared canon.
