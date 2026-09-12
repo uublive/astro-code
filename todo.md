@@ -143,3 +143,45 @@ A Windows/PowerShell user hit two issues installing:
    assumptions: POSIX paths in hooks/statusline, `$HOME` vs USERPROFILE, git
    hooks scripts written as POSIX sh in tests (test-only, fine), and whether
    `ac update` (git pull + npm install -g) works under PowerShell.
+
+## Canon sync and roadmap render (found 2026-09-12, driving astro-fleet)
+
+Two defects found while running the loop on a real project. Both are silent, both
+self-heal on the next unrelated command, and both therefore go unnoticed until the
+symptom shows up somewhere that looks unrelated.
+
+1. **Nothing ever publishes `CONVENTIONS.md`, so `ac canon pull` reverts it.**
+   `ac decision add` publishes `DECISIONS.md` and only that (it says so: "carried N
+   local-only decision(s) into the shared log"). A phase whose tasks edit
+   `.astrocode/CONVENTIONS.md` therefore leaves the registry stale, and the next
+   `ac canon pull` — which `/astro-plan` and `/astro-execute` both run best-effort as an
+   early step — overwrites the local file with the older registry copy and prints
+   `✓ pulled DECISIONS.md, CONVENTIONS.md` while doing it. ADR-041 in that project
+   already states the discipline ("push before you pull"), which is the tell: a rule a
+   human has to remember, for a thing the tool could just do.
+
+   Observed: a phase raised the Go core ceiling to 11400 and described a new module in
+   CONVENTIONS.md; the next command's pull put the ceiling back to 11000 while the
+   tracked line count already stood at 11093. The following phase would then have planned
+   against a ceiling the code had already passed — inventing a raise nobody asked for, or
+   reporting a false overrun. It was caught by diffing after the pull, not by the tool.
+
+   Fix: whatever closes a phase (`ac phase verify`, or the execute workflow's canon task)
+   should `ac canon push` when `.astrocode/` was touched. Failing that, `ac canon pull`
+   should refuse — or at minimum warn loudly — when the local canon has edits the registry
+   has never seen, rather than reporting success while discarding them.
+
+2. **`ac phase add` and `ac phase note` strip the `· planned` flag from every line of
+   ROADMAP.md.** Both re-render with `renderRoadmapMd(rm)` on the raw roadmap.json
+   (`lib/roadmap.mjs:105` in `setPhaseNote`, `:132` in `addPhase`), but `planned` is never
+   persisted there — it is disk-derived, and only `renderRoadmap(root)` computes it by
+   checking for each phase's `PLAN.md`. So both commands blank the flag on every planned
+   phase at once.
+
+   Cosmetic, and self-healing on the next `ac roadmap render` — which is exactly why it
+   has survived. It is also not rare: `ac phase add` runs on every fleet run that claims a
+   phase, so a fleet-driven repo re-strips it constantly and shows a diff nobody asked for.
+
+   Fix: call `renderRoadmap(root)` instead of `renderRoadmapMd(rm)` in both places. One
+   word each, and the `planned` flag stops depending on which command touched the file
+   last.
