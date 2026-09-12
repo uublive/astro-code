@@ -171,6 +171,26 @@ symptom shows up somewhere that looks unrelated.
    should refuse — or at minimum warn loudly — when the local canon has edits the registry
    has never seen, rather than reporting success while discarding them.
 
+   **Same root cause, worse symptom (found 2026-09-12, later the same day):** `DECISIONS.md`
+   has the mirror-image problem. `ac canon push` publishes `CONVENTIONS.md` only, and
+   `ac decision add` is the sole publisher of `DECISIONS.md` — so an edit to an EXISTING ADR
+   never reaches the registry. When the next sync finds local-N and shared-N with different
+   text it keeps both and renumbers one, which is right for two people colliding on a number
+   and wrong for one decision that was edited: the result is the same decision under two ids,
+   with the richer copy carrying the number nothing references. Observed end to end — a phase
+   task appended a `**Note:**` to an ADR published earlier that day, and the sync split it.
+   Every attempt to reconcile from the tool produced a THIRD copy, and each pull re-split it;
+   the only stable state was byte-matching the local file back to the registry and leaving the
+   duplicate in place. Repairing it means hand-editing the orphan branch, which is the exact
+   operation ADR-042's guards exist for.
+
+   Fix, in order of value: (a) publish `DECISIONS.md` from `ac canon push` too, so local edits
+   to existing ADRs can reach the registry at all; (b) treat "same id, different text" as a
+   conflict to SURFACE — print both and ask — rather than silently renumbering, because a
+   renumber orphans every existing reference to that id; (c) if a renumber really is the right
+   default, rewrite references to the old id in the same transaction, or say plainly which
+   references are now stale.
+
 2. **`ac phase add` and `ac phase note` strip the `· planned` flag from every line of
    ROADMAP.md.** Both re-render with `renderRoadmapMd(rm)` on the raw roadmap.json
    (`lib/roadmap.mjs:105` in `setPhaseNote`, `:132` in `addPhase`), but `planned` is never
