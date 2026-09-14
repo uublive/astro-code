@@ -24,7 +24,7 @@ Requires **Node ≥ 22**.
 git clone git@github.com:uublive/astro-code.git
 cd astro-code
 npm install -g .     # puts `ac` on your PATH
-ac install           # populates ~/.astro/code and links commands/agents into Claude Code
+ac install           # populates ~/.astro/code and publishes to every harness it finds
 ```
 
 > **Windows / PowerShell:** `ac` is shadowed by PowerShell's built-in `Add-Content`
@@ -34,11 +34,26 @@ ac install           # populates ~/.astro/code and links commands/agents into Cl
 > your session: `Remove-Item Alias:ac`. Note `ac install` links files with symlinks,
 > which on Windows require Developer Mode or an elevated shell.
 
-`ac install` keeps the files in `~/.astro/code` and symlinks the commands/agents into
-**every** Claude config dir Claude Code reads: the base `~/.claude` **and every
-jean-claude profile** (auto-detected from `~/.claude/.jean-claude/profiles.json`). So
-the commands show up in all your profiles at once — no per-profile reruns. It's
-idempotent; `ac uninstall` reverses it across all of them.
+`ac install` keeps the files in `~/.astro/code` and publishes them to **every agent
+harness present on the machine**, each in that harness's own format, from one command.
+It's idempotent; `ac uninstall` reverses it everywhere.
+
+| Harness | Where | How you invoke a command |
+|---|---|---|
+| **Claude Code** | symlinked into the base `~/.claude` **and every jean-claude profile** (auto-detected from `~/.claude/.jean-claude/profiles.json`) | `/astro-plan 3` |
+| **Codex CLI** | skills under `~/.codex/skills/` | `$astro-plan 3` |
+
+### Using it on Codex
+
+Codex has **no custom slash commands** — `/astro-plan` will not resolve. astro-code's
+commands are installed as Codex *skills*, so you invoke them as `$astro-plan` or simply
+ask for one by name. The six agents install as subagent skills the loop dispatches.
+
+Two things Codex does not get yet: the **status line / phase track** (Codex requires each
+hook to carry a `trusted_hash` in `config.toml`, which astro-code will not forge on your
+behalf), and hook-driven session state. Everything else — the full loop, the registry,
+worktree-isolated parallel execution — works the same, because the engine is
+host-agnostic and `ac` drives the orchestration itself.
 
 **Updating** is one command: `/astro-update` (or `ac update`) — it pulls the latest,
 refreshes the global CLI, and re-links across every profile. The first time, if it
