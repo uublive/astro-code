@@ -247,21 +247,23 @@ test('install publishes to every detected host, each in its own format', async (
     const claudeCmd = join(fakeHome, '.claude', 'commands', 'astro-plan.md');
     assert.ok(lstatSync(claudeCmd).isSymbolicLink(), 'Claude still gets a symlink');
 
-    // Codex: a rendered prompt file, with allowed-tools stripped.
-    const codexPrompt = join(codexHome, 'prompts', 'astro-plan.md');
-    assert.ok(existsSync(codexPrompt), 'Codex gets a real file, not a symlink');
-    assert.ok(!lstatSync(codexPrompt).isSymbolicLink());
-    const prompt = readFileSync(codexPrompt, 'utf8');
-    assert.ok(prompt.includes('description:'));
-    assert.ok(!prompt.includes('allowed-tools:'), 'Claude-only key must not reach Codex');
-
-    // Codex agents are skill DIRECTORIES.
+    // Codex: commands AND agents are skill directories (prompts/ is not read).
+    const codexCmd = join(codexHome, 'skills', 'astro-plan', 'SKILL.md');
+    assert.ok(existsSync(codexCmd), 'Codex gets a real file, not a symlink');
+    assert.ok(!lstatSync(codexCmd).isSymbolicLink());
+    const skill = readFileSync(codexCmd, 'utf8');
+    assert.ok(skill.includes('description:'));
+    assert.ok(!skill.includes('allowed-tools:'), 'Claude-only key must not reach Codex');
     assert.ok(existsSync(join(codexHome, 'skills', 'astro-executor', 'SKILL.md')));
     assert.ok(existsSync(join(codexHome, 'skills', 'astro-executor', 'agents', 'openai.yaml')));
 
+    // Both kinds share skills/ — publishing must not let one prune the other.
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-plan')), 'command survived the agent pass');
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-executor')), 'agent survived too');
+
     // Uninstall removes our entries from BOTH hosts.
     uninstallClaude();
-    assert.ok(!existsSync(codexPrompt), 'codex prompt removed');
+    assert.ok(!existsSync(join(codexHome, 'skills', 'astro-plan')), 'codex command removed');
     assert.ok(!existsSync(join(codexHome, 'skills', 'astro-executor')), 'codex skill dir removed');
   } finally {
     for (const [k, v] of [['HOME', prev.HOME], ['CLAUDE_CONFIG_DIR', prev.CFG], ['CODEX_HOME', prev.CX]]) {
@@ -274,10 +276,12 @@ test('install publishes to every detected host, each in its own format', async (
 test('publishing prunes our stale entries but never the user\'s own files', async () => {
   const fakeHome = mkdtempSync(join(tmpdir(), 'ac-prune-'));
   const codexHome = join(fakeHome, '.codex');
-  mkdirSync(join(codexHome, 'prompts'), { recursive: true });
+  mkdirSync(join(codexHome, 'skills'), { recursive: true });
   // one of ours from an older version, and one the user wrote
-  writeFileSync(join(codexHome, 'prompts', 'astro-gone.md'), 'renamed away upstream');
-  writeFileSync(join(codexHome, 'prompts', 'my-own.md'), 'do not touch');
+  mkdirSync(join(codexHome, 'skills', 'astro-gone'), { recursive: true });
+  writeFileSync(join(codexHome, 'skills', 'astro-gone', 'SKILL.md'), 'renamed away upstream');
+  mkdirSync(join(codexHome, 'skills', 'my-own'), { recursive: true });
+  writeFileSync(join(codexHome, 'skills', 'my-own', 'SKILL.md'), 'do not touch');
 
   const prev = { HOME: process.env.HOME, CFG: process.env.CLAUDE_CONFIG_DIR, CX: process.env.CODEX_HOME };
   process.env.HOME = fakeHome;
@@ -286,10 +290,10 @@ test('publishing prunes our stale entries but never the user\'s own files', asyn
   try {
     const { installClaude } = await import(`../lib/install.mjs?prune=${encodeURIComponent(fakeHome)}`);
     installClaude(FRAMEWORK);
-    assert.ok(!existsSync(join(codexHome, 'prompts', 'astro-gone.md')),
-      'a command renamed upstream must not linger in the slash menu');
-    assert.equal(readFileSync(join(codexHome, 'prompts', 'my-own.md'), 'utf8'), 'do not touch',
-      'a file the user put there is never ours to delete');
+    assert.ok(!existsSync(join(codexHome, 'skills', 'astro-gone')),
+      'a command renamed upstream must not linger as a dead skill');
+    assert.equal(readFileSync(join(codexHome, 'skills', 'my-own', 'SKILL.md'), 'utf8'), 'do not touch',
+      'a skill the user put there is never ours to delete');
   } finally {
     for (const [k, v] of [['HOME', prev.HOME], ['CLAUDE_CONFIG_DIR', prev.CFG], ['CODEX_HOME', prev.CX]]) {
       if (v === undefined) delete process.env[k];

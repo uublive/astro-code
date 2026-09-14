@@ -50,17 +50,28 @@ test('the Claude adapter renders commands and agents byte-identically', () => {
 
 // --- Codex: commands ------------------------------------------------------------
 
-test('a Codex prompt keeps description/argument-hint and drops allowed-tools', () => {
+test('a Codex command renders as a SKILL, not a prompts/ file', () => {
+  // ~/.codex/prompts/*.md is documented but not read by 0.154.0: Codex had
+  // never created that dir, the binary's only `prompts` strings are MCP
+  // protocol, and 22 files installed there produced "no matches" in the TUI.
+  // Skills are what actually works, so commands go there like agents do.
   const codex = getHost('codex');
-  const [file] = codex.renderCommand('astro-plan', readCommand('astro-plan'));
-  assert.equal(file.path, 'astro-plan.md');
-  const { frontmatter, body } = parseFrontmatter(file.content);
-  assert.ok(frontmatter.description, 'description survives — it is the slash menu label');
+  const files = codex.renderCommand('astro-plan', readCommand('astro-plan'));
+  assert.deepEqual(files.map((f) => f.path).sort(),
+    ['astro-plan/SKILL.md', 'astro-plan/agents/openai.yaml']);
+
+  const skill = files.find((f) => f.path.endsWith('SKILL.md'));
+  const { frontmatter, body } = parseFrontmatter(skill.content);
+  assert.ok(frontmatter.description, 'description drives discovery');
   assert.ok(!('allowed-tools' in frontmatter),
     'allowed-tools is Claude-only; Codex gates tools via its sandbox');
-  // The body must be untouched: both harnesses expand $ARGUMENTS identically.
-  const original = parseFrontmatter(readCommand('astro-plan')).body;
-  assert.equal(body, original, 'prompt body must not be rewritten');
+  assert.equal(body, parseFrontmatter(readCommand('astro-plan')).body,
+    'the prompt body must not be rewritten');
+
+  const yaml = files.find((f) => f.path.endsWith('openai.yaml')).content;
+  assert.match(yaml, /allow_implicit_invocation: false/,
+    'astro commands are driven by the user, never fired opportunistically');
+  assert.match(yaml, /default_prompt: "Use \$astro-plan/, 'argument-hint folds into the hint');
 });
 
 // --- Codex: agents are a skill DIRECTORY, not a file ----------------------------
@@ -154,10 +165,11 @@ test('all shipped commands and agents render on every host without throwing', ()
       assert.ok(Array.isArray(files) && files.length >= 1, `${host.id}: ${name} produced no file`);
       for (const out of files) {
         assert.ok(out.path && out.content, `${host.id}: ${name} produced an empty file`);
-        // A command with no description is invisible in every host's slash menu.
-        assert.ok(parseFrontmatter(out.content).frontmatter.description,
-          `${host.id}: ${name} lost its description`);
       }
+      // A command with no description is undiscoverable on every host.
+      const primary = files.find((f) => /\.md$/.test(f.path));
+      assert.ok(parseFrontmatter(primary.content).frontmatter.description,
+        `${host.id}: ${name} lost its description`);
     }
     for (const f of agents) {
       const name = f.replace(/\.md$/, '');
