@@ -57,8 +57,11 @@ test('a Codex command renders as a SKILL, not a prompts/ file', () => {
   // Skills are what actually works, so commands go there like agents do.
   const codex = getHost('codex');
   const files = codex.renderCommand('astro-plan', readCommand('astro-plan'));
-  assert.deepEqual(files.map((f) => f.path).sort(),
-    ['astro-plan/SKILL.md', 'astro-plan/agents/openai.yaml']);
+  // SKILL.md ONLY — matching lean-ctx, the plain skill that demonstrably works.
+  // An openai.yaml here would carry allow_implicit_invocation: false, which is
+  // right for a subagent and fatal for a command: it tells Codex never to
+  // invoke it, and Codex has no custom slash commands as a fallback path.
+  assert.deepEqual(files.map((f) => f.path), ['astro-plan/SKILL.md']);
 
   const skill = files.find((f) => f.path.endsWith('SKILL.md'));
   const { frontmatter, body } = parseFrontmatter(skill.content);
@@ -68,10 +71,16 @@ test('a Codex command renders as a SKILL, not a prompts/ file', () => {
   assert.equal(body, parseFrontmatter(readCommand('astro-plan')).body,
     'the prompt body must not be rewritten');
 
-  const yaml = files.find((f) => f.path.endsWith('openai.yaml')).content;
-  assert.match(yaml, /allow_implicit_invocation: false/,
-    'astro commands are driven by the user, never fired opportunistically');
-  assert.match(yaml, /default_prompt: "Use \$astro-plan/, 'argument-hint folds into the hint');
+  assert.ok(!files.some((f) => f.path.endsWith('openai.yaml')),
+    'a command must not carry the sidecar that suppresses its own discovery');
+});
+
+test('an AGENT does keep the sidecar — it is delegated to, not discovered', () => {
+  const files = getHost('codex').renderAgent('astro-executor', readAgent('astro-executor'));
+  const yaml = files.find((f) => f.path.endsWith('openai.yaml'));
+  assert.ok(yaml, 'subagents mirror the shipped review-agent shape');
+  assert.match(yaml.content, /allow_implicit_invocation: false/,
+    'an executor runs as a deliberate step in a wave, never opportunistically');
 });
 
 // --- Codex: agents are a skill DIRECTORY, not a file ----------------------------

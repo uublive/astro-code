@@ -301,3 +301,37 @@ test('publishing prunes our stale entries but never the user\'s own files', asyn
     }
   }
 });
+
+test('a stale file INSIDE an owned skill dir is cleaned, not just top-level ones', async () => {
+  // The real bug: when commands stopped emitting agents/openai.yaml, the old
+  // sidecar survived inside every astro-* skill because the directory itself
+  // was still legitimately ours and only top-level entries were pruned. That
+  // leftover carried allow_implicit_invocation: false and kept suppressing the
+  // skill's own discovery — an install that looked clean and worked wrongly.
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-stale-'));
+  const codexHome = join(fakeHome, '.codex');
+  mkdirSync(join(codexHome, 'skills', 'astro-status', 'agents'), { recursive: true });
+  writeFileSync(join(codexHome, 'skills', 'astro-status', 'agents', 'openai.yaml'), 'stale: true');
+  writeFileSync(join(codexHome, 'skills', 'astro-status', 'leftover.md'), 'from an old version');
+
+  const prev = { HOME: process.env.HOME, CFG: process.env.CLAUDE_CONFIG_DIR, CX: process.env.CODEX_HOME };
+  process.env.HOME = fakeHome;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  process.env.CODEX_HOME = codexHome;
+  try {
+    const { installClaude } = await import(`../lib/install.mjs?stale=${encodeURIComponent(fakeHome)}`);
+    installClaude(FRAMEWORK);
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-status', 'SKILL.md')));
+    assert.ok(!existsSync(join(codexHome, 'skills', 'astro-status', 'agents', 'openai.yaml')),
+      'a command must not keep a sidecar it no longer emits');
+    assert.ok(!existsSync(join(codexHome, 'skills', 'astro-status', 'leftover.md')),
+      'and no other stale file may survive inside an owned dir');
+    // Agents still legitimately have one.
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-executor', 'agents', 'openai.yaml')));
+  } finally {
+    for (const [k, v] of [['HOME', prev.HOME], ['CLAUDE_CONFIG_DIR', prev.CFG], ['CODEX_HOME', prev.CX]]) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
