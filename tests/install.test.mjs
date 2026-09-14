@@ -191,3 +191,148 @@ test('install fans out to the base AND every jean-claude profile', async () => {
     }
   });
 });
+
+// --- the version stamp ---------------------------------------------------------
+// writeVersion had NO test. It is what the status line reads to show the running
+// version, and it fails silently: its body is wrapped in `try { … } catch { return
+// null }`, so a broken reference inside it returns null and the install reports
+// success anyway. That is exactly how it broke during the host-adapter refactor —
+// a missing fs import threw a ReferenceError that the catch swallowed, and all
+// 513 tests stayed green. Assert the file lands, and that it holds the FRAMEWORK
+// version rather than any stale package.json under the home.
+test('installClaude stamps the framework version into the home', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-ver-'));
+  const prevHome = process.env.HOME;
+  const prevCfg = process.env.CLAUDE_CONFIG_DIR;
+  process.env.HOME = fakeHome;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  try {
+    const { installClaude } = await import(`../lib/install.mjs?ver=${encodeURIComponent(fakeHome)}`);
+    installClaude(FRAMEWORK);
+    const stamp = join(fakeHome, '.astro', 'code', 'version');
+    assert.ok(existsSync(stamp), 'version file must exist after install');
+    const expected = JSON.parse(readFileSync(join(FRAMEWORK, 'package.json'), 'utf8')).version;
+    assert.equal(readFileSync(stamp, 'utf8').trim(), expected,
+      'stamp must match the framework package.json');
+  } finally {
+    process.env.HOME = prevHome;
+    if (prevCfg === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = prevCfg;
+  }
+});
+
+// --- multi-host install ---------------------------------------------------------
+// `ac install` publishes to every harness it finds, in that harness's own
+// format, from one command. Claude Code gets symlinks to the markdown it
+// authored; Codex gets rendered prompts and skill directories.
+
+test('install publishes to every detected host, each in its own format', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-multi-'));
+  mkdirSync(join(fakeHome, '.claude'), { recursive: true });
+  const codexHome = join(fakeHome, '.codex');
+  mkdirSync(codexHome, { recursive: true });
+
+  const prev = { HOME: process.env.HOME, CFG: process.env.CLAUDE_CONFIG_DIR, CX: process.env.CODEX_HOME };
+  process.env.HOME = fakeHome;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  process.env.CODEX_HOME = codexHome;
+  try {
+    const { installClaude, uninstallClaude } = await import(`../lib/install.mjs?multi=${encodeURIComponent(fakeHome)}`);
+    const res = installClaude(FRAMEWORK);
+
+    const hosts = res.targets.map((t) => t.host).sort();
+    assert.deepEqual(hosts, ['claude', 'codex'], 'both detected hosts were published to');
+
+    // Claude: symlinks into commands/, exactly as before.
+    const claudeCmd = join(fakeHome, '.claude', 'commands', 'astro-plan.md');
+    assert.ok(lstatSync(claudeCmd).isSymbolicLink(), 'Claude still gets a symlink');
+
+    // Codex: commands AND agents are skill directories (prompts/ is not read).
+    const codexCmd = join(codexHome, 'skills', 'astro-plan', 'SKILL.md');
+    assert.ok(existsSync(codexCmd), 'Codex gets a real file, not a symlink');
+    assert.ok(!lstatSync(codexCmd).isSymbolicLink());
+    const skill = readFileSync(codexCmd, 'utf8');
+    assert.ok(skill.includes('description:'));
+    assert.ok(!skill.includes('allowed-tools:'), 'Claude-only key must not reach Codex');
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-executor', 'SKILL.md')));
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-executor', 'agents', 'openai.yaml')));
+
+    // Both kinds share skills/ — publishing must not let one prune the other.
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-plan')), 'command survived the agent pass');
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-executor')), 'agent survived too');
+
+    // Uninstall removes our entries from BOTH hosts.
+    uninstallClaude();
+    assert.ok(!existsSync(join(codexHome, 'skills', 'astro-plan')), 'codex command removed');
+    assert.ok(!existsSync(join(codexHome, 'skills', 'astro-executor')), 'codex skill dir removed');
+  } finally {
+    for (const [k, v] of [['HOME', prev.HOME], ['CLAUDE_CONFIG_DIR', prev.CFG], ['CODEX_HOME', prev.CX]]) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+test('publishing prunes our stale entries but never the user\'s own files', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-prune-'));
+  const codexHome = join(fakeHome, '.codex');
+  mkdirSync(join(codexHome, 'skills'), { recursive: true });
+  // one of ours from an older version, and one the user wrote
+  mkdirSync(join(codexHome, 'skills', 'astro-gone'), { recursive: true });
+  writeFileSync(join(codexHome, 'skills', 'astro-gone', 'SKILL.md'), 'renamed away upstream');
+  mkdirSync(join(codexHome, 'skills', 'my-own'), { recursive: true });
+  writeFileSync(join(codexHome, 'skills', 'my-own', 'SKILL.md'), 'do not touch');
+
+  const prev = { HOME: process.env.HOME, CFG: process.env.CLAUDE_CONFIG_DIR, CX: process.env.CODEX_HOME };
+  process.env.HOME = fakeHome;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  process.env.CODEX_HOME = codexHome;
+  try {
+    const { installClaude } = await import(`../lib/install.mjs?prune=${encodeURIComponent(fakeHome)}`);
+    installClaude(FRAMEWORK);
+    assert.ok(!existsSync(join(codexHome, 'skills', 'astro-gone')),
+      'a command renamed upstream must not linger as a dead skill');
+    assert.equal(readFileSync(join(codexHome, 'skills', 'my-own', 'SKILL.md'), 'utf8'), 'do not touch',
+      'a skill the user put there is never ours to delete');
+  } finally {
+    for (const [k, v] of [['HOME', prev.HOME], ['CLAUDE_CONFIG_DIR', prev.CFG], ['CODEX_HOME', prev.CX]]) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+test('a stale file INSIDE an owned skill dir is cleaned, not just top-level ones', async () => {
+  // The real bug: when commands stopped emitting agents/openai.yaml, the old
+  // sidecar survived inside every astro-* skill because the directory itself
+  // was still legitimately ours and only top-level entries were pruned. That
+  // leftover carried allow_implicit_invocation: false and kept suppressing the
+  // skill's own discovery — an install that looked clean and worked wrongly.
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-stale-'));
+  const codexHome = join(fakeHome, '.codex');
+  mkdirSync(join(codexHome, 'skills', 'astro-status', 'agents'), { recursive: true });
+  writeFileSync(join(codexHome, 'skills', 'astro-status', 'agents', 'openai.yaml'), 'stale: true');
+  writeFileSync(join(codexHome, 'skills', 'astro-status', 'leftover.md'), 'from an old version');
+
+  const prev = { HOME: process.env.HOME, CFG: process.env.CLAUDE_CONFIG_DIR, CX: process.env.CODEX_HOME };
+  process.env.HOME = fakeHome;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  process.env.CODEX_HOME = codexHome;
+  try {
+    const { installClaude } = await import(`../lib/install.mjs?stale=${encodeURIComponent(fakeHome)}`);
+    installClaude(FRAMEWORK);
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-status', 'SKILL.md')));
+    assert.ok(!existsSync(join(codexHome, 'skills', 'astro-status', 'leftover.md')),
+      'no stale file may survive inside an owned dir');
+    // the sidecar IS re-emitted, but as the current content, not the stale one
+    const yaml = readFileSync(join(codexHome, 'skills', 'astro-status', 'agents', 'openai.yaml'), 'utf8');
+    assert.ok(!yaml.includes('stale: true'), 'the old sidecar content must be replaced');
+    // Agents still legitimately have one.
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-executor', 'agents', 'openai.yaml')));
+  } finally {
+    for (const [k, v] of [['HOME', prev.HOME], ['CLAUDE_CONFIG_DIR', prev.CFG], ['CODEX_HOME', prev.CX]]) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
