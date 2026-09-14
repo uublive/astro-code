@@ -191,3 +191,32 @@ test('install fans out to the base AND every jean-claude profile', async () => {
     }
   });
 });
+
+// --- the version stamp ---------------------------------------------------------
+// writeVersion had NO test. It is what the status line reads to show the running
+// version, and it fails silently: its body is wrapped in `try { … } catch { return
+// null }`, so a broken reference inside it returns null and the install reports
+// success anyway. That is exactly how it broke during the host-adapter refactor —
+// a missing fs import threw a ReferenceError that the catch swallowed, and all
+// 513 tests stayed green. Assert the file lands, and that it holds the FRAMEWORK
+// version rather than any stale package.json under the home.
+test('installClaude stamps the framework version into the home', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-ver-'));
+  const prevHome = process.env.HOME;
+  const prevCfg = process.env.CLAUDE_CONFIG_DIR;
+  process.env.HOME = fakeHome;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  try {
+    const { installClaude } = await import(`../lib/install.mjs?ver=${encodeURIComponent(fakeHome)}`);
+    installClaude(FRAMEWORK);
+    const stamp = join(fakeHome, '.astro', 'code', 'version');
+    assert.ok(existsSync(stamp), 'version file must exist after install');
+    const expected = JSON.parse(readFileSync(join(FRAMEWORK, 'package.json'), 'utf8')).version;
+    assert.equal(readFileSync(stamp, 'utf8').trim(), expected,
+      'stamp must match the framework package.json');
+  } finally {
+    process.env.HOME = prevHome;
+    if (prevCfg === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = prevCfg;
+  }
+});
