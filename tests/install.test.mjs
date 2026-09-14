@@ -322,10 +322,11 @@ test('a stale file INSIDE an owned skill dir is cleaned, not just top-level ones
     const { installClaude } = await import(`../lib/install.mjs?stale=${encodeURIComponent(fakeHome)}`);
     installClaude(FRAMEWORK);
     assert.ok(existsSync(join(codexHome, 'skills', 'astro-status', 'SKILL.md')));
-    assert.ok(!existsSync(join(codexHome, 'skills', 'astro-status', 'agents', 'openai.yaml')),
-      'a command must not keep a sidecar it no longer emits');
     assert.ok(!existsSync(join(codexHome, 'skills', 'astro-status', 'leftover.md')),
-      'and no other stale file may survive inside an owned dir');
+      'no stale file may survive inside an owned dir');
+    // the sidecar IS re-emitted, but as the current content, not the stale one
+    const yaml = readFileSync(join(codexHome, 'skills', 'astro-status', 'agents', 'openai.yaml'), 'utf8');
+    assert.ok(!yaml.includes('stale: true'), 'the old sidecar content must be replaced');
     // Agents still legitimately have one.
     assert.ok(existsSync(join(codexHome, 'skills', 'astro-executor', 'agents', 'openai.yaml')));
   } finally {

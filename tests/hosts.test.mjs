@@ -57,11 +57,8 @@ test('a Codex command renders as a SKILL, not a prompts/ file', () => {
   // Skills are what actually works, so commands go there like agents do.
   const codex = getHost('codex');
   const files = codex.renderCommand('astro-plan', readCommand('astro-plan'));
-  // SKILL.md ONLY — matching lean-ctx, the plain skill that demonstrably works.
-  // An openai.yaml here would carry allow_implicit_invocation: false, which is
-  // right for a subagent and fatal for a command: it tells Codex never to
-  // invoke it, and Codex has no custom slash commands as a fallback path.
-  assert.deepEqual(files.map((f) => f.path), ['astro-plan/SKILL.md']);
+  assert.deepEqual(files.map((f) => f.path).sort(),
+    ['astro-plan/SKILL.md', 'astro-plan/agents/openai.yaml']);
 
   const skill = files.find((f) => f.path.endsWith('SKILL.md'));
   const { frontmatter, body } = parseFrontmatter(skill.content);
@@ -71,8 +68,30 @@ test('a Codex command renders as a SKILL, not a prompts/ file', () => {
   assert.equal(body, parseFrontmatter(readCommand('astro-plan')).body,
     'the prompt body must not be rewritten');
 
-  assert.ok(!files.some((f) => f.path.endsWith('openai.yaml')),
-    'a command must not carry the sidecar that suppresses its own discovery');
+  // The sidecar is fine — what matters is the flag inside it. A command must be
+  // implicitly invocable, because discovery from its description is the ONLY
+  // way to reach it: Codex has no custom slash commands.
+  const yaml = files.find((f) => f.path.endsWith('openai.yaml')).content;
+  assert.match(yaml, /allow_implicit_invocation: true/,
+    'a command that cannot be invoked implicitly cannot be invoked at all');
+  assert.match(yaml, /default_prompt: "Use \$astro-plan/,
+    'openai_yaml.md requires the default prompt to name the skill as $skill-name');
+});
+
+test('short_description honours the documented 25-64 character bound', () => {
+  const codex = getHost('codex');
+  const readBlurb = (files) => /short_description: "([^"]*)"/
+    .exec(files.find((f) => f.path.endsWith('openai.yaml')).content)[1];
+
+  // a very long description must be cut on a word boundary, not mid-word
+  const long = codex.renderCommand('x', `---\nname: x\ndescription: ${'word '.repeat(40)}\n---\nbody`);
+  const blurb = readBlurb(long);
+  assert.ok(blurb.length <= 64, `too long: ${blurb.length}`);
+  assert.ok(!/\s…$/.test(blurb), 'no dangling space before the ellipsis');
+
+  // a very short one must still reach the 25-char floor
+  const short = codex.renderCommand('y', '---\nname: y\ndescription: Do it\n---\nbody');
+  assert.ok(readBlurb(short).length >= 25, 'short blurbs are padded to the floor');
 });
 
 test('an AGENT does keep the sidecar — it is delegated to, not discovered', () => {
