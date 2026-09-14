@@ -22,6 +22,7 @@ import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, fl
 import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME } from '../lib/install.mjs';
 import { applyTune, undoTune, tuneTarget, UNTUNABLE } from '../lib/tune.mjs';
 import { collectStats } from '../lib/stats.mjs';
+import { writeAgentsMd } from '../lib/agentsmd.mjs';
 
 function parseArgs(args) {
   const flags = {};
@@ -148,6 +149,17 @@ async function main() {
       process.stdout.write(HELP);
       return;
 
+    // Refresh the managed AGENTS.md block on its own — for projects that predate
+    // it, or after upgrading astro-code. Only the region between the markers is
+    // touched; everything the user wrote around it is preserved.
+    case 'agents-md': {
+      const root = findRoot() || process.cwd();
+      const written = writeAgentsMd(root);
+      if (!written.length) console.log('• AGENTS.md already up to date');
+      else console.log(`✓ updated ${written.join(' + ')} in ${root}`);
+      return;
+    }
+
     case 'init': {
       const cwd = process.cwd();
       const res = initPlanning(cwd, {
@@ -155,6 +167,7 @@ async function main() {
         vision: typeof flags.vision === 'string' ? flags.vision : '',
       });
       console.log(res.created ? `✓ ${res.message}` : `• ${res.message}`);
+      if (res.agentsMd?.length) console.log(`✓ explained astro-code in ${res.agentsMd.join(' + ')}`);
       // ADR-035 — keep harness-created agent worktrees out of the user's index.
       //
       // Parallel executors are materialised under `.claude/worktrees/` as live git repos, so

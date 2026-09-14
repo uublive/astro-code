@@ -1399,3 +1399,24 @@ test('flowHotfixFinish throws "no remote" when repo has no remote configured (OQ
     'flowHotfixFinish must throw when no remote is configured',
   )
 })
+
+test('flowBranch rides an untracked AGENTS.md but still blocks a MODIFIED one', () => {
+  // `ac init` scaffolds AGENTS.md alongside .astrocode/, so an untracked one is
+  // expected and must not read as dirty. A modified one is different: that file
+  // is user-owned outside astro-code's managed block, and letting a real edit
+  // ride a branch silently is precisely what this guard exists to prevent.
+  const dir = scaffold(mkRepo())   // initPlanning writes AGENTS.md, untracked
+  enableFlow(dir)
+  withRegistry(dir)
+  flowInit(dir)
+
+  const res = flowBranch(dir)
+  assert.equal(res.ok, true, 'an untracked AGENTS.md rides along')
+
+  // commit it, then edit it: now it is the user's own change
+  git(['add', 'AGENTS.md'], { cwd: dir })
+  git(['commit', '-m', 'add agents'], { cwd: dir })
+  writeFileSync(join(dir, 'AGENTS.md'), '# edited by the user\n')
+  assert.throws(() => flowBranch(dir), /dirty/,
+    'a modified AGENTS.md must still block')
+});

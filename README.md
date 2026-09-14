@@ -95,6 +95,7 @@ ac init --name my-project --vision "what we're building"
 ac phase add "Foundation"      # claim + add a phase
 ac status                      # project / milestone / phases
 ac registry show               # the shared numbering registry
+ac agents-md                   # refresh the astro-code block in AGENTS.md
 ac milestone complete          # archive the current milestone
 ac stats                       # token usage (fresh vs cheap cache reads) + wall-clock
 
