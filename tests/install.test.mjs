@@ -220,3 +220,80 @@ test('installClaude stamps the framework version into the home', async () => {
     else process.env.CLAUDE_CONFIG_DIR = prevCfg;
   }
 });
+
+// --- multi-host install ---------------------------------------------------------
+// `ac install` publishes to every harness it finds, in that harness's own
+// format, from one command. Claude Code gets symlinks to the markdown it
+// authored; Codex gets rendered prompts and skill directories.
+
+test('install publishes to every detected host, each in its own format', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-multi-'));
+  mkdirSync(join(fakeHome, '.claude'), { recursive: true });
+  const codexHome = join(fakeHome, '.codex');
+  mkdirSync(codexHome, { recursive: true });
+
+  const prev = { HOME: process.env.HOME, CFG: process.env.CLAUDE_CONFIG_DIR, CX: process.env.CODEX_HOME };
+  process.env.HOME = fakeHome;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  process.env.CODEX_HOME = codexHome;
+  try {
+    const { installClaude, uninstallClaude } = await import(`../lib/install.mjs?multi=${encodeURIComponent(fakeHome)}`);
+    const res = installClaude(FRAMEWORK);
+
+    const hosts = res.targets.map((t) => t.host).sort();
+    assert.deepEqual(hosts, ['claude', 'codex'], 'both detected hosts were published to');
+
+    // Claude: symlinks into commands/, exactly as before.
+    const claudeCmd = join(fakeHome, '.claude', 'commands', 'astro-plan.md');
+    assert.ok(lstatSync(claudeCmd).isSymbolicLink(), 'Claude still gets a symlink');
+
+    // Codex: a rendered prompt file, with allowed-tools stripped.
+    const codexPrompt = join(codexHome, 'prompts', 'astro-plan.md');
+    assert.ok(existsSync(codexPrompt), 'Codex gets a real file, not a symlink');
+    assert.ok(!lstatSync(codexPrompt).isSymbolicLink());
+    const prompt = readFileSync(codexPrompt, 'utf8');
+    assert.ok(prompt.includes('description:'));
+    assert.ok(!prompt.includes('allowed-tools:'), 'Claude-only key must not reach Codex');
+
+    // Codex agents are skill DIRECTORIES.
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-executor', 'SKILL.md')));
+    assert.ok(existsSync(join(codexHome, 'skills', 'astro-executor', 'agents', 'openai.yaml')));
+
+    // Uninstall removes our entries from BOTH hosts.
+    uninstallClaude();
+    assert.ok(!existsSync(codexPrompt), 'codex prompt removed');
+    assert.ok(!existsSync(join(codexHome, 'skills', 'astro-executor')), 'codex skill dir removed');
+  } finally {
+    for (const [k, v] of [['HOME', prev.HOME], ['CLAUDE_CONFIG_DIR', prev.CFG], ['CODEX_HOME', prev.CX]]) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+test('publishing prunes our stale entries but never the user\'s own files', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-prune-'));
+  const codexHome = join(fakeHome, '.codex');
+  mkdirSync(join(codexHome, 'prompts'), { recursive: true });
+  // one of ours from an older version, and one the user wrote
+  writeFileSync(join(codexHome, 'prompts', 'astro-gone.md'), 'renamed away upstream');
+  writeFileSync(join(codexHome, 'prompts', 'my-own.md'), 'do not touch');
+
+  const prev = { HOME: process.env.HOME, CFG: process.env.CLAUDE_CONFIG_DIR, CX: process.env.CODEX_HOME };
+  process.env.HOME = fakeHome;
+  delete process.env.CLAUDE_CONFIG_DIR;
+  process.env.CODEX_HOME = codexHome;
+  try {
+    const { installClaude } = await import(`../lib/install.mjs?prune=${encodeURIComponent(fakeHome)}`);
+    installClaude(FRAMEWORK);
+    assert.ok(!existsSync(join(codexHome, 'prompts', 'astro-gone.md')),
+      'a command renamed upstream must not linger in the slash menu');
+    assert.equal(readFileSync(join(codexHome, 'prompts', 'my-own.md'), 'utf8'), 'do not touch',
+      'a file the user put there is never ours to delete');
+  } finally {
+    for (const [k, v] of [['HOME', prev.HOME], ['CLAUDE_CONFIG_DIR', prev.CFG], ['CODEX_HOME', prev.CX]]) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});

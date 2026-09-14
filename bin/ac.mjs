@@ -851,7 +851,8 @@ async function main() {
           continue;
         }
         const hk = t.hooks ? ', update banner+statusline' : '';
-        console.log(`✓ linked → ${t.dir}  [${t.label}]  (${t.commands} cmds, ${t.agents} agents${hk})`);
+        const who = t.hostLabel ? `${t.hostLabel} ` : '';
+        console.log(`✓ ${who}→ ${t.dir}  [${t.label}]  (${t.commands} cmds, ${t.agents} agents${hk})`);
       }
       console.log('  after pulling updates, refresh the global CLI: npm install -g .');
       return;
