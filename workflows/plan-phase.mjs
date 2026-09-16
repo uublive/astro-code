@@ -3,9 +3,9 @@
 // Fan out parallel researchers over a phase, then synthesize one executable
 // PLAN.md (+ ACCEPTANCE.md). Invoked by the /astro-plan command via:
 //   Workflow({ scriptPath: "<astro-code>/workflows/plan-phase.mjs",
-//              args: { root, phase, goal, models } })
+//              args: { root, phase, goal, models, reasoning } })
 //
-// Args stay SMALL (scalars + a tiny models map) so they're always valid JSON — we do
+// Args stay SMALL (scalars + two tiny per-role maps) so they're always valid JSON — we do
 // NOT pass canon/CONTEXT text here; the spawned agents read those from disk, which
 // also keeps the args from being accidentally serialized to a string.
 //
@@ -22,7 +22,7 @@ export const meta = {
 
 // Defensive: accept args as an object, or as a JSON string if the caller stringified it.
 const input = typeof args === 'string' ? JSON.parse(args) : args || {}
-const { root, phase: phaseSlug, goal = '(see PROJECT.md)', models = {} } = input
+const { root, phase: phaseSlug, goal = '(see PROJECT.md)', models = {}, reasoning = {} } = input
 if (!root || !phaseSlug) throw new Error('plan-phase requires args { root, phase }')
 
 // Agents read the canon + discussion brief from disk themselves.
@@ -53,7 +53,7 @@ await agent(
     `Ban structural/existence checks (file-exists, grep-for-a-string, "function defined") — a ` +
     `different valid implementation of the goal must still satisfy every criterion. Return a one-line count.` +
     OBEY,
-  { phase: 'Criteria', agentType: 'astro-criteria-author', model: models.planner },
+  { phase: 'Criteria', agentType: 'astro-criteria-author', model: models.planner, effort: reasoning.planner },
 )
 
 phase('Research')
@@ -72,7 +72,7 @@ const findings = await parallel(
         `Read the relevant files under ${root} and ${root}/.astrocode/. ` +
         `Return concise, concrete findings (no preamble).` +
         OBEY,
-      { label: `research:${i + 1}`, phase: 'Research', agentType: 'Explore', model: models.researcher },
+      { label: `research:${i + 1}`, phase: 'Research', agentType: 'Explore', model: models.researcher, effort: reasoning.researcher },
     ),
   ),
 )
@@ -120,7 +120,7 @@ const summary = await agent(
     `— and fix any violation.\n\n` +
     `Return a one-line summary of the plan.` +
     OBEY,
-  { phase: 'Synthesize', agentType: 'astro-planner', model: models.planner },
+  { phase: 'Synthesize', agentType: 'astro-planner', model: models.planner, effort: reasoning.planner },
 )
 
 return { phase: phaseSlug, plan: summary }

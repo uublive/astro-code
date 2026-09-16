@@ -37,7 +37,8 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
      Workflow({
        scriptPath: "<ac path workflows>/plan-phase.mjs",   // from `ac path workflows`
        args: { root: "<project root>", phase: "<phase slug>", goal: "<phase goal>",
-               models: <the JSON object from `ac config get models`> }
+               models: <the JSON object from `ac config get models`>,
+               reasoning: <the JSON object from `ac config get reasoning`> }
      })
      ```
      **Speed override:** if the user passed `--fast`, use the JSON from

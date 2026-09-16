@@ -30,6 +30,7 @@ Execute phase `$ARGUMENTS`.
        scriptPath: "<ac path workflows>/execute-phase.mjs",   // from `ac path workflows`
        args: { root: "<project root>", phase: "<phase slug>",
                models: <the JSON object from `ac config get models`>,
+               reasoning: <the JSON object from `ac config get reasoning`>,
                effort: <the level from `ac phase effort <slug>` (see the --effort note below)>,
                useWorktrees: <the boolean from `ac config get use_worktrees`>,
                leanExecution: <the boolean from `ac config get lean_execution`> }

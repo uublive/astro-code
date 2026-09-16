@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
 import { initPlanning, phaseContextStatus } from '../lib/planning.mjs';
 import { profileModels, PROFILE_NAMES } from '../lib/models.mjs';
+import { profileReasoning, REASONING_LEVELS, validateReasoning } from '../lib/reasoning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, setPhaseEffort, setPhaseNote, isPhasePlanned } from '../lib/roadmap.mjs';
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
@@ -684,25 +685,31 @@ async function main() {
       //   ac models <profile> --preview   print the preset JSON without writing
       //                                   (used by /astro-execute --fast for a
       //                                    one-off run that doesn't persist)
+      // A profile sets the model tier AND the reasoning depth together: both
+      // move cost, and leaving one at the host default while switching the
+      // other makes "go faster" only half-work.
       const r = root();
       const name = pos[0];
       if (!name) {
-        json(loadConfig(r).models || {});
+        const c = loadConfig(r);
+        json({ models: c.models || {}, reasoning: c.reasoning || {} });
         return;
       }
       let preset;
+      let reasoningPreset;
       try {
         preset = profileModels(name);
+        reasoningPreset = profileReasoning(name);
       } catch (e) {
         die(`${e.message} (usage: ac models [${PROFILE_NAMES.join('|')}] [--preview])`);
       }
       if (flags.preview) {
-        json(preset);
+        json({ models: preset, reasoning: reasoningPreset });
         return;
       }
-      const next = await updateConfig(r, (c) => ({ ...c, models: preset }));
-      console.log(`✓ models → ${name} profile`);
-      json(next.models);
+      const next = await updateConfig(r, (c) => ({ ...c, models: preset, reasoning: reasoningPreset }));
+      console.log(`✓ models + reasoning → ${name} profile`);
+      json({ models: next.models, reasoning: next.reasoning });
       return;
     }
 

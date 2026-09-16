@@ -14,6 +14,15 @@
     "discover": "sonnet",
     "integrator": "sonnet"
   },
+  "reasoning": {
+    "_comment": "Per-role REASONING depth: low | medium | high | xhigh | max. Independent of the model tier above — both move cost, so `ac models max|balanced|fast` sets the pair together. NOT the same as a phase's `effort` (ADR-022), which budgets verify→remediate cycles. Remove a role to inherit the host default.",
+    "planner": "high",
+    "researcher": "medium",
+    "executor": "medium",
+    "verifier": "high",
+    "discover": "low",
+    "integrator": "low"
+  },
   "gitflow": {
     "enabled": false,
     "main": "main",

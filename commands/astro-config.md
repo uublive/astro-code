@@ -1,15 +1,22 @@
 ---
-description: Choose which model (opus/sonnet) runs each role — planner, researcher, executor, verifier, discover, integrator
+description: Choose which model runs each role and how hard it thinks — planner, researcher, executor, verifier, discover, integrator
 allowed-tools: Bash, AskUserQuestion
 ---
 
-Interactively configure the per-role model tiers in `.astrocode/config.json`.
+Interactively configure the per-role **model tier** and **reasoning depth** in
+`.astrocode/config.json`. They are independent levers and both move cost — a cheap
+model at `xhigh` can outspend an expensive one at `low` — which is why a profile sets
+the pair together.
+
+**Do not confuse `reasoning` with a phase's `effort`.** `reasoning` is how hard one
+agent thinks (`low|medium|high|xhigh|max`). `effort` (ADR-022, `ac phase effort`) is
+how many verify→remediate cycles a phase may burn. Different dials, both about spend.
 
 If there is no `.astrocode/` here, tell the user to run `/astro-new-project` first and stop.
 
 ## Steps
 
-1. Show the current tiers: `ac models` (prints the effective per-role map).
+1. Show the current settings: `ac models` (prints both the tier and reasoning maps).
 2. Ask the user how to set them with **AskUserQuestion** — start with a profile pick.
    The tier ladder is **opus → sonnet** for EVERY role. haiku is excluded everywhere,
    integrator included: ADR-035 reverted the ADR-027 carve-out after a haiku integrator
@@ -34,12 +41,24 @@ If there is no `.astrocode/` here, tell the user to run `/astro-new-project` fir
 
 ## Apply
 
-For a named profile (Balanced/Fast/Max), apply the whole preset in one command:
+For a named profile (Balanced/Fast/Max), apply the whole preset — tier AND reasoning —
+in one command:
 - `ac models balanced` | `ac models fast` | `ac models max`
 
 For **Custom**, set each chosen role individually:
 - a concrete tier → `ac config set models.<role> <tier>`
-- `inherit` → `ac config unset models.<role>` (the workflow then uses the session model)
+- a reasoning depth → `ac config set reasoning.<role> <low|medium|high|xhigh|max>`
+- `inherit` → `ac config unset models.<role>` / `ac config unset reasoning.<role>`
+  (the workflow then uses the host default)
+
+Reasoning by profile: **max** spends `xhigh` on planner and verifier, **balanced** uses
+`high` on those two and `medium` elsewhere, **fast** drops to `low` everywhere EXCEPT
+the verify gate, which keeps `high` for the same reason it keeps opus — speed must never
+silently cost correctness at the gate. `discover` and `integrator` stay `low` in every
+profile: both are mechanical, and more thinking buys nothing.
+
+Not every host honours every level. Codex's ceiling is `xhigh`, Pi's is `max`; asking
+for more clamps to the host's ceiling rather than silently falling back to its default.
 
 ## Roles, for reference
 

@@ -3473,3 +3473,26 @@ test('ADR-041: an audit naming an unknown id is ignored, not trusted', async () 
   // A confused auditor must not be able to fail a phase over a task that was never planned.
   assert.strictEqual(result.integrationFailed, null, 'phantom ids must be filtered against the real task list')
 })
+
+test('every agent() that picks a model also picks a reasoning depth', () => {
+  // A role with a configured tier but no reasoning silently runs at the host
+  // default, which makes `ac models fast` only half-work: the model gets
+  // cheaper while the thinking stays wherever the session left it.
+  for (const wf of ['execute-phase.mjs', 'plan-phase.mjs']) {
+    const src = readFileSync(join(WF, wf), 'utf8');
+    const withModel = src.match(/model: models\.\w+/g) || [];
+    assert.ok(withModel.length > 0, `${wf}: expected agent calls with a model`);
+    for (const m of src.matchAll(/model: models\.(\w+)[^,}]*(,\s*effort: reasoning\.(\w+))?/g)) {
+      assert.ok(m[2], `${wf}: model: models.${m[1]} has no matching effort: reasoning.${m[1]}`);
+      assert.equal(m[3], m[1], `${wf}: role mismatch — model ${m[1]} but reasoning ${m[3]}`);
+    }
+  }
+});
+
+test('deep effort escalates BOTH the tier and the reasoning, consistently', () => {
+  // ADR-022 buys depth on execute+verify only. If the two dials disagree the
+  // phase would run an escalated model at default thinking, or the reverse.
+  const src = readFileSync(join(WF, 'execute-phase.mjs'), 'utf8');
+  assert.match(src, /effort === 'deep'[\s\S]{0,200}executor: 'opus', verifier: 'opus'/);
+  assert.match(src, /effort === 'deep'[\s\S]{0,300}executor: 'xhigh', verifier: 'xhigh'/);
+});

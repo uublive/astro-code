@@ -22,7 +22,7 @@ export const meta = {
 
 // Defensive: accept args as an object, or as a JSON string if the caller stringified it.
 const input = typeof args === 'string' ? JSON.parse(args) : args || {}
-const { root, phase: phaseSlug, models: baseModels = {} } = input
+const { root, phase: phaseSlug, models: baseModels = {}, reasoning: baseReasoning = {} } = input
 if (!root || !phaseSlug) throw new Error('execute-phase requires args { root, phase }')
 
 // Phase-10 (ADR-022): the per-phase effort dial.  `effort` arrives as a run-scoped
@@ -46,6 +46,16 @@ const maxCycles = ({ light: 0, standard: 1, deep: 3 })[effort] ?? 1
 // escalated by `deep` — it stays a two-arm ternary on purpose (a third arm here is an
 // easy one-arm-only bug) and carries its own floor at the wave-integrator call site below.
 const models = effort === 'deep' ? { ...baseModels, executor: 'opus', verifier: 'opus' } : baseModels
+
+// The per-role REASONING depth, resolved the same way and for the same reason.
+// `deep` buys thinking depth on exactly the two roles it already escalates by
+// tier — spending on execute+verify, never on wider fan-out (ADR-022) — so the
+// two dials stay consistent instead of one silently lagging the other.
+// NOTE: `reasoning` (how hard one agent thinks) is NOT `effort` (how many
+// verify→remediate cycles the phase may burn). Same script, two dials.
+const reasoning = effort === 'deep'
+  ? { ...baseReasoning, executor: 'xhigh', verifier: 'xhigh' }
+  : baseReasoning
 
 // Phase-07 / ADR-017: extract the zero-padded phase number from the slug as a
 // STRING so the commit-stamp grep pattern "(phase 07 tK)" is correct.
@@ -199,7 +209,7 @@ const disc = await agent(
     `For each task, set done:true or done:false using this EXACT check (replace <taskId> with the task id):\n` +
     `  git log --oneline --fixed-strings --grep "(phase ${phaseNum} <taskId>)"\n` +
     `If the command returns at least one line, set done:true; otherwise set done:false.`,
-  { schema: TASK_SCHEMA, phase: 'Discover', model: models.discover },
+  { schema: TASK_SCHEMA, phase: 'Discover', model: models.discover, effort: reasoning.discover },
 )
 
 // >>> MIRROR of lib/waves.mjs — keep in sync (Workflow sandbox can't import) >>>
@@ -626,7 +636,7 @@ const execPrompt = (t) =>
   SYNC_WORKTREE
 
 const runOnBranch = (t) =>
-  agent(execPrompt(t), { label: `exec:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
+  agent(execPrompt(t), { label: `exec:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor })
 
 // healPrompt is DISTINCT from execPrompt — it tells the executor this is a HEAL
 // re-run after an integration cherry-pick conflict, so it must not blindly pick up
@@ -657,7 +667,7 @@ const healPrompt = (t, preservedBranch) =>
   NO_BROAD_STASH
 
 const runHealOnBranch = (t, preservedBranch) =>
-  agent(healPrompt(t, preservedBranch), { label: `heal:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor })
+  agent(healPrompt(t, preservedBranch), { label: `heal:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor })
 
 // Strict schema for the healed-wave test gate (see the helper below).
 //
@@ -713,7 +723,7 @@ const runTestSuite = () =>
       `and "the tests are broken"; only the first is benign.\n` +
       `If passed:false, populate output with the failure summary (test names + error messages) ` +
       `so the caller can surface it in the integration-failure report.`,
-    { label: 'testgate', phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: TESTGATE_SCHEMA },
+    { label: 'testgate', phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: TESTGATE_SCHEMA },
   )
 
 // The strict schema (like TESTGATE_SCHEMA) prevents a silent no-op teardown from
@@ -754,7 +764,7 @@ const runTeardown = (w, branches) =>
       `and finally \`git worktree prune\`. Touch ONLY the listed branches — any other ` +
       `\`worktree-*\` branch must stay untouched (it may be a preserved failed heal under ` +
       `inspection). Return removed=[the branches you actually removed].`,
-    { label: `teardown:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: TEARDOWN_SCHEMA },
+    { label: `teardown:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: TEARDOWN_SCHEMA },
   )
 
 // Each conflict item is an object with branch + taskId so the script can drive
@@ -936,7 +946,7 @@ const integrateWave = (w, wave) =>
     // at the session tier (opus) for every project predating this key, the exact
     // opposite of the goal.  Mirrors leanExecutionEnabled's default-on reasoning.  An
     // explicit `ac config set models.integrator sonnet` (or a profile) still wins.
-    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.integrator || 'sonnet', schema: INTEGRATE_SCHEMA },
+    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.integrator || 'sonnet', effort: reasoning.integrator, schema: INTEGRATE_SCHEMA },
   )
 
 // ── Phase-13 (ADR-026): warm batched sequential executor primitives ────────────
@@ -1065,7 +1075,7 @@ const runBatchOnBranch = (orderedTasks) =>
     label: 'exec:batch',
     phase: 'Execute',
     agentType: 'astro-executor',
-    model: models.executor,
+    model: models.executor, effort: reasoning.executor,
     schema: BATCH_SCHEMA,
   })
 
@@ -1158,7 +1168,7 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
         phase: 'Execute',
         isolation: 'worktree',
         agentType: 'astro-executor',
-        model: models.executor,
+        model: models.executor, effort: reasoning.executor,
       }),
     ),
   )
@@ -1551,7 +1561,7 @@ const runStampAudit = (ids) =>
       `Return missing=[every id whose grep produced NO output]. An id you cannot prove landed ` +
       `belongs in missing[] — never omit one because you believe the work happened. If every ` +
       `id is found, return missing=[].`,
-    { label: 'stamp-audit', phase: 'Execute', agentType: 'astro-executor', model: models.executor, schema: STAMP_AUDIT_SCHEMA },
+    { label: 'stamp-audit', phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: STAMP_AUDIT_SCHEMA },
   )
 
 if (!integrationFailed && executableTasks.length) {
@@ -1662,7 +1672,7 @@ const runVerify = (focusIds = []) =>
       `never re-worded), passed true/false, and for every FAILING criterion the exact failing command ` +
       `and its output as evidence (so the remediate loop can scope + compare the failing set).` +
       OBEY,
-    { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier, schema: VERIFY_SCHEMA },
+    { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier, effort: reasoning.verifier, schema: VERIFY_SCHEMA },
   )
 
 // remediatePrompt is the THIRD executor prompt (sibling to execPrompt/healPrompt): a
@@ -1698,7 +1708,7 @@ const runRemediation = (unmet, cycle) =>
     label: `remediate:c${cycle}`,
     phase: 'Execute',
     agentType: 'astro-executor',
-    model: models.executor,
+    model: models.executor, effort: reasoning.executor,
     schema: REMEDIATE_SCHEMA,
   })
 
