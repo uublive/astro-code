@@ -9,6 +9,15 @@
     "researcher": "sonnet",
     "executor": "sonnet",
     "verifier": "opus",
-    "discover": "sonnet"
+    "discover": "sonnet",
+    "integrator": "sonnet"
+  },
+  "reasoning": {
+    "planner": "high",
+    "researcher": "medium",
+    "executor": "medium",
+    "verifier": "high",
+    "discover": "low",
+    "integrator": "low"
   }
 }
