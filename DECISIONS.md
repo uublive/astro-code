@@ -310,3 +310,10 @@ _2026-09-17_
 
 **Rejected:** Weighted item count; a score that rises with volume; showing the number on the statusline unconditionally
 
+## ADR-047 — A finding that was never real is dismissed, not dropped
+_2026-09-17_
+
+**Why:** Both close a debt item and both keep the record, so the split looks like hair-splitting until you ask what each measures. A drop is a fact about the CODE — it was true and the code moved on. A dismissal is a fact about the FEED — the verifier filed something that was not debt. Collapsing them buries the only precision signal the design has: if dismissals climb, the answer is to tighten the verifier prompt, not to work harder on the register. It would also pollute the drop reasons, which are meant to read as a history of how the codebase actually moved. ac debt score reports the false-positive rate as dismissed over resolved.
+
+**Rejected:** One drop verb with a free-text reason; deleting dismissed items outright
+
