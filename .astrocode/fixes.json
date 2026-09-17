@@ -4,8 +4,11 @@
     {
       "id": "2026-09-17-accepting-a-rejected-phase-leaves-a",
       "title": "accepting a rejected phase leaves a stale blocker, which then outlives the milestone",
-      "status": "verified",
-      "opened_at": "2026-09-17T08:41:05.892Z"
+      "status": "accepted",
+      "opened_at": "2026-09-17T08:41:05.892Z",
+      "accepted_at": "2026-09-17T09:05:12.666Z",
+      "accepted_kind": "human",
+      "accepted_by": "matteo.alvazzi@gmail.com"
     }
   ]
 }
