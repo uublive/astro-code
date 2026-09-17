@@ -303,3 +303,10 @@ _2026-09-17_
 
 **Rejected:** A structured DEFERRED.md; a third lifecycle for debt; letting pay close the item immediately
 
+## ADR-046 — Debt pressure is an interest-vs-principal ratio, never a count
+_2026-09-17_
+
+**Why:** A volume metric only ever rises, so it recommends paying debt on every day of the project and therefore says nothing — worse, it would punish the verifier for filing, which is the behaviour the register exists to encourage. Pressure instead weighs what debt is CHARGING you (recurrence x3, file concentration x1, age only where it compounds a recurrence x2) against the principal to clear it (small 1, medium 3, large 8). The load-bearing property, pinned by test: filing more isolated debt LOWERS the score, because a fresh finding is pure principal. Debt in code you never touch reads zero, which is the honest answer. The math lives in hooks/_astro-ctx.mjs because the statusline needs it and hooks install without lib/; lib/debt.mjs imports it rather than keeping a second copy that would drift.
+
+**Rejected:** Weighted item count; a score that rises with volume; showing the number on the statusline unconditionally
+
