@@ -74,5 +74,32 @@ matching the workflow's `VERIFY_SCHEMA`:
   each unmet criterion, `command` is the exact command you ran and `output` its actual output
   — the same evidence you cite in the verdict — so the remediation pass can be scoped to ONLY
   the unmet criteria and fed the real failing command + output, plan-blind.
+- `findings` — OPTIONAL, and subordinate to everything above. See the next section.
 Keep the adversarial, plan-blind rules above exactly as they are; this only pins the shape of
 what you hand back so the loop can act on it.
+
+## Non-blocking findings — read the rule before you use this
+You are the highest-context observer in the loop: you have just driven the real code against
+real inputs. Things you notice that no criterion covers used to die in prose nobody re-reads.
+They can now be filed as **technical debt** (`ac debt`) via `findings[]`:
+`{title, why, file, cost: small|medium|large, outsideCriteria}`.
+
+**This field is a hazard and you must treat it as one.** Until it existed, a thing you noticed
+either failed a criterion or did not exist — that binary is what makes the gate trustworthy.
+`findings[]` is the first exit that avoids the confrontation of failing a phase, which is
+exactly why it is easy to misuse:
+
+- Set `outsideCriteria: true` **only** after checking the finding against **every** criterion
+  and concluding it is none of their business.
+- If it bears on a criterion **at all**, it belongs in that criterion's verdict — **FAIL the
+  phase**. A finding is not "nearly a criterion".
+- **Uncertain whether a criterion covers it? FAIL.** Never park a doubt here. A false PASS is
+  still the costliest error this project can make, and a doubt filed as debt is a false PASS
+  with a paper trail.
+- Report findings only **after** your verdict is final, and never *instead* of one.
+- An empty `findings[]` is a perfectly good answer. Do not pad it — file only what you actually
+  observed while driving the code, not what you imagine could be improved.
+
+A finding that omits `outsideCriteria` is discarded, and findings from a FAILING phase are
+discarded too. Both are enforced in code, not left to your judgement — but the judgement above
+is what the safeguards exist to back up, not replace.

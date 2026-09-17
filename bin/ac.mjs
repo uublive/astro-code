@@ -17,6 +17,10 @@ import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete } from '../lib/registry.mjs';
 import { addFix, acceptFix, setFixStatus, findFix, openFixes, loadFixes, FIX_STATUSES } from '../lib/fixes.mjs';
+import {
+  addDebt, openDebt, findDebt, payDebt, dropDebt, closeDebtFor, staleDebt, debtAgeDays,
+  loadDebt, DEBT_COSTS, STALE_DAYS,
+} from '../lib/debt.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
@@ -64,6 +68,10 @@ const ALLOWED_FLAGS = {
   'phase accept': ['by', 'force', 'agent'],
   'phase reject': ['reason'],
   'fix accept': ['by', 'agent'],
+  // `drop` is the one debt verb that removes something from the list on a human's
+  // say-so, so a typo'd flag must not degrade into "dropped with no reason".
+  'debt drop': ['reason'],
+  'debt pay': ['as'],
 };
 
 function checkFlags(key, flags) {
@@ -119,6 +127,10 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac fix list                         open fixes
   ac fix status <id> [<status>]       read or move the lifecycle
   ac fix accept <id> [--agent <name>] human gate → accepted + archived
+  ac debt list [--phase N|--file p|--stale]  open technical debt (the verifier files it)
+  ac debt add "<what>" [--why …] [--phase N] [--file p] [--cost small|medium|large]
+  ac debt pay <id> [--as fix|phase]   graduate it into a fix (default) or a roadmap phase
+  ac debt drop <id> --reason "…"      it stopped being true (a reason is required)
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac phase note <phase> ["<text>"]    read/set/clear a durable phase note (survives ROADMAP.md renders)
@@ -213,10 +225,116 @@ async function main() {
         markFixComplete({ root: r, id: fix.id });
         const who = done.accepted_kind === 'agent' ? `agent ${done.accepted_by}` : done.accepted_by;
         console.log(`✓ accepted ${done.id} by ${who}${done.archived ? ' → archived' : ''}`);
+        // Draining the debt register is a SIDE EFFECT of the gate that already exists.
+        // This is the anti-rot mechanism: an item closes because the work was accepted,
+        // never because someone remembered to delete a line (see lib/debt.mjs).
+        for (const d of await closeDebtFor(r, { kind: 'fix', workRef: fix.id })) {
+          console.log(`✓ debt ${d.id} paid`);
+        }
         return;
       }
 
       die(`unknown: ac fix ${sub} (add | list | show | status | accept)`);
+    }
+
+    // The technical-debt register (lib/debt.mjs). An INBOX, not a plan: items are
+    // filed automatically by the phase verifier and leave by graduating into a fix
+    // or a phase, or by being dropped with a reason. Nothing here closes an item on
+    // a promise — `paid` is set by the acceptance gates, never typed.
+    case 'debt': {
+      const r = root();
+      const sub = pos[0];
+
+      if (!sub || sub === 'list') {
+        const items = flags.stale
+          ? staleDebt(r)
+          : openDebt(r, {
+            phase: typeof flags.phase === 'string' ? flags.phase : '',
+            file: typeof flags.file === 'string' ? flags.file : '',
+          });
+        if (flags.json) { json(items); return; }
+        if (!items.length) { console.log(flags.stale ? '• no stale debt' : '• no open debt'); return; }
+        for (const d of items) {
+          const age = debtAgeDays(d);
+          const where = [d.phase ? `phase ${d.phase}` : '', d.file || '', d.cost].filter(Boolean).join(' · ');
+          console.log(`  ${d.id}  ${where}`);
+          console.log(`    ${d.title}`);
+          if (d.status === 'paying') console.log(`    → being paid by ${d.paid_by.kind} ${d.paid_by.ref}`);
+          // Repeat sightings are the strongest signal the register has about what
+          // actually hurts, so they are surfaced rather than buried in the JSON.
+          if (d.also_found_in?.length) console.log(`    ⚠ hit again in phase ${d.also_found_in.join(', ')}`);
+          if (age >= STALE_DAYS) console.log(`    ⚠ ${age} days old — pay it or drop it`);
+        }
+        const total = loadDebt(r).debt.length;
+        console.log(`\n${items.length} open · ${total} filed all-time`);
+        return;
+      }
+
+      if (sub === 'add') {
+        const title = pos.slice(1).join(' ').trim();
+        if (!title) die('usage: ac debt add "<what is wrong>" [--why …] [--phase N] [--file p] [--cost small|medium|large]');
+        const cost = typeof flags.cost === 'string' ? flags.cost : 'small';
+        if (!DEBT_COSTS.includes(cost)) die(`unknown --cost "${cost}" (${DEBT_COSTS.join(' | ')})`);
+        const res = await addDebt(r, {
+          title,
+          why: typeof flags.why === 'string' ? flags.why : '',
+          phase: typeof flags.phase === 'string' ? flags.phase : '',
+          file: typeof flags.file === 'string' ? flags.file : '',
+          cost,
+        });
+        // A duplicate is a convergence, not an error: the filer is usually a verifier
+        // running after every phase, and the same finding recurring is information.
+        if (res.created) console.log(`✓ debt ${res.entry.id}`);
+        else console.log(`• already filed as ${res.entry.id} — recorded another sighting`);
+        return;
+      }
+
+      const item = findDebt(r, pos[1]);
+      if (!item) die(`no such debt: ${pos[1] || '(none given)'} — see \`ac debt list\``);
+
+      if (sub === 'show') { json(item); return; }
+
+      if (sub === 'pay') {
+        checkFlags('debt pay', flags);
+        const as = typeof flags.as === 'string' ? flags.as : 'fix';
+        if (as !== 'fix' && as !== 'phase') die('usage: ac debt pay <id> [--as fix|phase]');
+
+        if (as === 'fix') {
+          const fix = await addFix(r, { title: item.title });
+          claimFix({ root: r, id: fix.id, name: item.title });
+          await payDebt(r, item.id, { kind: 'fix', workRef: fix.id });
+          console.log(`✓ debt ${item.id} → fix ${fix.id}`);
+          console.log(`  it closes when you run \`ac fix accept ${fix.id}\` (or /astro-fix-accept)`);
+          return;
+        }
+
+        // Refactor-sized debt graduates to the roadmap and goes through the normal
+        // loop. Routing it through the fix lifecycle instead would produce a
+        // "bugfix" with no reproduction case, which is the one thing that makes
+        // `ac fix` trustworthy.
+        const st = loadState(r) || {};
+        const rm = loadRoadmap(r);
+        const milestone = st.active_milestone || rm.milestone || 1;
+        const res = claim({ root: r, type: 'phase', milestone, name: item.title });
+        if (res.source === 'error') die(res.error);
+        const phase = await addPhase(r, { number: res.number, name: item.title, milestone });
+        await payDebt(r, item.id, { kind: 'phase', workRef: phase.slug });
+        console.log(`✓ debt ${item.id} → phase ${phase.number} "${item.title}" (milestone ${milestone})`);
+        console.log(`  it closes when you run \`ac phase accept ${phase.number}\` (or /astro-accept)`);
+        warnNameMatches(res.matches, gitIdentity(r).owner);
+        return;
+      }
+
+      if (sub === 'drop') {
+        checkFlags('debt drop', flags);
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        if (!reason) die('usage: ac debt drop <id> --reason "why it stopped being true"');
+        const done = await dropDebt(r, item.id, { reason });
+        console.log(`✓ dropped ${done.id}: ${done.drop_reason}`);
+        return;
+      }
+
+      die(`unknown: ac debt ${sub} (add | list | show | pay | drop)`);
     }
 
     case 'agents-md': {
@@ -319,6 +437,13 @@ async function main() {
         console.log(`  ${String(ph.number).padStart(2, '0')}  ${ph.status.padEnd(9)} ${ph.name}  (${planned}${discuss})`);
       }
       if (st.blockers?.length) console.log(`Blockers:  ${st.blockers.length}`);
+      // Passive visibility. A register you have to remember to open is a register you
+      // stop opening, so the count rides along on the command already run constantly.
+      const debt = openDebt(r);
+      if (debt.length) {
+        const stale = staleDebt(r).length;
+        console.log(`Debt:      ${debt.length} open${stale ? ` (${stale} stale)` : ''}  — \`ac debt list\``);
+      }
       return;
     }
 
@@ -606,6 +731,11 @@ async function main() {
         console.log(
           `✓ phase ${ph.number} "${ph.name}" accepted by ${by}${agentSigner ? ' (AGENT — machine-signed, not human UAT)' : ''} → complete`,
         );
+        // Same drain as `ac fix accept`: debt paid by this phase closes here, on the
+        // acceptance, so the register can never claim work is done on a promise.
+        for (const d of await closeDebtFor(r, { kind: 'phase', workRef: ph.slug })) {
+          console.log(`✓ debt ${d.id} paid`);
+        }
       } else if (sub === 'reject') {
         if (!ph) die('usage: ac phase reject <phase> --reason "…"');
         checkFlags('phase reject', flags);

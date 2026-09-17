@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "debt": [
+    {
+      "id": "2026-09-17-a-canon-sync-that-finds-same-id",
+      "title": "a canon sync that finds same-id-different-text renumbers silently instead of surfacing the conflict",
+      "status": "open",
+      "cost": "medium",
+      "found_at": "2026-09-17T10:11:25.927Z",
+      "why": "Renumbering is right for two people colliding on a number and wrong for one decision that was edited — it orphans every existing reference to that id. Every attempt to reconcile from the tool produced a third copy. Surface both and ask; if a renumber really is the default, rewrite the references in the same transaction or say which ones are now stale.",
+      "file": "lib/canon.mjs"
+    },
+    {
+      "id": "2026-09-17-ac-canon-push-publishes-conventions-md",
+      "title": "ac canon push publishes CONVENTIONS.md only, so an edit to an existing ADR never reaches the registry",
+      "status": "open",
+      "cost": "medium",
+      "found_at": "2026-09-17T10:11:25.850Z",
+      "why": "canonPush guards on p.conventions alone and ac decision add is the sole publisher of DECISIONS.md. Editing a published ADR leaves the registry stale; the next sync sees same-id-different-text, keeps both and renumbers one, producing one decision under two ids with the richer copy carrying the number nothing references. Observed end to end 2026-09-12.",
+      "file": "lib/canon.mjs"
+    },
+    {
+      "id": "2026-09-17-ac-install-uses-symlinksync-with-no",
+      "title": "ac install uses symlinkSync with no copy fallback, so a standard Windows user gets EPERM",
+      "status": "open",
+      "cost": "medium",
+      "found_at": "2026-09-17T10:11:25.815Z",
+      "why": "lib/install.mjs:81 symlinks unconditionally; on Windows symlinks need Developer Mode or an elevated shell, so a normal install fails. A copy fallback must keep REQ-008 reversibility — uninstall has to recognise copies too. Flagged 2026-06-12 by the first external install attempt; item 1 of that report (the PowerShell 'ac' alias) was fixed, this one never was.",
+      "file": "lib/install.mjs"
+    },
+    {
+      "id": "2026-09-17-ac-phase-add-and-ac-phase-note-strip",
+      "title": "ac phase add and ac phase note strip the planned flag from every line of ROADMAP.md",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-09-17T10:11:25.963Z",
+      "why": "Both re-render with renderRoadmapMd(rm) on the raw roadmap.json, but planned is disk-derived and only renderRoadmap(root) computes it from each phase's PLAN.md. Cosmetic and self-healing on the next render, which is why it has survived — but ac phase add runs on every fleet run that claims a phase, so it re-strips constantly and shows a diff nobody asked for. Fix is one word in each place.",
+      "file": "lib/roadmap.mjs"
+    },
+    {
+      "id": "2026-09-17-nothing-publishes-conventions-md-when-a",
+      "title": "nothing publishes CONVENTIONS.md when a phase closes, so the next ac canon pull silently reverts local edits",
+      "status": "open",
+      "cost": "medium",
+      "found_at": "2026-09-17T10:11:25.889Z",
+      "why": "A phase whose tasks edit .astrocode/CONVENTIONS.md leaves the registry stale, and the pull that /astro-plan and /astro-execute both run overwrites the local file while printing success. Observed: a raised Go core ceiling reverted under a tracked line count that had already passed it. ADR-041 states the discipline as a rule humans must remember, which is the tell that the tool should just do it.",
+      "file": "lib/canon.mjs"
+    },
+    {
+      "id": "2026-09-17-the-planner-has-no-guidance-for-test",
+      "title": "the planner has no guidance for test-first task pairs split across a wave boundary",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-09-17T10:11:25.999Z",
+      "why": "An ESM import of a not-yet-existing export fails the whole test file, so 'write failing tests' is structurally impossible without stubs — which pushes the test task's executor to implement, overflowing its declared files and breaking the wave's file-disjointness. That was cause 2 of the phase-04 wave-2 incident. The other four bullets from that report shipped (heal ladder, fork-base guard under ADR-040, file-ownership enforcement, ADR-017 stamped resumability); this one did not.",
+      "file": "agents/astro-planner.md"
+    }
+  ]
+}

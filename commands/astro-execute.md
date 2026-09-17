@@ -167,6 +167,25 @@ Execute phase `$ARGUMENTS`.
    so the user can see whether HEAD already supersedes it. **Do not delete anything
    automatically** — a preserved branch may be the only copy of a failed heal (ADR-014).
 
+4d. **File the verifier's non-blocking findings as debt.** The workflow returns
+   `findings[]` — things the verifier observed that no criterion covered. It has already
+   gated them (only from a PASSING verdict, only where `outsideCriteria` was explicitly
+   asserted), so file each one verbatim, without re-judging it:
+
+   ```
+   ac debt add "<title>" --why "<why>" --phase <number> --file <file> --cost <small|medium|large>
+   ```
+
+   Then say in **one line** how many were filed (`filed 3 debt items — \`ac debt list\``),
+   or nothing at all when the array is empty. Do not list them in full: they are
+   non-blocking by construction, and burying the phase verdict under them is exactly the
+   noise this register exists to prevent. `ac debt add` is idempotent — a finding already
+   in the register is recorded as a repeat sighting, not a duplicate.
+
+   **Never file a finding yourself**, and never re-add one the workflow dropped. The
+   filter is the safeguard that stops the debt channel becoming a way for a criterion
+   failure to avoid failing the phase.
+
 5. Clear the live status (`ac activity clear` — also clear it on any early stop or
    `integrationFailed`), then report the verdict. `verdict` is now a **structured object**
    — read `verdict.passed` (boolean) for PASS/FAIL and `verdict.summary` for the

@@ -30,11 +30,45 @@ test('the execute-phase Verify spawn is CRITERIA.md-based, plan-blind, adversari
   const vi = execPhase.indexOf("phase('Verify')");
   assert.ok(vi !== -1, "phase('Verify') not found");
   // Window spans the Verify section (both the integrationFailed branch and the else spawn).
-  // Widened for ADR-031's re-verify focus preamble; assertions below are unchanged.
-  const window = execPhase.slice(vi, vi + 6000);
+  // Widened for ADR-031's re-verify focus preamble, and again for the non-blocking
+  // findings rule; assertions below are unchanged.
+  const window = execPhase.slice(vi, vi + 7200);
   assert.match(window, /CRITERIA\.md/, 'spawn prompt must reference CRITERIA.md');
   assert.match(window, /do NOT read[^.\n]*PLAN\.md/i, 'spawn prompt must forbid reading PLAN.md');
   assert.match(window, /assume[^.\n]*FAIL/i, 'spawn prompt must be adversarial (assume FAIL)');
   assert.match(window, /self-derive/i, 'spawn prompt must carry the self-derive fallback');
   assert.match(window, /agentType:\s*'astro-verifier'/, 'still spawns the astro-verifier agent');
+});
+
+// The debt channel is the first non-blocking exit the verifier has ever had. If a
+// criterion failure can be parked in it, the two-gate guarantee (REQ-006) acquires a
+// back door — so the containment is pinned here as a contract, not left to the prompt.
+test('non-blocking findings cannot become a back door out of failing a phase', () => {
+  // 1. the verifier must ASSERT the finding is off-criteria — never by omission
+  const si = execPhase.indexOf('findings: {');
+  assert.ok(si !== -1, 'VERIFY_SCHEMA must carry findings[]');
+  const schema = execPhase.slice(si, si + 700);
+  assert.match(schema, /outsideCriteria/, 'findings carry an explicit outsideCriteria claim');
+  assert.match(
+    schema,
+    /required:\s*\['title',\s*'outsideCriteria',\s*'cost'\]/,
+    'outsideCriteria must be REQUIRED — a finding must never be non-blocking by omission',
+  );
+
+  // 2. findings travel only from a PASSING verdict, gated in code rather than in prose
+  assert.match(
+    execPhase,
+    /findings:\s*verdict\.passed\s*\?/,
+    'the workflow must drop findings on a FAIL — the gap belongs in the verdict',
+  );
+  assert.match(
+    execPhase,
+    /\.filter\(\(f\) => f\?\.outsideCriteria === true\)/,
+    'the workflow must re-check the flag rather than trusting the schema alone',
+  );
+
+  // 3. the prompt tells the verifier to FAIL when in doubt, not to file the doubt
+  assert.match(execPhase, /Uncertain whether it is covered\? FAIL/i, 'doubt resolves to FAIL');
+  assert.match(verifier, /Uncertain whether a criterion covers it\? FAIL/i, 'same rule in the agent doc');
+  assert.match(verifier, /never \*instead\* of one/i, 'findings never substitute for a verdict');
 });

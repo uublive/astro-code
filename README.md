@@ -74,6 +74,7 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-kit-test           test a kit WITHOUT publishing: offline static checks, or --tier2 against a local Astro
 /astro-fix "<bug>"        fix a bug WITHOUT burning a milestone phase (reproduce → diagnose → fix → verify)
 /astro-fix-accept <id>    human gate on a fix — confirm the bug is gone, then archive it
+ac debt list              technical debt the verifier filed for you while you worked
 /astro-phase <name>       add a phase (claims its number)
 /astro-discuss <phase>    talk through decisions/edge cases → CONTEXT.md (before planning)
 /astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)
@@ -104,6 +105,9 @@ ac fix add "<what is broken>"  # open a bugfix (dated id, no phase number)
 ac fix list                    # what is open
 ac fix accept <id>             # human gate — archives it
 ac fix accept <id> --agent <n> # machine-signed (ADR-033): records accepted_kind=agent
+ac debt list [--stale]         # open technical debt (the verifier files it automatically)
+ac debt pay <id> [--as phase]  # graduate it into a fix (default) or a roadmap phase
+ac debt drop <id> --reason "…" # it stopped being true (a reason is required)
 ac milestone complete          # archive the current milestone
 ac phase effort <n> deep       # per-phase verify→remediate budget (light|standard|deep)
 ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
@@ -156,6 +160,22 @@ accepted`) — and carries one end-to-end: reproduce, diagnose, fix, verify.
 `/astro-fix-accept <id>` is the human gate; a failing verdict sends the fix back to
 `diagnosing` (the bug is still live), never to `rejected`, which means "we've decided not
 to fix this". Accepting archives it. `ac fix list` shows what's open.
+
+**Technical debt fills itself in.** The phase verifier is the highest-context observer in
+the loop — it has just driven the real code — so anything real it notices that no criterion
+covers is filed automatically as debt. You type nothing; `ac debt list` is the quality
+dashboard you check when you feel like it. An item is never worked in place: it **graduates**
+into the objects that already exist — `ac debt pay <id>` opens a **fix**, `--as phase` puts it
+on the **roadmap** — and closes when that work is *accepted*, never on a promise. If it simply
+stopped being true, `ac debt drop <id> --reason "…"`. That automatic outflow is the whole
+design: a list whose entries only leave when a human remembers to delete them is a diary, and
+a diary rots (astro-code's own `todo.md` spent months insisting GitFlow was unimplemented
+while `lib/flow.mjs` shipped it). Two hooks keep it live rather than archival: `/astro-discuss`
+surfaces debt touching the files a phase is about to change — debt is cheap to pay when
+you're already in the file — and `/astro-complete-milestone` asks you to pay or drop anything
+stale. The verifier can never park a *criterion* failure here: a finding is admissible only
+if it explicitly asserts it is outside every criterion, and findings from a failing phase are
+discarded, so the quality gate keeps no back door.
 
 **Two gates close a phase.** It moves `executing → verified → complete`: the
 `astro-verifier` agent is the machine gate — adversarial and **plan-blind**, it checks the

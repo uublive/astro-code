@@ -296,3 +296,10 @@ _2026-08-28_
 
 **Rejected:** Parsing hand-written text back out of ROADMAP.md on render: makes a generated artifact an input, and silently loses anything the parser does not recognise.
 
+## ADR-045 — Technical debt is a register the verifier fills, not a list humans maintain
+_2026-09-17_
+
+**Why:** A markdown list rots because CLOSING an entry needs a human to remember: astro-code's own todo.md described GitFlow as unimplemented while lib/flow.mjs shipped it. So both ends are automated — the phase verifier files non-blocking findings (it is the highest-context observer and VERIFY_SCHEMA previously had no field for them), and an item closes when the fix or phase PAYING it is accepted. Debt never becomes a third lifecycle: it graduates into a fix or a roadmap phase. The non-blocking channel is contained in three layers (required outsideCriteria assertion, findings dropped on a FAIL, re-checked before filing) because it is the first exit the verifier has ever had that avoids failing a phase, and a doubt parked there would be a false PASS with a paper trail.
+
+**Rejected:** A structured DEFERRED.md; a third lifecycle for debt; letting pay close the item immediately
+

@@ -23,6 +23,20 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    for UAT sign-off (reference the phase by its number, e.g. `/astro-accept 3`). Once the verifier agent has returned, you may add an optional nudge:
    state is saved to `.astrocode/`, so `/clear` before `/astro-accept` keeps context lean
    and loses nothing. On FAIL: list exactly what's missing and stop — do not mark it verified.
+3b. **On PASS only, file the verifier's non-blocking findings as debt.** If the agent
+   returned `findings[]`, file each item whose `outsideCriteria` is **explicitly `true`**:
+
+   ```
+   ac debt add "<title>" --why "<why>" --phase <number> --file <file> --cost <small|medium|large>
+   ```
+
+   Then report the count in one line (`filed 2 debt items — \`ac debt list\``), or say
+   nothing when there are none. **Discard any finding that omits `outsideCriteria`, and
+   file nothing at all on a FAIL** — on a FAIL the gap belongs in the missing-list the
+   user is about to read, not in a register they will open next month. This mirrors the
+   gate the execute-phase workflow applies in code; here it is yours to apply, so apply
+   it literally and never file a finding of your own.
+
 4. **Opportunistic capture — after the verdict above is already reported, never before,
    and never changes it (a capture can never turn a PASS into a FAIL or vice versa).**
    Capture only on a surprise that changed the approach: a **FAIL whose missing-list

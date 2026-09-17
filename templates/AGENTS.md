@@ -27,8 +27,16 @@ and leaves the roadmap describing something other than the plan. Use `/astro-fix
 (`2026-09-17-auth-401`), its own directory, and its own archive. Accepting a fix archives
 it. Run `ac fix list` to see what is open.
 
+**Technical debt is an inbox, not a plan.** The phase verifier files anything real it
+notices that no criterion covered, automatically — see `ac debt list`. An item never gets
+"worked" in place: it graduates into a fix (`ac debt pay <id>`) or onto the roadmap
+(`ac debt pay <id> --as phase`), and closes when THAT work is accepted. If it stopped
+being true, `ac debt drop <id> --reason "…"`. Never hand-edit the register to tidy it,
+and never file a criterion failure as debt — that is a phase FAIL.
+
 Phase lifecycle: `pending → executing → verified → complete` (plus `rejected`).
 Fix lifecycle: `open → diagnosing → executing → verified → accepted`.
+Debt lifecycle: `open → paying → paid` (or `dropped`).
 `verified` means the AI checked it. `complete` means a human accepted it. They are
 different claims and must not be conflated.
 

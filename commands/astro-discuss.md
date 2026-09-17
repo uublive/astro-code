@@ -15,6 +15,20 @@ about — and to capture the answers so planning is grounded, not guessed.
    `mcp__forge__forge_knowledge` query built from the phase goal — see
    `` `$(ac path templates)/forge-knowledge.md` `` for the full detection/degradation
    rules (tools absent → skip silently, no output).
+1b. **Check the debt register for the ground this phase will touch.** Run `ac debt list`,
+   and for each file/area the phase goal implicates, `ac debt list --file <path>`. Debt is
+   paid cheaply when you are **already in the file with the context loaded**, and expensively
+   as a standalone chore — this is the moment that difference is decidable.
+
+   If anything relevant is open, raise it as **one** `AskUserQuestion` in round one: name
+   the items and ask whether to fold them into this phase's scope (options: **"Fold them
+   in"** / **"Leave them"**). On "fold in", record them in CONTEXT.md as explicit in-scope
+   items so the planner picks them up. Ask **once** — a second nudge is nagging, and debt
+   that is genuinely not worth paying should be `ac debt drop`ped, not re-asked every phase.
+
+   Say nothing at all when there is no relevant debt. Never let this displace the phase's
+   own questions: the phase goal is the subject, and folded-in debt is at most a rider.
+
 2. **Map the gray areas.** Generate the decisions that are *specific to THIS phase* —
    real forks where more than one path is reasonable, not generic categories. Let the
    domain drive them (something users SEE / CALL / RUN / READ, or data being ORGANIZED).

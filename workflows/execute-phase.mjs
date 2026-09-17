@@ -1504,6 +1504,39 @@ const VERIFY_SCHEMA = {
         required: ['id', 'passed'],
       },
     },
+    // Non-blocking findings → the technical-debt register (lib/debt.mjs).
+    //
+    // WHY THIS FIELD IS DANGEROUS, AND HOW IT IS CONTAINED. Until now this schema
+    // forced a binary: a thing the verifier noticed either failed a criterion or did
+    // not exist. That is load-bearing — the verifier is the highest-context observer in
+    // the loop, and "a false PASS is the costliest error this project can make". Adding
+    // a non-blocking channel hands it a THIRD option for the first time, and a model
+    // unsure whether something breaks C4 now has an exit that avoids the confrontation
+    // of failing the phase. Ambiguity drifts toward the low-conflict output, so the
+    // two-gate guarantee (REQ-006) would quietly acquire a back door.
+    //
+    // Containment is three-layered and deliberately redundant, because prompt-only
+    // discipline is not a guarantee:
+    //   1. `outsideCriteria` is REQUIRED — the verifier must make the claim explicitly,
+    //      so a finding can never become non-blocking by omission;
+    //   2. the return below drops findings unless the phase actually PASSED, so this
+    //      can never be a place to park an unverified criterion;
+    //   3. `fileFindings` re-checks the flag before anything reaches the register.
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: { type: 'string' },
+          why: { type: 'string' },
+          file: { type: 'string' },
+          cost: { type: 'string', enum: ['small', 'medium', 'large'] },
+          outsideCriteria: { type: 'boolean' },
+        },
+        required: ['title', 'outsideCriteria', 'cost'],
+      },
+    },
   },
   required: ['passed', 'criteriaFound', 'summary'],
 }
@@ -1670,7 +1703,14 @@ const runVerify = (focusIds = []) =>
       `human-facing FAIL text (unmet criterion, command, output, what closes it) in summary; and for ` +
       `EACH criterion add an item to criteria[] carrying its EXACT C<n> id (verbatim from CRITERIA.md — ` +
       `never re-worded), passed true/false, and for every FAILING criterion the exact failing command ` +
-      `and its output as evidence (so the remediate loop can scope + compare the failing set).` +
+      `and its output as evidence (so the remediate loop can scope + compare the failing set).\n\n` +
+      `AFTER your verdict is final — never as a substitute for one — you may also report anything real ` +
+      `you noticed that NO criterion covers, in findings[]: {title, why, file, cost small|medium|large, ` +
+      `outsideCriteria}. These are filed as technical debt, so they do not block this phase. HARD RULE: ` +
+      `set outsideCriteria=true ONLY if you have checked the finding against EVERY criterion and it is ` +
+      `none of their business. If it bears on a criterion at all, it belongs in that criterion's verdict ` +
+      `— FAIL the phase. Uncertain whether it is covered? FAIL; never park a doubt here. Report nothing ` +
+      `rather than pad the list: findings[] is for things you actually observed while driving the code.` +
       OBEY,
     { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier, effort: reasoning.verifier, schema: VERIFY_SCHEMA },
   )
@@ -1802,4 +1842,11 @@ return {
   stoppedReason,
   integrationFailed,
   verdict,
+  // Non-blocking findings for the debt register, gated in CODE rather than in prose
+  // (layer 2 of the containment described at VERIFY_SCHEMA.findings): they travel ONLY
+  // from a passing final verdict, and only when the verifier explicitly asserted the
+  // finding is outside every criterion. A failing phase yields none — on a FAIL the
+  // gap belongs in the verdict the user is about to read, not in a register they will
+  // look at next month.
+  findings: verdict.passed ? (verdict.findings || []).filter((f) => f?.outsideCriteria === true) : [],
 }
