@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "fixes": [
+    {
+      "id": "2026-09-17-accepting-a-rejected-phase-leaves-a",
+      "title": "accepting a rejected phase leaves a stale blocker, which then outlives the milestone",
+      "status": "verified",
+      "opened_at": "2026-09-17T08:41:05.892Z"
+    }
+  ]
+}

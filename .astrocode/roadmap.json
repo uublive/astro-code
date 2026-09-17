@@ -1,36 +1,5 @@
 {
   "version": 1,
   "milestone": 6,
-  "phases": [
-    {
-      "number": 11,
-      "name": "Standardize kit command naming",
-      "slug": "11-standardize-kit-command-naming",
-      "status": "verified"
-    },
-    {
-      "number": 12,
-      "name": "Kit conversion command (source to standard kit)",
-      "slug": "12-kit-conversion-command-source-to-standard-kit",
-      "status": "verified"
-    },
-    {
-      "number": 13,
-      "name": "Warm batched sequential executor",
-      "slug": "13-warm-batched-sequential-executor",
-      "status": "verified"
-    },
-    {
-      "number": 14,
-      "name": "Cheap mechanical integrator and clean fast-path",
-      "slug": "14-cheap-mechanical-integrator-and-clean-fast-path",
-      "status": "verified"
-    },
-    {
-      "number": 15,
-      "name": "Opportunistic forge knowledge graph read and write",
-      "slug": "15-opportunistic-forge-knowledge-graph-read-and-write",
-      "status": "verified"
-    }
-  ]
+  "phases": []
 }
