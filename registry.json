@@ -193,7 +193,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "feature/lean-execution",
       "claimed_at": "2026-08-23T06:59:11.757Z",
-      "status": "active"
+      "status": "complete"
     },
     {
       "type": "phase",
@@ -203,7 +203,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "feature/lean-execution",
       "claimed_at": "2026-08-23T06:59:14.870Z",
-      "status": "active"
+      "status": "complete"
     },
     {
       "type": "fix",
