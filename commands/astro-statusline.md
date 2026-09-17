@@ -22,6 +22,10 @@ Wire up (or refresh) astro-code's rich statusline for this machine, then show th
      Opus variant is detected from its `[1m]` id; everything else is the 200k window)
    - **⊡ astro** — current milestone `M<n>` and phase `P<n> <name>` with its
      lifecycle status (or live activity verb), phase progress `done/total`, and any `⚠blockers`
+   - **⚖ nn** — technical-debt pressure (0–100), shown **only** once debt is actually
+     costing you: yellow at 25+ (`watch`, something is concentrating), red at 50+
+     (`pay-now`). It is not a count — filing more debt pushes it *down* — so the
+     segment appearing at all is the signal. `ac debt score` explains the number.
    - **⎇ branch** — current git branch · **$cost** — session spend so far
 4. Tell the user the line takes effect on the **next** statusline repaint (a
    keystroke or the next turn), but the busy/idle **dot** only starts toggling once

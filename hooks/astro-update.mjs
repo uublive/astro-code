@@ -7,7 +7,7 @@
 //       an update nudge to the same systemMessage;
 //   (3) if the cache is missing or stale (>1h), spawn the detached worker to
 //       refresh it for next time (a `git fetch` + behind-count in the background).
-// The one-session lag between (3) writing and (2) reading mirrors GSD by design —
+// The one-session lag between (3) writing and (2) reading is deliberate —
 // the banner never blocks startup on the network.
 import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';

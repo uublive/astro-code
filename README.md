@@ -1,10 +1,10 @@
 # astro-code
 
-A lean, multi-developer evolution of [GSD](https://github.com/glittercowboy/get-shit-done),
-**host-agnostic** (Claude Code and Codex CLI, from one install). It runs a
+Lean, multi-developer planning and execution for coding agents — **host-agnostic**
+(Claude Code and Codex CLI, from one install). It runs a
 `discuss → plan → execute → verify → accept` loop over milestones and phases, kept as
-plain files in your repo — and adds what GSD lacks: real parallelism and safe
-multi-developer collaboration.
+plain files in your repo, with real multi-agent parallelism and collision-proof
+coordination across a team.
 
 - 🧩 **Tiny core** — one zero-dependency Node CLI (`ac`) for state; the rest is short
   markdown commands/agents + Workflow scripts. No build step, no monolith.
@@ -106,8 +106,10 @@ ac fix list                    # what is open
 ac fix accept <id>             # human gate — archives it
 ac fix accept <id> --agent <n> # machine-signed (ADR-033): records accepted_kind=agent
 ac debt list [--stale]         # open technical debt (the verifier files it automatically)
+ac debt score                  # pay-it-down-now signal, 0-100, with the evidence
 ac debt pay <id> [--as phase]  # graduate it into a fix (default) or a roadmap phase
-ac debt drop <id> --reason "…" # it stopped being true (a reason is required)
+ac debt drop <id> --reason "…" # it WAS true and stopped being true
+ac debt dismiss <id> --reason … # it was NEVER true — the verifier was wrong
 ac milestone complete          # archive the current milestone
 ac phase effort <n> deep       # per-phase verify→remediate budget (light|standard|deep)
 ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
@@ -176,6 +178,25 @@ you're already in the file — and `/astro-complete-milestone` asks you to pay o
 stale. The verifier can never park a *criterion* failure here: a finding is admissible only
 if it explicitly asserts it is outside every criterion, and findings from a failing phase are
 discarded, so the quality gate keeps no back door.
+
+Two exits exist for an item that isn't going to be fixed, and the difference is the point:
+`ac debt drop` says it **was** true and the code moved on; `ac debt dismiss` says it was
+**never** true and the verifier was wrong. Both keep the record. Only the second is a
+measurement of the *feed* — if dismissals climb, tighten the verifier rather than grinding
+through the register.
+
+**Is it worth paying down?** `ac debt score` answers that with a 0–100 number and the
+evidence behind it. It is explicitly **not** a count: volume is a guilt meter that says
+"pay debt" every day of the project. Instead it weighs what the debt is *charging* you —
+**recurrence** (the verifier hit the same item again in a later phase — you demonstrably
+keep walking over this ground), **concentration** (several items in one file), and age but
+only where it compounds a recurrence — against the **principal** it would cost to clear
+(small 1 · medium 3 · large 8). So filing more debt can never raise the score by itself: a
+fresh, isolated finding is pure principal and pushes the number *down*. Debt in code you
+never touch reads as zero, which is the honest answer. Under 25 is healthy, 25–49 is worth
+watching, 50+ means the register is charging you about what clearing it would cost. The
+same number rides the statusline as `⚖ nn` — and **only** once it leaves the healthy band,
+so the segment appearing is itself the signal.
 
 **Two gates close a phase.** It moves `executing → verified → complete`: the
 `astro-verifier` agent is the machine gate — adversarial and **plan-blind**, it checks the

@@ -31,8 +31,11 @@ it. Run `ac fix list` to see what is open.
 notices that no criterion covered, automatically — see `ac debt list`. An item never gets
 "worked" in place: it graduates into a fix (`ac debt pay <id>`) or onto the roadmap
 (`ac debt pay <id> --as phase`), and closes when THAT work is accepted. If it stopped
-being true, `ac debt drop <id> --reason "…"`. Never hand-edit the register to tidy it,
-and never file a criterion failure as debt — that is a phase FAIL.
+being true, `ac debt drop <id> --reason "…"`; if it was never true and the verifier was
+wrong, `ac debt dismiss <id> --reason "…"` — keep those two apart, the second is the only
+measure of the verifier's precision. `ac debt score` says whether paying down is worth it
+right now. Never hand-edit the register to tidy it, and never file a criterion failure as
+debt — that is a phase FAIL.
 
 Phase lifecycle: `pending → executing → verified → complete` (plus `rejected`).
 Fix lifecycle: `open → diagnosing → executing → verified → accepted`.

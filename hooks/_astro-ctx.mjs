@@ -42,6 +42,112 @@ export function findAstroRoot(startDir) {
   }
 }
 
+// --- debt pressure -----------------------------------------------------------
+//
+// The KPI that answers ONE question: is it worth stopping to pay debt down, or
+// should you keep building? It lives HERE, in the dependency-free hook helper,
+// because both `ac debt score` and the statusline need it and a second copy would
+// drift — `lib/debt.mjs` imports it from this file rather than reimplementing it.
+//
+// ## Why it is not "how much debt do we have"
+//
+// Volume is a guilt meter, not a decision signal: it only ever rises, so it says
+// "pay debt" on every day of the project, which is the same as saying nothing.
+// Debt sitting in code you never touch genuinely costs nothing, and a metric that
+// cannot express that is lying.
+//
+// So this measures what the debt is CHARGING you, against what it would cost to
+// clear — the interest-vs-principal shape the debt metaphor already implies:
+//
+//   principal  what paying it off would cost:  small 1 · medium 3 · large 8
+//   interest   evidence it is costing you NOW, and only things actually observed:
+//                · recurrence (×3) — the verifier hit the same item again in a
+//                  LATER phase. The strongest signal there is: you demonstrably
+//                  keep walking over this ground. Weighted above one small item's
+//                  entire principal, because a cheap thing you have already
+//                  tripped over twice should simply be paid.
+//                · hotspot (×1) — other open debt in the same file. Concentration
+//                  is how a file becomes a place you dread touching.
+//                · stale-AND-recurring (×2) — old debt you keep re-hitting and
+//                  still have not paid. Age ALONE is deliberately worth nothing.
+//
+//   pressure = 100 · interest / (interest + principal)
+//
+// The load-bearing property, and the one the tests pin: **filing more debt cannot
+// raise the score by itself.** A fresh, isolated finding is pure principal, so it
+// pushes pressure DOWN. Only evidence of the debt actually hurting pushes it up.
+// That is what makes this safe to put on a statusline — it can never become a
+// number that scolds you for the verifier doing its job.
+export const DEBT_PRINCIPAL = Object.freeze({ small: 1, medium: 3, large: 8 });
+export const DEBT_STALE_DAYS = 30;
+// Bands, deliberately coarse: this is a signal for a judgement call, not a
+// measurement. `watch` means something is concentrating; `pay-now` means the
+// register is charging you about as much as clearing it would cost.
+export const DEBT_BANDS = Object.freeze({ watch: 25, payNow: 50 });
+
+export function debtPressure(db, nowMs = Date.now()) {
+  const all = Array.isArray(db?.debt) ? db.debt : [];
+  const live = all.filter((d) => d && (d.status === 'open' || d.status === 'paying'));
+
+  const perFile = new Map();
+  for (const d of live) {
+    if (d.file) perFile.set(d.file, (perFile.get(d.file) || 0) + 1);
+  }
+
+  let principal = 0;
+  let interest = 0;
+  const totals = { recurrence: 0, hotspot: 0, stale: 0 };
+
+  const items = live.map((d) => {
+    const p = DEBT_PRINCIPAL[d.cost] ?? DEBT_PRINCIPAL.small;
+    const recurrence = Array.isArray(d.also_found_in) ? d.also_found_in.length : 0;
+    const hotspot = d.file ? (perFile.get(d.file) || 1) - 1 : 0;
+    const found = Date.parse(d.found_at || '');
+    const ageDays = Number.isFinite(found) ? Math.max(0, Math.floor((nowMs - found) / 86_400_000)) : 0;
+    // Age counts ONLY alongside recurrence. Old-and-untouched is cheap by
+    // definition; charging for it would just be the volume metric again.
+    const stale = ageDays >= DEBT_STALE_DAYS && recurrence > 0 ? 1 : 0;
+    const own = recurrence * 3 + hotspot * 1 + stale * 2;
+
+    principal += p;
+    interest += own;
+    totals.recurrence += recurrence;
+    totals.hotspot += hotspot;
+    totals.stale += stale;
+
+    return { id: d.id, title: d.title, file: d.file || '', cost: d.cost, principal: p, recurrence, hotspot, ageDays, interest: own };
+  });
+
+  const denom = interest + principal;
+  const pressure = denom === 0 ? 0 : Math.round((100 * interest) / denom);
+  const band = pressure >= DEBT_BANDS.payNow ? 'pay-now' : pressure >= DEBT_BANDS.watch ? 'watch' : 'healthy';
+
+  // Verifier precision. `dismissed` means a human said the finding was never real,
+  // which is feedback about the FEED rather than about the code — a climbing rate
+  // is the signal to tighten the verifier, not to work harder on debt.
+  const count = (s) => all.filter((d) => d && d.status === s).length;
+  const dismissed = count('dismissed');
+  const resolved = dismissed + count('paid') + count('dropped');
+
+  return {
+    open: live.length,
+    principal,
+    interest,
+    pressure,
+    band,
+    totals,
+    items,
+    // Worst-first by friction per unit of effort: what to pay to move the number
+    // most per hour spent. Items with no interest are not recommendations.
+    worst: items.filter((i) => i.interest > 0)
+      .sort((a, b) => (b.interest / b.principal) - (a.interest / a.principal) || b.interest - a.interest),
+    files: [...perFile.entries()].map(([file, n]) => ({ file, n })).sort((a, b) => b.n - a.n),
+    filed: all.length,
+    dismissed,
+    falsePositiveRate: resolved === 0 ? 0 : Math.round((100 * dismissed) / resolved),
+  };
+}
+
 // Normalize state.json + roadmap.json into one render-ready context object.
 // `nowSeconds` is injected (not read from the clock) so renderers stay pure/testable.
 export function readContext(root, nowSeconds) {
@@ -102,6 +208,9 @@ export function readContext(root, nowSeconds) {
     discussed: phase ? phaseDiscussed(root, phase.slug) : false,
     done, verified, total: phases.length, blockers, activity,
     fix, openFixes: openFixes.length,
+    // Debt pressure, for the statusline. One small file read; the band is what
+    // decides whether the segment renders at all (see renderSegmentParts).
+    debt: debtPressure(readJson(join(root, '.astrocode', 'debt.json')), nowSeconds * 1000),
   };
 }
 
@@ -222,6 +331,13 @@ export function renderSegmentParts(ctx, { lookahead = 2 } = {}) {
     state.push(`${paint(`${ctx.verified ?? 0}▸`, ANSI.dim)} ${paint(`${ctx.done ?? 0}✓`, ANSI.dim)}`);
   }
   if (ctx.blockers) state.push(paint(`⚠${ctx.blockers}`, ANSI.red));
+  // Debt rides the line ONLY once it is actually charging you. A permanent
+  // "debt 6" would be wallpaper — read once, ignored forever — and worse, it
+  // would punish the verifier for filing, which is the behavior we want. So the
+  // healthy band renders nothing at all, and the segment appearing IS the signal.
+  if (ctx.debt && ctx.debt.band !== 'healthy') {
+    state.push(paint(`⚖ ${ctx.debt.pressure}`, ctx.debt.band === 'pay-now' ? ANSI.red : ANSI.yellow));
+  }
   return { identity: identity.join(' · '), state: state.join(' · ') };
 }
 

@@ -2,12 +2,12 @@
 
 ## Vision
 
-A lean, multi-developer, Claude-Code-4.8-native planning & execution framework — the
-evolution of GSD. It runs a `discuss → plan → execute → verify → accept` loop over
-milestones and phases, keeps **all state as plain files in the repo**, and adds real
-multi-agent parallelism plus collision-proof cross-developer coordination. The `ac` CLI
-owns deterministic state; the "thinking" lives in markdown commands/agents and Workflow
-scripts that Claude Code runs in isolated contexts — so the main session stays lean and
+A lean, multi-developer planning & execution framework for coding agents, host-agnostic
+across Claude Code and Codex CLI. It runs a `discuss → plan → execute → verify → accept`
+loop over milestones and phases, keeps **all state as plain files in the repo**, and adds
+real multi-agent parallelism plus collision-proof cross-developer coordination. The `ac`
+CLI owns deterministic state; the "thinking" lives in markdown commands/agents and
+Workflow scripts the host runs in isolated contexts — so the main session stays lean and
 `/clear`-safe. Consistency comes from a prescriptive **canon** (conventions + decisions)
 injected into every agent, not from a maintained codebase map.
 

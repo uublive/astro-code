@@ -1,8 +1,9 @@
 # astro-code — Architecture
 
-astro-code is a lean, multi-developer evolution of GSD, built for Claude Code 4.8.
-It keeps GSD's good parts — file-based planning state, milestones/phases/roadmap,
-the discuss → plan → execute → verify loop — and drops ~80% of the surface area.
+astro-code is a lean, multi-developer planning and execution system for coding
+agents, host-agnostic across Claude Code and Codex CLI. Planning state lives in
+plain files in your repo — milestones, phases, a roadmap — and every phase is
+carried through a discuss → plan → execute → verify → accept loop.
 
 ## Design principles
 
@@ -87,8 +88,8 @@ last-writer-wins via `ac canon push` (rare, by agreement). Per-phase plans/summa
 stay on the working branch with the code (see *Canon vs. codebase map*). Local
 `.astrocode/` copies are fast-read mirrors refreshed by `ac canon pull`.
 
-> Note: unlike GSD's external locksmith hook (which grepped numbers out of
-> ROADMAP.md on write), astro-code enforces numbering through the CLI itself
+> Note: numbering is not policed by an external hook watching the roadmap file
+> (grepping numbers out of ROADMAP.md on write); astro-code enforces it in the CLI itself
 > (`ac phase add` / `ac milestone new`). ROADMAP.md is *generated*, never the
 > source of truth — simpler and collision-proof by construction.
 
@@ -103,8 +104,9 @@ stay on the working branch with the code (see *Canon vs. codebase map*). Local
 
 ## Canon vs. codebase map (why we have one, not the other)
 
-GSD ships `map-codebase` (parallel agents write 4 snapshot docs of the code). We
-deliberately don't, and instead invest in **canon**:
+A common pattern is to have parallel agents write snapshot documents describing the
+codebase, kept up to date forever. We deliberately don't, and invest in **canon**
+instead:
 
 - **Canon is prescriptive and permanent** — the rules new code must obey. It's the
   cheap, high-leverage way to keep many parallel agents and multiple developers
@@ -116,8 +118,8 @@ deliberately don't, and instead invest in **canon**:
   than none** (agents trust outdated info). So it doesn't belong in the core loop.
 
 If a map is ever needed, the right shape is one lightweight, *timestamped*,
-on-demand `CODEBASE.md` (the existing `astro-mapper` agent can produce it) — not
-GSD's four always-maintained documents.
+on-demand `CODEBASE.md` (the existing `astro-mapper` agent can produce it) — not a
+set of always-maintained documents that quietly drift out of date.
 
 ## The loop
 
@@ -137,8 +139,8 @@ only reach `verified`; closing a phase requires human UAT sign-off
 Because all state lives in `.astrocode/` files + the registry — and because heavy
 work runs in workflows/subagents with their own contexts (principle #5) — the main
 thread barely accumulates, and every command re-grounds from disk (`ac status`,
-roadmap, `CONTEXT.md`, `PLAN.md`). So astro-code needs `/clear` *less often* than
-GSD (which does its heavy lifting inline) and `/clear` is *safe*: nothing is lost.
+roadmap, `CONTEXT.md`, `PLAN.md`). So astro-code needs `/clear` *less often* than a
+system that does its heavy lifting inline, and `/clear` is *safe*: nothing is lost.
 
 The guidance, therefore:
 - **Clear at phase boundaries**, not between every command — after a phase reaches a
@@ -150,38 +152,37 @@ The guidance, therefore:
 - **Never** clear while a background Workflow/Agent is in flight — you'd risk losing
   its completion notification. The nudge fires only *after* the work returns.
 
-## Why this is faster than GSD
+## Why this is fast
 
 Speed comes from doing less per turn and more in parallel — not from cutting corners.
 
-1. **Deterministic fan-out instead of prose orchestration.** GSD's execute loop is
-   driven by large workflow files (1,000–1,700 lines) the model re-reads and
-   interprets each turn to decide what to spawn. astro-code hands orchestration to
-   the 4.8 **Workflow** tool: a small JS script fans out agents directly. Less model
-   reasoning per turn, true parallelism, and `pipeline()` with no barriers between
-   independent tasks.
-2. **Tiny context footprint.** GSD loads `gsd-tools.cjs` (68 KB), big workflow files,
-   and a routing layer. astro-code commands are ~20 lines; the deterministic work
-   lives in the `ac` CLI and runs *outside* the model's context. Fewer tokens per
-   turn → faster and cheaper.
-3. **One call per state op.** Atomic `ac` subcommands replace GSD's many inline bash
-   patterns + JSON parsing per command.
+1. **Deterministic fan-out instead of prose orchestration.** Orchestration is not a
+   large workflow document the model re-reads and reinterprets each turn to decide
+   what to spawn; it is a small JS script handed to the **Workflow** tool, which fans
+   out agents directly. Less model reasoning per turn, true parallelism, and
+   `pipeline()` with no barriers between independent tasks.
+2. **Tiny context footprint.** Commands are ~20 lines. The deterministic work lives in
+   the `ac` CLI and runs *outside* the model's context, rather than being loaded into
+   it as a tool monolith plus a routing layer. Fewer tokens per turn → faster and
+   cheaper.
+3. **One call per state op.** Atomic `ac` subcommands replace inline bash + JSON
+   parsing repeated in every command.
 4. **Numbering is one git compare-and-swap**, not a read-write-recheck dance.
-5. **No runtime install/conversion.** GSD's installer converts skills across five
-   runtimes. astro-code targets Claude Code directly.
+5. **No runtime conversion at install.** Each host adapter renders the same commands
+   into that host's native format once, at install time.
 
 Honest caveat: the largest win is the parallel Workflow execution plus the small
 per-turn context. Wall-clock improvement should be **measured** on a real project,
-not assumed — that's a good early benchmark to run.
+not assumed.
 
-## Do we need the GSD / an MCP codebase?
+## Do we need a vendored tool monolith / an MCP server?
 
 **No, on both counts, for now.**
 
-- **GSD codebase.** We deliberately reimplemented the few essentials lean. Pulling in
-  `gsd-tools.cjs` wholesale would reintroduce exactly the complexity we cut. If a
-  specific battle-tested detail proves valuable later (e.g. an edge case in state
-  locking), we can port that one piece — not the whole thing.
+- **A vendored tool monolith.** The few essentials are deliberately reimplemented lean.
+  Pulling in a large prior-art toolfile wholesale would reintroduce exactly the
+  complexity the design cuts. If a specific battle-tested detail proves valuable later
+  (e.g. an edge case in state locking), port that one piece — not the whole thing.
 - **MCP server.** astro-code exposes its capabilities through the `ac` CLI (invoked
   via Bash) and the Workflow tool. That is simpler than running an MCP server and
   needs no extra process. An MCP server would only earn its keep if we wanted other

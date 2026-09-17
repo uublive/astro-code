@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Composing statusline wrapper. Invoked as:  node astro-statusline.mjs <configDir>
 //
-// astro-code must not clobber a statusline the user already runs (e.g. GSD's). At
+// astro-code must not clobber a statusline the user already runs. At
 // install time we save the original `statusLine.command` for each config dir into
 // ~/.astro/code/statusline-chain.json; here we run it first (feeding it the same
 // stdin Claude gave us), then append astro segments. From Claude's stdin blob we

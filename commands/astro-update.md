@@ -24,7 +24,7 @@ Claude config dir (reversed by `ac uninstall`):
 - a **SessionStart banner** — at the start of a session, if your clone is behind its
   origin, Claude shows `astro-code update available: N commits behind … — run /astro-update`;
 - a **statusline segment** — `⬆ astro-code N behind` appended to your existing statusline
-  (it composes with the one you already run, e.g. GSD's, rather than replacing it).
+  (it composes with the one you already run, rather than replacing it).
 
 Both read a cache refreshed in the background (a throttled `git fetch` + behind-count
 against your clone's upstream), so startup is never blocked on the network. The first

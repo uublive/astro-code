@@ -18,8 +18,8 @@ import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete } from '../lib/registry.mjs';
 import { addFix, acceptFix, setFixStatus, findFix, openFixes, loadFixes, FIX_STATUSES } from '../lib/fixes.mjs';
 import {
-  addDebt, openDebt, findDebt, payDebt, dropDebt, closeDebtFor, staleDebt, debtAgeDays,
-  loadDebt, DEBT_COSTS, STALE_DAYS,
+  addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt,
+  debtAgeDays, debtScore, loadDebt, DEBT_COSTS, STALE_DAYS,
 } from '../lib/debt.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
@@ -71,6 +71,7 @@ const ALLOWED_FLAGS = {
   // `drop` is the one debt verb that removes something from the list on a human's
   // say-so, so a typo'd flag must not degrade into "dropped with no reason".
   'debt drop': ['reason'],
+  'debt dismiss': ['reason'],
   'debt pay': ['as'],
 };
 
@@ -129,8 +130,10 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac fix accept <id> [--agent <name>] human gate → accepted + archived
   ac debt list [--phase N|--file p|--stale]  open technical debt (the verifier files it)
   ac debt add "<what>" [--why …] [--phase N] [--file p] [--cost small|medium|large]
+  ac debt score                       is it worth paying debt down right now? (0-100 + why)
   ac debt pay <id> [--as fix|phase]   graduate it into a fix (default) or a roadmap phase
-  ac debt drop <id> --reason "…"      it stopped being true (a reason is required)
+  ac debt drop <id> --reason "…"      it WAS true and stopped being true
+  ac debt dismiss <id> --reason "…"   it was NEVER true — the verifier was wrong
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac phase note <phase> ["<text>"]    read/set/clear a durable phase note (survives ROADMAP.md renders)
@@ -289,6 +292,47 @@ async function main() {
         return;
       }
 
+      // The KPI. Prints its own inputs on purpose: a single score nobody can audit
+      // gets ignored the first time it disagrees with someone's gut.
+      if (sub === 'score') {
+        const s = debtScore(r);
+        if (flags.json) { json(s); return; }
+        if (!s.open) { console.log('• no open debt — nothing to weigh'); return; }
+
+        console.log(`Debt pressure  ${s.pressure}/100 · ${s.band}`);
+        console.log(`  interest   ${String(s.interest).padStart(3)} pts   ${s.totals.recurrence} recurrence(s) · ${s.totals.hotspot} hotspot overlap(s) · ${s.totals.stale} stale-and-recurring`);
+        console.log(`  principal  ${String(s.principal).padStart(3)} pts   ${s.open} open item(s), by what clearing them would cost`);
+
+        const hot = s.files.filter((f) => f.n > 1);
+        if (hot.length) {
+          console.log('\nConcentration');
+          for (const f of hot) console.log(`  ${f.file}  ${f.n} items`);
+        }
+
+        if (s.worst.length) {
+          console.log('\nPay these first (most friction per unit of effort)');
+          for (const i of s.worst.slice(0, 5)) {
+            const why = [
+              i.recurrence ? `re-found ${i.recurrence}×` : '',
+              i.hotspot ? `${i.hotspot} file overlap(s)` : '',
+            ].filter(Boolean).join(', ');
+            console.log(`  ${i.id}`);
+            console.log(`    ${i.cost} · ${why}`);
+          }
+        }
+
+        // Precision of the FEED, kept separate from the state of the code.
+        console.log(`\nVerifier  ${s.filed} filed · ${s.dismissed} dismissed as not-debt (${s.falsePositiveRate}% false positive)`);
+
+        const verdict = {
+          'healthy': 'Your debt is not charging you right now — keep building. Volume alone never moves this number.',
+          'watch': 'Debt is concentrating. Fold some in next time you are already in these files — `/astro-discuss` will offer.',
+          'pay-now': 'The register is charging you about what clearing it would cost. Worth planning a phase for it.',
+        }[s.band];
+        console.log(`\n${verdict}`);
+        return;
+      }
+
       const item = findDebt(r, pos[1]);
       if (!item) die(`no such debt: ${pos[1] || '(none given)'} — see \`ac debt list\``);
 
@@ -334,7 +378,19 @@ async function main() {
         return;
       }
 
-      die(`unknown: ac debt ${sub} (add | list | show | pay | drop)`);
+      // `dismiss` is not a synonym for `drop` — drop says the code moved on, dismiss
+      // says the verifier was wrong. Only the second is a measurement of the feed.
+      if (sub === 'dismiss') {
+        checkFlags('debt dismiss', flags);
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        if (!reason) die('usage: ac debt dismiss <id> --reason "why this was never debt"');
+        const done = await dismissDebt(r, item.id, { reason });
+        console.log(`✓ dismissed ${done.id} (not debt): ${done.dismiss_reason}`);
+        console.log('  kept on the record — it counts toward the verifier\'s false-positive rate');
+        return;
+      }
+
+      die(`unknown: ac debt ${sub} (add | list | show | score | pay | drop | dismiss)`);
     }
 
     case 'agents-md': {

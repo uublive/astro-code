@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Background worker spawned (detached) by the astro-update SessionStart hook.
-// Adapted from GSD's npm-based check for astro-code's git-clone model: there is no
+// An npm-based update check does not fit astro-code's git-clone model: there is no
 // published package, so "newer" means "origin is ahead of the clone". We
 // `git fetch` the clone, count how many commits HEAD is behind its upstream, and
 // read the version from both sides' package.json. The result is cached so the next

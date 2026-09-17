@@ -16,12 +16,13 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  addDebt, openDebt, findDebt, payDebt, dropDebt, closeDebtFor, fileFindings,
-  loadDebt, debtId, debtAgeDays, staleDebt, validateDebtCost, validateDebtStatus,
-  DEBT_STATUSES, DEBT_COSTS, STALE_DAYS,
+  addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, fileFindings,
+  loadDebt, debtId, debtAgeDays, staleDebt, debtScore, debtPressure,
+  validateDebtCost, validateDebtStatus, DEBT_STATUSES, DEBT_COSTS, STALE_DAYS,
 } from '../lib/debt.mjs';
 import { initPlanning } from '../lib/planning.mjs';
 import { loadRoadmap } from '../lib/roadmap.mjs';
+import { readContext, renderSegmentParts } from '../hooks/_astro-ctx.mjs';
 
 function project() {
   const root = mkdtempSync(join(tmpdir(), 'ac-debt-'));
@@ -99,7 +100,7 @@ test('a debt item needs a title, and an unknown cost is refused on the write pat
   assert.throws(() => validateDebtCost('huge'), /unknown debt cost/);
   assert.throws(() => validateDebtStatus('nope'), /unknown debt status/);
   assert.deepEqual(DEBT_COSTS, ['small', 'medium', 'large']);
-  assert.deepEqual(DEBT_STATUSES, ['open', 'paying', 'paid', 'dropped']);
+  assert.deepEqual(DEBT_STATUSES, ['open', 'paying', 'paid', 'dropped', 'dismissed']);
 });
 
 // --- the gate leak --------------------------------------------------------------
@@ -268,6 +269,197 @@ test('a word past the id truncation still resolves — verifier titles are long 
   assert.ok(!entry.id.includes('jq'), 'precondition: the id really is truncated before "jq"');
   assert.equal(findDebt(root, 'jq -r')?.id, entry.id);
   assert.equal(findDebt(root, 'envelope')?.id, entry.id);
+});
+
+// --- dismissal: feedback about the FEED, not about the code ---------------------
+
+test('dismiss closes an item that was never real, and keeps the record', async () => {
+  const root = project();
+  const { entry } = await addDebt(root, { title: 'the verifier misread this', now: NOW });
+  await assert.rejects(() => dismissDebt(root, entry.id, { reason: ' ' }), /needs a reason/);
+
+  const done = await dismissDebt(root, entry.id, { reason: 'that branch is unreachable' });
+  assert.equal(done.status, 'dismissed');
+  assert.equal(done.dismiss_reason, 'that branch is unreachable');
+  assert.equal(openDebt(root).length, 0, 'a dismissed item leaves the live list');
+  assert.equal(loadDebt(root).debt.length, 1, 'but stays on the record');
+});
+
+test('dismissed and dropped are different measurements and must not be conflated', async () => {
+  const root = project();
+  const a = await addDebt(root, { title: 'never real', now: NOW });
+  const b = await addDebt(root, { title: 'was real, now moot', now: NOW });
+  await dismissDebt(root, a.entry.id, { reason: 'misread' });
+  await dropDebt(root, b.entry.id, { reason: 'the module was deleted' });
+
+  const s = debtScore(root, { now: NOW });
+  // only the dismissal is a verifier error; the drop is the codebase moving on
+  assert.equal(s.dismissed, 1);
+  assert.equal(s.falsePositiveRate, 50, '1 dismissed of 2 resolved');
+});
+
+test('a closed item cannot be resurrected by paying it', async () => {
+  const root = project();
+  const { entry } = await addDebt(root, { title: 'x', now: NOW });
+  await dismissDebt(root, entry.id, { reason: 'not real' });
+  await assert.rejects(() => payDebt(root, entry.id, { kind: 'fix', workRef: 'f1' }), /already dismissed/);
+});
+
+test('a paid item cannot retroactively be declared unreal', async () => {
+  const root = project();
+  const { entry } = await addDebt(root, { title: 'x', now: NOW });
+  await payDebt(root, entry.id, { kind: 'fix', workRef: 'f1' });
+  await closeDebtFor(root, { kind: 'fix', workRef: 'f1' });
+  await assert.rejects(() => dismissDebt(root, entry.id, { reason: 'eh' }), /already paid/);
+});
+
+// --- the KPI --------------------------------------------------------------------
+
+test('an empty register scores zero and reads healthy', () => {
+  const root = project();
+  const s = debtScore(root, { now: NOW });
+  assert.equal(s.pressure, 0);
+  assert.equal(s.band, 'healthy');
+  assert.equal(s.open, 0);
+});
+
+// THE load-bearing property. A metric that rises with volume is a guilt meter: it
+// says "pay debt" every day, which is the same as saying nothing — and it would
+// punish the verifier for doing exactly what we built it to do.
+test('filing more isolated debt LOWERS pressure — volume alone is never the signal', async () => {
+  const root = project();
+  await addDebt(root, { title: 'one', file: 'a.mjs', phase: '1', now: NOW });
+  await addDebt(root, { title: 'two', file: 'b.mjs', phase: '1', now: NOW });
+  // one recurrence, so there is some interest to dilute
+  await addDebt(root, { title: 'one', file: 'a.mjs', phase: '2', now: NOW });
+  const before = debtScore(root, { now: NOW }).pressure;
+  assert.ok(before > 0, 'precondition: a recurrence produced interest');
+
+  for (const n of ['three', 'four', 'five', 'six']) {
+    // eslint-disable-next-line no-await-in-loop
+    await addDebt(root, { title: n, file: `${n}.mjs`, phase: '3', cost: 'large', now: NOW });
+  }
+  const after = debtScore(root, { now: NOW });
+  assert.ok(after.pressure < before, `pressure must fall: ${before} → ${after.pressure}`);
+  assert.equal(after.open, 6);
+});
+
+test('recurrence is the strongest signal — one re-hit outweighs a small item entirely', async () => {
+  const root = project();
+  await addDebt(root, { title: 'tripped over', file: 'x.mjs', phase: '1', cost: 'small', now: NOW });
+  const quiet = debtScore(root, { now: NOW });
+  assert.equal(quiet.pressure, 0, 'a fresh isolated finding costs nothing');
+
+  await addDebt(root, { title: 'tripped over', file: 'x.mjs', phase: '2', now: NOW });
+  const loud = debtScore(root, { now: NOW });
+  // principal 1, interest 3 → 75
+  assert.equal(loud.pressure, 75);
+  assert.equal(loud.band, 'pay-now');
+  assert.equal(loud.totals.recurrence, 1);
+});
+
+test('concentration in one file raises pressure even with no recurrence', async () => {
+  const root = project();
+  for (const t of ['a', 'b', 'c']) {
+    // eslint-disable-next-line no-await-in-loop
+    await addDebt(root, { title: t, file: 'lib/canon.mjs', cost: 'medium', now: NOW });
+  }
+  const s = debtScore(root, { now: NOW });
+  assert.equal(s.totals.hotspot, 6, 'three items in one file = 2 overlaps each');
+  assert.equal(s.principal, 9);
+  assert.equal(s.pressure, 40);
+  assert.equal(s.band, 'watch');
+  assert.deepEqual(s.files[0], { file: 'lib/canon.mjs', n: 3 });
+});
+
+test('age ALONE is worth nothing — old debt in code you never touch is cheap', async () => {
+  const root = project();
+  await addDebt(root, { title: 'ancient and untouched', file: 'x.mjs', now: NOW });
+  const old = new Date(NOW.getTime() + 400 * 86_400_000);
+  const s = debtScore(root, { now: old });
+  assert.equal(s.totals.stale, 0);
+  assert.equal(s.pressure, 0, 'never re-hit, never shared a file — it costs nothing');
+});
+
+test('age counts only once it compounds a recurrence', async () => {
+  const root = project();
+  await addDebt(root, { title: 'keeps biting', file: 'x.mjs', phase: '1', now: NOW });
+  await addDebt(root, { title: 'keeps biting', file: 'x.mjs', phase: '2', now: NOW });
+  const fresh = debtScore(root, { now: NOW });
+  const aged = debtScore(root, { now: new Date(NOW.getTime() + 60 * 86_400_000) });
+  assert.equal(fresh.totals.stale, 0);
+  assert.equal(aged.totals.stale, 1);
+  assert.ok(aged.pressure > fresh.pressure, 'unpaid AND still recurring is worse over time');
+});
+
+test('closed items stop counting toward pressure', async () => {
+  const root = project();
+  await addDebt(root, { title: 'a', file: 'x.mjs', phase: '1', now: NOW });
+  await addDebt(root, { title: 'a', file: 'x.mjs', phase: '2', now: NOW });
+  const live = debtScore(root, { now: NOW });
+  assert.ok(live.pressure > 0);
+
+  const [item] = openDebt(root);
+  await dropDebt(root, item.id, { reason: 'gone' });
+  const after = debtScore(root, { now: NOW });
+  assert.equal(after.open, 0);
+  assert.equal(after.pressure, 0);
+});
+
+test('worst-first ranks by friction per unit of effort, and never recommends a quiet item', async () => {
+  const root = project();
+  // cheap + recurring — the thing you should obviously just fix
+  await addDebt(root, { title: 'cheap recurring', file: 'a.mjs', phase: '1', cost: 'small', now: NOW });
+  await addDebt(root, { title: 'cheap recurring', file: 'a.mjs', phase: '2', now: NOW });
+  // expensive + recurring once — same evidence, far more effort
+  await addDebt(root, { title: 'costly recurring', file: 'b.mjs', phase: '1', cost: 'large', now: NOW });
+  await addDebt(root, { title: 'costly recurring', file: 'b.mjs', phase: '2', now: NOW });
+  // quiet — never re-found, alone in its file
+  await addDebt(root, { title: 'quiet', file: 'c.mjs', cost: 'medium', now: NOW });
+
+  const s = debtScore(root, { now: NOW });
+  assert.equal(s.worst[0].title, 'cheap recurring', 'best value first');
+  assert.equal(s.worst.length, 2, 'a quiet item is not a recommendation');
+  assert.ok(!s.worst.some((i) => i.title === 'quiet'));
+});
+
+test('an unknown cost is scored as small rather than crashing the KPI', () => {
+  const s = debtPressure({ debt: [{ id: 'x', status: 'open', cost: 'gigantic', found_at: NOW.toISOString() }] }, NOW.getTime());
+  assert.equal(s.principal, 1);
+  assert.equal(s.pressure, 0);
+});
+
+test('debtPressure survives a missing, empty or malformed register', () => {
+  for (const junk of [null, undefined, {}, { debt: null }, { debt: 'nope' }]) {
+    const s = debtPressure(junk, NOW.getTime());
+    assert.equal(s.open, 0);
+    assert.equal(s.pressure, 0);
+    assert.equal(s.band, 'healthy');
+  }
+});
+
+// --- the statusline segment -----------------------------------------------------
+
+test('the statusline shows debt only once it is actually charging you', () => {
+  const base = { milestone: 1, phase: { number: 1, slug: '01-x', name: 'x', status: 'executing' }, phases: [], total: 0 };
+  const healthy = renderSegmentParts({ ...base, debt: { open: 9, pressure: 12, band: 'healthy' } });
+  assert.ok(!healthy.state.includes('⚖'), 'a healthy register renders nothing — the segment appearing IS the signal');
+
+  const watch = renderSegmentParts({ ...base, debt: { open: 2, pressure: 40, band: 'watch' } });
+  assert.match(watch.state, /⚖ 40/);
+
+  const pay = renderSegmentParts({ ...base, debt: { open: 2, pressure: 70, band: 'pay-now' } });
+  assert.match(pay.state, /⚖ 70/);
+});
+
+test('readContext carries debt pressure, and an absent register is healthy', async () => {
+  const root = project();
+  assert.equal(readContext(root, 0).debt.band, 'healthy');
+  await addDebt(root, { title: 'a', file: 'x.mjs', phase: '1', now: NOW });
+  await addDebt(root, { title: 'a', file: 'x.mjs', phase: '2', now: NOW });
+  const ctx = readContext(root, Math.floor(NOW.getTime() / 1000));
+  assert.equal(ctx.debt.open, 1);
+  assert.ok(ctx.debt.pressure > 0);
 });
 
 test('an absent debt.json reads as an empty register, not a crash', () => {

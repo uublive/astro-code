@@ -19,11 +19,15 @@ Complete and archive the current milestone.
    for this: you are already stepping back from the work, and an item nobody has touched
    in a month is either worth planning into the next cycle or is no longer true.
 
-   For each stale item ask **once**, with `AskUserQuestion`, which exit it takes:
+   Lead with `ac debt score` — the pay-or-build signal and the reason for it. For each
+   stale item then ask **once**, with `AskUserQuestion`, which exit it takes:
    - **Pay it now** → `ac debt pay <id> --as phase` puts it on the new milestone's roadmap
      (or `--as fix` if it is bug-shaped — a refactor routed through the fix loop would be
      a "bugfix" with no reproduction case);
-   - **Drop it** → `ac debt drop <id> --reason "…"`, a reason is required;
+   - **Drop it** → `ac debt drop <id> --reason "…"`: it *was* true and no longer is;
+   - **Not debt** → `ac debt dismiss <id> --reason "…"`: it was **never** true, the
+     verifier was wrong. Keep these two apart — dismissals are the only measure of the
+     verifier's precision, and a rising rate means tighten the feed, not grind the list;
    - **Keep it open** → leave it; it will surface again next milestone.
 
    Batch the questions rather than asking per item, and skip this step in silence when

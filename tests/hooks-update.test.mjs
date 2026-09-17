@@ -30,7 +30,7 @@ test('install registers SessionStart banner + composes statusline; uninstall res
   const fakeHome = mkdtempSync(join(tmpdir(), 'ac-hooks-'));
   const cfg = join(fakeHome, '.claude');
   mkdirSync(cfg, { recursive: true });
-  // pre-existing statusline (e.g. GSD's) we must NOT clobber
+  // pre-existing statusline (the user's own) we must NOT clobber
   const original = { type: 'command', command: '"node" "/some/gsd-statusline.js"' };
   writeFileSync(join(cfg, 'settings.json'), JSON.stringify({ statusLine: original, env: { KEEP: '1' } }));
 

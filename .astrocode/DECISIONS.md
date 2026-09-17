@@ -303,3 +303,17 @@ _2026-09-17_
 
 **Rejected:** A structured DEFERRED.md; a third lifecycle for debt; letting pay close the item immediately
 
+## ADR-046 — Debt pressure is an interest-vs-principal ratio, never a count
+_2026-09-17_
+
+**Why:** A volume metric only ever rises, so it recommends paying debt on every day of the project and therefore says nothing — worse, it would punish the verifier for filing, which is the behaviour the register exists to encourage. Pressure instead weighs what debt is CHARGING you (recurrence x3, file concentration x1, age only where it compounds a recurrence x2) against the principal to clear it (small 1, medium 3, large 8). The load-bearing property, pinned by test: filing more isolated debt LOWERS the score, because a fresh finding is pure principal. Debt in code you never touch reads zero, which is the honest answer. The math lives in hooks/_astro-ctx.mjs because the statusline needs it and hooks install without lib/; lib/debt.mjs imports it rather than keeping a second copy that would drift.
+
+**Rejected:** Weighted item count; a score that rises with volume; showing the number on the statusline unconditionally
+
+## ADR-047 — A finding that was never real is dismissed, not dropped
+_2026-09-17_
+
+**Why:** Both close a debt item and both keep the record, so the split looks like hair-splitting until you ask what each measures. A drop is a fact about the CODE — it was true and the code moved on. A dismissal is a fact about the FEED — the verifier filed something that was not debt. Collapsing them buries the only precision signal the design has: if dismissals climb, the answer is to tighten the verifier prompt, not to work harder on the register. It would also pollute the drop reasons, which are meant to read as a history of how the codebase actually moved. ac debt score reports the false-positive rate as dismissed over resolved.
+
+**Rejected:** One drop verb with a free-text reason; deleting dismissed items outright
+
