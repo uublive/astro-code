@@ -204,6 +204,15 @@
       "branch": "feature/lean-execution",
       "claimed_at": "2026-08-23T06:59:14.870Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-09-17-accepting-a-rejected-phase-leaves-a",
+      "name": "accepting a rejected phase leaves a stale blocker, which then outlives the milestone",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-09-17T08:41:07.819Z",
+      "status": "active"
     }
   ]
 }
