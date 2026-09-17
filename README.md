@@ -71,6 +71,7 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-kit-publish        publish a kit to a hosted Astro instance (zip with kit.json inside → its kit registry)
 /astro-kit-convert [src]  convert an existing non-kit implementation into a standard Astro kit at verified feature parity
 /astro-kit-test           test a kit WITHOUT publishing: offline static checks, or --tier2 against a local Astro
+/astro-fix "<bug>"        fix a bug WITHOUT burning a milestone phase (reproduce → diagnose → fix → verify)
 /astro-phase <name>       add a phase (claims its number)
 /astro-discuss <phase>    talk through decisions/edge cases → CONTEXT.md (before planning)
 /astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)
@@ -96,6 +97,9 @@ ac phase add "Foundation"      # claim + add a phase
 ac status                      # project / milestone / phases
 ac registry show               # the shared numbering registry
 ac agents-md                   # refresh the astro-code block in AGENTS.md
+ac fix add "<what is broken>"  # open a bugfix (dated id, no phase number)
+ac fix list                    # what is open
+ac fix accept <id>             # human gate — archives it
 ac milestone complete          # archive the current milestone
 ac stats                       # token usage (fresh vs cheap cache reads) + wall-clock
 

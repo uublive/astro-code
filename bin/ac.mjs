@@ -15,7 +15,8 @@ import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, setPhaseEffort, setPhaseNote, isPhasePlanned } from '../lib/roadmap.mjs';
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
-import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry } from '../lib/registry.mjs';
+import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete } from '../lib/registry.mjs';
+import { addFix, acceptFix, setFixStatus, findFix, openFixes, loadFixes, FIX_STATUSES } from '../lib/fixes.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
@@ -153,6 +154,61 @@ async function main() {
     // Refresh the managed AGENTS.md block on its own — for projects that predate
     // it, or after upgrading astro-code. Only the region between the markers is
     // touched; everything the user wrote around it is preserved.
+    // Bugfixes: peers of phases, never members of a milestone. Identity is a
+    // dated slug (ADR-013 — urgent out-of-band work is named, not numbered), so
+    // everything sorts chronologically on disk and in the registry.
+    case 'fix': {
+      const r = root();
+      const sub = pos[0];
+
+      if (!sub || sub === 'list') {
+        const open = openFixes(r);
+        if (flags.json) { json(open); return; }
+        if (!open.length) { console.log('• no open fixes'); return; }
+        for (const f of open) console.log(`  ${f.id}  ${f.status}  ${f.title}`);
+        return;
+      }
+
+      if (sub === 'add') {
+        const title = pos.slice(1).join(' ').trim();
+        if (!title) die('usage: ac fix add "<what is broken>"');
+        const fix = await addFix(r, { title });
+        // Registry is advisory for a fix: it warns a second developer that
+        // someone is already on this bug. Offline is fine (ADR-013) — the local
+        // record stands and the push is the collision detector.
+        const reg = claimFix({ root: r, id: fix.id, name: title });
+        console.log(`✓ fix ${fix.id}`);
+        if (reg.matches?.length) {
+          console.log(`⚠ someone may already be on this: ${reg.matches.map((m) => m.name).join(', ')}`);
+        } else if (!reg.ok) {
+          console.log('• registry not reachable — recorded locally (the push will detect collisions)');
+        }
+        return;
+      }
+
+      const fix = findFix(r, pos[1]);
+      if (!fix) die(`no such fix: ${pos[1] || '(none given)'} — see \`ac fix list\``);
+
+      if (sub === 'show') { json(fix); return; }
+
+      if (sub === 'status') {
+        const next = pos[2];
+        if (!next) { console.log(fix.status); return; }
+        const updated = await setFixStatus(r, fix.id, next);
+        console.log(`✓ ${updated.id} → ${updated.status}`);
+        return;
+      }
+
+      if (sub === 'accept') {
+        const done = await acceptFix(r, fix.id);
+        markFixComplete({ root: r, id: fix.id });
+        console.log(`✓ accepted ${done.id}${done.archived ? ' → archived' : ''}`);
+        return;
+      }
+
+      die(`unknown: ac fix ${sub} (add | list | show | status | accept)`);
+    }
+
     case 'agents-md': {
       const root = findRoot() || process.cwd();
       const written = writeAgentsMd(root);

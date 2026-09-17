@@ -77,6 +77,18 @@ export function readContext(root, nowSeconds) {
   // reads as "nothing finished" on a milestone where everything passed.
   const verified = phases.filter((p) => p.status === 'verified').length;
 
+  // An in-flight bugfix. A fix INTERRUPTS a phase rather than replacing it, so
+  // both are carried: the status line must be able to say "you are on a fix,
+  // and P15 is still where you were".
+  const fixesDb = readJson(join(root, '.astrocode', 'fixes.json')) || {};
+  const allFixes = Array.isArray(fixesDb.fixes) ? fixesDb.fixes : [];
+  const openFixes = allFixes.filter((f) => f && f.status !== 'accepted');
+  // Newest first — ids are date-prefixed, so a plain string sort is chronological.
+  openFixes.sort((a, b) => String(b.id).localeCompare(String(a.id)));
+  const fix = openFixes[0]
+    ? { id: openFixes[0].id, title: openFixes[0].title, status: openFixes[0].status }
+    : null;
+
   return {
     project: state.project || roadmap.project || null,
     status: state.status || null,
@@ -89,6 +101,7 @@ export function readContext(root, nowSeconds) {
     planned: phase ? existsSync(join(root, '.astrocode', 'phases', phase.slug, 'PLAN.md')) : false,
     discussed: phase ? phaseDiscussed(root, phase.slug) : false,
     done, verified, total: phases.length, blockers, activity,
+    fix, openFixes: openFixes.length,
   };
 }
 
@@ -193,6 +206,13 @@ export function renderSegmentParts(ctx, { lookahead = 2 } = {}) {
   if (track) identity.push(track);
 
   const state = [];
+  // A live bugfix leads the state half: it is what you are actually doing right
+  // now, and the phase behind it is still shown in the identity half.
+  if (ctx.fix) {
+    const label = String(ctx.fix.id).replace(/^\d{4}-\d{2}-\d{2}-/, '');
+    state.push(paint(`⚑ ${label}`, ANSI.red));
+    state.push(paint(ctx.fix.status, ANSI.yellow));
+  }
   if (ctx.activity) state.push(paint(ctx.activity, ANSI.yellow));     // live verb wins
   else if (ctx.phase) state.push(`▸ ${ctx.phase.status}`);
   // Verified (AI-checked) vs accepted (human-signed-off) are different facts and
