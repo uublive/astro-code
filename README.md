@@ -1,8 +1,9 @@
 # astro-code
 
-A lean, multi-developer, **Claude Code 4.8-native** evolution of [GSD](https://github.com/glittercowboy/get-shit-done).
-It runs a `discuss → plan → execute → verify` loop over milestones and phases, kept
-as plain files in your repo — and adds what GSD lacks: real parallelism and safe
+A lean, multi-developer evolution of [GSD](https://github.com/glittercowboy/get-shit-done),
+**host-agnostic** (Claude Code and Codex CLI, from one install). It runs a
+`discuss → plan → execute → verify → accept` loop over milestones and phases, kept as
+plain files in your repo — and adds what GSD lacks: real parallelism and safe
 multi-developer collaboration.
 
 - 🧩 **Tiny core** — one zero-dependency Node CLI (`ac`) for state; the rest is short
@@ -83,10 +84,11 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-accept <phase>     human gate: UAT sign-off, then close the phase
 /astro-milestone          start the next milestone cycle
 /astro-complete-milestone archive the finished milestone
-/astro-config             pick the model (opus/sonnet/haiku) per role
+/astro-config             pick the model tier + reasoning depth per role
 /astro-decision           record an architectural decision into the canon
 /astro-status             where am I, and what's next?
 /astro-statusline         set a rich Claude Code statusline (milestone/phase track, context bar)
+/astro-update             pull the latest astro-code and re-link it everywhere
 /astro-help               short guide: the loop, the commands, and how to go fast
 ```
 
@@ -103,12 +105,20 @@ ac fix list                    # what is open
 ac fix accept <id>             # human gate — archives it
 ac fix accept <id> --agent <n> # machine-signed (ADR-033): records accepted_kind=agent
 ac milestone complete          # archive the current milestone
+ac phase effort <n> deep       # per-phase verify→remediate budget (light|standard|deep)
+ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
+ac models balanced             # per-role model tier + reasoning depth, in one switch
+ac tune                        # apply recommended Claude settings (additive, `--undo`able)
 ac stats                       # token usage (fresh vs cheap cache reads) + wall-clock
 
 # GitFlow (opt-in — off by default):
 ac config set gitflow.enabled true   # turn it on for this project
 ac flow init                   # ensure main + develop exist (creates develop off main)
 ac flow                        # create+switch to feature/m<N> off develop
+ac flow pr                     # push the feature branch, print the develop PR URL
+ac flow release                # push develop, print the develop→main PR URL
+ac flow tag [version]          # tag origin/main once that PR merges
+ac flow hotfix start <name>    # branch off main; `finish` lands it in main+develop + tags
 ```
 
 `ac stats` reads Claude Code's session transcripts and reports the honest breakdown —
@@ -127,18 +137,25 @@ about scope, approach, and edge cases, then writes the decisions to the phase's
 `CONTEXT.md` — which `/astro-plan` reads and obeys. Optional but recommended; trivial
 phases can skip it.
 
-**The fast lane (off-the-cuff work).** `/astro-fast "<a long, unplanned prompt>"` is for
-the way some people work — a big freehand request dumped in one go that shouldn't need
-four commands to land. It **captures the raw prompt verbatim** (the source of truth),
-**distills a lean spec** you can eyeball — a checklist of changes, each traced back to
-the raw prompt, plus an explicit "to clarify / unclassified" list so nothing is silently
-dropped — then goes **straight to execution**: sequential atomic commits and a single
-verify pass, skipping the research/planning fan-out. It defaults the executor to Opus
-(there's no upstream Opus plan feeding it; override with `--model sonnet|haiku`), and a
-**scope guard** stops and escalates anything systemic (new architecture/data-model,
-cross-cutting migration, new dependency, or work that contradicts the canon) back to the
-full `discuss → plan → execute` flow. Like every other path, it produces a **verified**
-phase at best — human `/astro-accept` still closes it.
+**The fast lane (off-the-cuff work).** `/astro-fast "<a long, unplanned prompt>"` is for a
+big freehand request that shouldn't need four commands to land. It **captures the raw
+prompt verbatim** (the source of truth), **distills a lean spec** you can eyeball — a
+checklist of changes each traced back to the prompt, plus an explicit "to clarify" list so
+nothing is silently dropped — then goes **straight to execution**: sequential atomic
+commits and one verify pass, skipping the research fan-out. A **scope guard** escalates
+anything systemic (new architecture, cross-cutting migration, new dependency, or work that
+contradicts the canon) back to the full flow. It produces a **verified** phase at best —
+human `/astro-accept` still closes it.
+
+**Bugs are not phases.** A phase is planned milestone scope; a bug is something that
+turned out to be wrong. Filing one as a phase burns a milestone number on unplanned work
+and leaves the roadmap describing something other than the plan. `/astro-fix "<bug>"`
+keeps bugfixes **beside** the roadmap — a dated id (`2026-09-17-auth-401`), its own
+directory and archive, its own lifecycle (`open → diagnosing → executing → verified →
+accepted`) — and carries one end-to-end: reproduce, diagnose, fix, verify.
+`/astro-fix-accept <id>` is the human gate; a failing verdict sends the fix back to
+`diagnosing` (the bug is still live), never to `rejected`, which means "we've decided not
+to fix this". Accepting archives it. `ac fix list` shows what's open.
 
 **Two gates close a phase.** It moves `executing → verified → complete`: the
 `astro-verifier` agent is the machine gate — adversarial and **plan-blind**, it checks the
@@ -158,22 +175,33 @@ is the single source of truth: with no remote (or before `ac registry init`), a 
 **refuses with an actionable hint** rather than allocating a local number that could
 later collide — set up an `origin` and run `ac registry init` first.
 
-**Models & speed.** `.astrocode/config.json → models` sets a tier per role
-(`opus`/`sonnet`/`haiku` for `integrator`); unset a role to inherit the session model.
-The fastest lever is the **one-command speed switch** — `ac models max|balanced|fast`
-applies a whole per-role preset at once (the ladder is opus→sonnet for every judgement
-role — haiku is scoped to the mechanical wave `integrator`, ADR-027):
-- **balanced** (default) — opus for `planner`+`verifier`, sonnet for the rest, haiku for
-  `integrator`.
-- **fast** — sonnet everywhere **except** the `verifier` (kept opus) and `integrator`
-  (haiku), so going fast can never silently cost correctness: the verify gate still runs
-  the full test suite at full quality. Big phases dominated by execution shrink the most.
-- **max** — every role on opus, except `integrator` (sonnet — mechanical work doesn't
-  need opus either).
+**Models, thinking & effort — three dials.** `.astrocode/config.json` sets a **model
+tier** (`models.<role>`: opus/sonnet) and a **reasoning depth** (`reasoning.<role>`:
+low→max) for each of the six roles. They're independent and both move cost — a cheap
+model at `xhigh` can outspend an expensive one at `low` — so `ac models
+max|balanced|fast` sets the **pair** in one switch:
 
-Per-run without persisting: `/astro-plan <n> --fast` / `/astro-execute <n> --fast`. Fine-tune
-a single role with `ac config set models.executor opus`, or use `/astro-config`. The
-plan/execute workflows apply the resolved tier per agent.
+- **balanced** (default) — opus + `high` for `planner` and `verifier`, sonnet + `medium`
+  elsewhere (the mechanical `discover`/`integrator` stay `low` in every profile).
+- **fast** — sonnet and `low` everywhere **except the verify gate**, which keeps opus +
+  `high`. Going fast can never silently cost correctness. Phases dominated by execution
+  shrink the most.
+- **max** — opus everywhere (`xhigh` on planner/verifier), except `integrator`, which
+  stays sonnet — opus on a cherry-pick is waste.
+
+The tier ladder is **opus→sonnet for every role; haiku is excluded everywhere**. ADR-035
+reverted the old `integrator` carve-out: benchmarking showed haiku's cherry-pick
+*judgement* was sound but its *discipline* was not — it ran a bare `git stash -u` in the
+shared tree and destroyed a completed phase plan. Speed comes from opus→sonnet, never
+from dropping a role to haiku. Hosts clamp depth to their own ceiling (Codex tops out at
+`xhigh`) rather than silently falling back.
+
+The third dial is per-**phase**, not per-role: `ac phase effort <n> light|standard|deep`
+(ADR-022) budgets how many verify→remediate cycles a phase may burn — 0, 1, or several.
+Research stays 3 angles at every level; the budget goes into convergence, not fan-out.
+
+Per-run without persisting: `/astro-plan <n> --fast` / `/astro-execute <n> --fast`.
+Fine-tune one role with `ac config set models.executor opus`, or use `/astro-config`.
 
 **Resilience.** astro-code runs *inside* a Claude Code session (it never shells out to the
 `claude` binary), so model fallback is a session-launch concern, not a config knob: start
@@ -182,15 +210,16 @@ session to sonnet for the rest of the run instead of failing every request mid-p
 it for long autonomous runs.
 
 **GitFlow branching (opt-in).** Off by default — planning stays orthogonal to branching,
-so teams that don't want GitFlow pay zero cost. Turn it on per project with
-`ac config set gitflow.enabled true`, then drive it with two explicit commands (lifecycle
-commands like `ac milestone new` are never touched). `ac flow init` ensures the long-lived
-branches exist, creating `develop` off `main` if missing (idempotent). `ac flow` derives the
-active milestone's branch — `feature/m<N>-<slug>` — and creates+switches to it off `develop`;
-phases then land as commits on that branch. **Run `ac flow` before `/astro-execute`:**
-execution forks one git worktree per task from `HEAD`, so you must be on the feature branch
-first — `ac flow` lands you there and prints a reminder. It's pure local git (no `gh`/`glab`,
-works against any remote or none), and it refuses to touch the orphan `astro-registry` branch.
+so teams that don't want GitFlow pay zero cost. Turn it on with `ac config set
+gitflow.enabled true`, then drive it explicitly (lifecycle commands like `ac milestone new`
+are never touched): `ac flow init` ensures `main` + `develop` exist; `ac flow` creates and
+switches to the active milestone's `feature/m<N>-<slug>` off `develop`; `ac flow pr` and
+`ac flow release` push and print the develop and develop→main PR URLs; `ac flow tag` tags
+`origin/main` once that merges; `ac flow hotfix start|finish` branches off `main` and lands
+the fix in both long-lived branches with a patch tag. **Run `ac flow` before
+`/astro-execute`:** execution forks one worktree per task from `HEAD`, so you must be on
+the feature branch first. It's pure local git (no `gh`/`glab`, any remote or none) and it
+refuses to touch the orphan `astro-registry` branch.
 
 **Canon.** `CONVENTIONS.md` (rules) + `DECISIONS.md` (append-only ADR log) are shared
 on the same orphan branch and injected into every plan/execute agent. `ac decision add`
