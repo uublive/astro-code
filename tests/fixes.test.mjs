@@ -168,3 +168,28 @@ test('completing a milestone archives phases and leaves fixes untouched', async 
     readFileSync(join(paths(root).dir, 'milestones', '1', 'roadmap.json'), 'utf8'));
   assert.ok(!('fixes' in archived), 'the milestone archive is about the milestone only');
 });
+
+// --- who signed (ADR-033 parity with phases) ------------------------------------
+
+test('a plain accept records a HUMAN signature', async () => {
+  const root = project();
+  const fix = await addFix(root, { title: 'a bug', now: NOW });
+  const done = await acceptFix(root, fix.id, { by: 'matteo@example.com' });
+  assert.equal(done.accepted_kind, 'human');
+  assert.equal(done.accepted_by, 'matteo@example.com');
+});
+
+test('an agent accepting on the operator\'s behalf must say so', async () => {
+  // ADR-033: astro-code cannot tell a human sign-off from a machine one — when
+  // the operator accepts, their assistant runs this same command. The record is
+  // only honest if the signer declares it. It matters MORE for a bug than a
+  // phase: a bug wrongly marked fixed stops being looked for.
+  const root = project();
+  const fix = await addFix(root, { title: 'a bug', now: NOW });
+  const done = await acceptFix(root, fix.id, { agent: 'Claude Opus 5' });
+  assert.equal(done.accepted_kind, 'agent');
+  assert.equal(done.accepted_by, 'Claude Opus 5');
+
+  const stored = loadFixes(root).fixes.find((f) => f.id === fix.id);
+  assert.equal(stored.accepted_kind, 'agent', 'and it survives to the durable record');
+});

@@ -63,6 +63,7 @@ const ALLOWED_FLAGS = {
   'registry init': ['force'],
   'phase accept': ['by', 'force', 'agent'],
   'phase reject': ['reason'],
+  'fix accept': ['by', 'agent'],
 };
 
 function checkFlags(key, flags) {
@@ -114,6 +115,10 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase verify <phase>             mark a phase verified (AI gate passed)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase accept <p> --agent <name>  machine-signed sign-off (records accepted_kind=agent)
+  ac fix add "<what is broken>"       open a bugfix (dated id, no phase number)
+  ac fix list                         open fixes
+  ac fix status <id> [<status>]       read or move the lifecycle
+  ac fix accept <id> [--agent <name>] human gate → accepted + archived
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac phase note <phase> ["<text>"]    read/set/clear a durable phase note (survives ROADMAP.md renders)
@@ -200,9 +205,14 @@ async function main() {
       }
 
       if (sub === 'accept') {
-        const done = await acceptFix(r, fix.id);
+        checkFlags('fix accept', flags);
+        const done = await acceptFix(r, fix.id, {
+          by: typeof flags.by === 'string' ? flags.by : gitIdentity(r).owner,
+          agent: typeof flags.agent === 'string' ? flags.agent : '',
+        });
         markFixComplete({ root: r, id: fix.id });
-        console.log(`✓ accepted ${done.id}${done.archived ? ' → archived' : ''}`);
+        const who = done.accepted_kind === 'agent' ? `agent ${done.accepted_by}` : done.accepted_by;
+        console.log(`✓ accepted ${done.id} by ${who}${done.archived ? ' → archived' : ''}`);
         return;
       }
 
