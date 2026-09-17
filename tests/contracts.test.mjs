@@ -93,3 +93,39 @@ test('every /astro-<command> referenced exists as a command file', () => {
   }
   assert.deepEqual(violations, [], `reference(s) to a non-existent /astro-command:\n  ${[...new Set(violations)].join('\n  ')}`);
 });
+
+// The debt register's whole claim over a markdown list is that an item closes because
+// the WORK was accepted — not because someone remembered to tick it off. There is
+// deliberately no `ac debt paid` verb, so the only way to break that invariant is for a
+// command's prose to invent one. Cheap to pin, and the failure mode is silent.
+test('no command tells anyone to mark debt paid by hand', () => {
+  const violations = [];
+  for (const file of mdFiles(COMMANDS)) {
+    const text = read(file);
+    // `ac debt <verb>` where the verb is not one the CLI actually has
+    for (const m of text.matchAll(/ac debt ([a-z-]+)/g)) {
+      const verb = m[1];
+      if (!['add', 'list', 'show', 'score', 'pay', 'drop', 'dismiss'].includes(verb)) {
+        violations.push(`${file.split('/').pop()}: ac debt ${verb}`);
+      }
+    }
+    // …or a status hand-edit that would bypass the acceptance gate entirely
+    if (/debt\.json/.test(text) && /\b(edit|write|set)\b/i.test(text)) {
+      violations.push(`${file.split('/').pop()}: appears to hand-edit debt.json`);
+    }
+  }
+  assert.deepEqual(violations, [], `debt closes via an acceptance gate, never by hand:\n  ${violations.join('\n  ')}`);
+});
+
+test('the debt commands route every item through a fix or a phase, never around them', () => {
+  const pay = read(join(COMMANDS, 'astro-debt-pay.md'));
+  assert.match(pay, /ac debt pay <id>/, 'opens a fix by default');
+  assert.match(pay, /--as phase/, 'routes refactor-sized work to the roadmap');
+  assert.match(pay, /never mark the debt paid by hand/i, 'states the invariant');
+  assert.match(pay, /still real/i, 'checks the item has not already been fixed');
+
+  const review = read(join(COMMANDS, 'astro-debt.md'));
+  assert.match(review, /ac debt dismiss/, 'offers the not-real exit');
+  assert.match(review, /ac debt drop/, 'offers the no-longer-true exit');
+  assert.match(review, /never file debt from this command/i, 'filing stays the verifier’s job');
+});

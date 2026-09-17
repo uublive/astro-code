@@ -335,8 +335,10 @@ export function renderSegmentParts(ctx, { lookahead = 2 } = {}) {
   // "debt 6" would be wallpaper — read once, ignored forever — and worse, it
   // would punish the verifier for filing, which is the behavior we want. So the
   // healthy band renders nothing at all, and the segment appearing IS the signal.
+  // Spelled out rather than glyphed: ⚖ read as noise at statusline size, and every
+  // other segment here is either a word or a symbol with an obvious referent (⎇, $).
   if (ctx.debt && ctx.debt.band !== 'healthy') {
-    state.push(paint(`⚖ ${ctx.debt.pressure}`, ctx.debt.band === 'pay-now' ? ANSI.red : ANSI.yellow));
+    state.push(paint(`debt ${ctx.debt.pressure}`, ctx.debt.band === 'pay-now' ? ANSI.red : ANSI.yellow));
   }
   return { identity: identity.join(' · '), state: state.join(' · ') };
 }

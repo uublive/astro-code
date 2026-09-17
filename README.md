@@ -74,7 +74,8 @@ is coordinated across the team). Drive the loop from Claude Code:
 /astro-kit-test           test a kit WITHOUT publishing: offline static checks, or --tier2 against a local Astro
 /astro-fix "<bug>"        fix a bug WITHOUT burning a milestone phase (reproduce → diagnose → fix → verify)
 /astro-fix-accept <id>    human gate on a fix — confirm the bug is gone, then archive it
-ac debt list              technical debt the verifier filed for you while you worked
+/astro-debt               review the debt register: what's open, is it worth paying, what isn't real
+/astro-debt-pay <id>      take one debt item on and land it, routed to the right treatment
 /astro-phase <name>       add a phase (claims its number)
 /astro-discuss <phase>    talk through decisions/edge cases → CONTEXT.md (before planning)
 /astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)
@@ -185,8 +186,10 @@ Two exits exist for an item that isn't going to be fixed, and the difference is 
 measurement of the *feed* — if dismissals climb, tighten the verifier rather than grinding
 through the register.
 
-**Is it worth paying down?** `ac debt score` answers that with a 0–100 number and the
-evidence behind it. It is explicitly **not** a count: volume is a guilt meter that says
+**Is it worth paying down?** `/astro-debt` (or `ac debt score`) answers that with a 0–100
+number and the evidence behind it, then offers the exits; `/astro-debt-pay <id>` takes one
+on and lands it — checking first that it is still real, routing it to a fix or a phase, and
+closing it only through the acceptance gate. It is explicitly **not** a count: volume is a guilt meter that says
 "pay debt" every day of the project. Instead it weighs what the debt is *charging* you —
 **recurrence** (the verifier hit the same item again in a later phase — you demonstrably
 keep walking over this ground), **concentration** (several items in one file), and age but
@@ -195,8 +198,8 @@ only where it compounds a recurrence — against the **principal** it would cost
 fresh, isolated finding is pure principal and pushes the number *down*. Debt in code you
 never touch reads as zero, which is the honest answer. Under 25 is healthy, 25–49 is worth
 watching, 50+ means the register is charging you about what clearing it would cost. The
-same number rides the statusline as `⚖ nn` — and **only** once it leaves the healthy band,
-so the segment appearing is itself the signal.
+same number rides the statusline as `debt nn` — and **only** once it leaves the healthy
+band, so the segment appearing is itself the signal.
 
 **Two gates close a phase.** It moves `executing → verified → complete`: the
 `astro-verifier` agent is the machine gate — adversarial and **plan-blind**, it checks the

@@ -443,13 +443,13 @@ test('debtPressure survives a missing, empty or malformed register', () => {
 test('the statusline shows debt only once it is actually charging you', () => {
   const base = { milestone: 1, phase: { number: 1, slug: '01-x', name: 'x', status: 'executing' }, phases: [], total: 0 };
   const healthy = renderSegmentParts({ ...base, debt: { open: 9, pressure: 12, band: 'healthy' } });
-  assert.ok(!healthy.state.includes('⚖'), 'a healthy register renders nothing — the segment appearing IS the signal');
+  assert.ok(!/debt \d/.test(healthy.state), 'a healthy register renders nothing — the segment appearing IS the signal');
 
   const watch = renderSegmentParts({ ...base, debt: { open: 2, pressure: 40, band: 'watch' } });
-  assert.match(watch.state, /⚖ 40/);
+  assert.match(watch.state, /debt 40/);
 
   const pay = renderSegmentParts({ ...base, debt: { open: 2, pressure: 70, band: 'pay-now' } });
-  assert.match(pay.state, /⚖ 70/);
+  assert.match(pay.state, /debt 70/);
 });
 
 test('readContext carries debt pressure, and an absent register is healthy', async () => {
