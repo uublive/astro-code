@@ -13,7 +13,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { git } from '../lib/git.mjs';
 import { initPlanning } from '../lib/planning.mjs';
 import { paths } from '../lib/paths.mjs';
-import { claim, readRegistry, markComplete, findNameMatches, initRegistry } from '../lib/registry.mjs';
+import { claim, readRegistry, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete } from '../lib/registry.mjs';
 import { addDecision, canonPull } from '../lib/canon.mjs';
 
 function mkBareRemote() {
@@ -329,4 +329,66 @@ test('ADR-043: an unreachable remote is not reported as an uninitialised registr
   const reg = readRegistry(dir);
   assert.strictEqual(reg.available, false, 'an unread remote must never present as an empty registry');
   assert.strictEqual(reg.unreachable, true);
+});
+
+// --- fixes in the shared registry ------------------------------------------------
+// A fix is recorded so a second developer can see someone is already on the bug,
+// but it claims NO number: ADR-013 already settled that urgent out-of-band work
+// is name-identified, which keeps the path instant and offline-safe.
+
+test('a fix claim lands on the orphan branch with a dated id and no number', () => {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare, 'alice');
+  assert.equal(initRegistry({ root: dir }).ok, true);
+
+  const res = claimFix({ root: dir, id: '2026-09-17-auth-401', name: 'auth 401' });
+  assert.equal(res.ok, true, res.error || '');
+
+  const reg = readRegistry(dir).registry;
+  const fix = reg.claims.find((c) => c.type === 'fix');
+  assert.equal(fix.id, '2026-09-17-auth-401');
+  assert.equal(fix.number, undefined, 'a bug is not planned scope — no number is burned');
+  assert.equal(fix.status, 'active');
+  assert.ok(fix.claimed_at, 'timestamped like every other claim');
+
+  // and it must not disturb phase numbering at all
+  const p = claim({ root: dir, type: 'phase', milestone: 1 });
+  assert.equal(p.number, 1, 'the fix consumed nothing from the phase sequence');
+});
+
+test('a second developer is warned that someone is already on the bug', () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+  assert.equal(initRegistry({ root: alice }).ok, true);
+
+  claimFix({ root: alice, id: '2026-09-17-auth-401', name: 'auth token 401' });
+  const dup = claimFix({ root: bob, id: '2026-09-18-auth-401', name: 'auth token 401' });
+  assert.ok(dup.matches.length > 0,
+    'duplicate-work detection is the whole reason a fix touches the registry');
+});
+
+test('accepting a fix closes its claim without touching phase claims', () => {
+  const bare = mkBareRemote();
+  const dir = mkWorkdir(bare, 'alice');
+  assert.equal(initRegistry({ root: dir }).ok, true);
+  claim({ root: dir, type: 'phase', milestone: 1 });
+  claimFix({ root: dir, id: '2026-09-17-auth-401', name: 'auth 401' });
+
+  assert.equal(markFixComplete({ root: dir, id: '2026-09-17-auth-401' }).ok, true);
+
+  const reg = readRegistry(dir).registry;
+  assert.equal(reg.claims.find((c) => c.type === 'fix').status, 'complete');
+  assert.equal(reg.claims.find((c) => c.type === 'phase').status, 'active',
+    'closing a fix must not close phase work');
+});
+
+test('a fix records locally when the registry is unreachable (ADR-013 offline path)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-offline-'));
+  git(['init', '--quiet'], { cwd: dir });
+  initPlanning(dir, { name: 'offline' });      // no origin remote at all
+  const res = claimFix({ root: dir, id: '2026-09-17-urgent', name: 'urgent' });
+  assert.equal(res.ok, false);
+  assert.equal(res.source, 'local', 'offline is NOT an error for a fix — the push detects collisions');
+  assert.deepEqual(res.matches, []);
 });

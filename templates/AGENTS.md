@@ -20,7 +20,15 @@ map is worse than no map.
 | `verify <phase>` | an adversarial check that the phase's **goal** was met |
 | `accept <phase>` | human sign-off; only this marks a phase `complete` |
 
+**Bugs are not phases.** A phase is planned milestone scope; a bug is something that
+turned out to be wrong. Filing one as a phase burns a milestone number on unplanned work
+and leaves the roadmap describing something other than the plan. Use `/astro-fix` (or
+`ac fix add`), which keeps bugs beside the roadmap with a dated id
+(`2026-09-17-auth-401`), its own directory, and its own archive. Accepting a fix archives
+it. Run `ac fix list` to see what is open.
+
 Phase lifecycle: `pending → executing → verified → complete` (plus `rejected`).
+Fix lifecycle: `open → diagnosing → executing → verified → accepted`.
 `verified` means the AI checked it. `complete` means a human accepted it. They are
 different claims and must not be conflated.
 
