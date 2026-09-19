@@ -332,3 +332,10 @@ _2026-09-19_
 
 **Why:** A convention nobody checks is the known failure mode, but the only thing a build gate can mechanically see is that a file changed when a migration changed — forgeable by touching the file, and false-failing on correct work built differently, which is the exact structural check astro-criteria-author is forbidden to write. Behavioural criteria fail the phase instead of emitting a warning, matching the precedent that debt is a register the verifier fills (ADR-045) and kit parity is proven as falsifiable criteria (ADR-025). The advisory check exists solely because criteria never fire in /astro-fast, where the verifier self-derives its bar.
 
+## ADR-051 — Two run-contract choices this plan settled: RUN_SEED strict-equality consent and a bounded 2-attempt repair budget, plus adopt's wrap-never-rewrite/ask-before-rename rule for an existing seed and web service name
+_2026-09-19_
+
+**Why:** ADR-048/049/050 left these specifics to the planner rather than pinning them; phase 16's plan pins them once here so parallel tasks (t1-t8) converge on identical values instead of each task inventing its own, and the choices are recorded where future phases can find the reasoning rather than only the pinned-values table.
+
+**Rejected:** SEED/SEED_ENV as the consent variable name (confusable with an environment name like NODE_ENV); a multi-condition safety ladder for consent (rots first and is unreviewable across arbitrary stacks); unbounded repair retry (C7 fails it, and a looping agent is indistinguishable from a stuck one); editing an adopted project's own seed command in place (breaks the command a developer types daily, C6); silently renaming an existing web service to 'app' (breaks the project's CI without telling anyone)
+
