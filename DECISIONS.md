@@ -317,3 +317,8 @@ _2026-09-17_
 
 **Rejected:** One drop verb with a free-text reason; deleting dismissed items outright
 
+## ADR-048 — The runnable-project contract is Docker convention, not a manifest: Dockerfile + docker-compose.yml with a service named 'app', a healthcheck, and a container port. It is stated in a RUN-CONTRACT.md copied verbatim into the generated project AND distilled into that project's CONVENTIONS.md (mirroring KIT-CONTRACT.md). Scaffolding is agent-authored per stack with no templates, and lands in the command layer because lib/ must not write outside .astrocode/.
+_2026-09-19_
+
+**Why:** The fleet must find the app without knowing astro-code exists, and real Docker semantics stay true even if astro-code is removed. A separate manifest is a second source of truth that can claim 'start with X' while compose says Y, with the drift invisible until a preview comes up dead — the compose file cannot lie that way because booting it IS the check. With no templates, RUN-CONTRACT.md is the only thing keeping agent-authored output consistent across projects.
+
