@@ -475,3 +475,67 @@ test('astro-new-project.md skips the declaration and distilled rule for library/
     'astro-new-project.md must keep an explicit library/CLI skip instruction covering the fixtures declaration and distilled rule',
   );
 });
+
+// ── ADR-050/052 (C4): the fixture-currency check must stay wired into both execution
+// lanes. This is a regression guard, not new behaviour — deleting either invocation
+// (t4's step 4e in astro-execute.md, or t5's step 8b in astro-fast.md) must turn this
+// suite red, because a warning nobody triggers is indistinguishable from no warning.
+
+test('astro-execute.md and astro-fast.md both invoke `ac fixtures check`', () => {
+  for (const name of ['astro-execute.md', 'astro-fast.md']) {
+    assert.ok(
+      cmd(name).includes('ac fixtures check'),
+      `${name} must invoke \`ac fixtures check\` — deleting the invocation must not go unnoticed`,
+    );
+  }
+});
+
+test('astro-execute.md runs the fixture check after the wave workflow and before the verdict', () => {
+  const src = cmd('astro-execute.md');
+  const workflowIdx = src.indexOf('Workflow({');
+  const checkIdx = src.indexOf('ac fixtures check');
+  const verdictIdx = src.indexOf('5. Clear the live status');
+  assert.ok(workflowIdx !== -1, 'astro-execute.md must still call Workflow({...})');
+  assert.ok(checkIdx !== -1, 'astro-execute.md must invoke `ac fixtures check`');
+  assert.ok(verdictIdx !== -1, 'astro-execute.md must still carry the step-5 verdict section');
+  assert.ok(
+    workflowIdx < checkIdx,
+    'the fixture check must run AFTER the Workflow({...}) call — it needs a stamped diff the waves produced, which does not exist before they run',
+  );
+  assert.ok(
+    checkIdx < verdictIdx,
+    'the fixture check must run BEFORE step 5 reports the verdict, so its output can be folded into that summary',
+  );
+});
+
+test('astro-fast.md runs the fixture check after the step-8 execution block and covers both tiers', () => {
+  const src = cmd('astro-fast.md');
+  const step8Idx = src.search(/^8\./m);
+  const checkIdx = src.indexOf('ac fixtures check');
+  const step9Idx = src.search(/^9\./m);
+  assert.ok(step8Idx !== -1, 'astro-fast.md must still carry the step-8 execution block');
+  assert.ok(checkIdx !== -1, 'astro-fast.md must invoke `ac fixtures check`');
+  assert.ok(step9Idx !== -1, 'astro-fast.md must still carry the step-9 report');
+  assert.ok(
+    step8Idx < checkIdx && checkIdx < step9Idx,
+    'the fixture check must run after the step-8 execution block and before step 9 reports',
+  );
+  // One wording must cover BOTH tiers (the Workflow-tool call and the no-Workflow
+  // Agent-tool fallback) — a tier-specific step is exactly how the fallback silently
+  // skips the check.
+  const window = src.slice(step8Idx, step9Idx);
+  assert.ok(
+    /whichever tier ran/i.test(window),
+    'astro-fast.md must phrase the fixture check to cover whichever tier ran step 8 — a tier-specific wording lets the fallback skip it silently',
+  );
+});
+
+test("both lanes state the fixture-check output is folded into the run's final summary", () => {
+  for (const name of ['astro-execute.md', 'astro-fast.md']) {
+    const src = cmd(name);
+    assert.ok(
+      /fold[\s\S]{0,20}output[\s\S]{0,20}verbatim/i.test(src),
+      `${name} must state that the fixture check's output is folded verbatim into the final summary, not reduced to a silent side effect`,
+    );
+  }
+});
