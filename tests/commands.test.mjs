@@ -355,3 +355,71 @@ test('ADR-034: the ordering trap is documented where it bites', () => {
   // And the status command should steer the user there proactively.
   assert.ok(/ADR-032|pipeline/i.test(cmd('astro-status.md')), 'astro-status.md should keep the pipeline fed');
 });
+
+// ── ADR-048/050: the run-contract's three outcomes must stay distinguishable ─────────
+//
+// With no manifest and no template (D5), RUN-CONTRACT.md and the two scaffolding
+// commands are the ONLY consistency mechanism between generated projects. These guards
+// are cheap static checks only — they protect against silent deletion of load-bearing
+// prose (C7's three outcomes reading identically, or the pinned values drifting between
+// the contract doc and the commands that implement it). They do NOT prove the cold
+// start actually works; that proof is t10/t11's live rehearsal.
+
+const RUN_CONTRACT_MD = join(dirname(fileURLToPath(import.meta.url)), '..', 'templates', 'RUN-CONTRACT.md');
+const runContractSrc = () => readFileSync(RUN_CONTRACT_MD, 'utf8');
+
+test('ADR-048/050: astro-new-project and astro-adopt keep the three cold-start outcomes worded distinctly', () => {
+  for (const name of ['astro-new-project.md', 'astro-adopt.md']) {
+    const src = cmd(name);
+    assert.ok(src.includes('Cold start verified'), `${name} must report "Cold start verified" on success`);
+    assert.ok(
+      src.includes('Cold start NOT verified'),
+      `${name} must report "Cold start NOT verified" when the boot could not be attempted (e.g. Docker unavailable)`,
+    );
+    assert.ok(
+      src.includes('Cold start FAILED'),
+      `${name} must report "Cold start FAILED" when a boot was attempted and did not succeed`,
+    );
+    // C7 fails the phase if these three outcomes read the same — a caller (human or
+    // fleet automation) must be able to tell "never ran" apart from "ran and broke".
+    const stems = ['Cold start verified', 'Cold start NOT verified', 'Cold start FAILED'];
+    assert.equal(new Set(stems).size, 3, 'sanity: the three stems this test asserts on must themselves be distinct');
+  }
+});
+
+test('ADR-051: astro-new-project and astro-adopt name the pinned RUN_SEED consent variable', () => {
+  for (const name of ['astro-new-project.md', 'astro-adopt.md']) {
+    const src = cmd(name);
+    assert.ok(src.includes('RUN_SEED'), `${name} must name the pinned RUN_SEED consent variable`);
+  }
+});
+
+test('ADR-051: the service_completed_successfully edge is named where it is wired', () => {
+  // astro-new-project.md deliberately does NOT restate RUN-CONTRACT.md's dependency
+  // edges verbatim ("a restatement drifts out of sync with the source of truth") — it
+  // points at the contract as the single source of truth instead. astro-adopt.md wires
+  // an EXISTING project's compose file directly, so it must state the edge explicitly.
+  assert.ok(
+    cmd('astro-adopt.md').includes('service_completed_successfully'),
+    'astro-adopt.md must name the app.depends_on.seed: service_completed_successfully edge',
+  );
+  assert.ok(
+    runContractSrc().includes('service_completed_successfully'),
+    'templates/RUN-CONTRACT.md — the source of truth astro-new-project.md defers to — must name the edge',
+  );
+});
+
+test('ADR-048/051: templates/RUN-CONTRACT.md states the pinned service names, RUN_SEED, the Compose 2.1.1 floor, and the --reset fork', () => {
+  const src = runContractSrc();
+  assert.ok(/\bapp\b/.test(src), 'RUN-CONTRACT.md must name the `app` web service');
+  assert.ok(/\bseed\b/.test(src), 'RUN-CONTRACT.md must name the `seed` service');
+  assert.ok(src.includes('RUN_SEED'), 'RUN-CONTRACT.md must name the pinned RUN_SEED consent variable');
+  assert.ok(
+    src.includes('2.1.1'),
+    'RUN-CONTRACT.md must state the Docker Compose v2.1.1+ floor below which service_completed_successfully is silently ignored',
+  );
+  assert.ok(
+    src.includes('--reset'),
+    'RUN-CONTRACT.md must state the --reset fork between local dev (persistent, no reset) and preview (ephemeral, reset)',
+  );
+});

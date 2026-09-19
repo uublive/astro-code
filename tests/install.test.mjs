@@ -157,6 +157,14 @@ test('install ships templates/forge-knowledge.md, and registers ONLY real comman
     // placed in commands/ or agents/ would silently register as a phantom command/agent.
     assert.ok(!registeredCommands.includes('forge-knowledge.md'), 'forge-knowledge.md is not a registered command');
     assert.ok(!registeredAgents.includes('forge-knowledge.md'), 'forge-knowledge.md is not a registered agent');
+
+    // RUN-CONTRACT.md (ADR-048) ships the same way — an installed user must be able to
+    // read the run contract without holding a pointer to it as a command or agent.
+    const shippedContract = join(fakeHome, '.astro', 'code', 'templates', 'RUN-CONTRACT.md');
+    assert.ok(existsSync(shippedContract), 'RUN-CONTRACT.md ships under ~/.astro/code/templates');
+    assert.ok(readFileSync(shippedContract, 'utf8').trim().length > 0, 'shipped RUN-CONTRACT.md is non-empty');
+    assert.ok(!registeredCommands.includes('RUN-CONTRACT.md'), 'RUN-CONTRACT.md is not a registered command');
+    assert.ok(!registeredAgents.includes('RUN-CONTRACT.md'), 'RUN-CONTRACT.md is not a registered agent');
   });
 });
 
