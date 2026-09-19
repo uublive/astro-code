@@ -327,3 +327,8 @@ _2026-09-19_
 
 **Why:** Ephemeral previews are only better than a staging box if every preview starts from an identical known state, which requires the reset; but wiping a local developer's data on 'docker compose up' is a bug, and the volume already distinguishes the two cases. NODE_ENV reaching production as 'development' is a common accident and an empty-looking database is not evidence you may write to it, so consent must be positive and structural. A staged binary database produced a patch that could not be replayed and killed a run outright.
 
+## ADR-050 — Fixture currency is enforced by a behavioural CRITERIA.md entry the verifier actually runs (the cold start must come up holding the state the phase's acceptance items assume), backed by the rule in CONVENTIONS.md and an advisory diff check for lanes that skip verify. Explicitly NOT a hard build gate. ACCEPTANCE.md items must name the precondition state they assume.
+_2026-09-19_
+
+**Why:** A convention nobody checks is the known failure mode, but the only thing a build gate can mechanically see is that a file changed when a migration changed — forgeable by touching the file, and false-failing on correct work built differently, which is the exact structural check astro-criteria-author is forbidden to write. Behavioural criteria fail the phase instead of emitting a warning, matching the precedent that debt is a register the verifier fills (ADR-045) and kit parity is proven as falsifiable criteria (ADR-025). The advisory check exists solely because criteria never fire in /astro-fast, where the verifier self-derives its bar.
+
