@@ -1775,6 +1775,30 @@ test('t9 (phase-17): astro-planner.md ACCEPTANCE.md paragraph requires items to 
   )
 })
 
+test('t10 (phase-17): astro-planner.md ACCEPTANCE.md paragraph references ADR-050', () => {
+  const src = readFileSync(PLANNER_FILE, 'utf8')
+
+  // Same idiom as the phase-08 guards: the load-bearing prose must cite the ADR
+  // it implements, so a future rewrite that drifts the wording still points a
+  // reader at the decision behind it.
+  assert.ok(
+    /ADR-050/.test(src),
+    'astro-planner.md ACCEPTANCE.md paragraph must reference ADR-050',
+  )
+})
+
+test('t10 (phase-17): astro-planner.md ACCEPTANCE.md paragraph names the data-model-change failure it prevents', () => {
+  const src = readFileSync(PLANNER_FILE, 'utf8')
+
+  // The rule exists to stop a phase that changes the data model from passing
+  // UAT against fixtures the model has since outgrown — assert that WHY survives
+  // alongside the WHAT, so deleting just the reasoning still turns this red.
+  assert.ok(
+    /data model/i.test(src) && /precondition state/i.test(src),
+    'astro-planner.md ACCEPTANCE.md paragraph must name the data-model-change failure the precondition rule prevents',
+  )
+})
+
 // ── t2 (phase-08): plan-phase.mjs Synthesize prompt carries ADR-018 + self-check ──
 //
 // ADR-018: RED-test tasks must never statically import a missing symbol — the
