@@ -18,7 +18,10 @@ declare:
 Also write `.astrocode/phases/<slug>/ACCEPTANCE.md`: a short, user-facing UAT
 checklist of "the user can …" statements that a human will confirm before the phase
 closes (acceptance criteria, not unit tests). Keep it to the handful that prove the
-phase goal is really met.
+phase goal is really met. Each item must name the precondition state it assumes —
+the data the app must already hold for the item to be checkable — so a phase that
+changes the data model cannot pass UAT against fixtures that no longer cover it
+(ADR-050).
 
 Principles:
 - **Small, independently committable tasks.** Maximize tasks with no dependencies

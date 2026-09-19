@@ -1757,6 +1757,24 @@ test('t1 (phase-08): astro-planner.md Principles bullet allows test-after serial
   )
 })
 
+// ── t9 (phase-17): astro-planner.md ACCEPTANCE.md paragraph names the precondition rule ──
+//
+// ADR-050: ACCEPTANCE.md items must name the precondition state they assume — the
+// data the app must already hold for the item to be checkable. Without this, a
+// phase that changes the data model can pass UAT against fixtures the model has
+// since outgrown, which is exactly the "convention nobody checks" failure phase 17
+// exists to close at the planning layer. Same static-source-check idiom as the
+// phase-08 guards above.
+
+test('t9 (phase-17): astro-planner.md ACCEPTANCE.md paragraph requires items to name their precondition state', () => {
+  const src = readFileSync(PLANNER_FILE, 'utf8')
+
+  assert.ok(
+    /precondition state/i.test(src),
+    'astro-planner.md ACCEPTANCE.md paragraph must require items to name "the precondition state" they assume (ADR-050)',
+  )
+})
+
 // ── t2 (phase-08): plan-phase.mjs Synthesize prompt carries ADR-018 + self-check ──
 //
 // ADR-018: RED-test tasks must never statically import a missing symbol — the
