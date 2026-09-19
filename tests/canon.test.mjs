@@ -464,3 +464,120 @@ test('CLI: a decision collision and a duplicate report never look like a clean p
   const noDupes = runCli(['canon', 'dedupe'], dave);
   assert.match(noDupes.stdout, /no exact-duplicate/i);
 });
+
+// ── remediation: staleness (nobody edited MY copy) must fast-forward, not refuse ──
+//
+// The refusal added for C1/D1 compared local against the LIVE registry, which reads
+// identically whether local was genuinely EDITED or is simply STALE — the registry
+// moved on since this copy's own last successful sync, but nothing here ever touched
+// the file. A pull from an unmodified copy stalling on that refusal, with the tool's
+// own advertised fix (`ac canon push`) then republishing the stale copy and erasing
+// the teammate's edit, is exactly the C2 failure mode.
+test('a pull from an unmodified copy fast-forwards past a registry that moved on since its own last sync, and never refuses', () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  writeFileSync(paths(alice).conventions, '# Conventions\n\n- Max 300 lines per file.\n');
+  assert.equal(canonPush(alice).ok, true);
+
+  assert.equal(canonPull(bob).ok, true); // bob syncs, never edits locally afterwards
+
+  writeFileSync(paths(bob).conventions, '# Conventions\n\n- Max 300 lines per file.\n- Prefer pure functions.\n');
+  assert.equal(canonPush(bob).ok, true); // the registry has now moved on since alice's last sync
+
+  const res = canonPull(alice); // alice never touched her copy since her own publish
+
+  assert.equal(res.refused.length, 0, 'an unedited copy must never refuse a pull just because the registry moved on');
+  assert.equal(res.files['CONVENTIONS.md'].status, 'updated');
+  assert.equal(
+    readFileSync(paths(alice).conventions, 'utf8'),
+    readFileSync(paths(bob).conventions, 'utf8'),
+    'alice must fast-forward to the newer registry content',
+  );
+});
+
+// ── remediation: the same decision under a DIFFERENT id must converge, not duplicate ──
+//
+// C3's exact reproduction: bob hand-writes the SAME decision alice published, but
+// under a DIFFERENT ADR number (not the same id with a dash/date variant, which t5
+// already covered) — the ordinary case of two machines that never coordinated
+// numbers. `mergeDecisions` only ever compared same-id entries, so this landed as a
+// "local-only" preservation (a second copy) instead of a convergence.
+test('the same decision hand-written under a DIFFERENT ADR number converges to one entry, not two', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  const a = await addDecision(alice, { title: 'Never hand-edit state.json', why: 'locks', date: '2026-09-10' });
+  assert.equal(a.source, 'remote', a.error || '');
+  assert.notEqual(a.id, 'ADR-007');
+
+  // bob never pulled — same title/body, but hand-written under a DIFFERENT id, a
+  // different date stamp, and a plain hyphen instead of an em dash.
+  writeFileSync(
+    paths(bob).decisions,
+    `# Decisions\n\n## ADR-007 - Never hand-edit state.json\n_2026-09-11_\n\n**Why:** locks\n\n`,
+  );
+  // a genuinely local-only decision bob has that alice's side has never seen.
+  writeFileSync(
+    paths(bob).decisions,
+    readFileSync(paths(bob).decisions, 'utf8') +
+      '\n## ADR-009 — Bob-only decision\n_2026-09-11_\n\n**Why:** local to bob\n\n',
+  );
+
+  const res = canonPull(bob);
+  assert.deepEqual(res.collisions, [], 'a different-number hand-written copy of the same decision is not a collision');
+  assert.deepEqual(res.duplicates, [], 'converging must not leave a duplicate pair behind');
+  assert.deepEqual(res.preserved, ['ADR-009'], 'only the genuinely local-only decision is preserved, not the converged one');
+
+  await addDecision(bob, { title: 'Something else' });
+  const bobText = readFileSync(paths(bob).decisions, 'utf8');
+  assert.equal(
+    (bobText.match(/Never hand-edit state\.json/g) || []).length,
+    1,
+    'exactly one entry for the converged decision on bob\'s side',
+  );
+
+  assert.equal(canonPull(alice).ok, true);
+  const aliceText = readFileSync(paths(alice).decisions, 'utf8');
+  assert.equal(
+    (aliceText.match(/Never hand-edit state\.json/g) || []).length,
+    1,
+    'exactly one entry for the converged decision on alice\'s side too',
+  );
+});
+
+// ── remediation: an unrelated `decision add` must never republish a STALE copy ──
+//
+// C7's exact reproduction: bob publishes a newer CONVENTIONS.md; alice's own copy is
+// unedited since HER last publish (just behind the registry). Recording an unrelated
+// decision compared alice's local copy against the LIVE registry — which now differs
+// because bob moved it on, not because alice edited anything — and republished
+// alice's stale copy, discarding bob's edit from the registry entirely.
+test('recording a decision never republishes a stale CONVENTIONS.md over a teammate\'s newer publish', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  writeFileSync(paths(alice).conventions, '# Conventions\n\n- Max 300 lines per file.\n');
+  assert.equal(canonPush(alice).ok, true); // alice's own last sync — her copy matches the registry
+
+  assert.equal(canonPull(bob).ok, true);
+  writeFileSync(paths(bob).conventions, '# Conventions\n\n- Max 300 lines per file.\n- Prefer pure functions.\n');
+  assert.equal(canonPush(bob).ok, true); // the registry now holds bob's line; alice's copy is merely stale
+
+  const res = await addDecision(alice, { title: 'Unrelated three' });
+  assert.equal(res.source, 'remote', res.error || '');
+  assert.equal(res.publishedConventions, false, 'alice never edited her copy — recording a decision must not publish it');
+
+  // the registry must still hold bob's line — read it via a fresh clone that has
+  // never touched CONVENTIONS.md at all, so its pull reflects the registry exactly.
+  const carol = mkWorkdir(bare, 'carol');
+  assert.equal(canonPull(carol).ok, true);
+  assert.match(
+    readFileSync(paths(carol).conventions, 'utf8'),
+    /Prefer pure functions/,
+    "bob's published line must still be on the registry — alice's stale copy must not have overwritten it",
+  );
+});
