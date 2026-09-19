@@ -70,6 +70,17 @@ test('ADR-029: the flag check runs BEFORE the command does any work', () => {
   assert.doesNotMatch(res.stderr, /no coordinated remote/i);
 });
 
+test('ADR-029: `ac canon pull --nope` (typo) exits non-zero instead of silently pulling', () => {
+  // `pull` never called `checkFlags` and had no entry in `ALLOWED_FLAGS` at all, so a
+  // typo'd flag here degraded to the default — the exact hazard this phase exists to
+  // harden, on the one verb it exists to harden (phase 18 t3).
+  const dir = mkWorkdir(null);
+  const res = run(['canon', 'pull', '--nope'], dir);
+  assert.notStrictEqual(res.status, 0, 'a typo\'d flag must not exit 0');
+  assert.match(res.stderr, /unknown flag/i);
+  assert.match(res.stderr, /--nope/, 'the error must name the offending flag');
+});
+
 test('ADR-029: a typo\'d `ac decision add` flag rejects and writes NO decision', () => {
   const dir = mkWorkdir(null);
   const res = run(['decision', 'add', 'Some choice', '--wy', 'because'], dir);

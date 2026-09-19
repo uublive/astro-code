@@ -63,6 +63,10 @@ const die = (msg) => {
 // read-only verb (`ac status --verbose`) stays harmless, so it stays permitted —
 // blanket enforcement would break existing invocations for no safety gain.
 const ALLOWED_FLAGS = {
+  // No flags do anything here yet — this entry exists so a typo'd flag on the one
+  // verb phase 18 exists to harden dies loudly instead of silently degrading to
+  // the default (ADR-029). `t9` extends this to `['force']` once one does.
+  'canon pull': [],
   'canon push': ['dry-run'],
   'decision add': ['why', 'rejected'],
   'registry init': ['force'],
@@ -989,6 +993,7 @@ async function main() {
     case 'canon': {
       const r = root();
       if (pos[0] === 'pull') {
+        checkFlags('canon pull', flags);
         const res = canonPull(r);
         if (!res.ok) console.error('• no coordinated remote — canon is local-only');
         else {
