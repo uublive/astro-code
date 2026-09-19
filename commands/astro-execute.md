@@ -21,7 +21,9 @@ Execute phase `$ARGUMENTS`.
    0 of 11.
 
 3. Refresh the team canon best-effort (`ac canon pull`). The workflow's agents read
-   the canon + CONTEXT.md from disk — you do NOT pass them as args.
+   the canon + CONTEXT.md from disk — you do NOT pass them as args. A refusal or collision
+   warning is **not** a failure to retry or force — report it in the run summary and
+   continue; never pass `--force` from an agent.
 4. Run the execution fan-out. Use the **best available** mechanism (graceful fallback):
    - **Workflow tool available (preferred):** keep `args` to small scalars only — pass
      it as a real JSON object, never a string:

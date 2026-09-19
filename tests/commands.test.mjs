@@ -539,3 +539,22 @@ test("both lanes state the fixture-check output is folded into the run's final s
     );
   }
 });
+
+test('astro-execute.md tells the agent a canon-pull refusal or collision is not a failure to retry or force', () => {
+  const src = cmd('astro-execute.md');
+  const pullIdx = src.indexOf('ac canon pull');
+  assert.ok(pullIdx !== -1, 'astro-execute.md must still call `ac canon pull` in its canon-refresh step');
+  const window = src.slice(pullIdx, pullIdx + 600).replace(/\s+/g, ' ');
+  assert.ok(
+    /refusal or collision warning is \*\*not\*\* a failure to retry or force/i.test(window),
+    'astro-execute.md must state that a refusal or collision warning is NOT a failure to retry or force',
+  );
+  assert.ok(
+    /report it in the run summary and continue/i.test(window),
+    'astro-execute.md must instruct the agent to report the refusal/collision in the run summary and continue',
+  );
+  assert.ok(
+    /never pass `--force` from an agent/i.test(window),
+    'astro-execute.md must forbid an agent from passing `--force` to `ac canon pull`',
+  );
+});
