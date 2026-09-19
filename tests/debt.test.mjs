@@ -12,7 +12,7 @@
 // (REQ-006) quietly acquires a back door.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -468,4 +468,60 @@ test('an absent debt.json reads as an empty register, not a crash', () => {
   assert.deepEqual(loadDebt(root).debt, []);
   assert.deepEqual(openDebt(root), []);
   assert.deepEqual(staleDebt(root), []);
+});
+
+// --- absent vs damaged ------------------------------------------------------------
+//
+// The distinction these four pin is the register's whole claim to be trustworthy. An
+// absent file is a true empty (it is created lazily by the first filing); a damaged one
+// read as empty is a confident lie, and it is the exact failure this project shipped on
+// 2026-09-18 — a stray `if ` on line 1 made six filed items invisible behind "no open
+// debt", in the astro-code register itself.
+
+const registerPath = (root) => join(root, '.astrocode', 'debt.json');
+
+test('a DAMAGED register is an error, never an empty one', async () => {
+  const root = project();
+  await addDebt(root, { title: 'the one item that must not vanish', now: NOW });
+  writeFileSync(registerPath(root), 'if ' + readFileSync(registerPath(root), 'utf8'));
+
+  for (const read of [() => loadDebt(root), () => openDebt(root), () => staleDebt(root), () => debtScore(root)]) {
+    assert.throws(read, /damaged and was NOT read as empty/);
+  }
+});
+
+test('a write onto a damaged register refuses rather than serializing over it', async () => {
+  const root = project();
+  await addDebt(root, { title: 'the one item that must not vanish', now: NOW });
+  const damaged = 'if ' + readFileSync(registerPath(root), 'utf8');
+  writeFileSync(registerPath(root), damaged);
+
+  // Every mutator, because each one re-reads under the lock and writes the result back:
+  // accepting the empty fallback here is how an unreadable register becomes a lost one.
+  await assert.rejects(addDebt(root, { title: 'a later finding', now: NOW }), /damaged/);
+  await assert.rejects(payDebt(root, 'whatever', { kind: 'fix', workRef: 'f1' }), /damaged/);
+  await assert.rejects(dropDebt(root, 'whatever', { reason: 'r' }), /damaged/);
+  await assert.rejects(dismissDebt(root, 'whatever', { reason: 'r' }), /damaged/);
+  await assert.rejects(closeDebtFor(root, { kind: 'fix', workRef: 'f1' }), /damaged/);
+  await assert.rejects(fileFindings(root, [{ title: 'x', outsideCriteria: true }]), /damaged/);
+
+  assert.equal(readFileSync(registerPath(root), 'utf8'), damaged, 'the file is untouched');
+});
+
+test('valid JSON that is not a register is refused too — same lie, different route', async () => {
+  const root = project();
+  await addDebt(root, { title: 'the one item that must not vanish', now: NOW });
+  writeFileSync(registerPath(root), JSON.stringify({ version: 1, items: [] }));
+  assert.throws(() => loadDebt(root), /not a register/);
+});
+
+test('the error names the file and how to get it back', async () => {
+  const root = project();
+  await addDebt(root, { title: 'x', now: NOW });
+  writeFileSync(registerPath(root), '{oops');
+  assert.throws(() => loadDebt(root), (e) => {
+    assert.match(e.message, new RegExp(registerPath(root).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.match(e.message, /git checkout/);
+    return true;
+  });
 });
