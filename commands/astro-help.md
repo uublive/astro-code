@@ -34,7 +34,7 @@ devs never collide.
   escalates anything systemic back to the full loop. Verified at best — `/astro-accept` closes it.
 
 **Set up & navigate:**
-- `/astro-new-project` — scaffold a new project · `/astro-adopt` — adopt an existing codebase
+- `/astro-new-project` — scaffold a new project · `/astro-adopt` — adopt an existing codebase; both give an app-shaped project a one-command container contract (`docker compose up` → healthy, seeded app) and leave `RUN-CONTRACT.md` behind
 - `/astro-kit-new` — start a new Astro kit (standalone kit project: manifest v4 + recipe + build tooling)
 - `/astro-kit-publish` — publish a kit to a hosted Astro instance (zip with `kit.json` inside → the instance's kit registry)
 - `/astro-kit-convert <source path>` — convert an existing non-kit implementation into a standard Astro kit at verified feature parity with the original
