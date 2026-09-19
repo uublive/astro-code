@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 7,
-  "active_phase": null,
+  "active_phase": "17-fixtures-stay-current-as-the-data-model-changes",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-09-19T21:01:27.333Z",
+  "updated_at": "2026-09-19T21:16:14.949Z",
   "activity": null
 }
