@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 7,
-  "active_phase": null,
+  "active_phase": "16-a-project-is-born-runnable-with-fixtures",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-09-19T19:40:35.246Z",
+  "updated_at": "2026-09-19T20:03:21.479Z",
   "activity": null
 }
