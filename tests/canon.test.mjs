@@ -8,12 +8,18 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 import { git } from '../lib/git.mjs';
 import { initPlanning } from '../lib/planning.mjs';
 import { paths } from '../lib/paths.mjs';
 import { addDecision, canonPull, canonPush, canonDedupe } from '../lib/canon.mjs';
+
+const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
+const AC = join(FRAMEWORK, 'bin', 'ac.mjs');
+const runCli = (args, cwd) => spawnSync(process.execPath, [AC, ...args], { cwd, encoding: 'utf8' });
 
 function mkBareRemote() {
   const bare = mkdtempSync(join(tmpdir(), 'ac-origin-')) + '/origin.git';
@@ -357,4 +363,104 @@ test('near-duplicate decisions survive both a pull and the explicit repair verb'
   onDisk = readFileSync(paths(bob).decisions, 'utf8');
   assert.match(onDisk, /locks prevent races/);
   assert.match(onDisk, /locks prevent retries/);
+});
+
+// ── t10: CLI-level proof the two runs are distinguishable (D7/C9) ────────────
+//
+// Both production incidents printed the SAME success line whether a pull changed
+// anything or not. These tests exercise `bin/ac.mjs` as a subprocess — never the
+// library directly — so a regression that only breaks the CLI's own formatting
+// (as opposed to `canonPull`'s return value) is caught here too.
+test('CLI: an actual pull and a no-op pull print different output', () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  writeFileSync(paths(alice).conventions, '# Conventions\n\n- Max 300 lines per file.\n');
+  assert.equal(runCli(['canon', 'push'], alice).status, 0);
+
+  const real = runCli(['canon', 'pull'], bob);
+  const noop = runCli(['canon', 'pull'], bob);
+
+  assert.equal(real.status, 0);
+  assert.equal(noop.status, 0);
+  assert.notEqual(real.stdout + real.stderr, noop.stdout + noop.stderr, 'a real pull and a no-op pull must not print the same thing');
+  assert.match(real.stdout, /updated/i, 'the real pull must say something changed');
+  assert.match(noop.stdout, /already up to date/i, 'the no-op pull must plainly say nothing changed');
+  assert.doesNotMatch(noop.stdout, /updated/i, 'a no-op run must never claim anything was updated');
+});
+
+// ── t10: a refused pull is distinguishable from BOTH a clean pull and a no-op ──
+test('CLI: a refused pull prints output distinct from a clean pull, and both escapes actually resolve it', () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  writeFileSync(paths(alice).conventions, '# Conventions\n\n- Max 300 lines per file.\n');
+  assert.equal(runCli(['canon', 'push'], alice).status, 0);
+
+  const clean = runCli(['canon', 'pull'], bob); // bob's first pull — a real, non-refused update
+  assert.equal(clean.status, 0);
+  assert.doesNotMatch(clean.stdout, /refused/i);
+
+  writeFileSync(paths(bob).conventions, '# Conventions\n\n- Max 120 lines per file.\n');
+  const before = readFileSync(paths(bob).conventions, 'utf8');
+  const refused = runCli(['canon', 'pull'], bob);
+
+  assert.notEqual(
+    clean.stdout + clean.stderr,
+    refused.stdout + refused.stderr,
+    'a refusal must not print the same thing as the earlier clean pull',
+  );
+  assert.match(refused.stdout + refused.stderr, /refused|NOT overwritten/i);
+  assert.match(refused.stdout + refused.stderr, /canon push/, 'must name publishing yours as a way out');
+  assert.match(refused.stdout + refused.stderr, /--force/, 'must name the explicit force as a way out');
+  assert.equal(readFileSync(paths(bob).conventions, 'utf8'), before, 'the refusal must leave the local file untouched');
+
+  // escape (a): the documented force route actually resolves it.
+  const forced = runCli(['canon', 'pull', '--force'], bob);
+  assert.equal(forced.status, 0);
+  assert.equal(readFileSync(paths(bob).conventions, 'utf8'), readFileSync(paths(alice).conventions, 'utf8'));
+});
+
+// ── t10: a genuine collision and a duplicate report are each distinguishable
+//    from a clean pull ─────────────────────────────────────────────────────
+test('CLI: a decision collision and a duplicate report never look like a clean pull', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  const a = await addDecision(alice, { title: 'Use worktrees', why: 'isolation', date: '2026-09-17' });
+  assert.equal(a.source, 'remote', a.error || '');
+  writeFileSync(
+    paths(bob).decisions,
+    `# Decisions\n\n## ${a.id} — Ban worktrees\n_2026-09-17_\n\n**Why:** confusion\n\n`,
+  );
+
+  const clean = runCli(['canon', 'pull'], mkWorkdir(bare, 'carol')); // an ordinary clean pull, for comparison
+  const collided = runCli(['canon', 'pull'], bob);
+
+  assert.notEqual(clean.stdout + clean.stderr, collided.stdout + collided.stderr);
+  assert.match(collided.stdout + collided.stderr, /collision/i);
+  assert.match(collided.stdout + collided.stderr, /Use worktrees/);
+  assert.match(collided.stdout + collided.stderr, /Ban worktrees/, 'both colliding decisions must be named');
+
+  // a plain duplicate-report run is also distinguishable, and the CLI dedupe verb
+  // is what actually reports the removal.
+  const dave = mkWorkdir(bare, 'dave');
+  writeFileSync(
+    paths(dave).decisions,
+    '# Decisions\n\n' +
+      '## ADR-070 — Never hand-edit state.json\n_2026-09-10_\n\n**Why:** locks\n\n' +
+      '## ADR-071 — Never hand-edit state.json\n_2026-09-15_\n\n**Why:** locks\n\n',
+  );
+  const dupReport = runCli(['canon', 'pull'], dave);
+  assert.notEqual(clean.stdout + clean.stderr, dupReport.stdout + dupReport.stderr);
+  assert.match(dupReport.stdout + dupReport.stderr, /duplicate/i);
+
+  const dedupe = runCli(['canon', 'dedupe'], dave);
+  assert.equal(dedupe.status, 0);
+  assert.match(dedupe.stdout, /ADR-070|ADR-071/);
+  const noDupes = runCli(['canon', 'dedupe'], dave);
+  assert.match(noDupes.stdout, /no exact-duplicate/i);
 });
