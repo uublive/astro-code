@@ -16,7 +16,7 @@
       "number": 17,
       "name": "Fixtures stay current as the data model changes",
       "slug": "17-fixtures-stay-current-as-the-data-model-changes",
-      "status": "pending",
+      "status": "verified",
       "note": "Release deliverable: a fleet-facing contract document (what the fleet must know to build its side — service name, healthcheck, seed invocation, env vars, guarantees). Ships with the major version at the end of phases 16+17."
     },
     {
