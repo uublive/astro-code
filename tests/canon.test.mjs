@@ -34,8 +34,10 @@ function mkWorkdir(bare, name) {
 // ── 1. CONVENTIONS clobber — lib/canon.mjs canonPull, the unconditional
 //    `writeFileSync(p.conventions, …)` (no comparison, no notion of "local-only") ──
 //
-// PHASE-18 REPRODUCTION — asserts the BUG; flipped by t6.
-test('PHASE-18 REPRODUCTION: a diverged local CONVENTIONS.md edit is silently clobbered by pull', () => {
+// FIXED by t6 (D1/D7): a diverged CONVENTIONS.md is left byte-identical and the pull
+// REFUSES, naming both supported ways out. `force: true` is the only way past it other
+// than publishing first.
+test('a diverged local CONVENTIONS.md edit refuses a pull, and force replaces it', () => {
   const bare = mkBareRemote();
   const alice = mkWorkdir(bare, 'alice');
   const bob = mkWorkdir(bare, 'bob');
@@ -55,11 +57,25 @@ test('PHASE-18 REPRODUCTION: a diverged local CONVENTIONS.md edit is silently cl
   const res = canonPull(bob);
   const after = readFileSync(paths(bob).conventions, 'utf8');
 
-  // TODAY: bob's diverged edit is gone, replaced by alice's copy, and the call
-  // still reports it as a normal successful pull — the exact silent-clobber incident.
-  assert.notEqual(after, before, 'BUG: local edit was overwritten');
-  assert.equal(after, readFileSync(paths(alice).conventions, 'utf8'), 'BUG: registry copy won silently');
-  assert.ok(res.pulled.includes('CONVENTIONS.md'), 'BUG: reported as a plain successful pull, indistinguishable from a clean one');
+  // Bob's diverged edit survives byte-for-byte, and the refusal is reported per file —
+  // never indistinguishable from a clean pull (D7).
+  assert.equal(after, before, "bob's local edit must be left byte-identical");
+  assert.notEqual(after, readFileSync(paths(alice).conventions, 'utf8'), 'the registry copy must not win silently');
+  assert.ok(!res.pulled.includes('CONVENTIONS.md'), 'a refusal must not be reported as pulled');
+  assert.equal(res.files['CONVENTIONS.md'].status, 'refused');
+  assert.equal(res.refused.length, 1);
+  assert.equal(res.refused[0].file, 'CONVENTIONS.md');
+  assert.ok(res.refused[0].fixes.some((f) => f.includes('canon push')), 'must name publishing yours as a way out');
+  assert.ok(res.refused[0].fixes.some((f) => f.includes('--force')), 'must name the explicit force as a way out');
+
+  // The explicit force route actually resolves the refusal.
+  const forced = canonPull(bob, { force: true });
+  assert.ok(forced.pulled.includes('CONVENTIONS.md'), 'a forced pull must replace the local copy');
+  assert.equal(
+    readFileSync(paths(bob).conventions, 'utf8'),
+    readFileSync(paths(alice).conventions, 'utf8'),
+    'force must take the registry copy',
+  );
 });
 
 // ── 2. ADR-142 false positive, DASH VARIANT — lib/canon.mjs's old private `norm()`
@@ -154,4 +170,47 @@ test('a genuine same-id collision refuses instead of renumbering, and the headin
   assert.equal(res.collisions[0].kind, 'independent', 'different titles on each side — not the same-title edit case');
   assert.equal(res.collisions[0].localTitle, 'Ban worktrees');
   assert.equal(res.collisions[0].remoteTitle, 'Use worktrees');
+});
+
+// ── t6: the untouched scaffold is adopted, not refused ────────────────────────
+//
+// Without this, D1's refusal fires on the FIRST pull of every fresh clone (the
+// unedited templates/CONVENTIONS.md "differs from the registry" just as genuinely as
+// a real edit does) — worse than the clobber bug it replaces.
+test('the untouched CONVENTIONS.md scaffold is adopted on pull rather than refused', () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob'); // bob never edits his scaffold at all
+
+  writeFileSync(paths(alice).conventions, '# Conventions\n\n- Max 300 lines per file.\n');
+  assert.equal(canonPush(alice).ok, true);
+
+  const res = canonPull(bob);
+
+  assert.equal(res.files['CONVENTIONS.md'].status, 'updated', 'the untouched scaffold must be adopted, not refused');
+  assert.equal(res.refused.length, 0);
+  assert.equal(readFileSync(paths(bob).conventions, 'utf8'), readFileSync(paths(alice).conventions, 'utf8'));
+});
+
+// ── t6: per-file reporting distinguishes "nothing changed" from "I wrote something" ──
+test('a no-op pull reports both files as unchanged, per file (D7)', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+
+  const bob = mkWorkdir(bare, 'bob');
+  writeFileSync(paths(bob).conventions, '# Conventions\n\n- Max 300 lines per file.\n');
+  assert.equal(canonPush(bob).ok, true);
+  await addDecision(bob, { title: 'Keep the registry authoritative' }); // mirrors DECISIONS.md locally too
+
+  // alice has never touched either file, so her first pull actually writes both.
+  const first = canonPull(alice);
+  assert.equal(first.files['CONVENTIONS.md'].status, 'updated');
+  assert.equal(first.files['DECISIONS.md'].status, 'updated');
+
+  const second = canonPull(alice);
+  assert.equal(second.files['CONVENTIONS.md'].status, 'unchanged');
+  assert.equal(second.files['DECISIONS.md'].status, 'unchanged');
+  assert.deepEqual(second.pulled, [], 'a no-op pull must not claim anything was pulled');
+  assert.ok(second.unchanged.includes('CONVENTIONS.md'));
+  assert.ok(second.unchanged.includes('DECISIONS.md'));
 });

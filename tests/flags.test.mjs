@@ -145,8 +145,11 @@ test('ADR-029: canonPush dryRun reports a pending change and leaves the registry
   assert.deepStrictEqual(dry.pushed, [], 'a dry run must report nothing as pushed');
   assert.strictEqual(registryTip(bare), tip, 'the registry branch must NOT have moved');
 
-  // And the published copy is still the OLD one.
-  canonPull(dir);
+  // And the published copy is still the OLD one — read it back with a forced pull:
+  // the local copy is deliberately diverged ("second version"), so a plain pull would
+  // now REFUSE rather than overwrite it (t6, ADR-053 D1). `--force` is the documented
+  // way to confirm what the registry actually holds.
+  canonPull(dir, { force: true });
   assert.match(readFileSync(paths(dir).conventions, 'utf8'), /first version/);
 });
 

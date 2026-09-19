@@ -113,8 +113,11 @@ test('registry claims preserve shared canon (no tree wipe)', async () => {
 
   // both files coexist on the branch
   assert.equal(readRegistry(dir).registry.claims.length >= 1, true);
+  // `addDecision` already mirrored DECISIONS.md into the local working tree, so this
+  // pull is a no-op for that file — t6 (ADR-053 D7) reports that as `unchanged`, not
+  // as a claim of having pulled bytes that never moved.
   const pull = canonPull(dir);
-  assert.ok(pull.pulled.includes('DECISIONS.md'));
+  assert.ok(pull.unchanged.includes('DECISIONS.md'));
   assert.match(readFileSync(paths(dir).decisions, 'utf8'), /ADR-001 — Keep me/);
 });
 
