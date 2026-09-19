@@ -63,6 +63,18 @@ already there — then plan only what's *next*, not what already exists.
    section into `.astrocode/CONVENTIONS.md` carrying this project's real values
    (including its own seed command, not a generic one) — before the canon-push step
    below.
+
+   While copying the contract, **fill in its `§10` fixtures declaration** from what
+   the **astro-mapper** report actually found: the project's real data-model paths
+   (migrations dir, schema file, model/entity dir) under `data-model:` and its
+   pre-existing seed entry point — the one this step wraps rather than rewrites — under
+   `seed:`. If those paths are genuinely ambiguous from the map, leave both keys empty
+   and say so plainly in the report: `ac fixtures check` will read *not checked* until
+   someone declares them. Never guess a path — a wrong declaration is worse than an
+   honest "not checked" (D5). In the distilled "Run contract" section, carry the
+   fixture-currency rule as the state outcome (the cold start comes up holding the
+   state each phase's acceptance items assume, fixtures extended at the project's real
+   seed seam) plus one pointer to where the declaration lives.
 5. **Record load-bearing decisions.** Capture the big existing choices as ADRs so they
    aren't relitigated: `ac decision add "<choice>" --why "<why>"` (e.g. the web
    framework, auth provider, data layer). These go to the shared canon.
