@@ -57,3 +57,33 @@ test('astro-criteria-author is plan-blind and pins the falsifiable criterion sch
   assert.match(author, /goal-level|behavioral|different-but-valid|different valid implementation/i);
   assert.match(author, /grep|file X exists|existence check/i, 'must ban structural/existence checks');
 });
+
+// ADR-050/052: the criteria-author's standing rule that a goal implying new or changed
+// persisted state gets a fixture criterion, phrased as an outcome the cold start produces —
+// never as a file-edit obligation. Deleting the rule (C7's mutation 2) must turn this red.
+test('astro-criteria-author registers a persisted-state fixture criterion, phrased as an outcome', () => {
+  // the persisted-state trigger itself
+  assert.match(
+    author,
+    /goal[\s\S]{0,40}implies[\s\S]{0,40}(?:new or changed )?persisted state/i,
+    'must state the trigger: the goal (or CONTEXT.md) implying new or changed persisted state'
+  );
+  // the cold-start-state outcome phrasing (ADR-050's "comes up holding the state" wording)
+  assert.match(
+    author,
+    /cold[\s\S]{0,5}start[\s\S]{0,40}comes up holding the state/i,
+    'must phrase the resulting criterion as the one-command cold start coming up holding the state'
+  );
+  // stated as an outcome, not a file-edit obligation — the two banned phrasings this rule
+  // exists to rule out
+  assert.match(
+    author,
+    /never[\s\S]{0,20}seed file was edited/i,
+    'must ban "the seed file was edited" as an acceptable phrasing'
+  );
+  assert.match(
+    author,
+    /fixture file changed alongside the migration/i,
+    'must ban "a fixture file changed alongside the migration" as an acceptable phrasing'
+  );
+});
