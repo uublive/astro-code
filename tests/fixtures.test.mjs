@@ -14,7 +14,7 @@
 // would pass the happy path (C1) and fail this one (C2).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -212,4 +212,44 @@ test('readFixtureDeclaration/checkFixtures agree with the CLI posture at the uni
   const result = checkFixtures(dir, { phase: '17' });
   assert.equal(result.status, 'fired');
   assert.deepEqual(result.touched, ['schema.sql']);
+});
+
+// ── C1/C6 — the shipped template's live block must never read the worked example ──
+//
+// templates/RUN-CONTRACT.md ships the live-but-empty marker block (§10) followed later
+// in the same file by a worked example under a SECOND occurrence of the same marker,
+// for documentation purposes only. A project that copies the template verbatim without
+// filling in the live block has NOT opted in — the parser must not scan past the live
+// block's own boundary and pick up the worked example's values as if they were the
+// project's real declaration.
+
+test('ADR-054/C1/C6: a verbatim shipped RUN-CONTRACT.md reads as not-opted-in, never as the worked example', async () => {
+  const { readFixtureDeclaration } = await import('../lib/fixtures.mjs');
+
+  const dir = mkRepo();
+  copyFileSync(
+    join(FRAMEWORK, 'templates', 'RUN-CONTRACT.md'),
+    join(dir, 'RUN-CONTRACT.md'),
+  );
+
+  const decl = readFixtureDeclaration(dir);
+  assert.equal(
+    decl.ok,
+    false,
+    'the live block is empty as shipped; the worked example further down the file must never be picked up',
+  );
+
+  // Prove the CLI posture end to end: a phase-17-stamped commit that changes the
+  // worked example's declared data-model path (db/migrations/) must NOT read as
+  // "clean" — it must read as "not checked", since the project never declared paths.
+  commit(dir, { 'README.md': 'init\n' }, 'baseline');
+  commit(
+    dir,
+    { 'schema.sql': 'create table a();\n' },
+    'add table (phase 17 t2)',
+  );
+  const res = run(['fixtures', 'check', '--phase', '17'], dir);
+  assert.strictEqual(res.status, 0);
+  assert.match(res.stdout, /⊡/, 'must read as not-checked, never as clean silence');
+  assert.strictEqual(res.stderr, '');
 });

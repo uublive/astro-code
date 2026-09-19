@@ -118,6 +118,133 @@ fixture, was committed **unstamped** (`chore: initial canon + app scaffold …`,
 against, not phase 17's own change, so it must not appear in phase 17's stamped-commit
 diff range (D8).
 
+### Artifacts (verbatim, for replay)
+
+Recorded in full so a third party can reproduce this rehearsal without re-deriving the
+scaffold from prose — the scratch tree itself is deleted at the end of this rehearsal
+(see "Tear down and delete" below), so these are the only surviving record of what was
+actually booted.
+
+`Dockerfile`:
+
+```dockerfile
+FROM node:22-alpine
+WORKDIR /app
+COPY package.json ./
+RUN npm install --omit=dev
+COPY . .
+CMD ["node", "server.mjs"]
+```
+
+`docker-compose.yml`:
+
+```yaml
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+  seed:
+    build: .
+    command: ["node", "scripts/seed.mjs"]
+    environment:
+      DATABASE_URL: postgres://app:app@db:5432/app
+      RUN_SEED: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+  app:
+    build: .
+    ports:
+      - "3897:3000"
+    environment:
+      DATABASE_URL: postgres://app:app@db:5432/app
+    depends_on:
+      db:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+```
+
+`package.json`:
+
+```json
+{
+  "name": "astro-scratch-p17",
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "pg": "^8.11.0"
+  }
+}
+```
+
+`server.mjs`:
+
+```javascript
+import http from 'node:http'
+import pg from 'pg'
+
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+
+const server = http.createServer(async (req, res) => {
+  if (req.url === '/health') {
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+    return
+  }
+  if (req.url === '/widgets') {
+    const { rows } = await pool.query('SELECT id FROM widgets ORDER BY id')
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(rows))
+    return
+  }
+  if (req.url === '/gadgets') {
+    const { rows } = await pool.query('SELECT id, name FROM gadgets ORDER BY id')
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify(rows))
+    return
+  }
+  res.writeHead(404)
+  res.end()
+})
+
+server.listen(3000, () => console.log('listening on 3000'))
+```
+
+`scripts/seed.mjs`, as it stood BEFORE t23's fixture-seam extension (the baseline commit —
+applies every migration, then seeds only `widgets`, with the seam left empty):
+
+```javascript
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import pg from 'pg'
+
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL })
+
+const migrationsDir = 'db/migrations'
+const files = readdirSync(migrationsDir).sort()
+for (const file of files) {
+  const sql = readFileSync(join(migrationsDir, file), 'utf8')
+  await pool.query(sql)
+}
+
+await pool.query(
+  "INSERT INTO widgets (id) VALUES (1), (2), (3) ON CONFLICT (id) DO NOTHING",
+)
+
+// --- fixture seam ---
+
+await pool.end()
+```
+
 ### Commands run, verbatim, in order
 
 Baseline cold start, before any schema change — confirms the harness itself is sound:
