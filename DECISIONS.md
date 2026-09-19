@@ -322,3 +322,8 @@ _2026-09-19_
 
 **Why:** The fleet must find the app without knowing astro-code exists, and real Docker semantics stay true even if astro-code is removed. A separate manifest is a second source of truth that can claim 'start with X' while compose says Y, with the drift invisible until a preview comes up dead — the compose file cannot lie that way because booting it IS the check. With no templates, RUN-CONTRACT.md is the only thing keeping agent-authored output consistent across projects.
 
+## ADR-049 — Seeding is a separate script behind positive consent, never in the app's boot path and never gated on detection: it asserts one explicitly-handed variable (never NODE_ENV, never 'the database looks empty'). Fixtures are plain source loaded by running code — never a committed binary database. Seeds are idempotent, wired as a compose 'seed' service the 'app' service depends on completing successfully, delegating to the stack-native script. Reset is keyed to the volume: preview (ephemeral) always resets, local dev seeds only if empty.
+_2026-09-19_
+
+**Why:** Ephemeral previews are only better than a staging box if every preview starts from an identical known state, which requires the reset; but wiping a local developer's data on 'docker compose up' is a bug, and the volume already distinguishes the two cases. NODE_ENV reaching production as 'development' is a common accident and an empty-looking database is not evidence you may write to it, so consent must be positive and structural. A staged binary database produced a patch that could not be replayed and killed a run outright.
+
