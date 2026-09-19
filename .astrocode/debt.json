@@ -54,6 +54,15 @@
       "found_at": "2026-09-17T10:11:25.999Z",
       "why": "An ESM import of a not-yet-existing export fails the whole test file, so 'write failing tests' is structurally impossible without stubs — which pushes the test task's executor to implement, overflowing its declared files and breaking the wave's file-disjointness. That was cause 2 of the phase-04 wave-2 incident. The other four bullets from that report shipped (heal ladder, fork-base guard under ADR-040, file-ownership enforcement, ADR-017 stamped resumability); this one did not.",
       "file": "agents/astro-planner.md"
+    },
+    {
+      "id": "2026-09-19-ac-milestone-new-never-persists-the",
+      "title": "ac milestone new never persists the bumped milestone number to roadmap.json",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-09-19T19:41:06.389Z",
+      "why": "bin/ac.mjs mutates the object returned by loadRoadmap() and then calls renderRoadmap(), which re-reads from disk (lib/roadmap.mjs:118-119) and discards the mutation. state.active_milestone bumps correctly but roadmap.json.milestone stays on the OLD number, so ac status and the generated ROADMAP.md both report the previous milestone. Worse, completeMilestone reads rm.milestone to pick the archive directory — so completing the new milestone would archive its phases into the PREVIOUS milestone's archive dir, merging two unrelated milestones (m7 phases would land in .astrocode/milestones/6/ next to the already-archived phases 11-15). Observed live on 2026-09-19: ac milestone new claimed 7, state went to 7, roadmap.json stayed at 6. flowBranch is unaffected because it prefers state.active_milestone.",
+      "file": "bin/ac.mjs"
     }
   ]
 }

@@ -19,5 +19,8 @@
     "verifier": "high",
     "discover": "low",
     "integrator": "low"
+  },
+  "gitflow": {
+    "enabled": true
   }
 }
