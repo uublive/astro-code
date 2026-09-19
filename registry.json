@@ -223,6 +223,16 @@
       "branch": "main",
       "claimed_at": "2026-09-19T18:56:48.373Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 17,
+      "milestone": 6,
+      "name": "Fixtures stay current as the data model changes",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-09-19T18:56:53.751Z",
+      "status": "active"
     }
   ]
 }
