@@ -23,7 +23,7 @@ import {
 } from '../lib/debt.mjs';
 import { runFixturesCheck } from '../lib/fixtures.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
-import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
+import { canonText, loadCanon, addDecision, canonPull, canonPush, canonDedupe } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
 import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME } from '../lib/install.mjs';
@@ -63,11 +63,12 @@ const die = (msg) => {
 // read-only verb (`ac status --verbose`) stays harmless, so it stays permitted —
 // blanket enforcement would break existing invocations for no safety gain.
 const ALLOWED_FLAGS = {
-  // No flags do anything here yet — this entry exists so a typo'd flag on the one
-  // verb phase 18 exists to harden dies loudly instead of silently degrading to
-  // the default (ADR-029). `t9` extends this to `['force']` once one does.
-  'canon pull': [],
+  // ADR-053 (D1) — `--force` is the only way past a refused pull other than
+  // publishing first (`ac canon push`); a typo'd flag must not silently degrade
+  // into "took the registry's copy" (ADR-029).
+  'canon pull': ['force'],
   'canon push': ['dry-run'],
+  'canon dedupe': [],
   'decision add': ['why', 'rejected'],
   'registry init': ['force'],
   'phase accept': ['by', 'force', 'agent'],
@@ -157,7 +158,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac preflight                        warn if HEAD diverged from upstream (silent when in sync)
   ac fixtures check [--phase N]       advisory: warn if this phase's stamped commits changed
                                        the declared data model without the declared seed (never blocks, files debt)
-  ac canon [pull | push [--dry-run]]  print canon; pull/push shares it on the orphan branch
+  ac canon [pull [--force] | push [--dry-run] | dedupe]  print canon; pull/push shares it on the
+                                       orphan branch; dedupe collapses exact-duplicate decisions
   ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision (shared)
   ac decision list                    list recorded decisions
   ac stats [--since ISO|--session ID] token usage (fresh vs cache) + wall-clock from transcripts
@@ -994,22 +996,53 @@ async function main() {
       const r = root();
       if (pos[0] === 'pull') {
         checkFlags('canon pull', flags);
-        const res = canonPull(r);
-        if (!res.ok) console.error('• no coordinated remote — canon is local-only');
-        else {
-          console.log(`✓ pulled ${res.pulled.length ? res.pulled.join(', ') : 'nothing'} from ${res.branch}`);
+        const res = canonPull(r, { force: flags.force === true });
+        if (!res.ok) {
+          console.error('• no coordinated remote — canon is local-only');
+        } else {
+          // ADR-053 (D7/C9) — the two observably different outcomes ("I changed your
+          // files" and "I changed nothing") must never print the same line: that
+          // byte-identical success line is what let both production incidents hide in
+          // plain sight. Reported per file, so a partial pull (one file updated, one
+          // refused, one already current) is never flattened into one summary line.
+          const names = Object.keys(res.files);
+          if (!names.length) {
+            console.log(`• nothing to pull — ${res.branch} has no canon yet`);
+          } else if (names.every((n) => res.files[n].status === 'unchanged')) {
+            console.log(`• already up to date with ${res.branch} — ${names.join(', ')} unchanged`);
+          } else {
+            for (const name of names) {
+              const { status } = res.files[name];
+              if (status === 'updated') console.log(`✓ ${name}: updated from ${res.branch}`);
+              else if (status === 'unchanged') console.log(`• ${name}: already up to date`);
+              else console.error(`⚠ ${name}: refused`);
+            }
+          }
+          for (const ref of res.refused) {
+            console.error(
+              `⚠ ${ref.file} was NOT overwritten — ${ref.reason}. Fix: ${ref.fixes.join(', ')}.`,
+            );
+          }
           // ADR-034: a preserved entry means the local file diverged from the registry.
           // Silence here is what let the old overwrite destroy work unnoticed.
-          if (res.preserved && res.preserved.length) {
+          if (res.preserved.length) {
             console.error(
               `⚠ kept ${res.preserved.length} local-only decision(s) the registry has never seen: ${res.preserved.join(', ')} — ` +
                 `re-add them via \`ac decision add\` so they reach the team (DECISIONS.md is never bulk-pushed).`,
             );
           }
-          if (res.renumbered && res.renumbered.length) {
+          // ADR-053 (D5) — a genuine same-id collision refuses and names BOTH sides;
+          // nothing is ever renumbered or moved.
+          for (const c of res.collisions) {
             console.error(
-              `⚠ ${res.renumbered.length} local decision(s) shared an id with a DIFFERENT registry decision and were renumbered to keep both: ` +
-                res.renumbered.map((r) => `${r.from}→${r.to}`).join(', '),
+              `⚠ ${c.id} collision — local has "${c.localTitle}", the registry has "${c.remoteTitle}". ` +
+                `Nothing was changed; record a new decision that supersedes one of them.`,
+            );
+          }
+          // ADR-053 (D6) — reported on EVERY sync, never collapsed by a plain pull.
+          for (const d of res.duplicates) {
+            console.error(
+              `⚠ duplicate decision "${d.title}": ${d.ids.join(', ')} — run \`ac canon dedupe\` to collapse.`,
             );
           }
         }
@@ -1025,6 +1058,16 @@ async function main() {
               : `CONVENTIONS.md on ${res.branch} is already identical — a real push would change nothing`;
           console.log(`◆ dry run: ${what}. NOTHING was published.`);
         } else console.log(`✓ published ${res.pushed.join(', ')} to ${res.branch}`);
+      } else if (pos[0] === 'dedupe') {
+        checkFlags('canon dedupe', flags);
+        const res = canonDedupe(r);
+        if (!res.removed.length) {
+          console.log('• no exact-duplicate decisions found — nothing collapsed');
+        } else {
+          for (const rem of res.removed) {
+            console.log(`✓ removed ${rem.id} — duplicate of ${rem.keptId} ("${rem.title}")`);
+          }
+        }
       } else {
         const text = canonText(r);
         process.stdout.write((text || '(no canon yet — fill in .astrocode/CONVENTIONS.md)') + '\n');
@@ -1043,18 +1086,32 @@ async function main() {
           why: typeof flags.why === 'string' ? flags.why : '',
           rejected: typeof flags.rejected === 'string' ? flags.rejected : '',
         });
+        // ADR-053 (D4/D5) — a genuine collision (an independent decision, or an edit to
+        // an already-published one) refuses the add outright; nothing is renumbered.
+        if (res.ok === false && res.refused === 'decision-collision') {
+          const lines = res.collisions.map((c) =>
+            c.kind === 'edited-published'
+              ? `${c.id} was edited locally after publishing — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
+                `Record a NEW decision that supersedes it instead of editing the published one.`
+              : `${c.id} collides — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
+                `Nothing was changed; record a new decision that supersedes one of them.`,
+          );
+          die(`refused — ${lines.join(' ')}`);
+        }
         const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
         console.log(`✓ ${res.id} — ${res.title} (${res.date}) ${tag}`);
+        if (res.publishedConventions) console.log(`✓ published CONVENTIONS.md to ${res.branch}`);
         // ADR-039: an add that had to rescue local-only entries means the working tree had
         // decisions the registry has never seen. Silence here is what let them be destroyed.
         if (res.preserved && res.preserved.length) {
           console.error(`⚠ carried ${res.preserved.length} local-only decision(s) into the shared log: ${res.preserved.join(', ')}`);
         }
-        if (res.renumbered && res.renumbered.length) {
-          console.error(
-            `⚠ ${res.renumbered.length} local decision(s) collided with a DIFFERENT shared decision of the same id and were renumbered to keep both: ` +
-              res.renumbered.map((r) => `${r.from}→${r.to}`).join(', '),
-          );
+        if (res.duplicates && res.duplicates.length) {
+          for (const d of res.duplicates) {
+            console.error(
+              `⚠ duplicate decision "${d.title}": ${d.ids.join(', ')} — run \`ac canon dedupe\` to collapse.`,
+            );
+          }
         }
       } else if (pos[0] === 'list') {
         const { decisions } = loadCanon(r);
