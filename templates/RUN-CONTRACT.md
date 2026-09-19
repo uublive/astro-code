@@ -136,3 +136,42 @@ the fixtures needs a fixed place to write against, not a script it has to reloca
 App-shaped projects only. A library or CLI gets none of this — no `Dockerfile`, no
 `docker-compose.yml`, no seed, no run-contract claim in its canon. A Dockerfile in a library
 is noise nobody boots.
+
+## 10. Data model & fixtures declaration
+
+**The rule.** When a phase adds a table, a column, or any new persisted shape, the
+one-command cold start (§1) must come up holding the state that phase's acceptance items
+assume — extend the fixtures at the §8 seam so the seed script still produces that state.
+Never phrase this as "edit the seed file": a touched file proves nothing about what the app
+actually serves, and a rewritten seed that still produces the old state would satisfy a
+file-edit obligation while failing the thing that matters. Fixtures that stop covering the
+current data model make the preview empty again even though the machinery works — that is
+the exact failure this whole contract exists to prevent.
+
+**The declaration.** Name where the data model lives and where the fixtures that must stay
+in step with it come from, so a tool (or a person) can tell a current declaration from a
+stale one without guessing. The block below is a marker line followed by two keys, one per
+line, each a comma-separated list of repo-relative paths. A trailing `/` on a path means
+"this directory and everything under it"; anything else matches that exact path, or that
+path used as a directory prefix. No globs, no inference — an empty or missing declaration is
+never assumed to mean "nothing to declare".
+
+```
+<!-- astro-code: fixtures-declaration -->
+data-model:
+seed:
+```
+
+A worked example, for a project whose schema lives under a migrations directory and whose
+seed script is a single file:
+
+```
+<!-- astro-code: fixtures-declaration -->
+data-model: db/migrations/, prisma/schema.prisma
+seed: scripts/seed.mjs
+```
+
+Left empty (as shipped), the declaration means "not opted in": `ac fixtures check` (from
+astro-code, if present) reports the check was **not run**, never clean — a project that never
+declared its paths must never read as passing. This contract, including this section, stands
+on its own even if astro-code is removed from the project entirely.
