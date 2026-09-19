@@ -317,3 +317,18 @@ _2026-09-17_
 
 **Rejected:** One drop verb with a free-text reason; deleting dismissed items outright
 
+## ADR-048 — The runnable-project contract is Docker convention, not a manifest: Dockerfile + docker-compose.yml with a service named 'app', a healthcheck, and a container port. It is stated in a RUN-CONTRACT.md copied verbatim into the generated project AND distilled into that project's CONVENTIONS.md (mirroring KIT-CONTRACT.md). Scaffolding is agent-authored per stack with no templates, and lands in the command layer because lib/ must not write outside .astrocode/.
+_2026-09-19_
+
+**Why:** The fleet must find the app without knowing astro-code exists, and real Docker semantics stay true even if astro-code is removed. A separate manifest is a second source of truth that can claim 'start with X' while compose says Y, with the drift invisible until a preview comes up dead — the compose file cannot lie that way because booting it IS the check. With no templates, RUN-CONTRACT.md is the only thing keeping agent-authored output consistent across projects.
+
+## ADR-049 — Seeding is a separate script behind positive consent, never in the app's boot path and never gated on detection: it asserts one explicitly-handed variable (never NODE_ENV, never 'the database looks empty'). Fixtures are plain source loaded by running code — never a committed binary database. Seeds are idempotent, wired as a compose 'seed' service the 'app' service depends on completing successfully, delegating to the stack-native script. Reset is keyed to the volume: preview (ephemeral) always resets, local dev seeds only if empty.
+_2026-09-19_
+
+**Why:** Ephemeral previews are only better than a staging box if every preview starts from an identical known state, which requires the reset; but wiping a local developer's data on 'docker compose up' is a bug, and the volume already distinguishes the two cases. NODE_ENV reaching production as 'development' is a common accident and an empty-looking database is not evidence you may write to it, so consent must be positive and structural. A staged binary database produced a patch that could not be replayed and killed a run outright.
+
+## ADR-050 — Fixture currency is enforced by a behavioural CRITERIA.md entry the verifier actually runs (the cold start must come up holding the state the phase's acceptance items assume), backed by the rule in CONVENTIONS.md and an advisory diff check for lanes that skip verify. Explicitly NOT a hard build gate. ACCEPTANCE.md items must name the precondition state they assume.
+_2026-09-19_
+
+**Why:** A convention nobody checks is the known failure mode, but the only thing a build gate can mechanically see is that a file changed when a migration changed — forgeable by touching the file, and false-failing on correct work built differently, which is the exact structural check astro-criteria-author is forbidden to write. Behavioural criteria fail the phase instead of emitting a warning, matching the precedent that debt is a register the verifier fills (ADR-045) and kit parity is proven as falsifiable criteria (ADR-025). The advisory check exists solely because criteria never fire in /astro-fast, where the verifier self-derives its bar.
+

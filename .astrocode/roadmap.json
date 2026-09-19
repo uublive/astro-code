@@ -1,5 +1,20 @@
 {
   "version": 1,
   "milestone": 6,
-  "phases": []
+  "phases": [
+    {
+      "number": 16,
+      "name": "A project is born runnable with fixtures",
+      "slug": "16-a-project-is-born-runnable-with-fixtures",
+      "status": "pending",
+      "note": "Depends: nothing. Phase 17 depends on this one — 17 enforces the contract 16 defines."
+    },
+    {
+      "number": 17,
+      "name": "Fixtures stay current as the data model changes",
+      "slug": "17-fixtures-stay-current-as-the-data-model-changes",
+      "status": "pending",
+      "note": "Release deliverable: a fleet-facing contract document (what the fleet must know to build its side — service name, healthcheck, seed invocation, env vars, guarantees). Ships with the major version at the end of phases 16+17."
+    }
+  ]
 }
