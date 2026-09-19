@@ -214,3 +214,81 @@ test('a no-op pull reports both files as unchanged, per file (D7)', async () => 
   assert.ok(second.unchanged.includes('CONVENTIONS.md'));
   assert.ok(second.unchanged.includes('DECISIONS.md'));
 });
+
+// ── t7: `ac decision add` also publishes CONVENTIONS.md (D3) ─────────────────
+//
+// FIXES the root cause of the "nothing publishes CONVENTIONS.md" incident: a local
+// edit made without `ac canon push` used to sit unpublished forever, so the next
+// unrelated `decision add` elsewhere plus a `canon pull` reverted it.
+test('recording a decision also publishes a locally-edited CONVENTIONS.md', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  // alice edits CONVENTIONS.md but never runs `ac canon push` — the exact gap D3 closes.
+  writeFileSync(paths(alice).conventions, '# Conventions\n\n- Max 300 lines per file.\n');
+  const res = await addDecision(alice, { title: 'Cap file length', why: 'readability' });
+  assert.equal(res.source, 'remote', res.error || '');
+  assert.equal(res.publishedConventions, true, 'the edited CONVENTIONS.md must be published as a side effect');
+
+  // bob, who never touched CONVENTIONS.md, now receives alice's edit on pull.
+  const pull = canonPull(bob);
+  assert.equal(pull.files['CONVENTIONS.md'].status, 'updated');
+  assert.equal(readFileSync(paths(bob).conventions, 'utf8'), readFileSync(paths(alice).conventions, 'utf8'));
+
+  // a second, convention-unrelated add does NOT republish an unchanged file.
+  const res2 = await addDecision(alice, { title: 'Something unrelated' });
+  assert.equal(res2.publishedConventions, false, 'an unchanged CONVENTIONS.md is not republished');
+});
+
+// ── t7: `ac decision add` refuses on a genuine same-id collision ─────────────
+test('decision add refuses when a local entry collides with a different registry decision', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  const a = await addDecision(alice, { title: 'Use worktrees', why: 'isolation', date: '2026-09-17' });
+  assert.equal(a.source, 'remote', a.error || '');
+
+  // bob never pulled — a genuinely DIFFERENT decision lives locally under the same id.
+  writeFileSync(
+    paths(bob).decisions,
+    `# Decisions\n\n## ${a.id} — Ban worktrees\n_2026-09-17_\n\n**Why:** confusion\n\n`,
+  );
+  const before = readFileSync(paths(bob).decisions, 'utf8');
+
+  const res = await addDecision(bob, { title: 'Unrelated new decision' });
+  const after = readFileSync(paths(bob).decisions, 'utf8');
+
+  assert.equal(res.ok, false);
+  assert.equal(res.refused, 'decision-collision');
+  assert.equal(res.collisions.length, 1);
+  assert.equal(res.collisions[0].id, a.id);
+  assert.equal(res.collisions[0].kind, 'independent');
+  assert.equal(after, before, 'nothing may be renumbered or moved on a refusal');
+});
+
+// ── t7: `ac decision add` refuses when a published decision was edited locally ──
+test('decision add refuses when a locally-edited published decision collides with its own registry copy', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  const a = await addDecision(alice, { title: 'Registry is CAS-based', why: 'content addressing', date: '2026-09-17' });
+  assert.equal(a.source, 'remote', a.error || '');
+  assert.equal(canonPull(bob).ok, true);
+
+  // bob edits the BODY of the already-published decision, keeping id and title.
+  writeFileSync(
+    paths(bob).decisions,
+    `# Decisions\n\n## ${a.id} — Registry is CAS-based\n_2026-09-17_\n\n**Why:** something else entirely\n\n`,
+  );
+
+  const res = await addDecision(bob, { title: 'Unrelated two' });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.refused, 'decision-collision');
+  assert.equal(res.collisions.length, 1);
+  assert.equal(res.collisions[0].id, a.id);
+  assert.equal(res.collisions[0].kind, 'edited-published', 'same title on both sides — an edit, not an independent clash');
+});
