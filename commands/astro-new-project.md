@@ -61,6 +61,43 @@ You are starting a new astro-code project in the current repository.
    same way `PROJECT.md` and `CONVENTIONS.md` already are. Library/CLI-shaped
    projects skip this sub-step entirely — no container or seed scaffolding, no
    run-contract canon.
+4b. **If app-shaped, prove the cold start, repair it, report honestly, then seed the
+   canon.** An unrun Dockerfile is worse than none — it looks like a contract and
+   isn't one, and this step exists to prevent exactly that.
+   - **Probe Docker first:** run `docker compose version` via Bash. A non-zero exit
+     or "command not found" means it's absent — **skip the boot check, never block
+     project creation**, and print `Cold start NOT verified — Docker unavailable,
+     skipping the boot check` (still copy the contract and seed the canon below;
+     only the boot attempt is skipped). If present, attempt `docker compose up -d`
+     once.
+   - **Check what actually came up, never that files exist:** `docker compose ps`
+     must show `app` **healthy** and `seed` **exited 0**, and a request to the
+     published port (read off `docker-compose.yml`, never guessed) must return the
+     app's response.
+   - **Bounded repair on failure:** diagnose, fix, retry — **at most 2 repair
+     attempts** (3 boots maximum). If it's still broken after that, stop and print
+     `Cold start FAILED after N attempt(s) — <what is still broken>`, naming the
+     defect plainly; the final summary must not read as success.
+   - If the boot succeeds, print `Cold start verified — app healthy, seed exited 0,
+     served on <port>`. The three report stems above must appear verbatim so the
+     three outcomes stay distinguishable at a glance.
+   - **Always tear down afterward** with `docker compose down -v`, whichever
+     outcome, so the scaffold leaves no running containers behind.
+   - **Copy `` `$(ac path templates)/RUN-CONTRACT.md` `` verbatim to the project
+     root** — not into `.astrocode/`: a later `rm -rf .astrocode/` must not remove
+     the contract a human or non-astro agent still needs.
+   - **Distil it into `.astrocode/CONVENTIONS.md`** as a "Run contract" section,
+     carrying the concrete values this project actually shipped — service names,
+     the healthcheck, the published port, the stack-native seed command, the
+     `RUN_SEED=true` consent variable, the reset fork
+     (`docker-compose.preview.yml` override), and "fixtures are plain source,
+     never a binary database". These values must agree with the shipped
+     `docker-compose.yml` value for value — a canon that drifts from what actually
+     boots is worse than no canon. Then `ac canon push` again to share the
+     updated canon (the earlier push in step 4 predates this section).
+   - Library/CLI-shaped projects skip this entire step, including the canon
+     section — no cold-start probe, no `RUN-CONTRACT.md` copy, no run-contract
+     canon.
 5. Initialize the numbering registry: run `ac registry init`. This creates the
    orphan registry branch on `origin` and seeds milestone 1, so numbering is
    team-coordinated from day one (and can never drift the way local-then-remote
