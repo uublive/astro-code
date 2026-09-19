@@ -85,7 +85,17 @@ You are starting a new astro-code project in the current repository.
      outcome, so the scaffold leaves no running containers behind.
    - **Copy `` `$(ac path templates)/RUN-CONTRACT.md` `` verbatim to the project
      root** — not into `.astrocode/`: a later `rm -rf .astrocode/` must not remove
-     the contract a human or non-astro agent still needs.
+     the contract a human or non-astro agent still needs. Then **fill in the declaration
+     block** (§10, `<!-- astro-code: fixtures-declaration -->`) with
+     this project's real paths: `data-model:` gets the migrations dir, schema
+     file or model/entity dir the stack it just scaffolded actually uses, and
+     `seed:` gets the seed script plus any fixture data files it reads (comma-
+     separated, repo-relative, a trailing `/` for "this directory and everything
+     under it" — the same semantics §10 documents). At birth there may be no data
+     model yet — then leave `data-model:` empty and say so in one line in the
+     summary this step reports, so the first data-model phase knows to fill it.
+     Never invent a placeholder path: an unfilled-but-plausible-looking entry
+     would read as declared when it isn't.
    - **Distil it into `.astrocode/CONVENTIONS.md`** as a "Run contract" section,
      carrying the concrete values this project actually shipped — service names,
      the healthcheck, the published port, the stack-native seed command, the
@@ -93,11 +103,17 @@ You are starting a new astro-code project in the current repository.
      (`docker-compose.preview.yml` override), and "fixtures are plain source,
      never a binary database". These values must agree with the shipped
      `docker-compose.yml` value for value — a canon that drifts from what actually
-     boots is worse than no canon. Then `ac canon push` again to share the
+     boots is worse than no canon. Carry the fixture-currency rule itself as the
+     state outcome it is, not a file-edit obligation: when a later phase adds a
+     table, a column or any new persisted shape, the one-command cold start comes up
+     holding the state that phase's acceptance items assume — fixtures
+     extended at the `RUN-CONTRACT.md` §8 seam — and add one line pointing at
+     where the declaration lives (`RUN-CONTRACT.md` §10, filled in above) so
+     nobody has to rediscover the format. Then `ac canon push` again to share the
      updated canon (the earlier push in step 4 predates this section).
    - Library/CLI-shaped projects skip this entire step, including the canon
-     section — no cold-start probe, no `RUN-CONTRACT.md` copy, no run-contract
-     canon.
+     section, the declaration and the distilled rule — no cold-start probe, no
+     `RUN-CONTRACT.md` copy, no run-contract canon.
 5. Initialize the numbering registry: run `ac registry init`. This creates the
    orphan registry branch on `origin` and seeds milestone 1, so numbering is
    team-coordinated from day one (and can never drift the way local-then-remote

@@ -423,3 +423,55 @@ test('ADR-048/051: templates/RUN-CONTRACT.md states the pinned service names, RU
     'RUN-CONTRACT.md must state the --reset fork between local dev (persistent, no reset) and preview (ephemeral, reset)',
   );
 });
+
+// ── Phase 17 t11: /astro-new-project fills the declaration and distils the rule ────
+//
+// C6 requires a generated project to keep the fixture-currency rule and its declaration
+// on its own, with astro-code deleted — so /astro-new-project must (a) actually fill in
+// RUN-CONTRACT.md's live-but-empty declaration block with the project's real paths when
+// it copies the contract to the project root, and (b) distil the rule as a state outcome
+// (never a file-edit obligation) into the CONVENTIONS.md "Run contract" section, with a
+// pointer to where the declaration lives. Library/CLI-shaped projects skip both.
+
+test('astro-new-project.md fills in the fixtures declaration block when copying RUN-CONTRACT.md', () => {
+  const src = cmd('astro-new-project.md');
+  assert.ok(
+    /fill\s+in\s+the\s+declaration/i.test(src),
+    "astro-new-project.md must instruct filling in the declaration block with the project's real paths",
+  );
+  assert.ok(
+    /data-model:/.test(src) && /seed:/.test(src),
+    'astro-new-project.md must reference both declaration keys (data-model: and seed:)',
+  );
+  assert.ok(
+    /no\s+data\s+model\s+yet/i.test(src) && /leave\s+`?data-model:`?\s+empty/i.test(src),
+    'astro-new-project.md must say to leave data-model: empty at birth when there is no data model yet, and say so in one line',
+  );
+});
+
+test('astro-new-project.md distils the fixture-currency rule into CONVENTIONS.md as a state outcome, with a pointer to the declaration', () => {
+  const src = cmd('astro-new-project.md');
+  assert.ok(
+    /cold\s+start\s+comes\s+up\s+holding\s+the\s+state/i.test(src),
+    'astro-new-project.md must phrase the distilled rule as the state outcome the cold start must hold, not as a file-edit obligation',
+  );
+  assert.ok(
+    !/edit the seed file/i.test(src),
+    'astro-new-project.md must not phrase the fixture-currency rule as "edit the seed file" (a file-edit obligation, D1)',
+  );
+  assert.ok(
+    /declaration/i.test(src),
+    'astro-new-project.md must point to where the fixtures declaration lives from the distilled canon section',
+  );
+});
+
+test('astro-new-project.md skips the declaration and distilled rule for library/CLI-shaped projects', () => {
+  const src = cmd('astro-new-project.md');
+  // The existing "skip all of it" / "skip this entire step" library/CLI carve-out must
+  // still be present and cover the newly added declaration-filling and rule-distilling
+  // work, not just the container/seed scaffolding it originally guarded.
+  assert.ok(
+    /Library\/CLI-shaped projects skip/i.test(src),
+    'astro-new-project.md must keep an explicit library/CLI skip instruction covering the fixtures declaration and distilled rule',
+  );
+});
