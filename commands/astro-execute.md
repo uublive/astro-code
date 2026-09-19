@@ -186,6 +186,16 @@ Execute phase `$ARGUMENTS`.
    filter is the safeguard that stops the debt channel becoming a way for a criterion
    failure to avoid failing the phase.
 
+4e. **Check fixture currency (ADR-050/052).** Run `ac fixtures check`, unconditionally —
+   no flag, no "if the user asks", no "when the phase looks data-related": a command nobody
+   invokes fails exactly the way a convention nobody checks does (D7). It exits `0` by
+   design and never blocks the verdict. Fold its output **verbatim** into the final summary
+   you report in step 5 — a warning that lands in scrollback nobody opens is the same as no
+   warning (D6). Silence means the fixtures are clean; a `⊡ fixtures not checked` line means
+   the project has no data-model/seed declaration, which is information, not a failure. The
+   check **files its own debt** on a finding — do not re-file its output with `ac debt add`,
+   that would duplicate step 4d's filing path and fragment the register.
+
 5. Clear the live status (`ac activity clear` — also clear it on any early stop or
    `integrationFailed`), then report the verdict. `verdict` is now a **structured object**
    — read `verdict.passed` (boolean) for PASS/FAIL and `verdict.summary` for the
