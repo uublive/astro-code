@@ -62,13 +62,14 @@ test('PHASE-18 REPRODUCTION: a diverged local CONVENTIONS.md edit is silently cl
   assert.ok(res.pulled.includes('CONVENTIONS.md'), 'BUG: reported as a plain successful pull, indistinguishable from a clean one');
 });
 
-// ── 2. ADR-142 false positive, DASH VARIANT — lib/canon.mjs unionLocalOnly's
-//    `norm()` strips only an em dash (`—?`), so a plain-hyphen heading of the SAME
-//    decision normalizes differently and is treated as a genuine collision ──
+// ── 2. ADR-142 false positive, DASH VARIANT — lib/canon.mjs's old private `norm()`
+//    stripped only an em dash (`—?`), so a plain-hyphen heading of the SAME decision
+//    normalized differently and was treated as a genuine collision ──
 //
-// PHASE-18 REPRODUCTION — asserts the BUG; flipped by t5. Recorded here: this is
-// the variant that actually reproduces (see commit message).
-test('PHASE-18 REPRODUCTION: the same decision recorded with a hyphen instead of an em dash duplicates on pull', async () => {
+// FIXED by t5: `mergeDecisions` now routes through `lib/decisions.mjs`'s
+// `sameDecision`, whose dash class tolerates em dash, en dash and plain hyphen alike.
+// This is the variant that actually reproduced (see commit message).
+test('the same decision recorded with a hyphen instead of an em dash converges to one entry on pull', async () => {
   const bare = mkBareRemote();
   const alice = mkWorkdir(bare, 'alice');
   const bob = mkWorkdir(bare, 'bob');
@@ -86,18 +87,17 @@ test('PHASE-18 REPRODUCTION: the same decision recorded with a hyphen instead of
   const res = canonPull(bob);
   const ids = [...readFileSync(paths(bob).decisions, 'utf8').matchAll(/^##\s+(ADR-\d+)/gm)].map((m) => m[1]);
 
-  // TODAY: the dash mismatch makes norm() see two different decisions under the
-  // same id, so the local one gets silently renumbered and kept — two entries
-  // for what is really one decision.
-  assert.equal(ids.length, 2, 'BUG: the same decision became two entries because of dash style alone');
-  assert.ok(res.renumbered.length >= 1, 'BUG: reported as a renumbering, not a converge');
+  assert.equal(ids.length, 1, 'the same decision, differing only by dash style, must converge to one entry');
+  assert.deepEqual(res.collisions, [], 'a dash-style difference must never be reported as a collision');
 });
 
 // ── 3. ADR-142 false positive, DATE STAMP ONLY — `buildDecision` stamps a
-//    `_date_` line into the body and `norm()` never excludes it ──
+//    `_date_` line into the body and the old `norm()` never excluded it ──
 //
-// PHASE-18 REPRODUCTION — asserts the BUG; flipped by t5.
-test('PHASE-18 REPRODUCTION: the same decision recorded on two machines on different days duplicates on pull', async () => {
+// FIXED by t5: `normalizeDecision` (lib/decisions.mjs) strips the `_YYYY-MM-DD_`
+// line as its own anchored step, so the same decision recorded on two machines on
+// two different days converges instead of colliding.
+test('the same decision recorded on two machines on different days converges to one entry on pull', async () => {
   const bare = mkBareRemote();
   const alice = mkWorkdir(bare, 'alice');
   const bob = mkWorkdir(bare, 'bob');
@@ -115,16 +115,18 @@ test('PHASE-18 REPRODUCTION: the same decision recorded on two machines on diffe
   const res = canonPull(bob);
   const ids = [...readFileSync(paths(bob).decisions, 'utf8').matchAll(/^##\s+(ADR-\d+)/gm)].map((m) => m[1]);
 
-  assert.equal(ids.length, 2, 'BUG: the same decision became two entries because of the date stamp alone');
-  assert.ok(res.renumbered.length >= 1, 'BUG: reported as a renumbering, not a converge');
+  assert.equal(ids.length, 1, 'the same decision, differing only by recording date, must converge to one entry');
+  assert.deepEqual(res.collisions, [], 'a date-stamp-only difference must never be reported as a collision');
 });
 
-// ── 4. Silent renumbering — a genuine same-id/different-content collision is
+// ── 4. Silent renumbering — a genuine same-id/different-content collision was
 //    "resolved" by moving the local entry to a fresh id instead of surfacing the
 //    conflict (the third open debt item this phase closes) ──
 //
-// PHASE-18 REPRODUCTION — asserts the BUG; flipped by t5.
-test('PHASE-18 REPRODUCTION: a genuine same-id collision is silently renumbered instead of refusing', async () => {
+// FIXED by t5 (D5): a genuine collision REFUSES — nothing is renumbered, nothing is
+// moved, and the heading set on both sides is unchanged. The collision is reported
+// naming both decisions instead.
+test('a genuine same-id collision refuses instead of renumbering, and the heading set is unchanged', async () => {
   const bare = mkBareRemote();
   const alice = mkWorkdir(bare, 'alice');
   const bob = mkWorkdir(bare, 'bob');
@@ -138,17 +140,18 @@ test('PHASE-18 REPRODUCTION: a genuine same-id collision is silently renumbered 
     paths(bob).decisions,
     `# Decisions\n\n## ${a.id} — Ban worktrees\n_2026-09-17_\n\n**Why:** confusion\n\n`
   );
+  const before = readFileSync(paths(bob).decisions, 'utf8');
 
   const res = canonPull(bob);
-  const text = readFileSync(paths(bob).decisions, 'utf8');
-  const ids = [...text.matchAll(/^##\s+(ADR-\d+)/gm)].map((m) => m[1]);
+  const after = readFileSync(paths(bob).decisions, 'utf8');
+  const ids = [...after.matchAll(/^##\s+(ADR-\d+)/gm)].map((m) => m[1]);
 
-  // TODAY: bob's colliding entry is silently moved to a brand-new id and appended —
-  // nothing refuses, nothing names the collision as such.
-  assert.ok(res.renumbered.length >= 1, 'BUG: today reports a renumbering rather than refusing');
-  assert.equal(res.renumbered[0].from, a.id);
-  assert.notEqual(res.renumbered[0].to, a.id);
-  assert.ok(ids.includes(res.renumbered[0].to), 'BUG: a brand-new ADR-0NN heading now carries the moved copy');
-  assert.equal(ids.length, 2, 'both the original and the renumbered copy now exist');
-  assert.match(text, /Ban worktrees/, 'the local (colliding) content survived, just moved');
+  assert.equal(after, before, 'DECISIONS.md must be left byte-identical on a genuine collision');
+  assert.equal(ids.length, 1, 'no new ADR-0NN heading may appear — nothing is renumbered or moved');
+  assert.equal(ids[0], a.id, 'the id must not change');
+  assert.equal(res.collisions.length, 1, 'the collision must be reported, not silently resolved');
+  assert.equal(res.collisions[0].id, a.id);
+  assert.equal(res.collisions[0].kind, 'independent', 'different titles on each side — not the same-title edit case');
+  assert.equal(res.collisions[0].localTitle, 'Ban worktrees');
+  assert.equal(res.collisions[0].remoteTitle, 'Use worktrees');
 });

@@ -432,9 +432,25 @@ _2026-01-02_
 **Why:** BODY-TWO
 `;
 
+// Local-only ids that do NOT collide with the registry's own ADR-001 ("registry entry",
+// seeded by `seededRegistry()`) — this fixture tests plain local-only survival, not a
+// same-id collision (that is `LOCAL_LOG`'s job, below, since it deliberately reuses ADR-001).
+const LOCAL_ONLY_LOG = `# Decisions
+
+## ADR-050 — first real decision
+_2026-01-01_
+
+**Why:** BODY-ONE
+
+## ADR-051 — second real decision
+_2026-01-02_
+
+**Why:** BODY-TWO
+`;
+
 test('ADR-039: adding a decision never destroys a local-only ADR', async () => {
   const dir = await seededRegistry();
-  writeFileSync(paths(dir).decisions, LOCAL_LOG);
+  writeFileSync(paths(dir).decisions, LOCAL_ONLY_LOG);
 
   const res = await addDecision(dir, { title: 'brand new', why: 'must lose nothing' });
   const after = readFileSync(paths(dir).decisions, 'utf8');
@@ -446,19 +462,25 @@ test('ADR-039: adding a decision never destroys a local-only ADR', async () => {
   assert.strictEqual(res.source, 'remote');
 });
 
-test('ADR-039: a local ADR sharing an id with a DIFFERENT shared one is kept, renumbered, and reported', async () => {
+test('ADR-053 (D5): a local ADR sharing an id with a DIFFERENT shared one refuses instead of renumbering', async () => {
   const dir = await seededRegistry();
   writeFileSync(paths(dir).decisions, LOCAL_LOG);
+  const before = readFileSync(paths(dir).decisions, 'utf8');
+
   const res = await addDecision(dir, { title: 'brand new', why: 'x' });
 
-  // The registry already owns ADR-001 with different content. Keying on id alone silently
-  // dropped the local one — both are real decisions, so both must survive.
-  assert.ok(res.renumbered.length >= 1, 'the collision must be reported, not silently resolved');
-  assert.strictEqual(res.renumbered[0].from, 'ADR-001');
-  assert.notStrictEqual(res.renumbered[0].to, 'ADR-001');
+  // The registry already owns ADR-001 with different content. Renumbering the local one
+  // silently moved a number something can reference — refuse instead (D5): nothing is
+  // renumbered, nothing is moved, and neither entry's id changes.
+  assert.strictEqual(res.ok, false, 'the add must refuse as a whole on a genuine collision');
+  assert.strictEqual(res.refused, 'decision-collision');
+  assert.strictEqual(res.collisions.length, 1, 'the collision must be reported, not silently resolved');
+  assert.strictEqual(res.collisions[0].id, 'ADR-001');
+
   const after = readFileSync(paths(dir).decisions, 'utf8');
-  assert.match(after, /BODY-ONE/, 'the colliding local decision must still be present');
-  assert.match(after, /registry entry/, 'and so must the shared one it collided with');
+  assert.strictEqual(after, before, 'no new heading may appear and no id may change — the local file is untouched');
+  const ids = [...after.matchAll(/^##\s+(ADR-\d+)/gm)].map((m) => m[1]);
+  assert.deepStrictEqual(ids, ['ADR-001', 'ADR-002'], 'the local heading set must be exactly what it was before the add');
 });
 
 test('ADR-039: the new id never reuses an id already present locally', async () => {
