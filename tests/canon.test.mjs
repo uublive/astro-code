@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { git } from '../lib/git.mjs';
 import { initPlanning } from '../lib/planning.mjs';
 import { paths } from '../lib/paths.mjs';
-import { addDecision, canonPull, canonPush } from '../lib/canon.mjs';
+import { addDecision, canonPull, canonPush, canonDedupe } from '../lib/canon.mjs';
 
 function mkBareRemote() {
   const bare = mkdtempSync(join(tmpdir(), 'ac-origin-')) + '/origin.git';
@@ -291,4 +291,70 @@ test('decision add refuses when a locally-edited published decision collides wit
   assert.equal(res.collisions.length, 1);
   assert.equal(res.collisions[0].id, a.id);
   assert.equal(res.collisions[0].kind, 'edited-published', 'same title on both sides — an edit, not an independent clash');
+});
+
+// ── t8: already-duplicated canon is reported on every sync, collapsed only on request ──
+test('a pre-existing duplicate pair is reported on every pull, and only collapsed by the explicit repair', () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  writeFileSync(paths(alice).conventions, '# Conventions\n\n- Max 300 lines per file.\n');
+  assert.equal(canonPush(alice).ok, true);
+
+  // bob already has a content-identical duplicate pair on disk — different numbers and
+  // date stamps, same title and body — planted directly (not via `decision add`).
+  writeFileSync(
+    paths(bob).decisions,
+    '# Decisions\n\n' +
+      '## ADR-001 — Never hand-edit state.json\n_2026-09-10_\n\n**Why:** locks\n\n' +
+      '## ADR-002 — Never hand-edit state.json\n_2026-09-15_\n\n**Why:** locks\n\n',
+  );
+
+  const first = canonPull(bob);
+  assert.equal(first.duplicates.length, 1, 'a plain sync must report the pre-existing duplicate pair');
+  assert.deepEqual(first.duplicates[0].ids.sort(), ['ADR-001', 'ADR-002']);
+  let onDisk = readFileSync(paths(bob).decisions, 'utf8');
+  assert.equal((onDisk.match(/^##\s+ADR-00[12]\b/gm) || []).length, 2, 'a plain sync must not collapse anything');
+
+  // detection is not one-shot — a second sync reports it again.
+  const second = canonPull(bob);
+  assert.equal(second.duplicates.length, 1, 'duplicate detection must not be one-shot');
+
+  // the explicit repair verb collapses it.
+  const repaired = canonDedupe(bob);
+  assert.equal(repaired.ok, true);
+  assert.equal(repaired.removed.length, 1);
+  assert.equal(repaired.removed[0].keptId, 'ADR-001', 'the lowest-numbered id survives');
+  assert.equal(repaired.removed[0].id, 'ADR-002');
+  onDisk = readFileSync(paths(bob).decisions, 'utf8');
+  assert.equal((onDisk.match(/^##\s+ADR-00[12]\b/gm) || []).length, 1, 'exactly one of the pair remains');
+  assert.match(onDisk, /Never hand-edit state\.json/, "the survivor's body is intact");
+});
+
+// ── t8: near-duplicates are never collapsed, by pull OR by the explicit repair ──
+test('near-duplicate decisions survive both a pull and the explicit repair verb', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  await addDecision(alice, { title: 'Unrelated decision', why: 'keeps the registry non-empty' });
+
+  writeFileSync(
+    paths(bob).decisions,
+    '# Decisions\n\n' +
+      '## ADR-011 — Use locks\n_2026-09-10_\n\n**Why:** locks prevent races\n\n' +
+      '## ADR-012 — Use locks\n_2026-09-15_\n\n**Why:** locks prevent retries\n\n',
+  );
+
+  canonPull(bob);
+  let onDisk = readFileSync(paths(bob).decisions, 'utf8');
+  assert.match(onDisk, /locks prevent races/, 'a plain sync must never collapse a near-duplicate');
+  assert.match(onDisk, /locks prevent retries/);
+
+  const repaired = canonDedupe(bob);
+  assert.equal(repaired.removed.length, 0, 'a single meaningful word difference must never be collapsed');
+  onDisk = readFileSync(paths(bob).decisions, 'utf8');
+  assert.match(onDisk, /locks prevent races/);
+  assert.match(onDisk, /locks prevent retries/);
 });
