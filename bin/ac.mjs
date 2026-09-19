@@ -21,6 +21,7 @@ import {
   addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt,
   debtAgeDays, debtScore, loadDebt, DEBT_COSTS, STALE_DAYS,
 } from '../lib/debt.mjs';
+import { runFixturesCheck } from '../lib/fixtures.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush } from '../lib/canon.mjs';
 import { completeMilestone } from '../lib/milestone.mjs';
@@ -73,6 +74,8 @@ const ALLOWED_FLAGS = {
   'debt drop': ['reason'],
   'debt dismiss': ['reason'],
   'debt pay': ['as'],
+  // A typo'd `--phase` must not silently degrade into "checked the wrong phase".
+  'fixtures check': ['phase'],
 };
 
 function checkFlags(key, flags) {
@@ -148,6 +151,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
   ac models [max|balanced|fast] [--preview]  apply a per-role model preset (speed switch)
   ac preflight                        warn if HEAD diverged from upstream (silent when in sync)
+  ac fixtures check [--phase N]       advisory: warn if this phase's stamped commits changed
+                                       the declared data model without the declared seed (never blocks, files debt)
   ac canon [pull | push [--dry-run]]  print canon; pull/push shares it on the orphan branch
   ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision (shared)
   ac decision list                    list recorded decisions
@@ -465,6 +470,22 @@ async function main() {
           `  Fix: \`git push\` (or pull) so they match, and avoid committing while a phase runs.\n` +
           `  Or skip the parallel path entirely: \`ac config set use_worktrees false\`.`,
       );
+      return;
+    }
+
+    // ADR-050/052 layer 3: an advisory net for the lanes a criterion never reaches
+    // (`/astro-fast`, or any run that skips the verifier). Own case arm, not folded
+    // into `preflight`'s — same posture (exit 0 always, silent when clean, never
+    // blocks a run) but a distinct verb with its own flag and its own debt filing.
+    // The engine lives in lib/fixtures.mjs (D2 — testable, reusable); this is a
+    // thin dispatcher that relays its output verbatim to stdout.
+    case 'fixtures': {
+      const sub = pos[0];
+      if (sub !== 'check') die(`unknown fixtures subcommand "${sub ?? ''}" — try: ac fixtures check`);
+      checkFlags('fixtures check', flags);
+      const r = root();
+      const result = await runFixturesCheck(r, { phase: flags.phase });
+      if (result.lines.length) console.log(result.lines.join('\n'));
       return;
     }
 
