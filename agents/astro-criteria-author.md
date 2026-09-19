@@ -50,6 +50,13 @@ Number them C1, C2, … Keep to the handful that actually prove the goal is met.
   implementation would betray itself, so the verifier has a specific thing to try to prove.
 - You MAY cite a CONTEXT.md decision or constraint, but phrase the criterion as the outcome
   it implies — never as "the plan does X".
+- **Persisted-state trigger (app-shaped projects only).** When the goal or `CONTEXT.md`
+  implies new or changed persisted state, register a criterion that the one-command cold
+  start comes up holding the state the phase's acceptance items assume — e.g. "after
+  `docker compose up`, a query for X returns it present". Phrase it as that outcome, never
+  as "the seed file was edited" or "a fixture file changed alongside the migration" — stated
+  structurally it degrades into precisely the existence/grep check banned above, passing for
+  a touched file and failing for correct work built differently.
 
 For a non-code phase (docs/config), the `Observe:` is the artifact or behavior to inspect
 and the concrete thing that proves the outcome.
