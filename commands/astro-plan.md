@@ -18,7 +18,9 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    cases — but proceed if the user declines (trivial phases can skip). **Never create or
    seed `CONTEXT.md` yourself** — only `/astro-discuss` writes it; seeding a stub here is
    exactly what defeats this gate. Refresh the team canon best-effort (`ac canon pull`) so
-   the agents read the latest. Then, opportunistically, run ONE scoped
+   the agents read the latest. A refusal or collision warning is **not** a failure to retry
+   or force — report it in the run summary and continue; never pass `--force` from an
+   agent. Then, opportunistically, run ONE scoped
    `mcp__forge__forge_knowledge` query built from the phase goal — see
    `` `$(ac path templates)/forge-knowledge.md` `` for the full detection/degradation rules
    (tools absent → skip silently, no output). This fires here, in the command body, so it
