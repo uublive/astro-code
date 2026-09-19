@@ -128,6 +128,15 @@ prompt (one `AskUserQuestion` or just prompt for it) — never invent one.
      SPEC.md; tell the **verifier** to read the canon + the phase **goal** and self-derive
      its criteria (never treat SPEC.md as the bar), then verify by running the evidence.
 
+8b. **Check fixture currency.** Unconditionally — whichever tier ran step 8, the
+    Workflow-tool call or the no-Workflow Agent-tool fallback — after the last task
+    commit, run `ac fixtures check` and fold its output verbatim into step 9's final
+    summary. It exits `0` by design and never blocks the verdict: silence means clean, a
+    `⊡ fixtures not checked` line means the project has no declaration (information, not
+    a failure), and a `⚠` line means a phase changed a declared data-model path without
+    touching its declared seed source. It **files its own debt** — do not re-file it with
+    `ac debt add`.
+
 9. **Report — and surface what's unresolved.** Clear the status (`ac activity clear`).
    The workflow returns a **structured verdict**; read `verdict.passed` for the gate and
    `verdict.summary` for the human-readable reason.
