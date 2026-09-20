@@ -19,6 +19,10 @@ coordination across a team.
 
 Requires **Node ≥ 22**.
 
+📘 **[Field manual](https://claude.ai/code/artifact/80291435-e40c-4029-a933-8fbdf2d69539)** —
+an interactive walkthrough of the loop, the four object types, the lanes, the two gates,
+the cost dials and the field rules. Start there if you're new to astro-code.
+
 ## Install
 
 ```bash
@@ -114,6 +118,7 @@ ac debt dismiss <id> --reason … # it was NEVER true — the verifier was wrong
 ac milestone complete          # archive the current milestone
 ac phase effort <n> deep       # per-phase verify→remediate budget (light|standard|deep)
 ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
+ac phase milestone <n> [<N>]   # read/correct a phase's milestone (never moves the project)
 ac models balanced             # per-role model tier + reasoning depth, in one switch
 ac tune                        # apply recommended Claude settings (additive, `--undo`able)
 ac stats                       # token usage (fresh vs cheap cache reads) + wall-clock
