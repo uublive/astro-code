@@ -16,14 +16,16 @@ Execute phase `$ARGUMENTS`.
    matches its upstream, and otherwise warns that parallel executor worktrees fork from the
    REMOTE, not from `HEAD` — so a whole wave can come back STALE, be re-run through the heal
    ladder, and still report PASS. If it warns, **relay it and suggest `git push` before
-   continuing**; it is advisory, so proceed if the user prefers. Benchmark #2 lost 17
-   task-executions to this across three phases; the one phase that launched in sync healed
-   0 of 11.
+   continuing, in one line**; it is advisory, so proceed if the user prefers. `ac preflight`
+   prints nothing when in sync — **silence means in-sync**, so say nothing yourself when it
+   is quiet. Benchmark #2 lost 17 task-executions to this across three phases; the one phase
+   that launched in sync healed 0 of 11.
 
 3. Refresh the team canon best-effort (`ac canon pull`). The workflow's agents read
    the canon + CONTEXT.md from disk — you do NOT pass them as args. A refusal or collision
    warning is **not** a failure to retry or force — report it in the run summary and
-   continue; never pass `--force` from an agent.
+   continue, **in one line** naming the file and the two escapes, never the diff; never
+   pass `--force` from an agent.
 4. Run the execution fan-out. Use the **best available** mechanism (graceful fallback):
    - **Workflow tool available (preferred):** keep `args` to small scalars only — pass
      it as a real JSON object, never a string:
@@ -88,8 +90,8 @@ Execute phase `$ARGUMENTS`.
      `args.seqBudget` (default 8 tasks). The verifier runs against the integrated
      branch, never a pristine `main`. It runs in the background — tell the user to
      **watch `/workflows`** for live wave-by-wave progress; you'll be notified on
-     completion. If the result has `integrationFailed`, surface its conflict/cleanup
-     hint and stop (do not mark the phase verified) — this also fires when the
+     completion. If the result has `integrationFailed`, surface it **in one line plus the
+     hint verbatim** and stop (do not mark the phase verified) — this also fires when the
      integrator claims a teardown outside the branches it cleanly cherry-picked in
      this run, which the script catches as a plain data check before trusting the
      agent's report.
@@ -165,9 +167,10 @@ Execute phase `$ARGUMENTS`.
    nothing surfaced it, because `.gitignore` (correctly) hides `.claude/worktrees/`, so
    `git status` stays clean. It was caught only because a verifier volunteered it.
 
-   If anything survives: report it, and for each branch show `git rev-list HEAD..<branch>`
-   so the user can see whether HEAD already supersedes it. **Do not delete anything
-   automatically** — a preserved branch may be the only copy of a failed heal (ADR-014).
+   **Say nothing when the sweep is clean.** If anything survives: **one line per
+   surviving worktree/branch**, plus its `git rev-list HEAD..<branch>` count, so the user
+   can see whether HEAD already supersedes it. **Do not delete anything automatically** —
+   a preserved branch may be the only copy of a failed heal (ADR-014).
 
 4d. **File the verifier's non-blocking findings as debt.** The workflow returns
    `findings[]` — things the verifier observed that no criterion covered. It has already
@@ -202,15 +205,26 @@ Execute phase `$ARGUMENTS`.
    `integrationFailed`), then report the verdict. `verdict` is now a **structured object**
    — read `verdict.passed` (boolean) for PASS/FAIL and `verdict.summary` for the
    human-facing reason text (the workflow has returned by now — safe to suggest `/clear`).
+   **Lead with one line**: PASS or FAIL plus the one-line cause from `verdict.summary` —
+   `verdict.summary` is *summarised here, not relayed verbatim*; the verifier's long-form
+   evidence was never the bug. Then the next command, one line.
    - **`verdict.passed` true** → run `ac phase verify <slug>` (marks it **verified** — the
      AI gate), then tell the user to run **`/astro-accept <number>`** (by number, e.g.
      `/astro-accept 3`) for UAT sign-off, which is what actually closes the phase.
      Optionally add: state is saved to `.astrocode/`, so `/clear` before `/astro-accept`
      (or the next phase) keeps context lean and loses nothing — a suggestion, not a
      requirement.
-   - **`verdict.passed` false** → surface `verdict.summary` (and, when present,
-     `stoppedReason: 'no-progress' | 'max-cycles'` from the verify→remediate loop) and
-     stop; leave the phase unverified.
+   - **`verdict.passed` false** → **at most one line per unmet criterion** (and, when
+     present, `stoppedReason: 'no-progress' | 'max-cycles'` from the verify→remediate
+     loop) plus one line pointing at where the full per-criterion evidence lives (the
+     workflow log — `/workflows`), **never the evidence itself**, then stop; leave the
+     phase unverified.
+   - **The assembled summary is one shape, not five separate walls of text**: **verdict
+     first**, then each fold-in (4c's sweep, 4d's debt count, 4e's fixtures line, the
+     capture line below) at exactly the one line or silence it already promises above,
+     then the next command — nothing else. This is a shape rule, not a length gate: five
+     individually-terse fold-ins printed one after another still read as noise if nothing
+     orders them.
    - **Opportunistic capture — after the verdict above is already reported, never
      before, and never changes or gates it.** Capture only on a surprise that changed
      the approach, gated on signals the workflow's returned object **already carries**
