@@ -12,7 +12,7 @@ import { initPlanning, phaseContextStatus } from '../lib/planning.mjs';
 import { profileModels, PROFILE_NAMES } from '../lib/models.mjs';
 import { profileReasoning, REASONING_LEVELS, validateReasoning } from '../lib/reasoning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
-import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, setPhaseEffort, setPhaseNote, isPhasePlanned } from '../lib/roadmap.mjs';
+import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, setPhaseEffort, setPhaseNote, setPhaseMilestone, isPhasePlanned } from '../lib/roadmap.mjs';
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete } from '../lib/registry.mjs';
@@ -145,6 +145,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac phase note <phase> ["<text>"]    read/set/clear a durable phase note (survives ROADMAP.md renders)
+  ac phase milestone <phase> [<N>]    read/correct which milestone a phase belongs to (never moves the project)
   ac flow init                        ensure main + develop exist (gitflow, opt-in)
   ac flow                             create+switch to feature/m<N> off develop
   ac flow pr                          push the feature branch and print the develop PR URL
@@ -742,6 +743,13 @@ async function main() {
           );
         }
         console.log(`✓ phase ${phase.number} "${name}" (milestone ${milestone}) [registry: ${res.branch}]`);
+        // Scheduling for a LATER milestone used to move the project into it silently
+        // (issue #16). It no longer does — so say which milestone the project is still
+        // on, because the difference is now the whole point and used to be invisible.
+        const current = st.active_milestone || rm.milestone || 1;
+        if (milestone !== current) {
+          console.log(`  scheduled for milestone ${milestone} — the project stays on milestone ${current}`);
+        }
         warnNameMatches(res.matches, gitIdentity(r).owner);
         return;
       }
@@ -865,8 +873,31 @@ async function main() {
               : `✓ phase ${ph.number} "${ph.name}" note cleared`,
           );
         }
+      } else if (sub === 'milestone') {
+        // Correct which milestone a phase belongs to (issue #16).
+        //   ac phase milestone <n>        READ: print it, or say it is unset
+        //   ac phase milestone <n> <N>    WRITE: move the phase — and ONLY the phase
+        // Deliberately does not touch the project's current milestone: that is
+        // `ac milestone new`, and conflating the two is the bug this repairs.
+        if (!ph) die('usage: ac phase milestone <phase> [<N>]');
+        if (pos.length < 3) {
+          // An absent field is reported as absent. Every roadmap written before this
+          // landed has phases with no milestone, and printing a number there would
+          // invent an assignment the file does not actually record.
+          console.log(
+            ph.milestone == null
+              ? `phase ${ph.number} "${ph.name}" — no milestone recorded (set one with \`ac phase milestone ${ph.number} <N>\`)`
+              : String(ph.milestone),
+          );
+        } else {
+          // setPhaseMilestone validates first, so a bogus value exits non-zero
+          // (→ main().catch → die) with nothing written to disk.
+          const updated = await setPhaseMilestone(r, ph.slug, pos[2]);
+          console.log(`✓ phase ${updated.number} "${updated.name}" → milestone ${updated.milestone}`);
+          console.log('  the project\'s active milestone is unchanged — use `ac milestone new` to move it');
+        }
       } else {
-        die('usage: ac phase <add|check|context|verify|accept|reject|effort|note> …');
+        die('usage: ac phase <add|check|context|verify|accept|reject|effort|note|milestone> …');
       }
       return;
     }
