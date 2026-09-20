@@ -241,7 +241,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "main",
       "claimed_at": "2026-09-19T19:40:33.560Z",
-      "status": "active"
+      "status": "complete"
     },
     {
       "type": "phase",
@@ -251,7 +251,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "feature/m7-runnable-projects-with-fixtures",
       "claimed_at": "2026-09-19T20:37:20.043Z",
-      "status": "active"
+      "status": "complete"
     }
   ]
 }
