@@ -577,3 +577,198 @@ test('astro-plan.md tells the agent a canon-pull refusal or collision is not a f
     'astro-plan.md must forbid an agent from passing `--force` to `ac canon pull`',
   );
 });
+
+// ── Phase 19 t11: the Voice guard (ADR-055, D4/D5) ──────────────────────────────────
+//
+// What this file asserts, and nothing more (P5): every human-facing reporting slot in
+// the seven loop commands (discuss, plan, execute, verify, accept, status, debt) states
+// either an emission bound ("in one line", "at most three lines") or a silence rule
+// ("say nothing when there is nothing to report"). That is SHAPE ONLY — never quality,
+// never free-form prose, never the other nineteen commands. A word/line/character-count
+// gate is deliberately absent (D5): whether a paragraph earned its place is not
+// mechanically testable, and a length gate would just produce worse writing.
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const ASTRO_CONVENTIONS = join(ROOT, '.astrocode', 'CONVENTIONS.md');
+const TEMPLATE_CONVENTIONS = join(ROOT, 'templates', 'CONVENTIONS.md');
+const ROOT_AGENTS = join(ROOT, 'AGENTS.md');
+const TEMPLATE_AGENTS = join(ROOT, 'templates', 'AGENTS.md');
+const VERIFIER_MD = join(ROOT, 'agents', 'astro-verifier.md');
+
+// P4's bound vocabulary — a concept-level regex, not pinned prose. A copyedit of a slot
+// must not go red (C3); only deleting the bound itself may (C2). Extended with one extra
+// alternative ("two or three sentences") to cover astro-debt.md's pre-existing assessment
+// slot, which the phase-19 audit already judged compliant (PLAN.md) but which the plan's
+// literal P4 regex does not match — still a stated numeric bound, just an "X or Y" range.
+const BOUND_RE =
+  /\b(?:in|at most|no more than|to)\s+(?:exactly\s+)?(?:one|two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\b(?:one|two|three|\d+)\s+or\s+(?:two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\bone[- ]liner\b|\bone line\b|\bsay nothing\b|\bnothing at all\b|\bno output\b|\bsilence means\b|\bskip (?:this|it) (?:silently|in silence)\b/i;
+
+/**
+ * Slice `src` between two literal anchors (the numbered-step / bullet markers already
+ * unique per file) and assert BOUND_RE matches inside. `end === null` slices to EOF.
+ * Fails loudly, naming the command and the slot, if either anchor is missing — a renamed
+ * step must not silently drop out of the guard.
+ */
+function assertSlotBound(src, command, slot, start, end) {
+  const startIdx = src.indexOf(start);
+  assert.ok(startIdx !== -1, `${command}: slot "${slot}" — start anchor not found: "${start}"`);
+  const endIdx = end === null ? src.length : src.indexOf(end, startIdx + start.length);
+  if (end !== null) {
+    assert.ok(endIdx !== -1, `${command}: slot "${slot}" — end anchor not found: "${end}"`);
+  }
+  const slice = src.slice(startIdx, endIdx);
+  assert.ok(
+    BOUND_RE.test(slice),
+    `${command}, slot "${slot}": no line budget and no silence rule — a reporting slot ` +
+      `must say how much it may emit or when it emits nothing.\n\n${slice}`,
+  );
+}
+
+// The slot table. Built by reading all seven loop commands end to end (not by grepping
+// for known-good phrases) — every human-facing reporting slot in each file, not a subset.
+const SLOTS = [
+  // astro-discuss.md
+  { command: 'astro-discuss.md', slot: '1b debt fold-in: items when present', start: '1b. **Check the debt register', end: 'Say nothing at all when there is no relevant debt' },
+  { command: 'astro-discuss.md', slot: '1b debt fold-in: silence when absent', start: 'Say nothing at all when there is no relevant debt', end: '2. **Map the gray areas.' },
+  { command: 'astro-discuss.md', slot: '2 brain-settled fork', start: 'the forge brain already settled a fork', end: '3. **Discuss in rounds' },
+  { command: 'astro-discuss.md', slot: '4 capture report', start: '4. **Capture.', end: '5. **Promote firm choices.' },
+  { command: 'astro-discuss.md', slot: '6 hand-off', start: '6. Clear the live status', end: 'Keep it conversational' },
+  { command: 'astro-discuss.md', slot: 'closing trivial-phase skip', start: 'Keep it conversational', end: null },
+
+  // astro-plan.md
+  { command: 'astro-plan.md', slot: '2 discuss-gate canon refusal relay', start: '2. **Discuss gate', end: 'opportunistically, run ONE scoped' },
+  { command: 'astro-plan.md', slot: '2 forge result relay', start: 'opportunistically, run ONE scoped', end: '3. Mark the live status' },
+  { command: 'astro-plan.md', slot: '3 workflow launched (background)', start: 'It runs in the background — say so', end: '3b. **Commit the plan artifacts' },
+  { command: 'astro-plan.md', slot: '3b commit of plan artifacts', start: '3b. **Commit the plan artifacts', end: '4. Clear the live status' },
+  { command: 'astro-plan.md', slot: '4 plan summary', start: '4. Clear the live status', end: 'Only fan out when the phase is worth parallel research' },
+
+  // astro-execute.md
+  { command: 'astro-execute.md', slot: '2b preflight advisory', start: '2b. **Pre-flight the fork base', end: '3. Refresh the team canon' },
+  { command: 'astro-execute.md', slot: '3 canon refusal relay', start: '3. Refresh the team canon', end: '4. Run the execution fan-out' },
+  { command: 'astro-execute.md', slot: '4 integrationFailed', start: 'If the result has `integrationFailed`', end: '- **No Workflow tool, but the Agent tool is available:**' },
+  { command: 'astro-execute.md', slot: '4c leaked-ref sweep', start: '4c. **Sweep for leaked refs', end: '4d. **File the verifier' },
+  { command: 'astro-execute.md', slot: '4d debt findings', start: '4d. **File the verifier', end: '4e. **Check fixture currency' },
+  { command: 'astro-execute.md', slot: '4e fixtures check', start: '4e. **Check fixture currency', end: '5. Clear the live status' },
+  { command: 'astro-execute.md', slot: '5 verdict lead line + PASS/FAIL branches', start: '5. Clear the live status', end: '**The assembled summary' },
+  { command: 'astro-execute.md', slot: '5 assembled summary shape', start: '**The assembled summary', end: '**Opportunistic capture' },
+  { command: 'astro-execute.md', slot: '5 opportunistic capture', start: '**Opportunistic capture', end: 'Execution + the in-workflow verifier produce' },
+
+  // astro-verify.md
+  { command: 'astro-verify.md', slot: '3 PASS/FAIL verdict', start: '3. Clear the live status first', end: '3b. **On PASS only' },
+  { command: 'astro-verify.md', slot: '3b debt findings', start: '3b. **On PASS only', end: '4. **Opportunistic capture' },
+  { command: 'astro-verify.md', slot: '4 opportunistic capture', start: '4. **Opportunistic capture', end: 'Verification is the machine gate' },
+
+  // astro-accept.md
+  { command: 'astro-accept.md', slot: '1 not-verified stop', start: '1. Resolve the phase slug. Confirm its status', end: '2. Read' },
+  { command: 'astro-accept.md', slot: '3 walkthrough per item', start: '3. Walk the user through it', end: '4. Decide:' },
+  { command: 'astro-accept.md', slot: '4 accept success', start: '**All criteria hold**', end: '**Who is signing' },
+  { command: 'astro-accept.md', slot: '4 reject', start: '**Something fails**', end: '5. On accept' },
+  { command: 'astro-accept.md', slot: '5 closing nudge', start: '5. On accept', end: 'Keep it real' },
+
+  // astro-status.md
+  { command: 'astro-status.md', slot: '1 no .astrocode/', start: '1. Run `ac status`.', end: '2. Run `ac registry show`' },
+  { command: 'astro-status.md', slot: '2 registry show', start: '2. Run `ac registry show`', end: '3. Tell the user the single best next action' },
+  { command: 'astro-status.md', slot: '3 recommendation', start: '3. Tell the user the single best next action', end: '3b. **Keep the pipeline fed' },
+  { command: 'astro-status.md', slot: '3b pipeline nudge', start: '3b. **Keep the pipeline fed', end: '4. If the active phase' },
+  { command: 'astro-status.md', slot: '4 resting-point nudge', start: '4. If the active phase', end: null },
+
+  // astro-debt.md
+  { command: 'astro-debt.md', slot: '1 no open debt', start: '1. **Read the register.', end: '2. **Present it' },
+  { command: 'astro-debt.md', slot: '2 pressure line', start: 'Lead with the **pressure number', end: 'Then the items, **grouped by file' },
+  { command: 'astro-debt.md', slot: '2 grouping', start: 'Then the items, **grouped by file', end: '- Mark the ones carrying real evidence' },
+  { command: 'astro-debt.md', slot: '3 assessment', start: '3. **Say what you would do', end: '4. **Offer the exits' },
+  { command: 'astro-debt.md', slot: '4 exit taken', start: 'When you actually run one, say which and why in one line', end: '5. **Never file debt' },
+];
+
+const LOOP_COMMAND_SRC = new Map(
+  ['astro-discuss.md', 'astro-plan.md', 'astro-execute.md', 'astro-verify.md', 'astro-accept.md', 'astro-status.md', 'astro-debt.md'].map(
+    (name) => [name, cmd(name)],
+  ),
+);
+
+test('every reporting slot in the seven loop commands states a bound or a silence rule (C1/C2)', () => {
+  for (const { command, slot, start, end } of SLOTS) {
+    assertSlotBound(LOOP_COMMAND_SRC.get(command), command, slot, start, end);
+  }
+});
+
+// ── The canon keeps both audiences (C4) ─────────────────────────────────────────────
+
+test('.astrocode/CONVENTIONS.md keeps the code-comment density rule unweakened AND states the human-facing lead-with-the-change rule, both naming their audience', () => {
+  const src = readFileSync(ASTRO_CONVENTIONS, 'utf8');
+  assert.ok(
+    src.includes('high, explanatory density'),
+    'CONVENTIONS.md must still contain the exact phrase "high, explanatory density" — the code-comment rule (D1/scope) must not be weakened or folded into the human-facing rule',
+  );
+  assert.ok(
+    src.includes('leads with the change or the decision') && src.includes('keeps the evidence short'),
+    'CONVENTIONS.md must state the human-facing rule: a report to a human leads with the change or the decision and keeps the evidence short (ADR-055 P1)',
+  );
+  assert.ok(
+    src.includes('PLAN.md') && src.includes('CRITERIA.md'),
+    'CONVENTIONS.md must name PLAN.md and CRITERIA.md as exempt machine-read artifacts (P3) — otherwise a planner reading the human-facing rule would thin the artifacts that caught real bugs',
+  );
+});
+
+// ── No drift between the two canons, and the generated one is directly usable (C6) ──
+
+test('the human-facing lead-with-the-change sentence (P1) is byte-identical across .astrocode/CONVENTIONS.md and templates/CONVENTIONS.md', () => {
+  const P1 = 'A report to a human **leads with the change or the decision** and keeps the evidence short';
+  const astroSrc = readFileSync(ASTRO_CONVENTIONS, 'utf8');
+  const templateSrc = readFileSync(TEMPLATE_CONVENTIONS, 'utf8');
+  assert.ok(astroSrc.includes(P1), '.astrocode/CONVENTIONS.md must contain P1 verbatim');
+  assert.ok(templateSrc.includes(P1), 'templates/CONVENTIONS.md must contain P1 verbatim — a generated project must inherit the same sentence, not a paraphrase');
+});
+
+test('the unenforced-narration label ("nothing checks it") appears in all four canon files', () => {
+  for (const [label, file] of [
+    ['.astrocode/CONVENTIONS.md', ASTRO_CONVENTIONS],
+    ['templates/CONVENTIONS.md', TEMPLATE_CONVENTIONS],
+    ['AGENTS.md', ROOT_AGENTS],
+    ['templates/AGENTS.md', TEMPLATE_AGENTS],
+  ]) {
+    assert.ok(
+      readFileSync(file, 'utf8').includes('nothing checks it'),
+      `${label} must state the free-form-narration rule labelled "nothing checks it" (P2) — a reader must not be able to assume it is checked`,
+    );
+  }
+});
+
+test('templates/CONVENTIONS.md Voice section is pre-filled prose, not a fill-me-in stem, and never mentions astro-code or its own test suite', () => {
+  const src = readFileSync(TEMPLATE_CONVENTIONS, 'utf8');
+  const voiceIdx = src.indexOf('## Voice');
+  assert.ok(voiceIdx !== -1, 'templates/CONVENTIONS.md must carry a ## Voice section');
+  const voiceSection = src.slice(voiceIdx);
+  assert.ok(!voiceSection.includes('{{'), 'templates/CONVENTIONS.md Voice section must not carry a {{…}} placeholder — a rule the project must fill in is not an inherited rule (C6)');
+  assert.ok(
+    !/^- [^:]+:\s*$/m.test(voiceSection),
+    'templates/CONVENTIONS.md Voice section must not carry a blank "- Field:" stem like the Stack entries — it ships pre-filled',
+  );
+  assert.ok(
+    !/astro-code/i.test(voiceSection) && !/tests\//.test(voiceSection),
+    'templates/CONVENTIONS.md Voice section must be obeyable with astro-code\'s own repository absent — no reference to astro-code or its test suite',
+  );
+});
+
+// ── The verifier was not silenced (C5) ──────────────────────────────────────────────
+
+test('the verifier still demands cited commands and actual output per criterion, and astro-verify.md points at where the full evidence lives', () => {
+  const verifierSrc = readFileSync(VERIFIER_MD, 'utf8');
+  assert.ok(
+    /cite the exact command you ran and its actual output/i.test(verifierSrc),
+    'agents/astro-verifier.md must still require citing the exact command and its actual output per criterion — the command may summarise, but the verifier must not shrink (D2/C5)',
+  );
+  const verifySrc = LOOP_COMMAND_SRC.get('astro-verify.md');
+  assert.ok(
+    /full\s+per-criterion\s+report/i.test(verifySrc),
+    'astro-verify.md\'s FAIL path must point at the verifier\'s full per-criterion report — a bounded summary that leaves the reader no route to the detail is its own failure (C5)',
+  );
+});
+
+// ── C3's counterpart is enforced by construction, not asserted here ─────────────────
+//
+// C3 requires padding a loop command with ~200 words of ordinary prose to leave the
+// suite green. That is guaranteed by this test's own shape: assertSlotBound only checks
+// that BOUND_RE matches somewhere inside a slice bounded by two literal anchors — it
+// never counts words, lines or characters, so prose added between (or around) those
+// anchors cannot turn it red as long as the anchors and the bound phrase both survive.
