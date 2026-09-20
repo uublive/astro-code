@@ -6,7 +6,10 @@
       "number": 19,
       "name": "Agent output leads with what changed, not what was done",
       "slug": "19-agent-output-leads-with-what-changed-not-what-was-done",
-      "status": "verified"
+      "status": "complete",
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-20T12:03:44.608Z"
     }
   ]
 }
