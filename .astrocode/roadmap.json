@@ -23,7 +23,7 @@
       "number": 18,
       "name": "Canon sync never destroys or duplicates local canon",
       "slug": "18-canon-sync-never-destroys-or-duplicates-local-canon",
-      "status": "pending",
+      "status": "verified",
       "note": "Production bug report captured in BRIEF.md (NOT CONTEXT.md — the four forks are unsettled; run /astro-discuss 18 first). Confirms three debt items filed by verifiers on 2026-09-17 against lib/canon.mjs. Data-loss: pull whole-file-replaces CONVENTIONS.md with no warning; pull renumbers content-identical decisions into duplicates. Both print a success line."
     }
   ]

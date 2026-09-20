@@ -98,29 +98,55 @@
     {
       "id": "2026-09-20-a-canon-sync-that-finds-same-id",
       "title": "a canon sync that finds same-id-different-text renumbers silently instead of surfacing the conflict",
-      "status": "open",
+      "status": "dropped",
       "cost": "medium",
       "found_at": "2026-09-20T07:32:30.647Z",
       "why": "RE-FILED 2026-09-20: dropped by a phase-18 remediation cycle, then reproduced by that same run's verifier. Worse than originally described — lib/decisions.mjs:46 parseDecisions keys by id and src.match() resolves to the FIRST occurrence, so a second entry under the same id is invisible to mergeDecisions and is silently DESTROYED when merged text is written (verifier C5: bob's hand-written '## ADR-001 — Ban worktrees' gone after pull, grep -c = 0, plain success reported). A project that already holds duplicate ids is exactly the input that triggers it.",
+      "file": "lib/canon.mjs",
+      "dropped_at": "2026-09-20T07:47:58.460Z",
+      "drop_reason": "Fixed in phase 18 and independently re-driven by the verifier on 2026-09-20: the same-id case now refuses with the file byte-unchanged (pull prints '⚠ DECISIONS.md: refused' naming both titles; grep -c 'Ban worktrees' = 1, not 0). parseDecisionEntries sees every entry and the merge refuses on a duplicate id instead of discarding a side. Probed neighbours too — two local same-id entries, a registry-side duplicate id, a same-id exact duplicate — no residual silent drop."
+    },
+    {
+      "id": "2026-09-20-a-decisions-collision-refusal-prints-a",
+      "title": "a decisions-collision refusal prints a malformed empty fix list: 'Fix: .'",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-09-20T07:50:40.752Z",
+      "why": "lib/canon.mjs:356 builds the DECISIONS.md refusal with `fixes: []`, so every same-id collision — pull and decision add alike — prints the dangling sentence '⚠ DECISIONS.md was NOT overwritten — a same-id decision collision was found. Fix: .' The CONVENTIONS.md refusal a few lines down does carry a real list and reads correctly, which is what makes the empty one look like a bug to a reader. No criterion is harmed: the following line names both colliding decisions and states supersession. Fix is to populate the list with the supported route (record a superseding decision) or omit the sentence when there are no fixes.",
+      "phase": "18",
       "file": "lib/canon.mjs"
     },
     {
       "id": "2026-09-20-ac-canon-push-publishes-conventions-md",
       "title": "ac canon push publishes CONVENTIONS.md only, so an edit to an existing ADR never reaches the registry",
-      "status": "open",
+      "status": "dropped",
       "cost": "medium",
       "found_at": "2026-09-20T07:32:30.697Z",
       "why": "RE-FILED 2026-09-20: dropped by a phase-18 remediation cycle while still reproducible. Retained as originally filed on 2026-09-17.",
+      "file": "lib/canon.mjs",
+      "dropped_at": "2026-09-20T07:47:58.558Z",
+      "drop_reason": "Closed by design rather than by code: an edit to a published ADR deliberately does NOT reach the registry. ADR-053 makes published decisions immutable — editing one is refused with supersession explained (verified as C6: 'refused — ADR-001 was edited locally after publishing'). Propagating such an edit is now the wrong behaviour, so the gap this named is closed, not outstanding. Dropped rather than dismissed: it was a genuine gap when filed on 2026-09-17, before that decision existed."
+    },
+    {
+      "id": "2026-09-20-canon-pull-silently-deletes-hand",
+      "title": "canon pull silently deletes hand-written non-ADR prose from DECISIONS.md and reports plain success",
+      "status": "open",
+      "cost": "medium",
+      "found_at": "2026-09-20T07:50:40.808Z",
+      "why": "Observed directly: appending a hand-written non-ADR paragraph to DECISIONS.md and running `ac canon pull` left grep -c = 0, with the pull printing only '✓ DECISIONS.md: updated from astro-registry'. mergeDecisions rebuilds the file as remoteText plus entries recognised by the ^##\\s+(ADR-\\d+) heading scan, so anything outside a heading block is dropped. Outside all ten criteria — they identify a decision by its heading throughout — and partly inherent, since the local preamble is replaced by the registry's on every pull, which is the mirror semantics convergence requires. Filed because the phase goal's 'never silently destroy local canon' extends past ADR blocks, and free prose is indistinguishable from the preamble to the merge. A warning naming the discarded text would be enough.",
+      "phase": "18",
       "file": "lib/canon.mjs"
     },
     {
       "id": "2026-09-20-nothing-publishes-conventions-md-when-a",
       "title": "nothing publishes CONVENTIONS.md when a phase closes, so the next ac canon pull silently reverts local edits",
-      "status": "open",
+      "status": "dropped",
       "cost": "medium",
       "found_at": "2026-09-20T07:32:30.746Z",
       "why": "RE-FILED 2026-09-20: dropped by a phase-18 remediation cycle, then reproduced by that same run's verifier as C7. The D3 implicit publish is gated on registryMoved (lib/canon.mjs:132), which requires synced != null — any copy that has never run canon pull/push has no baseline, so the publish fires unconditionally and overwrites a teammate's published copy with no warning. .astrocode/.conventions-synced is untracked AND not gitignored, so every fresh clone starts in that unguarded branch.",
-      "file": "lib/canon.mjs"
+      "file": "lib/canon.mjs",
+      "dropped_at": "2026-09-20T07:47:58.509Z",
+      "drop_reason": "Fixed in phase 18 and independently re-driven on 2026-09-20: ac decision add now publishes a locally-edited CONVENTIONS.md, and refuses rather than clobbering in BOTH shapes — baseline-present-and-registry-moved, and never-synced-at-all. .astrocode/.conventions-synced is gitignored, so a fresh clone no longer starts in the unguarded branch. Verifier observed the teammate's line surviving in the registry in each probe."
     }
   ]
 }
