@@ -186,11 +186,12 @@ test('a pre-existing phase without a milestone field still loads and reads hones
 
   const res = ac(['phase', 'milestone', '1'], root);
   assert.equal(res.status, 0, res.stderr);
-  assert.doesNotMatch(
-    res.stdout,
-    /milestone 1\b/i,
-    'an absent field must not be reported as a confident assignment',
-  );
+  // The contract is that an absent field reads as absent. The read path prints a bare
+  // number when — and only when — one is recorded, so a bare number here would be an
+  // invented assignment. (Asserting on the word "milestone" would catch the command's
+  // own usage hint, not the value.)
+  assert.match(res.stdout, /no milestone recorded/i);
+  assert.doesNotMatch(res.stdout.trim(), /^\d+$/, 'must not print a number it does not have');
 
   // And it can be repaired.
   assert.equal(ac(['phase', 'milestone', '1', '2'], root).status, 0);
