@@ -21,10 +21,11 @@ about — and to capture the answers so planning is grounded, not guessed.
    as a standalone chore — this is the moment that difference is decidable.
 
    If anything relevant is open, raise it as **one** `AskUserQuestion` in round one: name
-   the items and ask whether to fold them into this phase's scope (options: **"Fold them
-   in"** / **"Leave them"**). On "fold in", record them in CONTEXT.md as explicit in-scope
-   items so the planner picks them up. Ask **once** — a second nudge is nagging, and debt
-   that is genuinely not worth paying should be `ac debt drop`ped, not re-asked every phase.
+   the items, **one line each**, inside that single question — never a table — and ask
+   whether to fold them into this phase's scope (options: **"Fold them in"** / **"Leave
+   them"**). On "fold in", record them in CONTEXT.md as explicit in-scope items so the
+   planner picks them up. Ask **once** — a second nudge is nagging, and debt that is
+   genuinely not worth paying should be `ac debt drop`ped, not re-asked every phase.
 
    Say nothing at all when there is no relevant debt. Never let this displace the phase's
    own questions: the phase goal is the subject, and folded-in debt is at most a rider.
@@ -56,7 +57,10 @@ about — and to capture the answers so planning is grounded, not guessed.
    - Treat scope-creep ideas as deferred notes and steer back — don't grow the phase.
 4. **Capture.** Write `.astrocode/phases/<slug>/CONTEXT.md`: the decisions reached,
    the chosen scope, and any open questions/assumptions. Keep it tight — it's the brief
-   the planner will obey. The **first line MUST be** the provenance marker
+   the planner will obey. CONTEXT.md is a machine-read artifact, not a human message
+   (D1) — it stays as dense as it needs to be. What you *report* about writing it is
+   bounded to **one line** ("captured to CONTEXT.md"). The **first line MUST be** the
+   provenance marker
    `<!-- astro-discuss: captured -->` — or, when an agent answered the questions on the
    operator's behalf rather than relaying a human's answers,
    `<!-- astro-discuss: captured by agent: <name> -->`. Same gate either way; the
@@ -69,9 +73,9 @@ about — and to capture the answers so planning is grounded, not guessed.
 5. **Promote firm choices.** If a decision is architectural (affects more than this
    phase), record it with `ac decision add "<choice>" --why "<why>"` so it joins the
    shared canon.
-6. Clear the live status (`ac activity clear`) and suggest `/astro-plan <number>` next
-   (reference the phase by its number, e.g. `/astro-plan 1`) — it will read CONTEXT.md
-   and plan against it.
+6. Clear the live status (`ac activity clear`) and suggest, **in one line**, `/astro-plan
+   <number>` next (reference the phase by its number, e.g. `/astro-plan 1`) — it will
+   read CONTEXT.md and plan against it.
 
 Keep it conversational and high-signal. A trivial phase may need no questions at all —
-say so and skip rather than manufacturing them.
+say so, **in one line**, and skip rather than manufacturing them.
