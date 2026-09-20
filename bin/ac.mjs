@@ -12,7 +12,7 @@ import { initPlanning, phaseContextStatus } from '../lib/planning.mjs';
 import { profileModels, PROFILE_NAMES } from '../lib/models.mjs';
 import { profileReasoning, REASONING_LEVELS, validateReasoning } from '../lib/reasoning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
-import { loadRoadmap, addPhase, renderRoadmap, findPhase, setPhaseStatus, setPhaseEffort, setPhaseNote, isPhasePlanned } from '../lib/roadmap.mjs';
+import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, setPhaseEffort, setPhaseNote, isPhasePlanned } from '../lib/roadmap.mjs';
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete } from '../lib/registry.mjs';
@@ -584,9 +584,7 @@ async function main() {
         const res = claim({ root: r, type: 'milestone', name });
         if (res.source === 'error') die(res.error);
         await updateState(r, (s) => ({ ...s, active_milestone: res.number, status: 'planning' }));
-        const rm = loadRoadmap(r);
-        rm.milestone = res.number;
-        renderRoadmap(r);
+        await setMilestone(r, res.number);
         console.log(`✓ milestone ${res.number}${name ? ` "${name}"` : ''} [${res.source}] — ${res.message ?? ''}`);
         warnNameMatches(res.matches, gitIdentity(r).owner);
       } else if (pos[0] === 'check') {

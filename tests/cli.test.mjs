@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { initPlanning } from '../lib/planning.mjs';
 import { paths } from '../lib/paths.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
-import { addPhase, loadRoadmap, renderRoadmapMd, renderRoadmap, slugify, findPhase, setPhaseStatus, isPhasePlanned } from '../lib/roadmap.mjs';
+import { addPhase, loadRoadmap, renderRoadmapMd, renderRoadmap, setMilestone, slugify, findPhase, setPhaseStatus, isPhasePlanned } from '../lib/roadmap.mjs';
 import { claim } from '../lib/registry.mjs';
 import { loadConfig, updateConfig, leanExecutionEnabled } from '../lib/config.mjs';
 import { loadCanon, canonText, addDecision } from '../lib/canon.mjs';
@@ -211,4 +211,50 @@ test('completeMilestone archives phases and clears the active roadmap', async ()
   assert.equal(loadRoadmap(root).phases.length, 0);
   assert.ok(existsSync(join(paths(root).dir, 'milestones', '1', 'phases', '01-alpha')));
   assert.ok(existsSync(join(paths(root).dir, 'milestones', '1', 'ROADMAP.md')));
+});
+
+// `ac milestone new` used to mutate the object from loadRoadmap() and then call
+// renderRoadmap(), which re-reads from disk and discarded the mutation — so the bumped
+// number never reached roadmap.json. The drift healed itself on the first `addPhase`
+// (which persists the field), which is exactly why it survived: it only showed up in
+// `ac status` and ROADMAP.md, and only until real work started.
+test('setMilestone persists the bumped number to roadmap.json, not just to state', async () => {
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  await addPhase(root, { number: 1, name: 'Foundation', milestone: 1 });
+  assert.equal(loadRoadmap(root).milestone, 1);
+
+  await setMilestone(root, 2);
+
+  assert.equal(loadRoadmap(root).milestone, 2, 'roadmap.json must carry the new milestone');
+  assert.match(
+    readFileSync(paths(root).roadmapMd, 'utf8'),
+    /\*\*Milestone 2\*\*/,
+    'the generated ROADMAP.md must render the new milestone, not the previous one',
+  );
+});
+
+// completeMilestone picks its archive directory from roadmap.milestone. This is the path
+// where the unpersisted bump actually bites: a milestone bumped and then completed with NO
+// phase added in between never gets repaired by addPhase, so the archive lands in the
+// PREVIOUS milestone's directory and overwrites the roadmap snapshot already sitting there.
+test('a milestone bumped and completed with no phase added archives into its own directory', async () => {
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  await addPhase(root, { number: 1, name: 'Foundation', milestone: 1 });
+  await completeMilestone(root);
+
+  const firstSnapshot = readFileSync(join(paths(root).dir, 'milestones', '1', 'roadmap.json'), 'utf8');
+
+  // Bump, then close it out immediately — nothing calls addPhase to repair the field.
+  await setMilestone(root, 2);
+  const arch = await completeMilestone(root);
+
+  assert.equal(arch.milestone, 2, 'the cycle must archive as milestone 2, not the previous one');
+  assert.ok(existsSync(join(paths(root).dir, 'milestones', '2')), 'milestones/2 must exist');
+  assert.equal(
+    readFileSync(join(paths(root).dir, 'milestones', '1', 'roadmap.json'), 'utf8'),
+    firstSnapshot,
+    "milestone 1's archived snapshot must be left byte-identical, never overwritten",
+  );
 });
