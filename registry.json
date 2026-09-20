@@ -271,6 +271,15 @@
       "branch": "main",
       "claimed_at": "2026-09-20T10:26:01.736Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-09-20-ac-phase-add-milestone-n-repoints-the",
+      "name": "ac phase add --milestone N repoints the project's active milestone",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-09-20T15:07:41.670Z",
+      "status": "active"
     }
   ]
 }
