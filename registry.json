@@ -252,6 +252,15 @@
       "branch": "feature/m7-runnable-projects-with-fixtures",
       "claimed_at": "2026-09-19T20:37:20.043Z",
       "status": "complete"
+    },
+    {
+      "type": "milestone",
+      "number": 8,
+      "name": "Agent output that respects the reader",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-09-20T10:25:46.359Z",
+      "status": "active"
     }
   ]
 }
