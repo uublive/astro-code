@@ -13,8 +13,11 @@
     {
       "id": "2026-09-20-ac-phase-add-milestone-n-repoints-the",
       "title": "ac phase add --milestone N repoints the project's active milestone",
-      "status": "verified",
-      "opened_at": "2026-09-20T15:07:40.719Z"
+      "status": "accepted",
+      "opened_at": "2026-09-20T15:07:40.719Z",
+      "accepted_at": "2026-09-20T16:42:56.279Z",
+      "accepted_kind": "human",
+      "accepted_by": "matteo.alvazzi@gmail.com"
     }
   ]
 }
