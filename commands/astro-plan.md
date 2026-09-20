@@ -19,8 +19,9 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    seed `CONTEXT.md` yourself** — only `/astro-discuss` writes it; seeding a stub here is
    exactly what defeats this gate. Refresh the team canon best-effort (`ac canon pull`) so
    the agents read the latest. A refusal or collision warning is **not** a failure to retry
-   or force — report it in the run summary and continue; never pass `--force` from an
-   agent. Then, opportunistically, run ONE scoped
+   or force — report it in the run summary and continue, **in one line** naming the file and
+   the two escapes (retry or force), never the diff; never pass `--force` from an agent. Then,
+   opportunistically, run ONE scoped
    `mcp__forge__forge_knowledge` query built from the phase goal — see
    `` `$(ac path templates)/forge-knowledge.md` `` for the full detection/degradation rules
    (tools absent → skip silently, no output). This fires here, in the command body, so it
@@ -46,8 +47,8 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
      **Speed override:** if the user passed `--fast`, use the JSON from
      `ac models fast --preview` as the `models` arg instead (a one-off fast preset,
      not persisted). `ac models fast` makes it the project default.
-     It runs in the background — tell the user to **watch `/workflows`** for live
-     progress; you'll be notified on completion.
+     It runs in the background — say so **in one line**: it runs in the background, watch
+     `/workflows`; you'll be notified on completion.
    - **No Workflow tool, but the Agent tool is available:** spawn the researchers
      yourself — parallel `astro-researcher` (or Explore) calls in one message (codebase
      patterns, external best practices, risks), then `astro-planner` to synthesize.
@@ -71,11 +72,15 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
 
    Do this BEFORE suggesting `/astro-execute`. It also means the pre-registered bar is in
    git history before any implementation exists, which is what makes ADR-021's plan-blind
-   claim auditable after the fact rather than merely asserted.
+   claim auditable after the fact rather than merely asserted. Report the commit **in one
+   line** — or say nothing at all when the commit is a no-op (nothing to commit).
 
-4. Clear the live status (`ac activity clear`), then summarize the plan and suggest
-   `/astro-execute <number>` (reference the phase by its number, e.g. `/astro-execute 1`).
-   Clear it too if planning fails or you stop early.
+4. Clear the live status (`ac activity clear`), then report the plan summary in **at most
+   three lines**: the task count and wave shape, the single next command
+   (`/astro-execute <number>`, referencing the phase by its number, e.g. `/astro-execute 1`),
+   and where the detail lives (`PLAN.md` / `CRITERIA.md`). Do not restate the task list in
+   chat — `PLAN.md` is the artifact and it stays dense. Clear the live status too if planning
+   fails or you stop early.
 
 Only fan out when the phase is worth parallel research — for a trivial phase, just
 write PLAN.md directly.
