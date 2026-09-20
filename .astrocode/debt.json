@@ -4,7 +4,7 @@
     {
       "id": "2026-09-17-a-canon-sync-that-finds-same-id",
       "title": "a canon sync that finds same-id-different-text renumbers silently instead of surfacing the conflict",
-      "status": "paying",
+      "status": "dropped",
       "cost": "medium",
       "found_at": "2026-09-17T10:11:25.927Z",
       "why": "Renumbering is right for two people colliding on a number and wrong for one decision that was edited — it orphans every existing reference to that id. Every attempt to reconcile from the tool produced a third copy. Surface both and ask; if a renumber really is the default, rewrite the references in the same transaction or say which ones are now stale.",
@@ -13,12 +13,14 @@
         "kind": "phase",
         "ref": "18-canon-sync-never-destroys-or-duplicates-local-canon"
       },
-      "paying_since": "2026-09-19T22:48:36.444Z"
+      "paying_since": "2026-09-19T22:48:36.444Z",
+      "dropped_at": "2026-09-20T07:18:56.871Z",
+      "drop_reason": "phase 18 removed the failure mode instead of reporting it: mergeDecisions now refuses a same-id/different-content collision and names both entries, and nothing is ever renumbered (ADR-053 D5, pinned by tests/canon.test.mjs against a real bare remote)"
     },
     {
       "id": "2026-09-17-ac-canon-push-publishes-conventions-md",
       "title": "ac canon push publishes CONVENTIONS.md only, so an edit to an existing ADR never reaches the registry",
-      "status": "paying",
+      "status": "dropped",
       "cost": "medium",
       "found_at": "2026-09-17T10:11:25.850Z",
       "why": "canonPush guards on p.conventions alone and ac decision add is the sole publisher of DECISIONS.md. Editing a published ADR leaves the registry stale; the next sync sees same-id-different-text, keeps both and renumbers one, producing one decision under two ids with the richer copy carrying the number nothing references. Observed end to end 2026-09-12.",
@@ -27,7 +29,9 @@
         "kind": "phase",
         "ref": "18-canon-sync-never-destroys-or-duplicates-local-canon"
       },
-      "paying_since": "2026-09-19T22:48:36.449Z"
+      "paying_since": "2026-09-19T22:48:36.449Z",
+      "dropped_at": "2026-09-20T07:19:01.744Z",
+      "drop_reason": "phase 18 closed it by refusal rather than by bulk-pushing an append-only log: an edit to an already-published decision is detected and refused with supersession named as the supported path (ADR-053 D4), so the edit no longer needs to reach the registry to avoid being lost"
     },
     {
       "id": "2026-09-17-ac-install-uses-symlinksync-with-no",
@@ -50,7 +54,7 @@
     {
       "id": "2026-09-17-nothing-publishes-conventions-md-when-a",
       "title": "nothing publishes CONVENTIONS.md when a phase closes, so the next ac canon pull silently reverts local edits",
-      "status": "paying",
+      "status": "dropped",
       "cost": "medium",
       "found_at": "2026-09-17T10:11:25.889Z",
       "why": "A phase whose tasks edit .astrocode/CONVENTIONS.md leaves the registry stale, and the pull that /astro-plan and /astro-execute both run overwrites the local file while printing success. Observed: a raised Go core ceiling reverted under a tracked line count that had already passed it. ADR-041 states the discipline as a rule humans must remember, which is the tell that the tool should just do it.",
@@ -59,7 +63,9 @@
         "kind": "phase",
         "ref": "18-canon-sync-never-destroys-or-duplicates-local-canon"
       },
-      "paying_since": "2026-09-19T22:48:36.450Z"
+      "paying_since": "2026-09-19T22:48:36.450Z",
+      "dropped_at": "2026-09-20T07:19:02.154Z",
+      "drop_reason": "phase 18 closed both ends: ac decision add now publishes a locally-edited CONVENTIONS.md (ADR-053 D3) and a pull refuses to overwrite a diverged copy instead of silently reverting it (D1); the implicit publish itself refuses when it would delete a teammate newer published copy"
     },
     {
       "id": "2026-09-17-the-planner-has-no-guidance-for-test",

@@ -581,3 +581,73 @@ test('recording a decision never republishes a stale CONVENTIONS.md over a teamm
     "bob's published line must still be on the registry — alice's stale copy must not have overwritten it",
   );
 });
+
+// ── remediation: a LOCAL edit must not clobber a teammate's newer publish either ──
+//
+// The sibling of the stale case above, and the half C7 still failed on. `editedLocally`
+// was the ONLY signal the D3 side-effect publish consulted, so when alice's copy was both
+// behind the registry AND edited, a last-writer-wins push sent a file that has never
+// contained bob's line over bob's published edit — deleting it, with no ⚠ anywhere and a
+// ✓ published line on stdout. Recording a decision must never be a destructive act on a
+// file the caller did not mention: the decision is still recorded, the implicit publish
+// stops, and the skip is REPORTED (silence is what made both incidents invisible).
+test("recording a decision never publishes over a teammate's newer convention edit it has never seen", async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  writeFileSync(paths(alice).conventions, '# Conventions\n\n- Shared base rule.\n');
+  assert.equal(canonPush(alice).ok, true); // alice's last sync == the registry
+  assert.equal(canonPull(bob).ok, true); // bob starts in sync with alice
+
+  // bob publishes a convention alice has never seen...
+  writeFileSync(paths(bob).conventions, '# Conventions\n\n- Shared base rule.\n- BOB: prefer pure functions.\n');
+  assert.equal(canonPush(bob).ok, true);
+
+  // ...and alice, still on the old base, edits her own copy and records an unrelated decision.
+  const aliceText = '# Conventions\n\n- Shared base rule.\n- ALICE: max 300 lines per file.\n';
+  writeFileSync(paths(alice).conventions, aliceText);
+  const res = await addDecision(alice, { title: 'Cap file length', why: 'readability' });
+
+  assert.equal(res.source, 'remote', res.error || '');
+  assert.ok(res.id, 'the decision itself must still be recorded');
+  assert.equal(res.publishedConventions, false, "a publish that would delete bob's line must not happen");
+  assert.ok(res.conventionsRefused, 'the skipped publish must be REPORTED, never silent');
+  assert.equal(res.conventionsRefused.file, 'CONVENTIONS.md');
+  assert.ok(
+    res.conventionsRefused.fixes.some((f) => f.includes('canon push')),
+    'the report must name how to publish deliberately',
+  );
+  assert.equal(readFileSync(paths(alice).conventions, 'utf8'), aliceText, "alice's own file is left byte-identical");
+
+  // The registry must still hold bob's line — read through a clone that has never
+  // touched CONVENTIONS.md, so its pull reflects the registry exactly.
+  const carol = mkWorkdir(bare, 'carol');
+  assert.equal(canonPull(carol).ok, true);
+  const carolText = readFileSync(paths(carol).conventions, 'utf8');
+  assert.match(carolText, /BOB: prefer pure functions/, "bob's published convention must survive alice's add");
+  assert.doesNotMatch(carolText, /ALICE: max 300/, "alice's unpublished edit must not have replaced it");
+});
+
+// ── remediation: the refused publish is visible at the CLI, not only in the return value ──
+test('CLI: an add that skips a clobbering CONVENTIONS.md publish warns on stderr and still records the decision', () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  writeFileSync(paths(alice).conventions, '# Conventions\n\n- Shared base rule.\n');
+  assert.equal(canonPush(alice).ok, true);
+  assert.equal(canonPull(bob).ok, true);
+  writeFileSync(paths(bob).conventions, '# Conventions\n\n- Shared base rule.\n- BOB: prefer pure functions.\n');
+  assert.equal(canonPush(bob).ok, true);
+
+  writeFileSync(paths(alice).conventions, '# Conventions\n\n- Shared base rule.\n- ALICE: max 300 lines per file.\n');
+  const run = runCli(['decision', 'add', 'Cap file length', '--why', 'readability'], alice);
+
+  assert.equal(run.status, 0, run.stderr); // the decision was recorded — only the publish stopped
+  assert.match(run.stdout, /✓ ADR-\d+ — Cap file length/);
+  assert.doesNotMatch(run.stdout, /published CONVENTIONS\.md/, 'it must not claim a publish that did not happen');
+  assert.match(run.stderr, /⚠/, 'the skipped publish must be warned about');
+  assert.match(run.stderr, /CONVENTIONS\.md/);
+  assert.match(run.stderr, /canon push/, 'the warning must name the deliberate route');
+});

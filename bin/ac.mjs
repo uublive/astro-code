@@ -1101,6 +1101,18 @@ async function main() {
         const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
         console.log(`✓ ${res.id} — ${res.title} (${res.date}) ${tag}`);
         if (res.publishedConventions) console.log(`✓ published CONVENTIONS.md to ${res.branch}`);
+        // ADR-053 (D3) — the implicit publish REFUSED because it would have overwritten a
+        // teammate's newer published copy. Loud on stderr: the decision still landed, so a
+        // caller reading only the ✓ line would otherwise believe their convention edit is
+        // shared when it is not — and the destructive version of this was silent too.
+        if (res.conventionsRefused) {
+          const c = res.conventionsRefused;
+          console.error(
+            `⚠ did NOT publish ${c.file} — ${c.reason}. ` +
+              `Reconcile first: \`${c.fixes[0]}\` takes the registry's copy (yours is replaced, so keep your edit), ` +
+              `then re-apply it and \`${c.fixes[1]}\` to publish deliberately.`,
+          );
+        }
         // ADR-039: an add that had to rescue local-only entries means the working tree had
         // decisions the registry has never seen. Silence here is what let them be destroyed.
         if (res.preserved && res.preserved.length) {
