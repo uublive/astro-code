@@ -1,36 +1,12 @@
 {
   "version": 1,
-  "milestone": 7,
+  "milestone": 8,
   "phases": [
     {
-      "number": 16,
-      "name": "A project is born runnable with fixtures",
-      "slug": "16-a-project-is-born-runnable-with-fixtures",
-      "status": "complete",
-      "note": "Depends: nothing. Phase 17 depends on this one — 17 enforces the contract 16 defines.",
-      "accepted_by": "matteo.alvazzi@gmail.com",
-      "accepted_kind": "human",
-      "accepted_at": "2026-09-19T20:41:17.980Z"
-    },
-    {
-      "number": 17,
-      "name": "Fixtures stay current as the data model changes",
-      "slug": "17-fixtures-stay-current-as-the-data-model-changes",
-      "status": "complete",
-      "note": "Release deliverable: a fleet-facing contract document (what the fleet must know to build its side — service name, healthcheck, seed invocation, env vars, guarantees). Ships with the major version at the end of phases 16+17.",
-      "accepted_by": "matteo.alvazzi@gmail.com",
-      "accepted_kind": "human",
-      "accepted_at": "2026-09-20T08:52:56.754Z"
-    },
-    {
-      "number": 18,
-      "name": "Canon sync never destroys or duplicates local canon",
-      "slug": "18-canon-sync-never-destroys-or-duplicates-local-canon",
-      "status": "complete",
-      "note": "Production bug report captured in BRIEF.md (NOT CONTEXT.md — the four forks are unsettled; run /astro-discuss 18 first). Confirms three debt items filed by verifiers on 2026-09-17 against lib/canon.mjs. Data-loss: pull whole-file-replaces CONVENTIONS.md with no warning; pull renumbers content-identical decisions into duplicates. Both print a success line.",
-      "accepted_by": "matteo.alvazzi@gmail.com",
-      "accepted_kind": "human",
-      "accepted_at": "2026-09-20T08:52:56.823Z"
+      "number": 19,
+      "name": "Agent output leads with what changed, not what was done",
+      "slug": "19-agent-output-leads-with-what-changed-not-what-was-done",
+      "status": "pending"
     }
   ]
 }
