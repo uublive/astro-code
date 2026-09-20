@@ -8,17 +8,19 @@ Run user acceptance testing (UAT) for phase `$ARGUMENTS` and close it only if th
 human accepts. This is the **human gate** after `/astro-verify` (the AI gate).
 
 1. Resolve the phase slug. Confirm its status is `verified` (`ac status` /
-   `ac roadmap list`). If it isn't, tell the user to run `/astro-verify` first and stop
-   (they can override with `ac phase accept <slug> --force`, but warn that skips the
-   AI gate).
+   `ac roadmap list`). If it isn't, tell them **in one line** to run `/astro-verify`
+   first, then stop — name the override, `ac phase accept <slug> --force`, and that it
+   skips the AI gate.
 2. Read `.astrocode/phases/<slug>/ACCEPTANCE.md` (the user-facing checklist written at
    plan time). If it's missing, derive a short checklist from the phase goal/PLAN.
-3. Walk the user through it: for each criterion, show what was built and **how to try
-   it** (the command to run, the URL to open, the thing to click). Let them confirm
-   each one. Use `AskUserQuestion` to collect a clear accept/reject.
+3. Walk the user through it: for each criterion, state it plus **one line** on how to
+   try it (the command to run, the URL to open, the thing to click) — not a
+   re-explanation of what was built. Let them confirm each one. Use `AskUserQuestion`
+   to collect a clear accept/reject.
 4. Decide:
    - **All criteria hold** → `ac phase accept <slug>` (records who accepted + when,
-     marks the phase **complete**). Suggest the next phase, or `/astro-complete-milestone`.
+     marks the phase **complete**). Report it in **one line**: complete, plus the next
+     suggestion (the next phase, or `/astro-complete-milestone`).
 
    **Who is signing (ADR-033).** Plain `ac phase accept` records
    `accepted_kind: "human"` — it asserts a person made this judgement. Use it ONLY when a
@@ -34,10 +36,13 @@ human accepts. This is the **human gate** after `/astro-verify` (the AI gate).
    sign-off as human does not just mislabel a field; it makes the two-gate guarantee
    unauditable, which is the whole reason the second gate exists.
    - **Something fails** → `ac phase reject <slug> --reason "<what's wrong>"` (records a
-     blocker, marks it **rejected**). Summarize the gap so it can be re-planned/executed.
-5. On accept, close with an optional context nudge: the phase is **complete** and all
-   state is saved to `.astrocode/`, so running `/clear` before the next phase keeps the
-   context lean and loses nothing (each command re-grounds from disk). Phrase it as a
-   suggestion, not a requirement.
+     blocker, marks it **rejected**). Summarize the gap in **at most three lines**: what
+     failed, what it blocks, and the next command — matching the `--reason` that was
+     just recorded.
+5. On accept, close with an optional **one-line** context nudge: the phase is
+   **complete** and all state is saved to `.astrocode/`, so running `/clear` before the
+   next phase keeps the context lean and loses nothing (each command re-grounds from
+   disk). Phrase it as a suggestion, not a requirement, and say nothing when accept
+   didn't happen (e.g. on reject).
 
 Keep it real — UAT is about "is this what I actually wanted?", not re-running unit tests.
