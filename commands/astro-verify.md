@@ -19,10 +19,12 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    is absent, self-derive goal criteria and open the verdict with a provenance line — never
    silently trust the plan.
 3. Clear the live status first (`ac activity clear`). On PASS: run `ac phase verify <slug>`
-   (marks the phase **verified**, NOT complete) and tell the user to run `/astro-accept <number>`
-   for UAT sign-off (reference the phase by its number, e.g. `/astro-accept 3`). Once the verifier agent has returned, you may add an optional nudge:
-   state is saved to `.astrocode/`, so `/clear` before `/astro-accept` keeps context lean
-   and loses nothing. On FAIL: list exactly what's missing and stop — do not mark it verified.
+   (marks the phase **verified**, NOT complete), then report **in one line**: verified, plus
+   the next command by number (`/astro-accept <number>`) for UAT sign-off. The `/clear`-before-
+   `/astro-accept` nudge (state lives in `.astrocode/`, so context is safe to drop) is optional
+   and, if given, stays to one line too. On FAIL: **one line per unmet criterion** — what is
+   missing, not how it was observed — then one line pointing to the verifier's full
+   per-criterion report for the reproduction detail, then stop. Do not mark it verified.
 3b. **On PASS only, file the verifier's non-blocking findings as debt.** If the agent
    returned `findings[]`, file each item whose `outsideCriteria` is **explicitly `true`**:
 
