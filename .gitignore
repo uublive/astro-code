@@ -15,3 +15,7 @@ __pycache__/
 # astro-code: per-copy CONVENTIONS.md sync baseline — local state, never shared.
 # Committing it would hand every clone a baseline it never actually synced.
 .astrocode/.conventions-synced
+
+# Python bytecode from the vendored kit tools under examples/
+__pycache__/
+*.pyc
