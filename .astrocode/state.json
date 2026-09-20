@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 7,
-  "active_phase": "18-canon-sync-never-destroys-or-duplicates-local-canon",
+  "active_phase": null,
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-09-20T07:50:40.705Z",
+  "updated_at": "2026-09-20T08:52:56.828Z",
   "activity": null
 }
