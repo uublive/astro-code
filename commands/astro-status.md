@@ -5,21 +5,23 @@ allowed-tools: Bash, Read
 
 Show where the project stands and what to do next.
 
-1. Run `ac status`. If there is no `.astrocode/`, tell the user to run
-   `/astro-new-project`.
+1. Run `ac status`. If there is no `.astrocode/`, tell the user in **one line** to run
+   `/astro-new-project`, then stop.
 2. Run `ac registry show` if a remote is configured, to confirm team-coordinated
-   numbering is live.
-3. In one short paragraph, tell the user the single best next action — e.g. discuss or
-   plan the first pending phase, execute a planned phase, verify a finished one, or
-   start a new milestone. For a pending, unplanned phase, the status line shows its
+   numbering is live. Say **nothing** when no remote is configured; **one line** when it
+   is live.
+3. Tell the user the single best next action in **at most three lines**: where the
+   project stands, the single best next action (by number) — e.g. discuss or plan the
+   first pending phase, execute a planned phase, verify a finished one, or start a new
+   milestone — and why. For a pending, unplanned phase, the status line shows its
    discuss state: **`undiscussed` → suggest `/astro-discuss <n>` first** (mention that a
    trivial phase can skip straight to `/astro-plan <n>`); `discussed` → suggest
    `/astro-plan <n>`. **Always reference a phase by its number** in any command you
    suggest (e.g. `/astro-discuss 1`, `/astro-execute 3`), never by its name or slug.
 3b. **Keep the pipeline fed (ADR-032).** If the phase you are about to suggest executing
-   has a successor that is still `undiscussed`, suggest `/astro-discuss <next>` FIRST.
-   `/astro-execute` plans the next phase concurrently with the current one's execution —
-   but only if that phase is already discussed, so under the naive
+   has a successor that is still `undiscussed`, suggest `/astro-discuss <next>` FIRST, in
+   **one line**. `/astro-execute` plans the next phase concurrently with the current
+   one's execution — but only if that phase is already discussed, so under the naive
    discuss→plan→execute→accept order the gate never passes and the saving is never
    realised. One extra discuss up front turns it on.
 
