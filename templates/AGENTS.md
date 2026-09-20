@@ -57,6 +57,8 @@ different claims and must not be conflated.
   without unpicking someone else's work.
 - **A phase's goal is the bar, not its task list.** Every task passing while the goal is
   unmet is a failed phase.
+- **Reports to a human lead with the change or decision, not the process** — the rule
+  lives in `CONVENTIONS.md` §Voice. It's narration — nothing checks it.
 
 ### Invoking the commands
 
