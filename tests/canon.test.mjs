@@ -651,3 +651,74 @@ test('CLI: an add that skips a clobbering CONVENTIONS.md publish warns on stderr
   assert.match(run.stderr, /CONVENTIONS\.md/);
   assert.match(run.stderr, /canon push/, 'the warning must name the deliberate route');
 });
+
+// ── 3. The two defects the phase-18 verifier reproduced after the first fixes landed ──
+//
+// Both were live with a fully green suite, which is the point: the existing tests
+// covered only the guarded branch of each path.
+
+// C5 — lib/decisions.mjs `parseDecisions` keyed by id and resolved every lookup to the
+// FIRST occurrence, so a second entry under the same id was invisible to the merge and
+// was DESTROYED when the merged text was written. Duplicate ids are exactly the state a
+// project arrives in after the renumbering bug this phase exists to fix.
+test('a second local decision sharing an id is never dropped by a pull — the merge refuses instead', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  const a = await addDecision(alice, { title: 'Use worktrees', why: 'isolated trees', date: '2026-09-10' });
+  assert.equal(canonPush(alice).ok, true);
+  assert.equal(canonPull(bob).ok, true);
+
+  // bob hand-writes a DIFFERENT decision under the SAME id — the shape ADR-034's own
+  // note records agents producing, and the shape a renumber incident leaves behind.
+  const bobDecisions = readFileSync(paths(bob).decisions, 'utf8');
+  writeFileSync(
+    paths(bob).decisions,
+    `${bobDecisions.trimEnd()}\n\n## ${a.id} — Ban worktrees\n_2026-09-11_\n\n**Why:** they confuse the integrator\n`,
+  );
+
+  const pull = canonPull(bob);
+  const after = readFileSync(paths(bob).decisions, 'utf8');
+
+  assert.ok(
+    after.includes('Ban worktrees'),
+    'the second same-id entry must survive — dropping it is silent data loss',
+  );
+  assert.ok(after.includes('Use worktrees'), 'the registry entry must survive too');
+  assert.ok(
+    (pull.collisions || []).some((c) => c.id === a.id && c.kind === 'duplicate-id'),
+    'the duplicate id must be surfaced as a collision, not resolved by discarding one side',
+  );
+});
+
+// C7 — the implicit D3 publish was gated on `registryMoved`, which required a sync
+// baseline. A copy that has never pulled or pushed has none, so the guard read false and
+// the publish fired unconditionally over a teammate's published copy. Every fresh clone
+// starts in that state: `.conventions-synced` is local-only and never committed.
+test('a never-synced copy refuses to publish CONVENTIONS.md over a teammate, instead of clobbering it', async () => {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+
+  // bob publishes a convention. alice has never pulled or pushed, so she has no baseline.
+  writeFileSync(paths(bob).conventions, '# Conventions\n\n- Bob rule.\n');
+  assert.equal(canonPush(bob).ok, true);
+
+  writeFileSync(paths(alice).conventions, '# Conventions\n\n- Alice rule.\n');
+  const res = await addDecision(alice, { title: 'Something unrelated', why: 'nothing to do with conventions', date: '2026-09-20' });
+
+  assert.equal(
+    res.publishedConventions,
+    false,
+    'an unrelated decision must never be the thing that publishes over a teammate',
+  );
+  assert.ok(res.conventionsRefused, 'the refusal must be reported, not silent');
+
+  // bob's published convention is still the registry's copy, and survives his next pull.
+  assert.equal(canonPull(bob).ok, true);
+  assert.ok(
+    readFileSync(paths(bob).conventions, 'utf8').includes('Bob rule.'),
+    "bob's published convention must survive an unrelated decision recorded elsewhere",
+  );
+});

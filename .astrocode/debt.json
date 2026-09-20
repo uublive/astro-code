@@ -94,6 +94,33 @@
       "why": "`git worktree list` shows .claude/worktrees/wf_7e0f9d53-f43-10 and wf_e41e92cd-a11-5 still registered, with branches worktree-wf_7e0f9d53-f43-10 and worktree-wf_e41e92cd-a11-5. The latter's `git rev-list HEAD..` is non-empty (commit 0385673, phase 17 t9); diff confirms HEAD's astro-planner.md is a strict superset of it, so nothing is lost — but the ADR-038 leak sweep (astro-execute step 4c) is meant to leave none of these behind, and a stale ref that looks un-integrated costs every future verifier the same investigation.",
       "phase": "17",
       "file": ".claude/worktrees/"
+    },
+    {
+      "id": "2026-09-20-a-canon-sync-that-finds-same-id",
+      "title": "a canon sync that finds same-id-different-text renumbers silently instead of surfacing the conflict",
+      "status": "open",
+      "cost": "medium",
+      "found_at": "2026-09-20T07:32:30.647Z",
+      "why": "RE-FILED 2026-09-20: dropped by a phase-18 remediation cycle, then reproduced by that same run's verifier. Worse than originally described — lib/decisions.mjs:46 parseDecisions keys by id and src.match() resolves to the FIRST occurrence, so a second entry under the same id is invisible to mergeDecisions and is silently DESTROYED when merged text is written (verifier C5: bob's hand-written '## ADR-001 — Ban worktrees' gone after pull, grep -c = 0, plain success reported). A project that already holds duplicate ids is exactly the input that triggers it.",
+      "file": "lib/canon.mjs"
+    },
+    {
+      "id": "2026-09-20-ac-canon-push-publishes-conventions-md",
+      "title": "ac canon push publishes CONVENTIONS.md only, so an edit to an existing ADR never reaches the registry",
+      "status": "open",
+      "cost": "medium",
+      "found_at": "2026-09-20T07:32:30.697Z",
+      "why": "RE-FILED 2026-09-20: dropped by a phase-18 remediation cycle while still reproducible. Retained as originally filed on 2026-09-17.",
+      "file": "lib/canon.mjs"
+    },
+    {
+      "id": "2026-09-20-nothing-publishes-conventions-md-when-a",
+      "title": "nothing publishes CONVENTIONS.md when a phase closes, so the next ac canon pull silently reverts local edits",
+      "status": "open",
+      "cost": "medium",
+      "found_at": "2026-09-20T07:32:30.746Z",
+      "why": "RE-FILED 2026-09-20: dropped by a phase-18 remediation cycle, then reproduced by that same run's verifier as C7. The D3 implicit publish is gated on registryMoved (lib/canon.mjs:132), which requires synced != null — any copy that has never run canon pull/push has no baseline, so the publish fires unconditionally and overwrites a teammate's published copy with no warning. .astrocode/.conventions-synced is untracked AND not gitignored, so every fresh clone starts in that unguarded branch.",
+      "file": "lib/canon.mjs"
     }
   ]
 }
