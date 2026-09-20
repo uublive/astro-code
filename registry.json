@@ -261,6 +261,16 @@
       "branch": "main",
       "claimed_at": "2026-09-20T10:25:46.359Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 19,
+      "milestone": 8,
+      "name": "Agent output leads with what changed, not what was done",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-09-20T10:26:01.736Z",
+      "status": "active"
     }
   ]
 }
