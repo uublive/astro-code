@@ -1,0 +1,453 @@
+# astro-code — Manual
+
+The complete reference. For a five-minute orientation, read [`README.md`](./README.md);
+for an interactive walkthrough, open the
+[field manual](https://claude.ai/code/artifact/80291435-e40c-4029-a933-8fbdf2d69539).
+For *why* it is built this way, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+
+- [Install and hosts](#install-and-hosts)
+- [The loop](#the-loop)
+- [Two gates close a phase](#two-gates-close-a-phase)
+- [Numbering and duplicate detection](#numbering-and-duplicate-detection)
+- [Bugs are not phases](#bugs-are-not-phases)
+- [Technical debt](#technical-debt)
+- [The fast lane](#the-fast-lane)
+- [Canon](#canon)
+- [Models, thinking and effort](#models-thinking-and-effort)
+- [GitFlow branching (opt-in)](#gitflow-branching-opt-in)
+- [Astro kits](#astro-kits)
+- [Forge knowledge graph (optional)](#forge-knowledge-graph-optional)
+- [Command reference](#command-reference)
+- [Layout and development](#layout-and-development)
+
+---
+
+## Install and hosts
+
+```bash
+git clone git@github.com:uublive/astro-code.git
+cd astro-code
+npm install -g .     # puts `ac` on your PATH
+ac install           # populates ~/.astro/code and publishes to every harness it finds
+```
+
+Requires **Node ≥ 22**.
+
+`ac install` keeps the files in `~/.astro/code` and publishes them to **every agent
+harness present on the machine**, each in that harness's own format, from one command.
+It's idempotent; `ac uninstall` reverses it everywhere.
+
+| Harness | Where | How you invoke a command |
+|---|---|---|
+| **Claude Code** | symlinked into the base `~/.claude` **and every jean-claude profile** (auto-detected from `~/.claude/.jean-claude/profiles.json`) | `/astro-plan 3` |
+| **Codex CLI** | skills under `~/.codex/skills/` | `$astro-plan 3` |
+
+**Updating** is one command: `/astro-update` (or `ac update`) — it pulls the latest,
+refreshes the global CLI, and re-links across every profile. The first time, if it
+can't find your clone, run `ac update <path-to-clone>` once and it remembers it.
+
+### Windows / PowerShell
+
+`ac` is shadowed by PowerShell's built-in `Add-Content` alias (aliases beat external
+commands), so typing `ac install` prompts for `Value[0]` instead of running the CLI.
+Use the equivalent **`astrocode`** command (`astrocode install`), or bypass the alias
+with `ac.cmd install`, or remove it for your session: `Remove-Item Alias:ac`.
+
+Note `ac install` links files with symlinks, which on Windows require Developer Mode or
+an elevated shell.
+
+### Using it on Codex
+
+Codex has **no custom slash commands** — `/astro-plan` will not resolve. astro-code's
+commands are installed as Codex *skills*, so you invoke them as `$astro-plan` or simply
+ask for one by name. The six agents install as subagent skills the loop dispatches.
+
+Two things Codex does not get yet: the **status line / phase track** (Codex requires each
+hook to carry a `trusted_hash` in `config.toml`, which astro-code will not forge on your
+behalf), and hook-driven session state. Everything else — the full loop, the registry,
+worktree-isolated parallel execution — works the same, because the engine is
+host-agnostic and `ac` drives the orchestration itself.
+
+---
+
+## The loop
+
+Everything lives in **`.astrocode/`** in your repo (human-readable, git-committed):
+`PROJECT.md`, `ROADMAP.md`, per-phase `CRITERIA.md`/`PLAN.md`/`SUMMARY.md`, plus the canon.
+
+Per phase: `discuss → plan → execute → verify → accept`.
+
+### Discuss before planning
+
+`/astro-discuss` asks adaptive, pick-an-answer questions about scope, approach, and edge
+cases, then writes the decisions to the phase's `CONTEXT.md` — which `/astro-plan` reads
+and obeys. Optional but recommended; trivial phases can skip it.
+
+It also surfaces open debt touching the files this phase is about to change, because debt
+is cheap to pay when you are already in the file.
+
+### Plan
+
+`/astro-plan` first has the `astro-criteria-author` agent pre-register goal-derived,
+falsifiable success criteria — **before any plan exists**, so the verifier's bar can never
+be shaped by the implementation. Then researchers fan out on three angles and a planner
+synthesizes an executable, dependency-aware `PLAN.md` plus the acceptance checklist you
+will sign against later.
+
+### Execute
+
+`/astro-execute` runs the plan **wave by wave** on the working branch: independent tasks in
+parallel, one isolated git worktree each, an integrator landing them. One task, one commit —
+so a failed task can be re-run without unpicking someone else's work. It calls the verify
+gate itself when the last wave lands.
+
+Watch live progress with **`/workflows`**. It degrades gracefully to inline subagents when
+the Workflow tool isn't available.
+
+### Context hygiene (`/clear`-safe by design)
+
+Because all state lives in `.astrocode/` files plus the registry — and because heavy work
+runs in workflows/subagents with their own contexts — the main thread barely accumulates,
+and every command re-grounds from disk. So astro-code needs `/clear` *less often* than a
+system that does its heavy lifting inline, and `/clear` is *safe*: nothing is lost.
+
+- **Clear at phase boundaries**, not between every command.
+- **Don't** clear mid-`discuss`, or `discuss → plan` while you are still in the thread —
+  that conversation carries intent not yet on disk.
+- **Never** clear while a background Workflow/Agent is in flight — you would risk losing
+  its completion notification.
+
+---
+
+## Two gates close a phase
+
+A phase moves `executing → verified → complete`.
+
+The `astro-verifier` agent is the **machine gate** — adversarial and **plan-blind**. It
+checks the result against the pre-registered, goal-derived `CRITERIA.md` by running the
+evidence per criterion, never by trusting the plan or the task summaries.
+
+`/astro-accept` is the **human gate**: UAT against the acceptance checklist written at plan
+time. The AI never auto-closes its own work; `ac phase accept` requires a prior `verified`.
+
+> **A phase's goal is the bar, not its task list.** Every task passing while the goal is
+> unmet is a failed phase.
+
+---
+
+## Numbering and duplicate detection
+
+`ac phase add` / `ac milestone new` claim the next free number from `registry.json` on an
+orphan branch (`astro-registry`) via a git compare-and-swap: if someone else pushed first
+your push is rejected and `ac` retries with the next number. No server, no `gh`.
+
+Claims also record the **name**, so adding a phase (or `ac phase check "<name>"`) warns
+when another dev is already building something with the same or similar name — catching
+duplicate work early.
+
+The registry is the single source of truth: with no remote (or before `ac registry init`),
+a claim **refuses with an actionable hint** rather than allocating a local number that
+could later collide — set up an `origin` and run `ac registry init` first.
+
+> **Never hand-edit `.astrocode/roadmap.json`, `state.json`, or the registry.** Editing
+> them desynchronises the claim ledger and the corruption surfaces later, on someone
+> else's branch. `ROADMAP.md` is **generated** — edits to it are overwritten; use
+> `ac phase note <n> "<text>"` for a note that survives.
+
+A phase's milestone lives **on the phase**. Scheduling a phase for a future milestone never
+moves the project; correct a wrong assignment with `ac phase milestone <n> <N>`.
+
+---
+
+## Bugs are not phases
+
+A phase is planned milestone scope; a bug is something that turned out to be wrong. Filing
+one as a phase burns a milestone number on unplanned work and leaves the roadmap describing
+something other than the plan.
+
+`/astro-fix "<bug>"` keeps bugfixes **beside** the roadmap — a dated id
+(`2026-09-17-auth-401`), its own directory and archive, its own lifecycle
+(`open → diagnosing → executing → verified → accepted`) — and carries one end-to-end:
+reproduce, diagnose, fix, verify.
+
+`/astro-fix-accept <id>` is the human gate; a failing verdict sends the fix back to
+`diagnosing` (the bug is still live), never to `rejected`, which means "we've decided not
+to fix this". Accepting archives it. `ac fix list` shows what's open.
+
+---
+
+## Technical debt
+
+The phase verifier is the highest-context observer in the loop — it has just driven the
+real code — so anything real it notices that no criterion covers is filed automatically as
+debt. You type nothing; `ac debt list` is the quality dashboard you check when you feel
+like it.
+
+An item is never worked in place: it **graduates** into the objects that already exist —
+`ac debt pay <id>` opens a **fix**, `--as phase` puts it on the **roadmap** — and closes
+when that work is *accepted*, never on a promise.
+
+That automatic outflow is the whole design: a list whose entries only leave when a human
+remembers to delete them is a diary, and a diary rots (astro-code's own `todo.md` spent
+months insisting GitFlow was unimplemented while `lib/flow.mjs` shipped it). Two hooks keep
+it live rather than archival: `/astro-discuss` surfaces debt touching the files a phase is
+about to change, and `/astro-complete-milestone` asks you to pay or drop anything stale.
+
+The verifier can never park a *criterion* failure here: a finding is admissible only if it
+explicitly asserts it is outside every criterion, and findings from a failing phase are
+discarded, so the quality gate keeps no back door.
+
+### Drop vs dismiss
+
+Two exits exist for an item that isn't going to be fixed, and the difference is the point:
+
+- `ac debt drop` — it **was** true and the code moved on.
+- `ac debt dismiss` — it was **never** true and the verifier was wrong.
+
+Both keep the record. Only the second is a measurement of the *feed* — if dismissals climb,
+tighten the verifier rather than grinding through the register.
+
+### Is it worth paying down?
+
+`/astro-debt` (or `ac debt score`) answers with a 0–100 number and the evidence behind it,
+then offers the exits; `/astro-debt-pay <id>` takes one on and lands it — checking first
+that it is still real, routing it to a fix or a phase, and closing it only through the
+acceptance gate.
+
+It is explicitly **not** a count: volume is a guilt meter that says "pay debt" every day of
+the project. Instead it weighs what the debt is *charging* you — **recurrence** (the
+verifier hit the same item again in a later phase, so you demonstrably keep walking over
+this ground), **concentration** (several items in one file), and age but only where it
+compounds a recurrence — against the **principal** it would cost to clear
+(small 1 · medium 3 · large 8).
+
+So filing more debt can never raise the score by itself: a fresh, isolated finding is pure
+principal and pushes the number *down*. Debt in code you never touch reads as zero, which is
+the honest answer.
+
+| Score | Reading |
+|---|---|
+| under 25 | healthy |
+| 25–49 | worth watching |
+| 50+ | the register is charging you about what clearing it would cost |
+
+The same number rides the statusline as `debt nn` — and **only** once it leaves the healthy
+band, so the segment appearing is itself the signal.
+
+---
+
+## The fast lane
+
+`/astro-fast "<a long, unplanned prompt>"` is for a big freehand request that shouldn't need
+four commands to land. It **captures the raw prompt verbatim** (the source of truth),
+**distills a lean spec** you can eyeball — a checklist of changes each traced back to the
+prompt, plus an explicit "to clarify" list so nothing is silently dropped — then goes
+**straight to execution**: sequential atomic commits and one verify pass, skipping the
+research fan-out.
+
+A **scope guard** escalates anything systemic (new architecture, cross-cutting migration,
+new dependency, or work that contradicts the canon) back to the full flow.
+
+It produces a **verified** phase at best — human `/astro-accept` still closes it.
+
+---
+
+## Canon
+
+`CONVENTIONS.md` (rules) + `DECISIONS.md` (append-only ADR log) are shared on the same
+orphan branch as the registry and injected into every plan/execute agent, so consistency
+across parallel work is enforced rather than hoped for.
+
+`ac decision add` appends to the shared log (ADR ids never collide across devs);
+`ac canon pull` refreshes your local mirror.
+
+> Read `CONVENTIONS.md` and `DECISIONS.md` before proposing an approach. Conventions are
+> binding; decisions record what was already settled and why. Re-litigating a recorded
+> decision wastes the work that produced it.
+
+**Existing project?** `/astro-adopt` maps the repo once and drafts `PROJECT.md` +
+`CONVENTIONS.md` from the real code, then plans what's next — a one-time bootstrap, not an
+always-synced codebase map.
+
+---
+
+## Models, thinking and effort
+
+`.astrocode/config.json` sets a **model tier** (`models.<role>`: opus/sonnet) and a
+**reasoning depth** (`reasoning.<role>`: low→max) for each of the six roles. They're
+independent and both move cost — a cheap model at `xhigh` can outspend an expensive one at
+`low` — so `ac models max|balanced|fast` sets the **pair** in one switch:
+
+- **balanced** (default) — opus + `high` for `planner` and `verifier`, sonnet + `medium`
+  elsewhere (the mechanical `discover`/`integrator` stay `low` in every profile).
+- **fast** — sonnet and `low` everywhere **except the verify gate**, which keeps opus +
+  `high`. Going fast can never silently cost correctness. Phases dominated by execution
+  shrink the most.
+- **max** — opus everywhere (`xhigh` on planner/verifier), except `integrator`, which stays
+  sonnet — opus on a cherry-pick is waste.
+
+The tier ladder is **opus→sonnet for every role; haiku is excluded everywhere**. ADR-035
+reverted the old `integrator` carve-out: benchmarking showed haiku's cherry-pick *judgement*
+was sound but its *discipline* was not — it ran a bare `git stash -u` in the shared tree and
+destroyed a completed phase plan. Speed comes from opus→sonnet, never from dropping a role
+to haiku. Hosts clamp depth to their own ceiling (Codex tops out at `xhigh`) rather than
+silently falling back.
+
+The third dial is per-**phase**, not per-role: `ac phase effort <n> light|standard|deep`
+(ADR-022) budgets how many verify→remediate cycles a phase may burn — 0, 1, or several.
+Research stays 3 angles at every level; the budget goes into convergence, not fan-out.
+
+Per-run without persisting: `/astro-plan <n> --fast` / `/astro-execute <n> --fast`.
+Fine-tune one role with `ac config set models.executor opus`, or use `/astro-config`.
+
+### Measuring cost
+
+`ac stats` reads Claude Code's session transcripts and reports the honest breakdown —
+**fresh** input/output (the real cost) vs **cache reads** (cheap), the cache-hit ratio, and
+wall-clock. It's the whole project session by default; scope a single run with
+`--since "<ISO timestamp>"` (or `--session <id>`). For a real astro-code-vs-X comparison,
+run the same task in a fresh session and compare.
+
+### Resilience
+
+astro-code runs *inside* a Claude Code session (it never shells out to the `claude` binary),
+so model fallback is a session-launch concern, not a config knob: start Claude Code with
+`claude --fallback-model sonnet` and a transient opus outage degrades the session to sonnet
+for the rest of the run instead of failing every request mid-phase — worth it for long
+autonomous runs.
+
+---
+
+## GitFlow branching (opt-in)
+
+Off by default — planning stays orthogonal to branching, so teams that don't want GitFlow
+pay zero cost. Turn it on with `ac config set gitflow.enabled true`, then drive it
+explicitly (lifecycle commands like `ac milestone new` are never touched):
+
+```bash
+ac flow init                   # ensure main + develop exist (creates develop off main)
+ac flow                        # create+switch to feature/m<N> off develop
+ac flow pr                     # push the feature branch, print the develop PR URL
+ac flow release                # push develop, print the develop→main PR URL
+ac flow tag [version]          # tag origin/main once that PR merges
+ac flow hotfix start <name>    # branch off main; `finish` lands it in main+develop + tags
+```
+
+> **Run `ac flow` before `/astro-execute`.** Execution forks one worktree per task from
+> `HEAD`, so you must be on the feature branch first.
+
+It's pure local git (no `gh`/`glab`, any remote or none) and it refuses to touch the orphan
+`astro-registry` branch.
+
+---
+
+## Astro kits
+
+```
+/astro-kit-new [kit-id]   start a new Astro kit: scaffold manifest v4 + recipe + build tooling
+/astro-kit-convert [src]  convert an existing non-kit implementation at verified feature parity
+/astro-kit-test           test a kit WITHOUT publishing: offline static checks, or --tier2
+/astro-kit-publish        publish a kit to a hosted Astro instance (zip with kit.json inside)
+```
+
+A kit is developed as a standalone astro-code project and goes through the normal loop.
+
+---
+
+## Forge knowledge graph (optional)
+
+If a FORGEMASTER knowledge-graph MCP server happens to be connected, astro-code
+opportunistically *consumes* it — querying before `/astro-discuss`, `/astro-plan`, and
+`/astro-new-project` decide, and staging a lifted, project-agnostic generator after
+`/astro-decision` records an ADR. With no server connected, every one of those steps is a
+silent no-op — nothing printed, nothing missing.
+
+astro-code still never *hosts* an MCP server; it only optionally reads from someone else's.
+See [`templates/forge-knowledge.md`](./templates/forge-knowledge.md) for the full spec.
+
+---
+
+## Command reference
+
+### Slash commands
+
+```
+/astro-new-project        scaffold .astrocode/, shape PROJECT.md + the roadmap
+/astro-adopt              adopt an EXISTING codebase: map it → draft canon → plan next
+/astro-phase <name>       add a phase (claims its number)
+/astro-discuss <phase>    talk through decisions/edge cases → CONTEXT.md (before planning)
+/astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)
+/astro-execute <phase>    wave-based parallel execution, then verify
+/astro-verify <phase>     AI gate: confirm the phase goal is met (goal-backward)
+/astro-accept <phase>     human gate: UAT sign-off, then close the phase
+/astro-autonomous <phase> run a whole phase end-to-end (discuss→plan→execute→verify), then stop
+/astro-fast "<prompt>"    fast lane for a long, off-the-cuff prompt: capture → distill → execute
+/astro-fix "<bug>"        fix a bug WITHOUT burning a milestone phase
+/astro-fix-accept <id>    human gate on a fix — confirm the bug is gone, then archive it
+/astro-debt               review the debt register
+/astro-debt-pay <id>      take one debt item on and land it
+/astro-milestone          start the next milestone cycle
+/astro-complete-milestone archive the finished milestone
+/astro-decision           record an architectural decision into the canon
+/astro-config             pick the model tier + reasoning depth per role
+/astro-status             where am I, and what's next?
+/astro-statusline         set a rich Claude Code statusline (milestone/phase track, context bar)
+/astro-update             pull the latest astro-code and re-link it everywhere
+/astro-help               short guide: the loop, the commands, and how to go fast
+/astro-kit-new /astro-kit-convert /astro-kit-test /astro-kit-publish
+```
+
+On Codex, invoke the same commands as `$astro-plan 3`.
+
+### CLI
+
+`ac help` lists everything. The common ones:
+
+```bash
+ac init --name my-project --vision "what we're building"
+ac status                      # project / milestone / phases
+ac phase add "Foundation"      # claim + add a phase
+ac phase check "<name>"        # is someone already building this?
+ac phase accept <n>            # human gate — requires a prior `verified`
+ac phase effort <n> deep       # per-phase verify→remediate budget (light|standard|deep)
+ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
+ac phase milestone <n> [<N>]   # read/correct a phase's milestone (never moves the project)
+ac milestone new               # claim the next milestone number
+ac milestone complete          # archive the current milestone
+
+ac fix add "<what is broken>"  # open a bugfix (dated id, no phase number)
+ac fix list                    # what is open
+ac fix accept <id>             # human gate — archives it
+ac fix accept <id> --agent <n> # machine-signed (ADR-033): records accepted_kind=agent
+
+ac debt list [--stale]         # open technical debt (the verifier files it automatically)
+ac debt score                  # pay-it-down-now signal, 0-100, with the evidence
+ac debt pay <id> [--as phase]  # graduate it into a fix (default) or a roadmap phase
+ac debt drop <id> --reason "…" # it WAS true and stopped being true
+ac debt dismiss <id> --reason … # it was NEVER true — the verifier was wrong
+
+ac models balanced             # per-role model tier + reasoning depth, in one switch
+ac config set models.executor opus
+ac stats                       # token usage (fresh vs cheap cache reads) + wall-clock
+ac registry init|show          # the shared numbering registry
+ac canon pull|push             # the shared conventions + decisions
+ac decision add "<t>" --why …  # append an ADR-lite decision (shared)
+ac agents-md                   # refresh the astro-code block in AGENTS.md
+ac preflight                   # warn if HEAD diverged from upstream
+ac tune                        # apply recommended Claude settings (additive, `--undo`able)
+ac install | uninstall | update
+```
+
+---
+
+## Layout and development
+
+```
+bin/ac.mjs   the CLI            commands/   slash commands (the loop)
+lib/         engine (tested)    agents/     subagent roles
+templates/   .astrocode/ seed   workflows/  Workflow scripts
+```
+
+```bash
+npm test     # engine units + a real bare-remote registry/canon integration test
+```

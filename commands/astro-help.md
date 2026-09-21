@@ -55,4 +55,5 @@ devs never collide.
 **Two gates close a phase:** the AI verifier (goal-backward + full test suite) marks it
 *verified*; only human `/astro-accept` marks it *complete*. The AI never closes its own work.
 
-More: `README.md` (overview) and `ARCHITECTURE.md` (design rationale) in the repo.
+More: `MANUAL.md` (the full reference), `README.md` (5-minute overview) and
+`ARCHITECTURE.md` (design rationale) in the repo.
