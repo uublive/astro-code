@@ -13,7 +13,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMMANDS = join(ROOT, 'commands');
 const CONVERT_MD = join(COMMANDS, 'astro-kit-convert.md');
 const HELP_MD = join(COMMANDS, 'astro-help.md');
-const README_MD = join(ROOT, 'README.md');
+const MANUAL_MD = join(ROOT, 'MANUAL.md');
 
 const src = readFileSync(CONVERT_MD, 'utf8');
 
@@ -137,7 +137,12 @@ test('astro-kit-convert.md ends by pointing at a numbered /astro-discuss 1', () 
   );
 });
 
-// ── 8. Docs: astro-help.md and README.md both list astro-kit-convert ────────────
+// ── 8. Docs: astro-help.md and MANUAL.md both list astro-kit-convert ────────────
+//
+// The guard is discoverability: the command must appear in the user-facing docs, not
+// only in `ac help`. It pointed at README.md until the docs were split — README.md is
+// now a five-minute overview and MANUAL.md carries the command surface, so MANUAL.md
+// is where the assertion belongs. Same bar, correct file.
 
 test('astro-help.md lists astro-kit-convert', () => {
   const helpSrc = readFileSync(HELP_MD, 'utf8');
@@ -148,11 +153,11 @@ test('astro-help.md lists astro-kit-convert', () => {
   );
 });
 
-test('README.md lists astro-kit-convert', () => {
-  const readmeSrc = readFileSync(README_MD, 'utf8');
+test('MANUAL.md lists astro-kit-convert', () => {
+  const manualSrc = readFileSync(MANUAL_MD, 'utf8');
   assert.match(
-    readmeSrc,
+    manualSrc,
     /astro-kit-convert/,
-    'README.md must list astro-kit-convert alongside the other kit commands',
+    'MANUAL.md must list astro-kit-convert alongside the other kit commands',
   );
 });
