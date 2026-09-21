@@ -15,7 +15,8 @@ idea turns out to be stale. So this command asks before it acts, then does the o
 
 1. **Confirm the idea is still worth a phase.** Run `ac backlog show $ARGUMENTS` (or
    `ac backlog list` first if the argument does not resolve) and show the human the
-   captured title and note. Ask, one `AskUserQuestion`: still worth a phase, or would it
+   captured title and note, in two or three lines — not a paste of the full record.
+   Ask, one `AskUserQuestion`: still worth a phase, or would it
    read better folded into a phase already in flight (`ac backlog link`), or archived
    instead (`/astro-backlog`)? Only proceed on "still worth a phase" — a spent phase
    number is not reissued, so this confirmation happens before anything is claimed.

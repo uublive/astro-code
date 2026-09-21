@@ -678,12 +678,39 @@ const SLOTS = [
   { command: 'astro-debt.md', slot: '2 grouping', start: 'Then the items, **grouped by file', end: '- Mark the ones carrying real evidence' },
   { command: 'astro-debt.md', slot: '3 assessment', start: '3. **Say what you would do', end: '4. **Offer the exits' },
   { command: 'astro-debt.md', slot: '4 exit taken', start: 'When you actually run one, say which and why in one line', end: '5. **Never file debt' },
+
+  // astro-discuss.md — phase 20 D1 fold-in offer (t9/t10)
+  { command: 'astro-discuss.md', slot: '1c backlog fold-in', start: '1c. **Check the backlog', end: '2. **Map the gray areas' },
+
+  // astro-accept.md — phase 20 D1 drain (t11)
+  { command: 'astro-accept.md', slot: '4 backlog drain', start: '**Backlog items linked to this phase', end: '**Who is signing' },
+
+  // astro-phase.md — phase 20 D5 declined-match warning (t12)
+  { command: 'astro-phase.md', slot: '1b declined match', start: '1b. **Check what you already decided against', end: '2. Run `ac phase add' },
+
+  // astro-backlog.md — capture + review (t9)
+  { command: 'astro-backlog.md', slot: '1 empty backlog', start: '1. **Read the backlog.', end: '2. **Present it' },
+  { command: 'astro-backlog.md', slot: '2 item presentation', start: '2. **Present it', end: '3. **Offer the exits' },
+  { command: 'astro-backlog.md', slot: '3 exit taken', start: '3. **Offer the exits', end: null },
+
+  // astro-backlog-promote.md (t9)
+  { command: 'astro-backlog-promote.md', slot: '1 still worth a phase', start: '1. **Confirm the idea is still worth a phase', end: '2. **Promote it' },
+  { command: 'astro-backlog-promote.md', slot: '3 promotion reported', start: '3. **Say what happened', end: null },
 ];
 
 const LOOP_COMMAND_SRC = new Map(
-  ['astro-discuss.md', 'astro-plan.md', 'astro-execute.md', 'astro-verify.md', 'astro-accept.md', 'astro-status.md', 'astro-debt.md'].map(
-    (name) => [name, cmd(name)],
-  ),
+  [
+    'astro-discuss.md',
+    'astro-plan.md',
+    'astro-execute.md',
+    'astro-verify.md',
+    'astro-accept.md',
+    'astro-status.md',
+    'astro-debt.md',
+    'astro-phase.md',
+    'astro-backlog.md',
+    'astro-backlog-promote.md',
+  ].map((name) => [name, cmd(name)]),
 );
 
 test('every reporting slot in the seven loop commands states a bound or a silence rule (C1/C2)', () => {
