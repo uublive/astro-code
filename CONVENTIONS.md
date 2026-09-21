@@ -62,6 +62,30 @@
 
 ## Voice
 
+### Comments
+
 Comments carry **high, explanatory density** — module headers say *why* and which bug a
 choice prevents ("safe over fast", "the milestone-1-twice drift"), not just *what*.
 Match this voice; comments are load-bearing here.
+
+### Writing to a human
+
+A report to a human **leads with the change or the decision** and keeps the evidence short
+and beneath it.
+
+Every reporting slot in a command states **how much it may emit** — "in one line, naming
+the count" — or **when it emits nothing** — "say nothing when there is nothing to report".
+
+The split that makes this decidable: *things that change what the reader does* versus
+*evidence that work happened* — cut the second, and say where the full version lives
+rather than pasting it. `astro-debt.md`'s "keep each item to its title plus one line of
+why — use `ac debt show <id>` for detail" is exactly this shape.
+
+Machine-read artifacts are exempt: `PLAN.md`, `CRITERIA.md`, and a verifier's structured
+return and log stay as dense as they need to be — that detail is what catches bugs a
+green suite misses.
+
+Free-form narration (prose between tool calls) follows the same rule by convention, but
+**nothing checks it**: `tests/commands.test.mjs` asserts that each reporting slot in the
+seven loop commands (`discuss`, `plan`, `execute`, `verify`, `accept`, `status`, `debt`)
+states a bound — shape only, never quality, never free prose.
