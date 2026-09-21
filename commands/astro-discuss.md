@@ -30,6 +30,19 @@ about — and to capture the answers so planning is grounded, not guessed.
    Say nothing at all when there is no relevant debt. Never let this displace the phase's
    own questions: the phase goal is the subject, and folded-in debt is at most a rider.
 
+1c. **Check the backlog for ideas this phase would absorb.** Run `ac backlog list`, and
+   for each open item that reads as relevant to this phase's goal, note it.
+
+   If anything relevant is open, raise it as **one** `AskUserQuestion` naming the items
+   **one line each** — never a table — offering **"Fold them in"** / **"Leave them"**. On
+   "fold in", run `ac backlog link <id> --phase <n>` for each one and record them in
+   CONTEXT.md as explicit in-scope items so the planner picks them up. Ask **once**.
+
+   Say nothing at all when there is no relevant open item. Never let this displace the
+   phase's own questions: the phase goal is the subject, and folded-in ideas are at most
+   a rider. A linked item closes by itself when `/astro-accept` closes this phase — nobody
+   ticks it off by hand.
+
 2. **Map the gray areas.** Generate the decisions that are *specific to THIS phase* —
    real forks where more than one path is reasonable, not generic categories. Let the
    domain drive them (something users SEE / CALL / RUN / READ, or data being ORGANIZED).
