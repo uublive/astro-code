@@ -79,11 +79,13 @@
     {
       "id": "2026-09-19-ac-milestone-new-never-persists-the",
       "title": "ac milestone new never persists the bumped milestone number to roadmap.json",
-      "status": "open",
+      "status": "dropped",
       "cost": "small",
       "found_at": "2026-09-19T19:41:06.389Z",
       "why": "bin/ac.mjs mutates the object returned by loadRoadmap() and then calls renderRoadmap(), which re-reads from disk (lib/roadmap.mjs:118-119) and discards the mutation. state.active_milestone bumps correctly but roadmap.json.milestone stays on the OLD number, so ac status and the generated ROADMAP.md both report the previous milestone. Worse, completeMilestone reads rm.milestone to pick the archive directory — so completing the new milestone would archive its phases into the PREVIOUS milestone's archive dir, merging two unrelated milestones (m7 phases would land in .astrocode/milestones/6/ next to the already-archived phases 11-15). Observed live on 2026-09-19: ac milestone new claimed 7, state went to 7, roadmap.json stayed at 6. flowBranch is unaffected because it prefers state.active_milestone.",
-      "file": "bin/ac.mjs"
+      "file": "bin/ac.mjs",
+      "dropped_at": "2026-09-21T10:22:33.583Z",
+      "drop_reason": "fixed on 2026-09-20 in 4da9f05 — ac milestone new now calls setMilestone(r, res.number) alongside updateState, so the bumped number reaches roadmap.json (bin/ac.mjs:587). Verified at v0.24.1 during the phase-20 discuss."
     },
     {
       "id": "2026-09-19-two-leaked-git-worktrees-and-worktree",
