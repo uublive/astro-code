@@ -22,6 +22,12 @@ human accepts. This is the **human gate** after `/astro-verify` (the AI gate).
      marks the phase **complete**). Report it in **one line**: complete, plus the next
      suggestion (the next phase, or `/astro-complete-milestone`).
 
+   **Backlog items linked to this phase close here.** `ac phase accept` closes every
+   backlog item linked to this phase as `absorbed` and prints one line each — relay
+   them **in at most two lines**, and **say nothing** when it closed none. A rejection
+   puts a linked item back on the backlog instead, so nothing is silently lost either
+   way.
+
    **Who is signing (ADR-033).** Plain `ac phase accept` records
    `accepted_kind: "human"` — it asserts a person made this judgement. Use it ONLY when a
    human actually confirmed the criteria in step 3.
