@@ -154,6 +154,16 @@
       "file": "lib/canon.mjs",
       "dropped_at": "2026-09-20T07:47:58.509Z",
       "drop_reason": "Fixed in phase 18 and independently re-driven on 2026-09-20: ac decision add now publishes a locally-edited CONVENTIONS.md, and refuses rather than clobbering in BOTH shapes — baseline-present-and-registry-moved, and never-synced-at-all. .astrocode/.conventions-synced is gitignored, so a fresh clone no longer starts in the unguarded branch. Verifier observed the teammate's line surviving in the registry in each probe."
+    },
+    {
+      "id": "2026-09-21-ac-backlog-list-says-oldest-first-but",
+      "title": "ac backlog list says \"oldest first\" but sorts by id, so same-day captures list out of capture order",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-09-21T13:45:31.552Z",
+      "why": "The sort is lexicographic on the date-prefixed id, so within a single day it is slug order, not age order. Observed in a scratch project: an item captured at 13:36:58.851 listed after one captured at 13:36:58.900. The --help line 'open ideas (oldest first)' is inaccurate for the common case of several ideas captured in one session, and the 0d age column makes the ordering look authoritative. Either sort on captured_at or soften the help text.",
+      "phase": "20",
+      "file": "bin/ac.mjs"
     }
   ]
 }
