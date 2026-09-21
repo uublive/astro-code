@@ -33,10 +33,14 @@ about — and to capture the answers so planning is grounded, not guessed.
 1c. **Check the backlog for ideas this phase would absorb.** Run `ac backlog list`, and
    for each open item that reads as relevant to this phase's goal, note it.
 
-   If anything relevant is open, raise it as **one** `AskUserQuestion` naming the items
-   **one line each** — never a table — offering **"Fold them in"** / **"Leave them"**. On
-   "fold in", run `ac backlog link <id> --phase <n>` for each one and record them in
-   CONTEXT.md as explicit in-scope items so the planner picks them up. Ask **once**.
+   If anything relevant is open, raise it as **one** `AskUserQuestion` **in round one, after
+   the debt question** — never during this grounding step, and never ahead of the phase's own
+   questions. Reading this file top to bottom is not the order the user experiences: steps 1b
+   and 1c gather, step 3 asks. An idea you might fold in is a rider on the discussion, not its
+   opening move. Name the items **one line each** inside that single question — never a table
+   — offering **"Fold them in"** / **"Leave them"**. On "fold in", run
+   `ac backlog link <id> --phase <n>` for each one and record them in CONTEXT.md as explicit
+   in-scope items so the planner picks them up. Ask **once**.
 
    Say nothing at all when there is no relevant open item. Never let this displace the
    phase's own questions: the phase goal is the subject, and folded-in ideas are at most

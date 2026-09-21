@@ -799,3 +799,43 @@ test('the verifier still demands cited commands and actual output per criterion,
 // that BOUND_RE matches somewhere inside a slice bounded by two literal anchors — it
 // never counts words, lines or characters, so prose added between (or around) those
 // anchors cannot turn it red as long as the anchors and the bound phrase both survive.
+
+// ── Phase 20 C9: the fold-in must be ASKED after the debt question, not merely
+// written after it ──────────────────────────────────────────────────────────────────
+//
+// The slot guard above checks that each reporting slot states a bound. It says nothing
+// about WHEN the question is raised, and phase 20's first verify pass failed on exactly
+// that gap: step 1c carried the bound language but no timing anchor, so an operator
+// reading /astro-discuss top to bottom raised the backlog question during grounding —
+// ahead of step 3's round one, and ahead of the debt question that 1b defers into it.
+//
+// The ordering is the criterion, not a nicety: the phase goal is the subject of a
+// discussion, and an idea that might be folded in is a rider. Asking the rider first
+// inverts that in the only place the user actually sees.
+test('the /astro-discuss backlog fold-in is anchored to round one, after the debt question (phase 20 C9)', () => {
+  const src = LOOP_COMMAND_SRC.get('astro-discuss.md');
+  const slot = src.slice(src.indexOf('1c. **Check the backlog'), src.indexOf('2. **Map the gray areas'));
+  assert.ok(slot, 'astro-discuss.md must still carry the 1c backlog fold-in step');
+
+  assert.match(
+    slot,
+    /in\s+round\s+one/i,
+    'the 1c fold-in must anchor its AskUserQuestion to round one — without a timing anchor the ' +
+      'question is raised during grounding, before the phase\'s own questions (C9 Fails-if)',
+  );
+  assert.match(
+    slot,
+    /after\s+the\s+debt\s+question/i,
+    'the 1c fold-in must say it comes AFTER the debt question — C9 requires the fold-in to follow ' +
+      'the existing debt prompt, and 1b already defers that one to round one',
+  );
+
+  // And the debt prompt it defers to must still be the round-one one it names.
+  const debtSlot = src.slice(src.indexOf('1b. **Check the debt register'), src.indexOf('1c. **Check the backlog'));
+  assert.match(
+    debtSlot,
+    /in\s+round\s+one/i,
+    'the 1b debt prompt must remain anchored to round one — 1c points at it, so weakening 1b ' +
+      'silently un-anchors the backlog fold-in too',
+  );
+});
