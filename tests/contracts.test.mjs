@@ -61,10 +61,21 @@ test('every `ac <subcommand>` referenced in a command exists in the CLI', () => 
   );
 });
 
-test('every `ac <subcommand>` in the README exists in the CLI', () => {
+// Both user-facing docs, not just the README: the command surface moved to MANUAL.md when
+// the docs were split, and checking only the README would quietly shrink this guard to the
+// handful of commands the overview still shows.
+test('every `ac <subcommand>` in the user docs exists in the CLI', () => {
   const valid = validAcCommands();
-  const bad = acCommandsIn(codeRegions(read(join(ROOT, 'README.md')))).filter((c) => !valid.has(c));
-  assert.deepEqual(bad, [], `README references unknown ac subcommand(s): ${bad.join(', ')}`);
+  const violations = [];
+  for (const doc of ['README.md', 'MANUAL.md']) {
+    for (const c of acCommandsIn(codeRegions(read(join(ROOT, doc))))) {
+      if (!valid.has(c)) violations.push(`${doc}: ac ${c}`);
+    }
+  }
+  assert.deepEqual(
+    violations, [],
+    `doc(s) reference unknown ac subcommand(s):\n  ${violations.join('\n  ')}`,
+  );
 });
 
 test('every agentType in a workflow has a matching agents/ file (or is built-in)', () => {
@@ -83,7 +94,7 @@ test('every agentType in a workflow has a matching agents/ file (or is built-in)
 test('every /astro-<command> referenced exists as a command file', () => {
   const have = new Set(mdFiles(COMMANDS).map((f) => f.split('/').pop().replace(/\.md$/, '')));
   const violations = [];
-  const sources = [...mdFiles(COMMANDS), join(ROOT, 'README.md')];
+  const sources = [...mdFiles(COMMANDS), join(ROOT, 'README.md'), join(ROOT, 'MANUAL.md')];
   for (const file of sources) {
     for (const m of read(file).matchAll(/\/(astro-[a-z-]+)/g)) {
       const name = m[1];
