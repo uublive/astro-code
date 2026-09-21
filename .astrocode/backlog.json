@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "backlog": [
+    {
+      "id": "2026-09-21-add-ac-version-so-bug-reports-can-state",
+      "title": "Add ac --version so bug reports can state a version",
+      "note": "README tells testers to cat ~/.astro/code/version; a flag is the obvious place to look",
+      "status": "open",
+      "captured_at": "2026-09-21T12:07:35.570Z"
+    }
+  ]
+}
