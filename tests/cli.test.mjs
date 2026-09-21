@@ -118,6 +118,37 @@ test('ADR-044: a phase note survives every render that used to wipe it', async (
   assert.equal(loadRoadmap(root).phases.find((p) => p.slug === '01-alpha').note, undefined);
 });
 
+// C8 — the `· planned` marker is disk-derived (isPhasePlanned), never persisted, so
+// every writer that re-renders ROADMAP.md from the in-memory roadmap object must
+// re-enrich it first. Before the fix, setPhaseNote/setPhaseMilestone/addPhase called
+// atomicWriteText(renderRoadmapMd(rm)) directly and silently stripped the marker off
+// every OTHER phase's line the command never touched.
+test('C8: the · planned marker survives phase add, note, status, and milestone writes', async () => {
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  const { setPhaseNote, setPhaseMilestone } = await import('../lib/roadmap.mjs');
+  await addPhase(root, { number: 1, name: 'Foundation', milestone: 1 });
+  await addPhase(root, { number: 2, name: 'Auth', milestone: 1 });
+  writeFileSync(join(paths(root).phases, '01-foundation', 'PLAN.md'), '# plan');
+  renderRoadmap(root);
+  const md = () => readFileSync(paths(root).roadmapMd, 'utf8');
+  assert.match(md(), /Phase 1 — Foundation `pending` · planned/);
+
+  await addPhase(root, { number: 3, name: 'Payments', milestone: 1 });
+  assert.match(md(), /Phase 1 — Foundation `pending` · planned/, 'addPhase must not strip the marker off phase 1');
+  assert.match(md(), /Phase 3 — Payments/, 'the new phase must still be rendered');
+
+  await setPhaseNote(root, '02-auth', 'a note');
+  assert.match(md(), /Phase 1 — Foundation `pending` · planned/, 'setPhaseNote must not strip the marker off phase 1');
+  assert.match(md(), /a note/, 'the note must still be rendered');
+
+  await setPhaseStatus(root, '02-auth', 'executing');
+  assert.match(md(), /Phase 1 — Foundation `pending` · planned/, 'setPhaseStatus must not strip the marker off phase 1');
+
+  await setPhaseMilestone(root, '02-auth', 2);
+  assert.match(md(), /Phase 1 — Foundation `pending` · planned/, 'setPhaseMilestone must not strip the marker off phase 1');
+});
+
 test('init scaffolds the canon files', () => {
   const root = fresh();
   initPlanning(root, { name: 'demo' });
