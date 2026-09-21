@@ -659,6 +659,13 @@ async function main() {
         const stale = staleDebt(r).length;
         console.log(`Debt:      ${debt.length} open${stale ? ` (${stale} stale)` : ''}  — \`ac debt list\``);
       }
+      // Same posture as Debt: suppressed at zero, and never throws on a project whose
+      // .astrocode/ predates this phase and has no backlog.json at all — openBacklog
+      // reads an absent file as a true empty, not a damaged one.
+      const back = openBacklog(r);
+      if (back.length) {
+        console.log(`Backlog:   ${back.length} open  — \`ac backlog list\``);
+      }
       return;
     }
 
@@ -882,6 +889,12 @@ async function main() {
           console.log(`  scheduled for milestone ${milestone} — the project stays on milestone ${current}`);
         }
         warnNameMatches(res.matches, gitIdentity(r).owner);
+        // "Let's plan X" meets the earlier decision against X (D5) — never blocks, never
+        // needs --force, the phase above is already created. An `obsolete` archive
+        // ("the world moved on") deliberately never raises this.
+        for (const m of declinedMatches(r, name)) {
+          console.log(`  ⚠ already decided against "${m.title}" (${m.id}): ${m.reason}`);
+        }
         return;
       }
 
@@ -956,6 +969,12 @@ async function main() {
         for (const d of await closeDebtFor(r, { kind: 'phase', workRef: ph.slug })) {
           console.log(`✓ debt ${d.id} paid`);
         }
+        // Same drain as debt, for the backlog (D1): a linked item closes automatically
+        // the moment the phase that offered to fold it in is accepted — nobody ticks it
+        // off by hand.
+        for (const b of await closeBacklogFor(r, { kind: 'phase', workRef: ph.slug })) {
+          console.log(`✓ backlog ${b.id} absorbed`);
+        }
       } else if (sub === 'reject') {
         if (!ph) die('usage: ac phase reject <phase> --reason "…"');
         checkFlags('phase reject', flags);
@@ -963,6 +982,11 @@ async function main() {
         await setPhaseStatus(r, ph.slug, 'rejected');
         await updateState(r, (s) => ({ ...s, blockers: [...(s.blockers || []), { phase: ph.slug, reason, at: new Date().toISOString() }] }));
         console.log(`✗ phase ${ph.number} "${ph.name}" → rejected${reason ? `: ${reason}` : ''}`);
+        // Q1: a linked item whose phase is REJECTED reverts to open rather than being
+        // stranded as `linked` forever — nothing is silently lost either way.
+        for (const b of await reopenBacklogFor(r, { kind: 'phase', workRef: ph.slug })) {
+          console.log(`• backlog ${b.id} back on the list`);
+        }
       } else if (sub === 'effort') {
         // Per-phase effort dial (ADR-022), mirroring `ac models` ergonomics.
         //   ac phase effort <n>               RESOLVE: print the effective level
