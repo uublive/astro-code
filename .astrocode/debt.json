@@ -45,11 +45,16 @@
     {
       "id": "2026-09-17-ac-phase-add-and-ac-phase-note-strip",
       "title": "ac phase add and ac phase note strip the planned flag from every line of ROADMAP.md",
-      "status": "open",
+      "status": "paying",
       "cost": "small",
       "found_at": "2026-09-17T10:11:25.963Z",
       "why": "Both re-render with renderRoadmapMd(rm) on the raw roadmap.json, but planned is disk-derived and only renderRoadmap(root) computes it from each phase's PLAN.md. Cosmetic and self-healing on the next render, which is why it has survived — but ac phase add runs on every fleet run that claims a phase, so it re-strips constantly and shows a diff nobody asked for. Fix is one word in each place.",
-      "file": "lib/roadmap.mjs"
+      "file": "lib/roadmap.mjs",
+      "paid_by": {
+        "kind": "phase",
+        "ref": "20-backlog-capture-ideas-without-planning-them"
+      },
+      "paying_since": "2026-09-21T11:43:04.435Z"
     },
     {
       "id": "2026-09-17-nothing-publishes-conventions-md-when-a",
