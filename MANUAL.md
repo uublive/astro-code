@@ -11,6 +11,7 @@ For *why* it is built this way, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 - [Numbering and duplicate detection](#numbering-and-duplicate-detection)
 - [Bugs are not phases](#bugs-are-not-phases)
 - [Technical debt](#technical-debt)
+- [Backlog](#backlog)
 - [The fast lane](#the-fast-lane)
 - [Canon](#canon)
 - [Models, thinking and effort](#models-thinking-and-effort)
@@ -236,6 +237,27 @@ band, so the segment appearing is itself the signal.
 
 ---
 
+## Backlog
+
+A place to write down an idea you are not ready to plan — `/astro-backlog "<idea>"` files
+it with no file touched and no phase number spent. It is a peer of debt and fixes, not a
+status inside either: an idea has no file and no recurrence, so folding it into the debt
+register would corrupt the one number in the system that currently carries signal.
+
+Like debt, it cannot rot into a `todo.md`: every item leaves the list the same way it
+arrived. `/astro-discuss` offers to **link** an open item to the phase it relates to, and
+a linked item **closes automatically** when `/astro-accept` accepts that phase — never on
+a human remembering to delete a line. An item can also be **promoted**
+(`/astro-backlog-promote <id>`) into a real phase, which claims a number and seeds the
+idea's captured text into the new phase's `CONTEXT.md` — deliberately without marking it
+as a discuss round, so `/astro-plan` still demands a real one. Or it can be **archived**
+with a reason (`declined` or `obsolete`), keeping the record of why so a later "let's plan
+X" can be answered instead of re-litigated.
+
+`/astro-backlog` with no argument reviews what's open and offers those exits inline.
+
+---
+
 ## The fast lane
 
 `/astro-fast "<a long, unplanned prompt>"` is for a big freehand request that shouldn't need
@@ -386,6 +408,8 @@ See [`templates/forge-knowledge.md`](./templates/forge-knowledge.md) for the ful
 /astro-fix-accept <id>    human gate on a fix — confirm the bug is gone, then archive it
 /astro-debt               review the debt register
 /astro-debt-pay <id>      take one debt item on and land it
+/astro-backlog ["<idea>"] capture an idea, or review the open backlog and decide each item
+/astro-backlog-promote <id> promote a backlog idea into a real phase
 /astro-milestone          start the next milestone cycle
 /astro-complete-milestone archive the finished milestone
 /astro-decision           record an architectural decision into the canon
@@ -425,6 +449,12 @@ ac debt score                  # pay-it-down-now signal, 0-100, with the evidenc
 ac debt pay <id> [--as phase]  # graduate it into a fix (default) or a roadmap phase
 ac debt drop <id> --reason "…" # it WAS true and stopped being true
 ac debt dismiss <id> --reason … # it was NEVER true — the verifier was wrong
+
+ac backlog add "<idea>"        # capture an idea (no file, no phase number spent)
+ac backlog list                # open ideas, oldest first
+ac backlog link <id> --phase N # fold it into a phase already in flight
+ac backlog promote <id>        # claim a phase number and seed CONTEXT.md from it
+ac backlog archive <id> --kind declined|obsolete --reason "…" # file it WITHOUT doing it
 
 ac models balanced             # per-role model tier + reasoning depth, in one switch
 ac config set models.executor opus

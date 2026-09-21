@@ -33,6 +33,10 @@ devs never collide.
   Executor defaults to Opus (`--model sonnet` to override); a **scope guard**
   escalates anything systemic back to the full loop. Verified at best — `/astro-accept` closes it.
 
+**Capture without planning:**
+- `/astro-backlog ["<idea>"]` — file an idea with no phase spent, or (no argument) review what's open and promote/link/archive each one
+- `/astro-backlog-promote <id>` — turn a captured idea into a real phase, seeding its captured note into `CONTEXT.md`
+
 **Set up & navigate:**
 - `/astro-new-project` — scaffold a new project · `/astro-adopt` — adopt an existing codebase; both give an app-shaped project a one-command container contract (`docker compose up` → healthy, seeded app) and leave `RUN-CONTRACT.md` behind
 - `/astro-kit-new` — start a new Astro kit (standalone kit project: manifest v4 + recipe + build tooling)

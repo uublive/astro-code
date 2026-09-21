@@ -10,6 +10,13 @@
       "accepted_by": "matteo.alvazzi@gmail.com",
       "accepted_kind": "human",
       "accepted_at": "2026-09-20T12:03:44.608Z"
+    },
+    {
+      "number": 20,
+      "name": "Backlog: capture ideas without planning them",
+      "slug": "20-backlog-capture-ideas-without-planning-them",
+      "status": "verified",
+      "milestone": 8
     }
   ]
 }

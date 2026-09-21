@@ -10,6 +10,15 @@ Add a new phase named `$ARGUMENTS` to the current milestone.
    phase with the same/similar name claimed by **another developer**, surface it and
    use `AskUserQuestion` to let the user choose: proceed anyway, rename, or stop and
    coordinate with that dev. (A match by *you* is just informational.)
+
+1b. **Check what you already decided against.** `ac phase add` warns when the name
+   resembles an item archived as `declined`. When it does, relay the item and its
+   reason **in one line** and raise one `AskUserQuestion`: proceed anyway / show me
+   what I wrote / stop. Say nothing when there is no match. This never blocks and
+   never needs `--force` — the phase is already created by the time the warning
+   prints. An `obsolete` archive deliberately raises nothing here: "the world moved
+   on" is not an argument against a fresh idea.
+
 2. Run `ac phase add "<final name>"`. This **claims the next free phase number** from
    the orphan-branch registry (phase numbers are **project-global** — they don't
    restart at 1 each milestone, so every phase number is unique on its own) — if

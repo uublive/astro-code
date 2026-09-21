@@ -361,3 +361,10 @@ _2026-09-20_
 
 **Why:** The framework had the instinct but not the principle: eleven ad-hoc per-slot brevity instructions existed only where someone had previously been buried, and the single global voice rule ('high explanatory density') governs code comments and pushes the other way, with no counterpart for writing to a human. The split that matters is things that change what the reader does versus evidence that work happened; the noise is almost entirely the second. Machine-read artifacts are exempt because their detail is what caught real bugs a green suite missed — the failure was relaying that detail into a human channel, not producing it. Enforcement stops at slot shape because whether a paragraph earned its place is not mechanically testable and a word-count gate would produce worse writing; saying so plainly is preferable to implying coverage that does not exist.
 
+## ADR-056 — The backlog is a first-class object peer to fixes and debt, never a debt status or a milestone-less phase
+_2026-09-21_
+
+**Why:** ac debt score measures what debt CHARGES you (recurrence, concentration) against principal. A backlog item has no file and no recurrence, so every one filed reads as pure principal and pushes the score down — putting ideas in the debt register corrupts the one number in the system that carries signal. Secondary: drop/dismiss do not map to an idea (it was never 'not true'), and debt's integrity claim is that the verifier files it, which human wishes would break. The rejected alternative from issue #16 — a phase with no milestone — is worse again: the registry, milestone complete, the loop and the statusline would each have to learn a new case, whereas a peer object touches none of them.
+
+**Rejected:** a 'parked' phase status or milestone-less phase tier (issue #16); an idea-flavoured debt entry; a priority field (every backlog grows one and every one becomes meaningless — ordering, if ever needed, comes from earned recurrence like debt, not self-report)
+

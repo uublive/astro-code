@@ -21,6 +21,11 @@ import {
   addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt,
   debtAgeDays, debtScore, loadDebt, DEBT_COSTS, STALE_DAYS,
 } from '../lib/debt.mjs';
+import {
+  addBacklog, openBacklog, loadBacklog, findBacklog, backlogAgeDays, linkBacklog,
+  closeBacklogFor, reopenBacklogFor, markPromoted, archiveBacklog, declinedMatches,
+  promotionContext, ARCHIVE_KINDS, BACKLOG_STALE_DAYS,
+} from '../lib/backlog.mjs';
 import { runFixturesCheck } from '../lib/fixtures.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
 import { canonText, loadCanon, addDecision, canonPull, canonPush, canonDedupe } from '../lib/canon.mjs';
@@ -81,6 +86,10 @@ const ALLOWED_FLAGS = {
   'debt pay': ['as'],
   // A typo'd `--phase` must not silently degrade into "checked the wrong phase".
   'fixtures check': ['phase'],
+  'backlog add': ['note'],
+  'backlog link': ['phase'],
+  'backlog archive': ['kind', 'reason'],
+  'backlog promote': [],
 };
 
 function checkFlags(key, flags) {
@@ -142,6 +151,12 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac debt pay <id> [--as fix|phase]   graduate it into a fix (default) or a roadmap phase
   ac debt drop <id> --reason "…"      it WAS true and stopped being true
   ac debt dismiss <id> --reason "…"   it was NEVER true — the verifier was wrong
+  ac backlog list [--all] [--json]    open ideas (oldest first); --all includes archived/promoted
+  ac backlog add "<idea>" [--note …]  capture an idea (no phase/milestone spent)
+  ac backlog show <id>                print the raw item as JSON
+  ac backlog link <id> --phase N      commit the item to a phase already in flight
+  ac backlog promote <id>             claim a phase number and start it from this idea
+  ac backlog archive <id> --kind declined|obsolete --reason "…"  file the idea WITHOUT doing it
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac phase note <phase> ["<text>"]    read/set/clear a durable phase note (survives ROADMAP.md renders)
@@ -405,6 +420,122 @@ async function main() {
       die(`unknown: ac debt ${sub} (add | list | show | score | pay | drop | dismiss)`);
     }
 
+    case 'backlog': {
+      const r = root();
+      const sub = pos[0];
+
+      if (!sub || sub === 'list') {
+        const db = loadBacklog(r);
+        const items = flags.all
+          ? [...db.backlog].sort((a, b) => String(a.id).localeCompare(String(b.id)))
+          : openBacklog(r);
+        if (flags.json) { json(items); return; }
+        if (!items.length) { console.log('• no open ideas'); return; }
+        for (const b of items) {
+          const age = backlogAgeDays(b);
+          const closed = b.status !== 'open' && b.status !== 'linked'
+            ? b.archive_kind ? ` — ${b.archive_kind}: ${b.archive_reason}`
+              : b.status === 'promoted' ? ` — promoted to phase ${b.promoted_to?.number}`
+                : b.status === 'absorbed' ? ` — absorbed by phase ${b.linked_by?.ref}` : ''
+            : '';
+          console.log(`  ${b.id}  ${b.status}  ${age}d${closed}`);
+          console.log(`    ${b.title}`);
+          if (b.status === 'open' && age >= BACKLOG_STALE_DAYS) console.log(`    ⚠ ${age} days old`);
+        }
+        console.log(`\n${items.length} ${flags.all ? 'total' : 'open'} · ${db.backlog.length} filed all-time`);
+        return;
+      }
+
+      if (sub === 'add') {
+        checkFlags('backlog add', flags);
+        const title = pos.slice(1).join(' ').trim();
+        if (!title) die('usage: ac backlog add "<idea>" [--note "<short paragraph>"]');
+        const note = typeof flags.note === 'string' ? flags.note : '';
+        const res = await addBacklog(r, { title, note });
+        console.log(`✓ backlog ${res.entry.id}`);
+        // "If you are writing a plan, it is a phase" — this register captures an
+        // idea, not the plan for it; a long note is a signal the idea is really a
+        // phase waiting to be discussed, so it is flagged, never refused (D5/D6).
+        if (note.trim().length > 600) {
+          console.log('  ⚠ that note reads like a plan, not an idea — if you are writing a plan, it is a phase');
+        }
+        if (res.similar.length) {
+          console.log('⚠ similar open idea(s):');
+          for (const s of res.similar) console.log(`  ${s.id}  ${s.title}`);
+        }
+        return;
+      }
+
+      const item = findBacklog(r, pos[1]);
+      if (['show', 'link', 'promote', 'archive'].includes(sub) && !item) {
+        die(`no such backlog item: ${pos[1] || '(none given)'} — see \`ac backlog list\``);
+      }
+
+      if (sub === 'show') { json(item); return; }
+
+      if (sub === 'link') {
+        checkFlags('backlog link', flags);
+        const phaseRef = typeof flags.phase === 'string' ? flags.phase : '';
+        if (!phaseRef) die('usage: ac backlog link <id> --phase <n>');
+        const ph = findPhase(r, phaseRef);
+        if (!ph) die(`no such phase: ${phaseRef}`);
+        await linkBacklog(r, item.id, { kind: 'phase', workRef: ph.slug });
+        console.log(`✓ backlog ${item.id} → phase ${ph.number} "${ph.name}"`);
+        console.log(`  it closes when you run \`ac phase accept ${ph.number}\` (or \`ac phase reject\` reopens it)`);
+        return;
+      }
+
+      if (sub === 'promote') {
+        checkFlags('backlog promote', flags);
+        // Idempotent (ADR-017 posture): a retry after a partial failure must never
+        // spend a second number, so a promoted item dies naming the phase it already
+        // became BEFORE claim() runs.
+        if (item.promoted_to) {
+          die(`backlog ${item.id} was already promoted to phase ${item.promoted_to.number} — a spent number is not reissued`);
+        }
+        const st = loadState(r) || {};
+        const rm = loadRoadmap(r);
+        const milestone = st.active_milestone || rm.milestone || 1;
+        const res = claim({ root: r, type: 'phase', milestone, name: item.title });
+        if (res.source === 'error') die(res.error);
+        let phase;
+        try {
+          phase = await addPhase(r, { number: res.number, name: item.title, milestone });
+        } catch (e) {
+          die(
+            `${e.message}\n` +
+            `  phase ${res.number} was already claimed on ${res.branch} and stays claimed — it will not be ` +
+            `handed out again. Your roadmap and the registry disagree; run \`ac registry show\` to compare.`,
+          );
+        }
+        // The two local writes go LAST — a crash between here and markPromoted must
+        // never leave an item marked promoted with no phase behind it.
+        writeFileSync(
+          join(paths(r).phases, phase.slug, 'CONTEXT.md'),
+          promotionContext(item, { number: phase.number }),
+        );
+        await markPromoted(r, item.id, { number: phase.number, slug: phase.slug });
+        console.log(`✓ backlog ${item.id} → phase ${phase.number} "${item.title}" (milestone ${milestone})`);
+        console.log(`  run /astro-discuss ${phase.number} before planning — the seed is a captured note, not a discussion`);
+        warnNameMatches(res.matches, gitIdentity(r).owner);
+        return;
+      }
+
+      if (sub === 'archive') {
+        checkFlags('backlog archive', flags);
+        const kind = typeof flags.kind === 'string' ? flags.kind : '';
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        if (!kind || !reason || !ARCHIVE_KINDS.includes(kind)) {
+          die(`usage: ac backlog archive <id> --kind ${ARCHIVE_KINDS.join('|')} --reason "…"`);
+        }
+        const done = await archiveBacklog(r, item.id, { kind, reason });
+        console.log(`✓ archived ${done.id} (${done.archive_kind}): ${done.archive_reason}`);
+        return;
+      }
+
+      die(`unknown: ac backlog ${sub} (add | list | show | link | promote | archive)`);
+    }
+
     case 'agents-md': {
       const root = findRoot() || process.cwd();
       const written = writeAgentsMd(root);
@@ -527,6 +658,13 @@ async function main() {
       if (debt.length) {
         const stale = staleDebt(r).length;
         console.log(`Debt:      ${debt.length} open${stale ? ` (${stale} stale)` : ''}  — \`ac debt list\``);
+      }
+      // Same posture as Debt: suppressed at zero, and never throws on a project whose
+      // .astrocode/ predates this phase and has no backlog.json at all — openBacklog
+      // reads an absent file as a true empty, not a damaged one.
+      const back = openBacklog(r);
+      if (back.length) {
+        console.log(`Backlog:   ${back.length} open  — \`ac backlog list\``);
       }
       return;
     }
@@ -751,6 +889,12 @@ async function main() {
           console.log(`  scheduled for milestone ${milestone} — the project stays on milestone ${current}`);
         }
         warnNameMatches(res.matches, gitIdentity(r).owner);
+        // "Let's plan X" meets the earlier decision against X (D5) — never blocks, never
+        // needs --force, the phase above is already created. An `obsolete` archive
+        // ("the world moved on") deliberately never raises this.
+        for (const m of declinedMatches(r, name)) {
+          console.log(`  ⚠ already decided against "${m.title}" (${m.id}): ${m.reason}`);
+        }
         return;
       }
 
@@ -825,6 +969,12 @@ async function main() {
         for (const d of await closeDebtFor(r, { kind: 'phase', workRef: ph.slug })) {
           console.log(`✓ debt ${d.id} paid`);
         }
+        // Same drain as debt, for the backlog (D1): a linked item closes automatically
+        // the moment the phase that offered to fold it in is accepted — nobody ticks it
+        // off by hand.
+        for (const b of await closeBacklogFor(r, { kind: 'phase', workRef: ph.slug })) {
+          console.log(`✓ backlog ${b.id} absorbed`);
+        }
       } else if (sub === 'reject') {
         if (!ph) die('usage: ac phase reject <phase> --reason "…"');
         checkFlags('phase reject', flags);
@@ -832,6 +982,11 @@ async function main() {
         await setPhaseStatus(r, ph.slug, 'rejected');
         await updateState(r, (s) => ({ ...s, blockers: [...(s.blockers || []), { phase: ph.slug, reason, at: new Date().toISOString() }] }));
         console.log(`✗ phase ${ph.number} "${ph.name}" → rejected${reason ? `: ${reason}` : ''}`);
+        // Q1: a linked item whose phase is REJECTED reverts to open rather than being
+        // stranded as `linked` forever — nothing is silently lost either way.
+        for (const b of await reopenBacklogFor(r, { kind: 'phase', workRef: ph.slug })) {
+          console.log(`• backlog ${b.id} back on the list`);
+        }
       } else if (sub === 'effort') {
         // Per-phase effort dial (ADR-022), mirroring `ac models` ergonomics.
         //   ac phase effort <n>               RESOLVE: print the effective level
