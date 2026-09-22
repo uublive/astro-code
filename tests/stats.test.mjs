@@ -61,3 +61,17 @@ test('collectStats reports unavailable when the project has no transcripts', asy
     assert.equal(collectStats(ROOT).available, false);
   });
 });
+
+test('collectStats finds transcripts when the project path contains a dot (#38)', async () => {
+  // Claude Code writes /tmp/demo/user.name/proj's transcripts under -tmp-demo-user-name-proj
+  // (the dot becomes a dash, like the slashes) — the literal name is the contract.
+  const cfg = mkdtempSync(join(tmpdir(), 'ac-cfg-'));
+  const dir = join(cfg, 'projects', '-tmp-demo-user-name-proj');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'sess.jsonl'), JSON.stringify({ timestamp: '2026-06-01T10:00:00.000Z', message: { usage: { input_tokens: 1, output_tokens: 2 } } }));
+  await withCfg(cfg, ({ collectStats }) => {
+    const s = collectStats('/tmp/demo/user.name/proj');
+    assert.equal(s.available, true, `looked in ${s.dir}`);
+    assert.equal(s.output, 2);
+  });
+});
