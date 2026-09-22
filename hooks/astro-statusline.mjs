@@ -6,9 +6,13 @@
 // ~/.astro/code/statusline-chain.json; here we run it first (feeding it the same
 // stdin Claude gave us), then append astro segments. From Claude's stdin blob we
 // render, in order: a recap of the task in flight, the running model, a graphical
-// context-window-fill bar, the live project state (milestone/phase/status/activity),
-// the git branch, and the session cost — then, when the clone is behind origin, an
-// update nudge. Uninstall restores the original command from that same map.
+// context-window-fill bar, subscription rate-limit quota bars (5h/7d/spend cap,
+// when Claude sends them), the live project state (milestone/phase/status/activity),
+// and the git branch — then, when the clone is behind origin, an update nudge.
+// Uninstall restores the original command from that same map. There is
+// deliberately no session-cost segment: it was an estimate, not actionable
+// mid-session, and cost columns that now go to the rate-limit quota bars
+// (phase 21) instead — the number that actually binds.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -16,7 +20,8 @@ import { spawnSync } from 'node:child_process';
 import {
   findAstroRoot, readContext, renderSegment,
   readContextTokens, renderClaudeSegment, modelLimit,
-  isBusy, renderStatus, termWidth, visibleWidth, packStatus, renderSegmentParts, STATUS_SEP,
+  isBusy, renderStatus, termWidth, visibleWidth, truncateVisible, packStatus, renderSegmentParts, STATUS_SEP,
+  renderRateLimits,
 } from './_astro-ctx.mjs';
 
 const HOME = join(homedir(), '.astro', 'code');
@@ -30,7 +35,7 @@ function readJson(p) {
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
 }
 
-// astro-code's own version, for the statusline brand mark (⊡ astro v0.5.2). Prefer the
+// astro-code's own version, for the statusline brand mark (⊡ v0.5.2). Prefer the
 // explicit `version` file written at install; fall back to the clone's package.json via
 // the `source` pointer. NEVER read HOME/package.json — it can be a stale leftover.
 function readVersion() {
@@ -49,13 +54,15 @@ function readVersion() {
 let data = null;
 try { data = JSON.parse(input); } catch { /* no/!json stdin */ }
 
+const nowSeconds = Math.floor(Date.now() / 1000);
+
 // (0) the leading busy/idle dot — is a turn in flight for this session? The
 // astro-session-state hooks stamp turn boundaries; we read this session's record.
 let status = '';
 try {
   const sid = data?.session_id;
   const map = readJson(join(HOME, 'session-state.json')) || {};
-  status = renderStatus(isBusy(sid ? map[sid] : null, Math.floor(Date.now() / 1000)));
+  status = renderStatus(isBusy(sid ? map[sid] : null, nowSeconds));
 } catch { /* default: idle */ }
 
 // (1) the original statusline, if any — runs first, keeps its own place.
@@ -86,14 +93,39 @@ if (data) {
   claude = renderClaudeSegment({ model: data.model, tokens, limit });
 }
 
+// Terminal width, read once. Needed by the rate-limit tier below as well as the
+// row layout, so it is resolved before either.
+const cols = termWidth();
+
+// The narrowest single line on which the quota BARS still fit alongside model,
+// branch, version and project state. Measured, not guessed: with bars the one-line
+// render is ~145 columns, so anything below this reflows — which is exactly the
+// C8 failure. Above it the bars are free; below it they cost a second row.
+const BAR_WIDTH_FLOOR = 150;
+
+// (3) subscription rate-limit quota — how much of the rolling 5h/7d windows
+// (plus a gateway-only spend cap) is spent. Absent before the first API
+// response and for non-subscribers (D1's "absence is normal" — the segment
+// costs zero columns then), never threshold-gated once present. `full` is the
+// desktop tier tried first via `wide`; `rlDetail` is the cols-based fallback
+// for the row layout — the same lookahead-ladder shape `lookahead` below uses,
+// so a shrinking screen sheds bars, then all-but-the-hottest window (D4),
+// never a slice mid-token.
+// The single line carries BARS only when the terminal is wide enough to hold them.
+// It used to ask for `full` unconditionally, which is what pushed the one-line render
+// to 145 columns and split a 110-column terminal into two rows: the bars were bought
+// with width the line did not have. Numbers alone still answer "how much is left",
+// which is the question; the bar is the luxury, so it is the first thing to go.
+const rlWide = cols === 0 || cols >= BAR_WIDTH_FLOOR ? 'full' : 'numbers';
+const rateLimitsFull = data ? renderRateLimits({ rateLimits: data.rate_limits, nowSeconds, detail: rlWide }) : '';
+
 // (5) the astro project segment — current milestone/phase/status + live activity.
 // The cwd comes from Claude's stdin blob; from it we walk up to the `.astrocode/`.
 let projCtx = null;
 const cwd = data?.workspace?.current_dir || data?.cwd || process.cwd();
-const cols = termWidth();
 try {
   const projRoot = findAstroRoot(cwd);
-  if (projRoot) projCtx = { ...readContext(projRoot, Math.floor(Date.now() / 1000)), version: readVersion() };
+  if (projRoot) projCtx = { ...readContext(projRoot, nowSeconds), version: readVersion() };
 } catch { /* not inside an astro-code project */ }
 
 // The phase track shrinks by dropping look-ahead entries, so a narrow screen
@@ -102,15 +134,13 @@ const projectAt = (lookahead) => (projCtx
   ? renderSegmentParts(projCtx, { lookahead })
   : { identity: '', state: '' });
 
-// (6) git branch + (7) session cost — cheap, always-useful context.
+// (6) git branch — cheap, always-useful context.
 let branch = '';
 try {
   const r = spawnSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', windowsHide: true });
   const b = (r.stdout || '').trim();
   if (b && b !== 'HEAD') branch = `⎇ ${b}`;
 } catch { /* not a git repo */ }
-const usd = data?.cost?.total_cost_usd;
-const cost = typeof usd === 'number' && usd > 0 ? `$${usd < 1 ? usd.toFixed(2) : usd.toFixed(1)}` : '';
 
 // (8) the astro update segment
 let update = '';
@@ -141,17 +171,54 @@ const lookahead = cols === 0 || cols >= 110 ? 3 : cols >= 70 ? 2 : 1;
 const { identity, state } = projectAt(lookahead);
 const project = [identity, state].filter(Boolean).join(' · ');
 
+// D4's narrow-degradation: bars go first, then all windows but the hottest
+// (the one nearest its limit — see renderRateLimits' hottest-first sort). D5:
+// no promotion to row 1 — this rides row 2 with branch/claude like every other
+// non-identity segment, shed wholesale by `packStatus`'s normal fit rules.
+const rlDetail = cols === 0 || cols >= 130 ? 'full' : cols >= 90 ? 'numbers' : 'hottest';
+const rateLimitsRow = data ? renderRateLimits({ rateLimits: data.rate_limits, nowSeconds, detail: rlDetail }) : '';
+
 // Phase state rides with the identity when there's room, and drops to the next
 // row when there isn't — rather than being silently dropped for lack of space.
 const stateFitsRow1 = !rowWidth ||
   visibleWidth([identity, state].filter(Boolean).join(STATUS_SEP)) <= rowWidth;
 
+// `fitRow` fills a row greedily in array order and DROPS whatever comes
+// after the budget runs out — so the array order IS a priority order, not
+// just cosmetic. `rateLimitsRow` sits ahead of `branch` here (mirroring its
+// position ahead of `branch` in `wide` above) so a shrinking width always
+// sheds the branch name before it touches the quota gauge D1 promised stays
+// visible; putting the quota segment LAST made its survival depend on
+// whether `branch` happened to fit first, which is non-monotonic — a
+// narrower width could free room by dropping `branch` and let the quota
+// segment reappear after it had already been shed at a wider column count.
+// The branch is the only segment whose length is USER data — a branch name can be
+// four characters or a hundred, and `ac flow` itself generates 45-character ones. Every
+// other segment on the line is bounded by construction, so when the single line overruns
+// it is almost always the branch that did it. Rather than let one long name force a
+// second row, the branch is the ELASTIC segment: it gets whatever width is left after
+// the bounded segments have taken theirs, and is truncated to it.
+//
+// Truncation, not elision: a dropped branch answers "which branch?" with nothing, while
+// a truncated one still disambiguates most pairs and shows a trailing `…` so nobody
+// mistakes it for the whole name. Below a floor it is dropped instead — three characters
+// and an ellipsis is worse than silence.
+const BRANCH_MIN = 12;
+let branchWide = branch;
+if (branch && rowWidth) {
+  const bounded = [base, claude, rateLimitsFull, project, update].filter(Boolean);
+  const spent = visibleWidth(bounded.join(STATUS_SEP)) + (bounded.length ? visibleWidth(STATUS_SEP) : 0);
+  const room = rowWidth - spent;
+  if (room < BRANCH_MIN) branchWide = '';
+  else if (room < visibleWidth(branch)) branchWide = truncateVisible(branch, room);
+}
+
 const lines = packStatus({
-  wide: [base, claude, project, branch, cost, update],
+  wide: [base, claude, rateLimitsFull, project, branchWide, update],
   groups: [
     // where am I — the answer the statusline exists to give, never sliced
     stateFitsRow1 ? [identity, state] : [identity],
-    stateFitsRow1 ? [branch, claude, cost] : [state, branch, claude, cost],
+    stateFitsRow1 ? [claude, rateLimitsRow, branch] : [state, claude, rateLimitsRow, branch],
     [base, update],
   ],
   width: rowWidth,

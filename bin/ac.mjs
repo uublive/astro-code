@@ -1381,7 +1381,6 @@ async function main() {
         workspace: { current_dir: cwd }, cwd,
         model: { id: typeof flags.model === 'string' ? flags.model : 'claude-opus-4-8', display_name: typeof flags.name === 'string' ? flags.name : 'Opus 4.8' },
         transcript_path: tp,
-        cost: { total_cost_usd: 0.42 },
       };
       const hook = join(HOME_ROOT, 'hooks', 'astro-statusline.mjs');
       const r = spawnSync(process.execPath, [hook, ''], { input: JSON.stringify(blob), encoding: 'utf8', windowsHide: true, env: { ...process.env, HOME: previewHome } });
