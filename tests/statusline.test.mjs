@@ -718,3 +718,54 @@ test('one line when it fits, two rows when it does not — identity always intac
   }
 });
 
+// --- width sweep: priority-aware degradation + the 110-column budget ---------
+
+test('width sweep: the window nearest its limit survives; detail only ever decreases', () => {
+  const sweep = (rateLimits, coolPct, hotPct) => {
+    const widths = [200, 160, 140, 120, 100, 90, 80, 70, 60, 50, 40];
+    // level: 3 = bar+both numbers, 2 = both numbers no bar, 1 = hottest number
+    // only, 0 = absent. Fixed-width, no COLOR — the raw substrings are exact.
+    let prevLevel = Infinity;
+    for (const columns of widths) {
+      const out = runStatusline({ rateLimits, columns }).stdout;
+      const hasBar = /[█░]/.test(out);
+      const hasCool = out.includes(`${coolPct}%`);
+      const hasHot = out.includes(`${hotPct}%`);
+      // (1) never sheds the hot window while keeping the cool one.
+      assert.ok(!(hasCool && !hasHot), `at ${columns} cols the cool window survived while the hot one did not:\n${out}`);
+      // (2) a bar never survives at a width where a number was dropped.
+      if (hasBar) assert.ok(hasCool && hasHot, `at ${columns} cols a bar rode without both numbers:\n${out}`);
+      const level = hasBar ? 3 : (hasCool && hasHot) ? 2 : hasHot ? 1 : 0;
+      // (3) detail only ever decreases as the screen narrows.
+      assert.ok(level <= prevLevel, `detail INCREASED at ${columns} cols (level ${level} > ${prevLevel}):\n${out}`);
+      prevLevel = level;
+      // (4) no fragment cut mid-token: every window label is followed by its own %.
+      for (const label of ['5h', '7d']) {
+        const at = out.indexOf(label);
+        if (at >= 0) assert.match(out.slice(at), /%/, `"${label}" rode with no trailing % (cut mid-token) at ${columns} cols:\n${out}`);
+      }
+      // every row stays within its own budget — no overflow/wrap.
+      for (const row of out.split('\n')) assert.ok(visibleWidth(row) <= columns, `row overflowed at ${columns}: ${row}`);
+      assert.ok(out.split('\n').every((r) => r.length > 0), `no empty row at ${columns} cols`);
+    }
+  };
+
+  // cool=5h(10%), hot=7d(95%) — the 7d window must be the one that survives.
+  sweep({ five_hour: { used_percentage: 10 }, seven_day: { used_percentage: 95 } }, 10, 95);
+  // swapped: now 5h is the hot one — the SURVIVOR must flip with it.
+  sweep({ five_hour: { used_percentage: 95 }, seven_day: { used_percentage: 10 } }, 10, 95);
+});
+
+test('the wide line with both quota bars fits a typical terminal at 110 and 100 columns', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const rateLimits = {
+    five_hour: { used_percentage: 23, resets_at: now + 7920 },
+    seven_day: { used_percentage: 41, resets_at: now + 400_000 },
+  };
+  for (const columns of [110, 100]) {
+    const out = runStatusline({ rateLimits, columns }).stdout;
+    assert.equal(out.split('\n').length, 1, `${columns} cols should still be a single line`);
+    assert.ok(visibleWidth(out) <= columns, `line exceeded its own budget at ${columns}: ${visibleWidth(out)}`);
+  }
+});
+
