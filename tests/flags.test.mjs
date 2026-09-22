@@ -123,6 +123,15 @@ test('ADR-029: read-only verbs are deliberately NOT guarded (no blanket enforcem
   assert.strictEqual(res.status, 0, 'a stray flag on a read-only verb stays harmless');
 });
 
+test('`ac tune --help` is refused and writes NO settings.json (#14)', () => {
+  const dir = mkWorkdir(null);
+  const res = run(['tune', '--help'], dir);
+  assert.notStrictEqual(res.status, 0, 'an unknown flag must not apply the tuning');
+  assert.match(res.stderr, /unknown flag/i);
+  assert.match(res.stderr, /--undo/, 'the error must name what IS accepted');
+  assert.ok(!existsSync(join(dir, '.claude', 'settings.json')), 'nothing may be written');
+});
+
 // ── 2. canon push --dry-run reads, never writes ───────────────────────────────
 
 test('ADR-029: canonPush dryRun reports a pending change and leaves the registry untouched', () => {

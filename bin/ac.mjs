@@ -90,6 +90,9 @@ const ALLOWED_FLAGS = {
   'backlog link': ['phase'],
   'backlog archive': ['kind', 'reason'],
   'backlog promote': [],
+  // `tune` writes a settings.json that grants permissions, so `ac tune --help` (or any
+  // typo) must be refused rather than silently applying the tuning.
+  'tune': ['user', 'undo'],
 };
 
 function checkFlags(key, flags) {
@@ -1321,6 +1324,7 @@ async function main() {
     case 'tune': {
       // Apply (or undo) the astro-recommended Claude Code settings — the officially
       // supported settings.json subset only, additively and reversibly.
+      checkFlags('tune', flags);
       const scope = flags.user ? 'user' : 'project';
       const target = tuneTarget(scope, {
         projectRoot: flags.user ? undefined : root(),
