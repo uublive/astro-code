@@ -168,12 +168,21 @@ const rateLimitsRow = data ? renderRateLimits({ rateLimits: data.rate_limits, no
 const stateFitsRow1 = !rowWidth ||
   visibleWidth([identity, state].filter(Boolean).join(STATUS_SEP)) <= rowWidth;
 
+// `fitRow` fills a row greedily in array order and DROPS whatever comes
+// after the budget runs out — so the array order IS a priority order, not
+// just cosmetic. `rateLimitsRow` sits ahead of `branch` here (mirroring its
+// position ahead of `branch` in `wide` above) so a shrinking width always
+// sheds the branch name before it touches the quota gauge D1 promised stays
+// visible; putting the quota segment LAST made its survival depend on
+// whether `branch` happened to fit first, which is non-monotonic — a
+// narrower width could free room by dropping `branch` and let the quota
+// segment reappear after it had already been shed at a wider column count.
 const lines = packStatus({
   wide: [base, claude, rateLimitsFull, project, branch, update],
   groups: [
     // where am I — the answer the statusline exists to give, never sliced
     stateFitsRow1 ? [identity, state] : [identity],
-    stateFitsRow1 ? [branch, claude, rateLimitsRow] : [state, branch, claude, rateLimitsRow],
+    stateFitsRow1 ? [claude, rateLimitsRow, branch] : [state, claude, rateLimitsRow, branch],
     [base, update],
   ],
   width: rowWidth,

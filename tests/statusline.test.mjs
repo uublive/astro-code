@@ -464,8 +464,17 @@ test('the statusline hook composes model + context bar from stdin + transcript',
 // --- rate-limit quota: end-to-end through the real hook ----------------------
 
 // A fresh project + isolated HOME per call, so nothing leaks between cases.
-function runStatusline({ rateLimits, cost, version, columns = 200 } = {}) {
+// `branch`, when given, inits a real git repo checked out on that branch
+// name — the ⎇ segment is otherwise empty (not a git repo), which hides any
+// bug in how it competes with the quota segment for row space.
+function runStatusline({ rateLimits, cost, version, columns = 200, branch } = {}) {
   const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
+  if (branch) {
+    spawnSync('git', ['init', '-q', '-b', branch, root], { encoding: 'utf8' });
+    spawnSync('git', ['-C', root, 'config', 'user.email', 'a@b.c'], { encoding: 'utf8' });
+    spawnSync('git', ['-C', root, 'config', 'user.name', 'a'], { encoding: 'utf8' });
+    spawnSync('git', ['-C', root, 'commit', '-q', '--allow-empty', '-m', 'init'], { encoding: 'utf8' });
+  }
   const home = mkdtempSync(join(tmpdir(), 'ac-sl-rl-'));
   mkdirSync(join(home, '.astro', 'code'), { recursive: true });
   if (version) writeFileSync(join(home, '.astro', 'code', 'version'), `${version}\n`);
@@ -765,6 +774,55 @@ test('the wide line with both quota bars fits a typical terminal at 110 and 100 
   for (const columns of [110, 100]) {
     const out = runStatusline({ rateLimits, columns }).stdout;
     assert.equal(out.split('\n').length, 1, `${columns} cols should still be a single line`);
+    assert.ok(visibleWidth(out) <= columns, `line exceeded its own budget at ${columns}: ${visibleWidth(out)}`);
+  }
+});
+
+// A hot window (>=85%) grows a D2 reset countdown, which is exactly the case
+// the two tests above never exercised (both stayed below the hot threshold,
+// so `resets_at` never rendered). The countdown text — plus row2's segment
+// ORDER, which `fitRow` treats as a priority list since it drops whatever
+// overflows — is what let the quota segment disappear and then reappear as
+// the screen kept narrowing.
+
+test('width sweep with a hot window + live reset countdown never lets the quota segment reappear once shed', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const rateLimits = {
+    five_hour: { used_percentage: 10, resets_at: now + 7200 },
+    seven_day: { used_percentage: 95, resets_at: now + 86_400 * 3 },
+  };
+  // A real, long branch name — the ⎇ segment competes with the quota segment
+  // for row space, which is exactly what made the shed non-monotonic.
+  const branch = 'feature/a-fairly-long-branch-name-like-real-repos-have';
+  const widths = [200, 160, 140, 120, 100, 90, 80, 70, 60, 50, 40];
+  let seenGone = false;
+  for (const columns of widths) {
+    const out = runStatusline({ rateLimits, columns, branch }).stdout;
+    const hasHot = out.includes('95%');
+    const hasCool = out.includes('10%');
+    // (1) the hot window must never be shed while the cool one still shows.
+    assert.ok(!(hasCool && !hasHot), `at ${columns} cols the cool window survived while the hot one did not:\n${out}`);
+    // (2) once the hot window is gone at some width, it must stay gone at
+    // every narrower width — no reappearing as the screen keeps shrinking.
+    if (!hasHot) seenGone = true;
+    else assert.ok(!seenGone, `95% reappeared at ${columns} cols after being shed at a wider width:\n${out}`);
+    for (const row of out.split('\n')) assert.ok(visibleWidth(row) <= columns, `row overflowed at ${columns}: ${row}`);
+  }
+});
+
+test('a hot window with a live reset countdown still leaves the wide line fitting ~100-110 columns', () => {
+  // D2's countdown text is the one thing that can blow the always-visible
+  // quota segment (D1) past the reflow budget the phase costed it against —
+  // confirm it still does not push the single-line reflow point away from
+  // the ~100-column budget C8/D7/D8 were funded to protect.
+  const now = Math.floor(Date.now() / 1000);
+  const rateLimits = {
+    five_hour: { used_percentage: 10, resets_at: now + 7200 },
+    seven_day: { used_percentage: 95, resets_at: now + 86_400 * 3 },
+  };
+  for (const columns of [110, 100]) {
+    const out = runStatusline({ rateLimits, columns }).stdout;
+    assert.equal(out.split('\n').length, 1, `${columns} cols should still be a single line:\n${out}`);
     assert.ok(visibleWidth(out) <= columns, `line exceeded its own budget at ${columns}: ${visibleWidth(out)}`);
   }
 });

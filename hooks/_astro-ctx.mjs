@@ -532,13 +532,21 @@ function buildWindow(key, data) {
   return { key, label: RATE_LIMIT_WINDOW_LABELS[key], pct: data.used_percentage, resetsAt: data.resets_at };
 }
 
+// Quota bars ride narrower than the context-fill bar (which owns the whole
+// line to itself) — 5 cells, matching the CONTEXT.md D2/D4 illustrations
+// ("5h ▓▓▓▓░ 88%"). Up to two of these plus a spend cap share one line with
+// everything else, so the default 10-wide progressBar would blow the wide
+// line's reflow point far past the ~100-column budget D1's "always visible"
+// promise was costed against.
+const RATE_LIMIT_BAR_WIDTH = 5;
+
 // One window's rendering at a given detail: `bar` toggles the graphical fill
 // (D4 sheds bars before numbers); the reset countdown only ever appears once
 // the window is hot (D2/D6).
 function renderWindow(w, bar, nowSeconds) {
   const col = rampColor(w.pct / 100);
   const bits = [w.label];
-  if (bar) bits.push(paint(progressBar(w.pct / 100), col));
+  if (bar) bits.push(paint(progressBar(w.pct / 100, RATE_LIMIT_BAR_WIDTH), col));
   bits.push(paint(`${Math.round(w.pct)}%`, col));
   let out = bits.join(' ');
   if (isHotWindow(w.pct) && validPct(w.resetsAt)) {
@@ -552,7 +560,7 @@ function renderWindow(w, bar, nowSeconds) {
 function renderSpend(pct, bar) {
   const col = rampColor(Math.min(1, pct / 100));
   const bits = ['cap'];
-  if (bar) bits.push(paint(progressBar(pct / 100), col));
+  if (bar) bits.push(paint(progressBar(pct / 100, RATE_LIMIT_BAR_WIDTH), col));
   bits.push(paint(`${Math.round(pct)}%`, col));
   return bits.join(' ');
 }
