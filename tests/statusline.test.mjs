@@ -464,10 +464,31 @@ test('the statusline hook composes model + context bar from stdin + transcript',
 // --- rate-limit quota: end-to-end through the real hook ----------------------
 
 // A fresh project + isolated HOME per call, so nothing leaks between cases.
-// `branch`, when given, inits a real git repo checked out on that branch
-// name — the ⎇ segment is otherwise empty (not a git repo), which hides any
-// bug in how it competes with the quota segment for row space.
-function runStatusline({ rateLimits, cost, version, columns = 200, branch } = {}) {
+//
+// The fixture renders the MAXIMAL realistic line by default — model, version and a real
+// git branch all present — and a caller opts OUT by passing null, rather than opting in.
+// That default is the whole point of this helper and it is not cosmetic: it previously
+// built a blob with no `model`, no `version` and no git repo at all, so the two width
+// guards below measured a line missing the three segments that consume most of the
+// budget. They passed at 110 and 100 columns while the real hook wrapped to two rows at
+// both. A budget assertion is only worth as much as its fixture, and a minimal fixture
+// certifies a line that never renders.
+//
+// `branch` inits a real git repo checked out on that name; the default is deliberately
+// long because `ac flow` generates 45-character milestone branches, and the branch is
+// the one segment whose width is user data rather than bounded by construction.
+const FIXTURE_MODEL = { display_name: 'Opus 5' };
+const FIXTURE_VERSION = '0.25.1';
+const FIXTURE_BRANCH = 'feature/m8-agent-output-that-respects-the-reader';
+
+function runStatusline({
+  rateLimits,
+  cost,
+  version = FIXTURE_VERSION,
+  columns = 200,
+  branch = FIXTURE_BRANCH,
+  model = FIXTURE_MODEL,
+} = {}) {
   const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
   if (branch) {
     spawnSync('git', ['init', '-q', '-b', branch, root], { encoding: 'utf8' });
@@ -479,6 +500,7 @@ function runStatusline({ rateLimits, cost, version, columns = 200, branch } = {}
   mkdirSync(join(home, '.astro', 'code'), { recursive: true });
   if (version) writeFileSync(join(home, '.astro', 'code', 'version'), `${version}\n`);
   const blob = { session_id: 's1', workspace: { current_dir: root } };
+  if (model) blob.model = model;
   if (rateLimits !== undefined) blob.rate_limits = rateLimits;
   if (cost !== undefined) blob.cost = { total_cost_usd: cost };
   const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
@@ -555,9 +577,13 @@ test('D8: no dollar cost segment renders at any width, even when cost.total_cost
 });
 
 test('D7: with no version the identity mark still reads coherently — no dangling separator, no empty v', () => {
-  const r = runStatusline({ rateLimits: {
-    five_hour: { used_percentage: 23, resets_at: Math.floor(Date.now() / 1000) + 7920 },
-  } }); // version omitted → readVersion() finds nothing in this isolated HOME
+  // Opt OUT of the fixture's default version — the point of this case is the absent one.
+  const r = runStatusline({
+    version: null,
+    rateLimits: {
+      five_hour: { used_percentage: 23, resets_at: Math.floor(Date.now() / 1000) + 7920 },
+    },
+  });
   assert.equal(r.status, 0);
   assert.doesNotMatch(r.stdout, /⊡\s*·/, 'no dangling middot right off the glyph');
   assert.doesNotMatch(r.stdout, /⊡\s*v(?!\d)/, 'no empty "v"');
@@ -775,7 +801,30 @@ test('the wide line with both quota bars fits a typical terminal at 110 and 100 
     const out = runStatusline({ rateLimits, columns }).stdout;
     assert.equal(out.split('\n').length, 1, `${columns} cols should still be a single line`);
     assert.ok(visibleWidth(out) <= columns, `line exceeded its own budget at ${columns}: ${visibleWidth(out)}`);
+
+    // The width assertion above CANNOT fail on its own any more: the branch is the
+    // elastic segment, so it truncates until the line fits whatever it was given. That
+    // makes "it fits" true by construction and therefore worthless as a guard — the
+    // second unfalsifiable assertion this phase produced.
+    //
+    // What is actually load-bearing is WHICH detail tier a typical terminal gets. The
+    // bars are the 12 columns that pushed the one-line render to 145 and forced the
+    // reflow, so at 110 and 100 the quota segment must be numbers-only. Assert that,
+    // because it is the thing that can regress.
+    assert.doesNotMatch(
+      out,
+      /[█░]/,
+      `quota bars must not render at ${columns} cols — they are what overran the line, and ` +
+        'the branch silently truncating to absorb them is not the fix',
+    );
+    assert.match(out, /5h\s+23%/, `the 5h number must survive at ${columns} cols`);
+    assert.match(out, /7d\s+41%/, `the 7d number must survive at ${columns} cols`);
   }
+
+  // ...and the bars must still exist somewhere, or "numbers-only at 110" would be
+  // satisfied by having removed them altogether, which C1 forbids.
+  const wide = runStatusline({ rateLimits, columns: 200 }).stdout;
+  assert.match(wide, /[█░]/, 'a genuinely wide terminal must still get the bars');
 });
 
 // A hot window (>=85%) grows a D2 reset countdown, which is exactly the case

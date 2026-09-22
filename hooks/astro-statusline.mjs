@@ -20,7 +20,7 @@ import { spawnSync } from 'node:child_process';
 import {
   findAstroRoot, readContext, renderSegment,
   readContextTokens, renderClaudeSegment, modelLimit,
-  isBusy, renderStatus, termWidth, visibleWidth, packStatus, renderSegmentParts, STATUS_SEP,
+  isBusy, renderStatus, termWidth, visibleWidth, truncateVisible, packStatus, renderSegmentParts, STATUS_SEP,
   renderRateLimits,
 } from './_astro-ctx.mjs';
 
@@ -93,6 +93,16 @@ if (data) {
   claude = renderClaudeSegment({ model: data.model, tokens, limit });
 }
 
+// Terminal width, read once. Needed by the rate-limit tier below as well as the
+// row layout, so it is resolved before either.
+const cols = termWidth();
+
+// The narrowest single line on which the quota BARS still fit alongside model,
+// branch, version and project state. Measured, not guessed: with bars the one-line
+// render is ~145 columns, so anything below this reflows — which is exactly the
+// C8 failure. Above it the bars are free; below it they cost a second row.
+const BAR_WIDTH_FLOOR = 150;
+
 // (3) subscription rate-limit quota — how much of the rolling 5h/7d windows
 // (plus a gateway-only spend cap) is spent. Absent before the first API
 // response and for non-subscribers (D1's "absence is normal" — the segment
@@ -101,13 +111,18 @@ if (data) {
 // for the row layout — the same lookahead-ladder shape `lookahead` below uses,
 // so a shrinking screen sheds bars, then all-but-the-hottest window (D4),
 // never a slice mid-token.
-const rateLimitsFull = data ? renderRateLimits({ rateLimits: data.rate_limits, nowSeconds, detail: 'full' }) : '';
+// The single line carries BARS only when the terminal is wide enough to hold them.
+// It used to ask for `full` unconditionally, which is what pushed the one-line render
+// to 145 columns and split a 110-column terminal into two rows: the bars were bought
+// with width the line did not have. Numbers alone still answer "how much is left",
+// which is the question; the bar is the luxury, so it is the first thing to go.
+const rlWide = cols === 0 || cols >= BAR_WIDTH_FLOOR ? 'full' : 'numbers';
+const rateLimitsFull = data ? renderRateLimits({ rateLimits: data.rate_limits, nowSeconds, detail: rlWide }) : '';
 
 // (5) the astro project segment — current milestone/phase/status + live activity.
 // The cwd comes from Claude's stdin blob; from it we walk up to the `.astrocode/`.
 let projCtx = null;
 const cwd = data?.workspace?.current_dir || data?.cwd || process.cwd();
-const cols = termWidth();
 try {
   const projRoot = findAstroRoot(cwd);
   if (projRoot) projCtx = { ...readContext(projRoot, nowSeconds), version: readVersion() };
@@ -177,8 +192,29 @@ const stateFitsRow1 = !rowWidth ||
 // whether `branch` happened to fit first, which is non-monotonic — a
 // narrower width could free room by dropping `branch` and let the quota
 // segment reappear after it had already been shed at a wider column count.
+// The branch is the only segment whose length is USER data — a branch name can be
+// four characters or a hundred, and `ac flow` itself generates 45-character ones. Every
+// other segment on the line is bounded by construction, so when the single line overruns
+// it is almost always the branch that did it. Rather than let one long name force a
+// second row, the branch is the ELASTIC segment: it gets whatever width is left after
+// the bounded segments have taken theirs, and is truncated to it.
+//
+// Truncation, not elision: a dropped branch answers "which branch?" with nothing, while
+// a truncated one still disambiguates most pairs and shows a trailing `…` so nobody
+// mistakes it for the whole name. Below a floor it is dropped instead — three characters
+// and an ellipsis is worse than silence.
+const BRANCH_MIN = 12;
+let branchWide = branch;
+if (branch && rowWidth) {
+  const bounded = [base, claude, rateLimitsFull, project, update].filter(Boolean);
+  const spent = visibleWidth(bounded.join(STATUS_SEP)) + (bounded.length ? visibleWidth(STATUS_SEP) : 0);
+  const room = rowWidth - spent;
+  if (room < BRANCH_MIN) branchWide = '';
+  else if (room < visibleWidth(branch)) branchWide = truncateVisible(branch, room);
+}
+
 const lines = packStatus({
-  wide: [base, claude, rateLimitsFull, project, branch, update],
+  wide: [base, claude, rateLimitsFull, project, branchWide, update],
   groups: [
     // where am I — the answer the statusline exists to give, never sliced
     stateFitsRow1 ? [identity, state] : [identity],
