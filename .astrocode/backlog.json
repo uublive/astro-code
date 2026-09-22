@@ -7,6 +7,13 @@
       "note": "README tells testers to cat ~/.astro/code/version; a flag is the obvious place to look",
       "status": "open",
       "captured_at": "2026-09-21T12:07:35.570Z"
+    },
+    {
+      "id": "2026-09-22-ac-install-leaves-stale-command",
+      "title": "ac install leaves stale command symlinks in config dirs it no longer targets",
+      "note": "~/.claude/commands still holds 17 links from July, missing every command added since. Harmless but it reads like a real install and misleads anyone debugging a missing command.",
+      "status": "open",
+      "captured_at": "2026-09-22T10:35:22.120Z"
     }
   ]
 }
