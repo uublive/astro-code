@@ -7,8 +7,11 @@
 // stdin Claude gave us), then append astro segments. From Claude's stdin blob we
 // render, in order: a recap of the task in flight, the running model, a graphical
 // context-window-fill bar, the live project state (milestone/phase/status/activity),
-// the git branch, and the session cost — then, when the clone is behind origin, an
-// update nudge. Uninstall restores the original command from that same map.
+// the git branch — then, when the clone is behind origin, an update nudge.
+// Uninstall restores the original command from that same map. There is
+// deliberately no session-cost segment: it was an estimate, not actionable
+// mid-session, and cost columns that now go to the rate-limit quota bars
+// (phase 21) instead — the number that actually binds.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -102,15 +105,13 @@ const projectAt = (lookahead) => (projCtx
   ? renderSegmentParts(projCtx, { lookahead })
   : { identity: '', state: '' });
 
-// (6) git branch + (7) session cost — cheap, always-useful context.
+// (6) git branch — cheap, always-useful context.
 let branch = '';
 try {
   const r = spawnSync('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', windowsHide: true });
   const b = (r.stdout || '').trim();
   if (b && b !== 'HEAD') branch = `⎇ ${b}`;
 } catch { /* not a git repo */ }
-const usd = data?.cost?.total_cost_usd;
-const cost = typeof usd === 'number' && usd > 0 ? `$${usd < 1 ? usd.toFixed(2) : usd.toFixed(1)}` : '';
 
 // (8) the astro update segment
 let update = '';
@@ -147,11 +148,11 @@ const stateFitsRow1 = !rowWidth ||
   visibleWidth([identity, state].filter(Boolean).join(STATUS_SEP)) <= rowWidth;
 
 const lines = packStatus({
-  wide: [base, claude, project, branch, cost, update],
+  wide: [base, claude, project, branch, update],
   groups: [
     // where am I — the answer the statusline exists to give, never sliced
     stateFitsRow1 ? [identity, state] : [identity],
-    stateFitsRow1 ? [branch, claude, cost] : [state, branch, claude, cost],
+    stateFitsRow1 ? [branch, claude] : [state, branch, claude],
     [base, update],
   ],
   width: rowWidth,
