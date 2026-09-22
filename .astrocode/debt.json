@@ -45,7 +45,7 @@
     {
       "id": "2026-09-17-ac-phase-add-and-ac-phase-note-strip",
       "title": "ac phase add and ac phase note strip the planned flag from every line of ROADMAP.md",
-      "status": "paying",
+      "status": "paid",
       "cost": "small",
       "found_at": "2026-09-17T10:11:25.963Z",
       "why": "Both re-render with renderRoadmapMd(rm) on the raw roadmap.json, but planned is disk-derived and only renderRoadmap(root) computes it from each phase's PLAN.md. Cosmetic and self-healing on the next render, which is why it has survived — but ac phase add runs on every fleet run that claims a phase, so it re-strips constantly and shows a diff nobody asked for. Fix is one word in each place.",
@@ -54,7 +54,8 @@
         "kind": "phase",
         "ref": "20-backlog-capture-ideas-without-planning-them"
       },
-      "paying_since": "2026-09-21T11:43:04.435Z"
+      "paying_since": "2026-09-21T11:43:04.435Z",
+      "paid_at": "2026-09-22T13:41:14.268Z"
     },
     {
       "id": "2026-09-17-nothing-publishes-conventions-md-when-a",
@@ -164,6 +165,16 @@
       "why": "The sort is lexicographic on the date-prefixed id, so within a single day it is slug order, not age order. Observed in a scratch project: an item captured at 13:36:58.851 listed after one captured at 13:36:58.900. The --help line 'open ideas (oldest first)' is inaccurate for the common case of several ideas captured in one session, and the 0d age column makes the ordering look authoritative. Either sort on captured_at or soften the help text.",
       "phase": "20",
       "file": "bin/ac.mjs"
+    },
+    {
+      "id": "2026-09-22-the-statusline-hook-crashes-with-an",
+      "title": "The statusline hook crashes with an unhandled EPIPE when its stdout reader closes early",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-09-22T12:57:47.332Z",
+      "why": "Piping the hook into a short consumer (node hooks/astro-statusline.mjs < payload | head -3) makes the final process.stdout.write throw an uncaught 'Error: write EPIPE', printing a Node stack trace to stderr and exiting non-zero. Claude Code captures stdout in full so this is not a live-user path, which is why no criterion touches it — but it makes the hook unpleasant to debug by hand, and any future caller that pipes it sees a stack trace instead of a truncated line. A try/catch or an EPIPE listener around the final write would close it.",
+      "phase": "21",
+      "file": "hooks/astro-statusline.mjs"
     }
   ]
 }

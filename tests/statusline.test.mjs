@@ -17,6 +17,7 @@ import {
   modelLimit, readContextTokens, readRecap, progressBar, renderClaudeSegment, renderRecap, truncate, phaseTrack,
   isBusy, renderStatus, SESSION_STALE_SECONDS,
   termWidth, visibleWidth, truncateVisible, packStatus, renderSegmentParts, STATUS_SEP,
+  rampColor, formatETA, renderRateLimits,
 } from '../hooks/_astro-ctx.mjs';
 
 const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -76,7 +77,8 @@ test('state.active_phase overrides the next-open heuristic', () => {
 test('renderSegment shows ⊡, milestone, phase, progress, blockers', () => {
   const root = project({ state: { blockers: [1] }, roadmap: ROADMAP });
   const seg = renderSegment(readContext(root, NOW));
-  assert.match(seg, /⊡ astro/);
+  assert.match(seg, /⊡/);
+  assert.doesNotMatch(seg, /\bastro\b/, 'D7: the redundant word is gone — the glyph carries the identity');
   assert.match(seg, /M1/);
   assert.match(seg, /‹2 \(P3\) P4/, 'windowed track: 2 behind, current, one queued');
   assert.doesNotMatch(seg, /close-ci-gates/, 'the slug is no longer on the status line');
@@ -88,11 +90,13 @@ test('renderSegment shows ⊡, milestone, phase, progress, blockers', () => {
 test('renderSegment shows the astro-code version by the brand mark when provided', () => {
   const root = project({ roadmap: ROADMAP });
   const seg = renderSegment({ ...readContext(root, NOW), version: '0.5.2' });
-  assert.match(seg, /⊡ astro v0\.5\.2 · M1/, 'version sits right after the astro mark');
-  // absent version → unchanged brand (never a bare "v")
+  assert.match(seg, /⊡ v0\.5\.2 · M1/, 'version sits right after the glyph');
+  // absent version → the milestone folds onto the glyph with a plain space, so
+  // the fallback never reads as a dangling middot ("⊡ ·") — D7's open question.
   const noV = renderSegment(readContext(root, NOW));
-  assert.match(noV, /⊡ astro · M1/);
-  assert.doesNotMatch(noV, /v0\.5\.2|astro v/);
+  assert.match(noV, /⊡ M1/);
+  assert.doesNotMatch(noV, /⊡\s*·/, 'no dangling separator right off the bare glyph');
+  assert.doesNotMatch(noV, /v0\.5\.2|\bastro\b|⊡\s*$|⊡\s*v\b/);
 });
 
 test('renderResumeNote (PreCompact) carries project/phase/status + next action + on-disk pointer', () => {
@@ -323,6 +327,95 @@ test('renderClaudeSegment shows model + a coloured fill bar; model-only when no 
   assert.equal(renderClaudeSegment({}), '', 'empty with no model');
 });
 
+// --- rate-limit quota gauge ---------------------------------------------------
+
+test('rampColor: green below 60%, yellow from 60%, red from 85% (matches the context bar)', () => {
+  assert.equal(rampColor(0.59), rampColor(0.5), 'both cool → same colour');
+  assert.equal(rampColor(0.6), rampColor(0.84), 'both mid-band → same colour');
+  assert.equal(rampColor(0.85), rampColor(0.99), 'both hot → same colour');
+  const green = rampColor(0.1), yellow = rampColor(0.6), red = rampColor(0.85);
+  assert.notEqual(green, yellow);
+  assert.notEqual(yellow, red);
+  assert.notEqual(green, red);
+});
+
+test('formatETA renders a relative duration, never a raw epoch, and clamps a past reset at zero', () => {
+  const now = 1_700_000_000;
+  assert.equal(formatETA(now + 7920, now), '2h12m');
+  assert.equal(formatETA(now + 300, now), '5m');
+  assert.equal(formatETA(now - 60, now), '0m', 'an already-passed reset never goes negative');
+});
+
+test('renderRateLimits shows both windows with a distinct marker + bar each, at any usage level', () => {
+  const seg = renderRateLimits({ rateLimits: {
+    five_hour: { used_percentage: 23, resets_at: 1_700_100_000 },
+    seven_day: { used_percentage: 41, resets_at: 1_700_500_000 },
+  }, nowSeconds: 1_700_000_000 });
+  assert.match(seg, /5h/);
+  assert.match(seg, /7d/);
+  assert.match(seg, /23%/);
+  assert.match(seg, /41%/);
+  assert.match(seg, /[█░]/, 'a graphical bar accompanies the numbers');
+
+  // Far below any alarm threshold — D1 says always visible, never threshold-gated.
+  const low = renderRateLimits({ rateLimits: {
+    five_hour: { used_percentage: 5 }, seven_day: { used_percentage: 8 },
+  } });
+  assert.match(low, /5%/);
+  assert.match(low, /8%/);
+});
+
+test('renderRateLimits is empty when there is nothing valid to show', () => {
+  assert.equal(renderRateLimits({}), '');
+  assert.equal(renderRateLimits({ rateLimits: null }), '');
+  assert.equal(renderRateLimits({ rateLimits: {} }), '');
+  assert.equal(renderRateLimits({ rateLimits: { five_hour: null, seven_day: { used_percentage: 'abc' } } }), '');
+});
+
+test('renderRateLimits appends a reset countdown only on a hot (>=85%) window', () => {
+  const cool = renderRateLimits({ rateLimits: { seven_day: { used_percentage: 60, resets_at: 1_700_400_000 } }, nowSeconds: 1_700_000_000 });
+  assert.doesNotMatch(cool, /\d+h\d+m|\d+m/, 'sub-red window carries no countdown');
+
+  const hot = renderRateLimits({ rateLimits: { five_hour: { used_percentage: 88, resets_at: 1_700_007_920 } }, nowSeconds: 1_700_000_000 });
+  assert.match(hot, /·2h12m/);
+});
+
+test('renderRateLimits: spend_limit shows the real percentage past 100% while the bar clamps', () => {
+  const at100 = renderRateLimits({ rateLimits: { spend_limit: { used_percentage: 100 } } });
+  const at142 = renderRateLimits({ rateLimits: { spend_limit: { used_percentage: 142 } } });
+  assert.match(at142, /142%/);
+  // The bar glyphs (stripped of the trailing percentage) must be identical.
+  const bars = (s) => s.match(/[█░]+/)[0];
+  assert.equal(bars(at100), bars(at142), 'the bar stops at 100% while the number keeps climbing');
+});
+
+test('renderRateLimits: narrower detail tiers shed bars before numbers, then to the hottest window only', () => {
+  const rl = { five_hour: { used_percentage: 10 }, seven_day: { used_percentage: 95 } };
+  const full = renderRateLimits({ rateLimits: rl, detail: 'full' });
+  const numbers = renderRateLimits({ rateLimits: rl, detail: 'numbers' });
+  const hottest = renderRateLimits({ rateLimits: rl, detail: 'hottest' });
+
+  assert.match(full, /[█░]/);
+  assert.match(full, /10%/);
+  assert.match(full, /95%/);
+
+  assert.doesNotMatch(numbers, /[█░]/, 'numbers tier drops the bars');
+  assert.match(numbers, /10%/);
+  assert.match(numbers, /95%/);
+
+  assert.doesNotMatch(hottest, /10%/, 'the coolest window is shed first');
+  assert.match(hottest, /95%/, 'the window nearest its limit survives');
+});
+
+test('renderRateLimits: width auto-picks the widest tier that fits; unknown width means roomy', () => {
+  const rl = { five_hour: { used_percentage: 10 }, seven_day: { used_percentage: 95 } };
+  const full = renderRateLimits({ rateLimits: rl, detail: 'full' });
+  assert.equal(renderRateLimits({ rateLimits: rl }), full, 'no width → assume roomy → full tier');
+  const narrow = renderRateLimits({ rateLimits: rl, width: 6 });
+  assert.ok(visibleWidth(narrow) <= 6);
+  assert.match(narrow, /95%/);
+});
+
 test('renderRecap prefixes ❯ and is empty for blank text', () => {
   assert.match(renderRecap('do the thing'), /❯ do the thing/);
   assert.equal(renderRecap(''), '');
@@ -338,7 +431,7 @@ test('the statusline hook renders the project segment from a Claude stdin blob',
     encoding: 'utf8',
   });
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /⊡ astro · M1 · ‹2 \(P3\)/);
+  assert.match(r.stdout, /⊡ M1 · ‹2 \(P3\)/);
 });
 
 test('the statusline hook composes model + context bar from stdin + transcript', () => {
@@ -365,7 +458,136 @@ test('the statusline hook composes model + context bar from stdin + transcript',
   assert.ok(!r.stdout.includes('ship the statusline'), 'the prompt is NOT echoed back');
   assert.match(r.stdout, /Opus 4\.8/, 'model');
   assert.match(r.stdout, /10% · 100k\/1M/, 'context-fill bar (Opus 4.8 → 1M window)');
-  assert.match(r.stdout, /⊡ astro · M1 · ‹2 \(P3\)/, 'astro segment still there');
+  assert.match(r.stdout, /⊡ M1 · ‹2 \(P3\)/, 'the project identity segment still there');
+});
+
+// --- rate-limit quota: end-to-end through the real hook ----------------------
+
+// A fresh project + isolated HOME per call, so nothing leaks between cases.
+//
+// The fixture renders the MAXIMAL realistic line by default — model, version and a real
+// git branch all present — and a caller opts OUT by passing null, rather than opting in.
+// That default is the whole point of this helper and it is not cosmetic: it previously
+// built a blob with no `model`, no `version` and no git repo at all, so the two width
+// guards below measured a line missing the three segments that consume most of the
+// budget. They passed at 110 and 100 columns while the real hook wrapped to two rows at
+// both. A budget assertion is only worth as much as its fixture, and a minimal fixture
+// certifies a line that never renders.
+//
+// `branch` inits a real git repo checked out on that name; the default is deliberately
+// long because `ac flow` generates 45-character milestone branches, and the branch is
+// the one segment whose width is user data rather than bounded by construction.
+const FIXTURE_MODEL = { display_name: 'Opus 5' };
+const FIXTURE_VERSION = '0.25.1';
+const FIXTURE_BRANCH = 'feature/m8-agent-output-that-respects-the-reader';
+
+function runStatusline({
+  rateLimits,
+  cost,
+  version = FIXTURE_VERSION,
+  columns = 200,
+  branch = FIXTURE_BRANCH,
+  model = FIXTURE_MODEL,
+} = {}) {
+  const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
+  if (branch) {
+    spawnSync('git', ['init', '-q', '-b', branch, root], { encoding: 'utf8' });
+    spawnSync('git', ['-C', root, 'config', 'user.email', 'a@b.c'], { encoding: 'utf8' });
+    spawnSync('git', ['-C', root, 'config', 'user.name', 'a'], { encoding: 'utf8' });
+    spawnSync('git', ['-C', root, 'commit', '-q', '--allow-empty', '-m', 'init'], { encoding: 'utf8' });
+  }
+  const home = mkdtempSync(join(tmpdir(), 'ac-sl-rl-'));
+  mkdirSync(join(home, '.astro', 'code'), { recursive: true });
+  if (version) writeFileSync(join(home, '.astro', 'code', 'version'), `${version}\n`);
+  const blob = { session_id: 's1', workspace: { current_dir: root } };
+  if (model) blob.model = model;
+  if (rateLimits !== undefined) blob.rate_limits = rateLimits;
+  if (cost !== undefined) blob.cost = { total_cost_usd: cost };
+  const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
+  return spawnSync(process.execPath, [hook, join(home, '.claude')], {
+    input: JSON.stringify(blob),
+    env: { ...process.env, HOME: home, NO_COLOR: '1', COLUMNS: String(columns) },
+    encoding: 'utf8',
+  });
+}
+
+test('rate-limit quota: present data shows both windows on the live hook, at any usage level', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const r = runStatusline({ rateLimits: {
+    five_hour: { used_percentage: 23, resets_at: now + 7920 },
+    seven_day: { used_percentage: 41, resets_at: now + 400_000 },
+  } });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /5h/);
+  assert.match(r.stdout, /7d/);
+  assert.match(r.stdout, /23%/);
+  assert.match(r.stdout, /41%/);
+
+  const low = runStatusline({ rateLimits: { five_hour: { used_percentage: 5 }, seven_day: { used_percentage: 8 } } });
+  assert.match(low.stdout, /5%/);
+  assert.match(low.stdout, /8%/, 'far below any alarm threshold — still shown (D1: never gated)');
+});
+
+test('rate-limit quota: absence is silent — the usual line renders, with no placeholder or broken value', () => {
+  const cases = [
+    undefined,                                                          // (a) no key at all
+    { five_hour: { used_percentage: 30, resets_at: Math.floor(Date.now() / 1000) + 7920 } },   // (b) five_hour only
+    { seven_day: { used_percentage: 30, resets_at: Math.floor(Date.now() / 1000) + 7920 } },   // (c) seven_day only
+    { five_hour: null, seven_day: { used_percentage: 'abc' }, spend_limit: {} },                // (d) garbage
+  ];
+  for (const rateLimits of cases) {
+    const r = runStatusline({ rateLimits });
+    assert.equal(r.status, 0);
+    assert.ok(r.stdout.trim().length > 0, 'a non-empty line still renders');
+    assert.match(r.stdout, /⊡/, 'identity mark still present');
+    assert.doesNotMatch(r.stdout, /NaN|undefined|null|Infinity|--%/, 'no broken/placeholder value leaks through');
+  }
+  // (a)/(d): nothing valid → no percentages at all.
+  for (const rateLimits of [cases[0], cases[3]]) {
+    const r = runStatusline({ rateLimits });
+    assert.doesNotMatch(r.stdout, /\d+%/, 'no rate-limit numbers when there is nothing valid');
+  }
+  // (b)/(c): exactly the one supplied window shows, the other stays silent.
+  const bOut = runStatusline({ rateLimits: cases[1] }).stdout;
+  assert.match(bOut, /30%/);
+  assert.match(bOut, /5h/);
+  assert.doesNotMatch(bOut, /7d/);
+  const cOut = runStatusline({ rateLimits: cases[2] }).stdout;
+  assert.match(cOut, /30%/);
+  assert.match(cOut, /7d/);
+  assert.doesNotMatch(cOut, /5h/);
+});
+
+test('rate-limit quota: an empty stdin blob still exits 0 with a non-empty line', () => {
+  const home = mkdtempSync(join(tmpdir(), 'ac-sl-empty-'));
+  mkdirSync(join(home, '.astro', 'code'), { recursive: true });
+  const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
+  const r = spawnSync(process.execPath, [hook, join(home, '.claude')], {
+    input: '', env: { ...process.env, HOME: home, NO_COLOR: '1', COLUMNS: '200' }, encoding: 'utf8',
+  });
+  assert.equal(r.status, 0);
+  assert.ok(r.stdout.length >= 0, 'never throws on empty stdin');
+});
+
+test('D8: no dollar cost segment renders at any width, even when cost.total_cost_usd is present', () => {
+  for (const columns of [200, 120, 80, 40]) {
+    const r = runStatusline({ cost: 4.2, columns });
+    assert.doesNotMatch(r.stdout, /\$\d/, `no $-amount at ${columns} cols`);
+  }
+});
+
+test('D7: with no version the identity mark still reads coherently — no dangling separator, no empty v', () => {
+  // Opt OUT of the fixture's default version — the point of this case is the absent one.
+  const r = runStatusline({
+    version: null,
+    rateLimits: {
+      five_hour: { used_percentage: 23, resets_at: Math.floor(Date.now() / 1000) + 7920 },
+    },
+  });
+  assert.equal(r.status, 0);
+  assert.doesNotMatch(r.stdout, /⊡\s*·/, 'no dangling middot right off the glyph');
+  assert.doesNotMatch(r.stdout, /⊡\s*v(?!\d)/, 'no empty "v"');
+  assert.match(r.stdout, /⊡ M1/, 'the mark still binds the glyph to the milestone');
 });
 
 // --- narrow screens: iPad, phone, split pane ---------------------------------
@@ -434,7 +656,7 @@ test('renderSegmentParts splits identity from state; renderSegment still joins t
     version: '0.14.0', done: 0, total: 5,
   };
   const { identity, state } = renderSegmentParts(ctx);
-  assert.match(identity, /astro/);
+  assert.match(identity, /⊡/);
   assert.match(identity, /v0\.14\.0/);
   assert.match(identity, /M6/);
   assert.match(identity, /P15/);
@@ -468,7 +690,7 @@ test('on an iPad-width terminal the statusline still shows version, milestone an
       assert.ok(visibleWidth(row) <= columns,
         `at ${columns} cols a row overflowed (${visibleWidth(row)}): ${row}`);
     }
-    assert.match(out, /astro v0\.14\.0/, `version visible at ${columns} cols`);
+    assert.match(out, /⊡ v0\.14\.0/, `version visible at ${columns} cols`);
     assert.match(out, /M\d/, `milestone visible at ${columns} cols`);
     assert.match(out, /P\d/, `phase visible at ${columns} cols`);
   }
@@ -514,17 +736,143 @@ test('one line when it fits, two rows when it does not — identity always intac
   const wide = render(300);
   assert.equal(wide.split('\n').length, 1, 'a roomy terminal keeps one line');
   // Pick narrow widths from the fixture's own single-line length, so the test
-  // does not depend on how long this fixture's phase slug happens to be.
-  for (const columns of [40, 50]) {
+  // does not depend on how long this fixture's phase slug happens to be (D7's
+  // word removal shortened the line, which is exactly why this must be derived
+  // rather than hardcoded).
+  const wideLen = visibleWidth(wide.trim());
+  for (const columns of [wideLen - 20, wideLen - 10]) {
     const out = render(columns);
     assert.ok(out.split('\n').length >= 2, `at ${columns} cols it should use rows:\n${out}`);
     for (const row of out.split('\n')) {
       assert.ok(visibleWidth(row) <= columns,
         `row overflowed at ${columns} (${visibleWidth(row)}): ${row}`);
     }
-    assert.match(out, /astro v0\.14\.0/, `version survives at ${columns}`);
+    assert.match(out, /⊡ v0\.14\.0/, `version survives at ${columns}`);
     assert.match(out, /M\d/, `milestone survives at ${columns}`);
     assert.match(out, /P\d/, `phase survives at ${columns}`);
+  }
+});
+
+// --- width sweep: priority-aware degradation + the 110-column budget ---------
+
+test('width sweep: the window nearest its limit survives; detail only ever decreases', () => {
+  const sweep = (rateLimits, coolPct, hotPct) => {
+    const widths = [200, 160, 140, 120, 100, 90, 80, 70, 60, 50, 40];
+    // level: 3 = bar+both numbers, 2 = both numbers no bar, 1 = hottest number
+    // only, 0 = absent. Fixed-width, no COLOR — the raw substrings are exact.
+    let prevLevel = Infinity;
+    for (const columns of widths) {
+      const out = runStatusline({ rateLimits, columns }).stdout;
+      const hasBar = /[█░]/.test(out);
+      const hasCool = out.includes(`${coolPct}%`);
+      const hasHot = out.includes(`${hotPct}%`);
+      // (1) never sheds the hot window while keeping the cool one.
+      assert.ok(!(hasCool && !hasHot), `at ${columns} cols the cool window survived while the hot one did not:\n${out}`);
+      // (2) a bar never survives at a width where a number was dropped.
+      if (hasBar) assert.ok(hasCool && hasHot, `at ${columns} cols a bar rode without both numbers:\n${out}`);
+      const level = hasBar ? 3 : (hasCool && hasHot) ? 2 : hasHot ? 1 : 0;
+      // (3) detail only ever decreases as the screen narrows.
+      assert.ok(level <= prevLevel, `detail INCREASED at ${columns} cols (level ${level} > ${prevLevel}):\n${out}`);
+      prevLevel = level;
+      // (4) no fragment cut mid-token: every window label is followed by its own %.
+      for (const label of ['5h', '7d']) {
+        const at = out.indexOf(label);
+        if (at >= 0) assert.match(out.slice(at), /%/, `"${label}" rode with no trailing % (cut mid-token) at ${columns} cols:\n${out}`);
+      }
+      // every row stays within its own budget — no overflow/wrap.
+      for (const row of out.split('\n')) assert.ok(visibleWidth(row) <= columns, `row overflowed at ${columns}: ${row}`);
+      assert.ok(out.split('\n').every((r) => r.length > 0), `no empty row at ${columns} cols`);
+    }
+  };
+
+  // cool=5h(10%), hot=7d(95%) — the 7d window must be the one that survives.
+  sweep({ five_hour: { used_percentage: 10 }, seven_day: { used_percentage: 95 } }, 10, 95);
+  // swapped: now 5h is the hot one — the SURVIVOR must flip with it.
+  sweep({ five_hour: { used_percentage: 95 }, seven_day: { used_percentage: 10 } }, 10, 95);
+});
+
+test('the wide line with both quota bars fits a typical terminal at 110 and 100 columns', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const rateLimits = {
+    five_hour: { used_percentage: 23, resets_at: now + 7920 },
+    seven_day: { used_percentage: 41, resets_at: now + 400_000 },
+  };
+  for (const columns of [110, 100]) {
+    const out = runStatusline({ rateLimits, columns }).stdout;
+    assert.equal(out.split('\n').length, 1, `${columns} cols should still be a single line`);
+    assert.ok(visibleWidth(out) <= columns, `line exceeded its own budget at ${columns}: ${visibleWidth(out)}`);
+
+    // The width assertion above CANNOT fail on its own any more: the branch is the
+    // elastic segment, so it truncates until the line fits whatever it was given. That
+    // makes "it fits" true by construction and therefore worthless as a guard — the
+    // second unfalsifiable assertion this phase produced.
+    //
+    // What is actually load-bearing is WHICH detail tier a typical terminal gets. The
+    // bars are the 12 columns that pushed the one-line render to 145 and forced the
+    // reflow, so at 110 and 100 the quota segment must be numbers-only. Assert that,
+    // because it is the thing that can regress.
+    assert.doesNotMatch(
+      out,
+      /[█░]/,
+      `quota bars must not render at ${columns} cols — they are what overran the line, and ` +
+        'the branch silently truncating to absorb them is not the fix',
+    );
+    assert.match(out, /5h\s+23%/, `the 5h number must survive at ${columns} cols`);
+    assert.match(out, /7d\s+41%/, `the 7d number must survive at ${columns} cols`);
+  }
+
+  // ...and the bars must still exist somewhere, or "numbers-only at 110" would be
+  // satisfied by having removed them altogether, which C1 forbids.
+  const wide = runStatusline({ rateLimits, columns: 200 }).stdout;
+  assert.match(wide, /[█░]/, 'a genuinely wide terminal must still get the bars');
+});
+
+// A hot window (>=85%) grows a D2 reset countdown, which is exactly the case
+// the two tests above never exercised (both stayed below the hot threshold,
+// so `resets_at` never rendered). The countdown text — plus row2's segment
+// ORDER, which `fitRow` treats as a priority list since it drops whatever
+// overflows — is what let the quota segment disappear and then reappear as
+// the screen kept narrowing.
+
+test('width sweep with a hot window + live reset countdown never lets the quota segment reappear once shed', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const rateLimits = {
+    five_hour: { used_percentage: 10, resets_at: now + 7200 },
+    seven_day: { used_percentage: 95, resets_at: now + 86_400 * 3 },
+  };
+  // A real, long branch name — the ⎇ segment competes with the quota segment
+  // for row space, which is exactly what made the shed non-monotonic.
+  const branch = 'feature/a-fairly-long-branch-name-like-real-repos-have';
+  const widths = [200, 160, 140, 120, 100, 90, 80, 70, 60, 50, 40];
+  let seenGone = false;
+  for (const columns of widths) {
+    const out = runStatusline({ rateLimits, columns, branch }).stdout;
+    const hasHot = out.includes('95%');
+    const hasCool = out.includes('10%');
+    // (1) the hot window must never be shed while the cool one still shows.
+    assert.ok(!(hasCool && !hasHot), `at ${columns} cols the cool window survived while the hot one did not:\n${out}`);
+    // (2) once the hot window is gone at some width, it must stay gone at
+    // every narrower width — no reappearing as the screen keeps shrinking.
+    if (!hasHot) seenGone = true;
+    else assert.ok(!seenGone, `95% reappeared at ${columns} cols after being shed at a wider width:\n${out}`);
+    for (const row of out.split('\n')) assert.ok(visibleWidth(row) <= columns, `row overflowed at ${columns}: ${row}`);
+  }
+});
+
+test('a hot window with a live reset countdown still leaves the wide line fitting ~100-110 columns', () => {
+  // D2's countdown text is the one thing that can blow the always-visible
+  // quota segment (D1) past the reflow budget the phase costed it against —
+  // confirm it still does not push the single-line reflow point away from
+  // the ~100-column budget C8/D7/D8 were funded to protect.
+  const now = Math.floor(Date.now() / 1000);
+  const rateLimits = {
+    five_hour: { used_percentage: 10, resets_at: now + 7200 },
+    seven_day: { used_percentage: 95, resets_at: now + 86_400 * 3 },
+  };
+  for (const columns of [110, 100]) {
+    const out = runStatusline({ rateLimits, columns }).stdout;
+    assert.equal(out.split('\n').length, 1, `${columns} cols should still be a single line:\n${out}`);
+    assert.ok(visibleWidth(out) <= columns, `line exceeded its own budget at ${columns}: ${visibleWidth(out)}`);
   }
 });
 

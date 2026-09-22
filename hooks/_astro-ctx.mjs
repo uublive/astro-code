@@ -306,13 +306,26 @@ export function phaseTrack(ctx, lookahead = 2) {
 export function renderSegmentParts(ctx, { lookahead = 2 } = {}) {
   if (!ctx || (ctx.milestone == null && !ctx.phase)) return { identity: '', state: '' };
   const col = ctx.phase ? statusColor(ctx.phase.status) : ANSI.dim;
-  const identity = [
-    `${paint('⊡', col)} ${paint('astro', ANSI.magenta)}` +
-      (ctx.version ? paint(` v${ctx.version}`, ANSI.dim) : ''),
-  ];
-  if (ctx.milestone != null) identity.push(`M${ctx.milestone}`);
+  // D7: the `⊡` glyph already carries the identity — the word "astro" was ~6
+  // columns of redundancy on the most width-pressured line, funding the
+  // always-visible rate-limit bars (D1/D8).
+  const glyph = paint('⊡', col);
+  const hasVersion = Boolean(ctx.version);
+  const head = hasVersion ? `${glyph} ${paint(`v${ctx.version}`, ANSI.dim)}` : glyph;
+
+  const rest = [];
+  if (ctx.milestone != null) rest.push(`M${ctx.milestone}`);
   const track = phaseTrack(ctx, lookahead);
-  if (track) identity.push(track);
+  if (track) rest.push(track);
+
+  // No version → the head is a bare glyph, and the usual " · " joiner would
+  // then read as a dangling separator right off it (`⊡ ·`) — the word "astro"
+  // used to fill that gap before D7 dropped it (CONTEXT.md open question 1).
+  // Fold the first surviving item onto the glyph with a plain space instead;
+  // everything after it still joins on the normal middot.
+  const identity = hasVersion || !rest.length
+    ? [head, ...rest]
+    : [`${head} ${rest[0]}`, ...rest.slice(1)];
 
   const state = [];
   // A live bugfix leads the state half: it is what you are actually doing right
@@ -466,6 +479,15 @@ export function renderRecap(text) {
   return t ? paint(`❯ ${t}`, ANSI.dim) : '';
 }
 
+// The shared green→yellow→red ramp: yellow from 60%, red from 85%. Every gauge
+// on the line (context-fill, rate-limit quota) reuses this ONE function so two
+// bars never disagree about what "yellow" means (ADR: match renderClaudeSegment's
+// existing ramp rather than invent a second one for quota).
+export function rampColor(fraction) {
+  const f = Number(fraction) || 0;
+  return f >= 0.85 ? ANSI.red : f >= 0.6 ? ANSI.yellow : ANSI.green;
+}
+
 // model name + a context-fill bar (bar+percent+tokens/limit). `tokens`/`limit`
 // may be null (no transcript yet) → only the model shows. Colour ramps
 // green→yellow→red as the window fills. Empty when there's no model at all.
@@ -475,10 +497,129 @@ export function renderClaudeSegment({ model, tokens, limit } = {}) {
   if (name) parts.push(paint(name, ANSI.cyan));
   if (tokens != null && limit) {
     const f = tokens / limit;
-    const col = f >= 0.85 ? ANSI.red : f >= 0.6 ? ANSI.yellow : ANSI.green;
+    const col = rampColor(f);
     parts.push(`${paint(progressBar(f), col)} ${Math.round(f * 100)}% · ${kfmt(tokens)}/${kfmt(limit)}`);
   }
   return parts.join(' ');
+}
+
+// --- rate-limit quota gauge ---------------------------------------------------
+// `rate_limits` on the statusline stdin blob: two rolling windows (5h/7d, each
+// independently optional) plus an optional gateway-only spend cap. See phase 21
+// CONTEXT.md — always visible when present (D1), never threshold-gated.
+
+// Human-readable time-to-reset, e.g. `2h12m` / `12m`. `resetsAt`/`nowSeconds`
+// are both Unix epoch seconds; NEVER render the raw epoch or an absolute clock
+// time (D2). Clamped at zero so an already-passed `resets_at` reads `0m`
+// instead of going negative.
+export function formatETA(resetsAt, nowSeconds) {
+  const secs = Math.max(0, Math.round(Number(resetsAt) - Number(nowSeconds)));
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return h > 0 ? `${h}h${m}m` : `${m}m`;
+}
+
+const RATE_LIMIT_WINDOW_LABELS = { five_hour: '5h', seven_day: '7d' };
+// D6: the countdown (D2) rides the same red threshold as the colour ramp.
+const isHotWindow = (pct) => pct >= 85;
+
+function validPct(v) {
+  return typeof v === 'number' && Number.isFinite(v);
+}
+
+function buildWindow(key, data) {
+  if (!data || typeof data !== 'object' || !validPct(data.used_percentage)) return null;
+  return { key, label: RATE_LIMIT_WINDOW_LABELS[key], pct: data.used_percentage, resetsAt: data.resets_at };
+}
+
+// Quota bars ride narrower than the context-fill bar (which owns the whole
+// line to itself) — 5 cells, matching the CONTEXT.md D2/D4 illustrations
+// ("5h ▓▓▓▓░ 88%"). Up to two of these plus a spend cap share one line with
+// everything else, so the default 10-wide progressBar would blow the wide
+// line's reflow point far past the ~100-column budget D1's "always visible"
+// promise was costed against.
+const RATE_LIMIT_BAR_WIDTH = 5;
+
+// One window's rendering at a given detail: `bar` toggles the graphical fill
+// (D4 sheds bars before numbers); the reset countdown only ever appears once
+// the window is hot (D2/D6).
+function renderWindow(w, bar, nowSeconds) {
+  const col = rampColor(w.pct / 100);
+  const bits = [w.label];
+  if (bar) bits.push(paint(progressBar(w.pct / 100, RATE_LIMIT_BAR_WIDTH), col));
+  bits.push(paint(`${Math.round(w.pct)}%`, col));
+  let out = bits.join(' ');
+  if (isHotWindow(w.pct) && validPct(w.resetsAt)) {
+    out += ` ·${formatETA(w.resetsAt, nowSeconds)}`;
+  }
+  return out;
+}
+
+// The spend cap: costs nothing when absent (D3). `used_percentage` may exceed
+// 100 — the text keeps climbing while `progressBar` (already clamped) stops.
+function renderSpend(pct, bar) {
+  const col = rampColor(Math.min(1, pct / 100));
+  const bits = ['cap'];
+  if (bar) bits.push(paint(progressBar(pct / 100, RATE_LIMIT_BAR_WIDTH), col));
+  bits.push(paint(`${Math.round(pct)}%`, col));
+  return bits.join(' ');
+}
+
+/**
+ * Render the rate-limit quota segment.
+ *
+ * `detail` explicitly picks a tier (`'full' | 'numbers' | 'hottest'`), for
+ * direct testing and for the hook's cols-based ladder (mirroring `phaseTrack`'s
+ * `lookahead`). `width` instead auto-picks the WIDEST tier that fits — used the
+ * same way `termWidth`'s "unknown means roomy" contract works: no width → full.
+ *
+ * D4's narrow-degradation order: bars go before numbers, and the windows are
+ * sorted hottest-first so a shrinking line sheds the COOLEST window first —
+ * the one nearest its limit is what survives.
+ */
+export function renderRateLimits({ rateLimits, nowSeconds = Math.floor(Date.now() / 1000), width, detail } = {}) {
+  if (!rateLimits || typeof rateLimits !== 'object') return '';
+
+  const windows = ['five_hour', 'seven_day']
+    .map((k) => buildWindow(k, rateLimits[k]))
+    .filter(Boolean)
+    .sort((a, b) => b.pct - a.pct);
+
+  const spendPct = rateLimits.spend_limit && rateLimits.spend_limit.used_percentage;
+  const spend = validPct(spendPct) ? spendPct : null;
+
+  if (!windows.length && spend == null) return '';
+
+  const tiers = [];
+  if (windows.length) {
+    tiers.push(() => [
+      ...windows.map((w) => renderWindow(w, true, nowSeconds)),
+      ...(spend != null ? [renderSpend(spend, true)] : []),
+    ]);
+    tiers.push(() => [
+      ...windows.map((w) => renderWindow(w, false, nowSeconds)),
+      ...(spend != null ? [renderSpend(spend, false)] : []),
+    ]);
+    tiers.push(() => [renderWindow(windows[0], false, nowSeconds)]);
+  } else {
+    tiers.push(() => [renderSpend(spend, true)]);
+    tiers.push(() => [renderSpend(spend, false)]);
+  }
+  const TIER_NAMES = windows.length ? ['full', 'numbers', 'hottest'] : ['full', 'numbers'];
+
+  if (detail) {
+    const i = TIER_NAMES.indexOf(detail);
+    const build = tiers[i < 0 ? 0 : i];
+    return build().join(' · ');
+  }
+
+  if (!width) return tiers[0]().join(' · ');   // unknown width → assume roomy
+
+  for (const build of tiers) {
+    const s = build().join(' · ');
+    if (visibleWidth(s) <= width) return s;
+  }
+  return '';
 }
 
 // A terse, PLAIN-text continuity note for the PreCompact hook. Context compaction
