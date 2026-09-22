@@ -17,6 +17,7 @@ import {
   modelLimit, readContextTokens, readRecap, progressBar, renderClaudeSegment, renderRecap, truncate, phaseTrack,
   isBusy, renderStatus, SESSION_STALE_SECONDS,
   termWidth, visibleWidth, truncateVisible, packStatus, renderSegmentParts, STATUS_SEP,
+  rampColor, formatETA, renderRateLimits,
 } from '../hooks/_astro-ctx.mjs';
 
 const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -321,6 +322,95 @@ test('renderClaudeSegment shows model + a coloured fill bar; model-only when no 
   assert.match(seg, /52% · 104k\/200k/);
   assert.equal(renderClaudeSegment({ model: { display_name: 'Opus 4.8' }, tokens: null, limit: 200_000 }), 'Opus 4.8');
   assert.equal(renderClaudeSegment({}), '', 'empty with no model');
+});
+
+// --- rate-limit quota gauge ---------------------------------------------------
+
+test('rampColor: green below 60%, yellow from 60%, red from 85% (matches the context bar)', () => {
+  assert.equal(rampColor(0.59), rampColor(0.5), 'both cool → same colour');
+  assert.equal(rampColor(0.6), rampColor(0.84), 'both mid-band → same colour');
+  assert.equal(rampColor(0.85), rampColor(0.99), 'both hot → same colour');
+  const green = rampColor(0.1), yellow = rampColor(0.6), red = rampColor(0.85);
+  assert.notEqual(green, yellow);
+  assert.notEqual(yellow, red);
+  assert.notEqual(green, red);
+});
+
+test('formatETA renders a relative duration, never a raw epoch, and clamps a past reset at zero', () => {
+  const now = 1_700_000_000;
+  assert.equal(formatETA(now + 7920, now), '2h12m');
+  assert.equal(formatETA(now + 300, now), '5m');
+  assert.equal(formatETA(now - 60, now), '0m', 'an already-passed reset never goes negative');
+});
+
+test('renderRateLimits shows both windows with a distinct marker + bar each, at any usage level', () => {
+  const seg = renderRateLimits({ rateLimits: {
+    five_hour: { used_percentage: 23, resets_at: 1_700_100_000 },
+    seven_day: { used_percentage: 41, resets_at: 1_700_500_000 },
+  }, nowSeconds: 1_700_000_000 });
+  assert.match(seg, /5h/);
+  assert.match(seg, /7d/);
+  assert.match(seg, /23%/);
+  assert.match(seg, /41%/);
+  assert.match(seg, /[█░]/, 'a graphical bar accompanies the numbers');
+
+  // Far below any alarm threshold — D1 says always visible, never threshold-gated.
+  const low = renderRateLimits({ rateLimits: {
+    five_hour: { used_percentage: 5 }, seven_day: { used_percentage: 8 },
+  } });
+  assert.match(low, /5%/);
+  assert.match(low, /8%/);
+});
+
+test('renderRateLimits is empty when there is nothing valid to show', () => {
+  assert.equal(renderRateLimits({}), '');
+  assert.equal(renderRateLimits({ rateLimits: null }), '');
+  assert.equal(renderRateLimits({ rateLimits: {} }), '');
+  assert.equal(renderRateLimits({ rateLimits: { five_hour: null, seven_day: { used_percentage: 'abc' } } }), '');
+});
+
+test('renderRateLimits appends a reset countdown only on a hot (>=85%) window', () => {
+  const cool = renderRateLimits({ rateLimits: { seven_day: { used_percentage: 60, resets_at: 1_700_400_000 } }, nowSeconds: 1_700_000_000 });
+  assert.doesNotMatch(cool, /\d+h\d+m|\d+m/, 'sub-red window carries no countdown');
+
+  const hot = renderRateLimits({ rateLimits: { five_hour: { used_percentage: 88, resets_at: 1_700_007_920 } }, nowSeconds: 1_700_000_000 });
+  assert.match(hot, /·2h12m/);
+});
+
+test('renderRateLimits: spend_limit shows the real percentage past 100% while the bar clamps', () => {
+  const at100 = renderRateLimits({ rateLimits: { spend_limit: { used_percentage: 100 } } });
+  const at142 = renderRateLimits({ rateLimits: { spend_limit: { used_percentage: 142 } } });
+  assert.match(at142, /142%/);
+  // The bar glyphs (stripped of the trailing percentage) must be identical.
+  const bars = (s) => s.match(/[█░]+/)[0];
+  assert.equal(bars(at100), bars(at142), 'the bar stops at 100% while the number keeps climbing');
+});
+
+test('renderRateLimits: narrower detail tiers shed bars before numbers, then to the hottest window only', () => {
+  const rl = { five_hour: { used_percentage: 10 }, seven_day: { used_percentage: 95 } };
+  const full = renderRateLimits({ rateLimits: rl, detail: 'full' });
+  const numbers = renderRateLimits({ rateLimits: rl, detail: 'numbers' });
+  const hottest = renderRateLimits({ rateLimits: rl, detail: 'hottest' });
+
+  assert.match(full, /[█░]/);
+  assert.match(full, /10%/);
+  assert.match(full, /95%/);
+
+  assert.doesNotMatch(numbers, /[█░]/, 'numbers tier drops the bars');
+  assert.match(numbers, /10%/);
+  assert.match(numbers, /95%/);
+
+  assert.doesNotMatch(hottest, /10%/, 'the coolest window is shed first');
+  assert.match(hottest, /95%/, 'the window nearest its limit survives');
+});
+
+test('renderRateLimits: width auto-picks the widest tier that fits; unknown width means roomy', () => {
+  const rl = { five_hour: { used_percentage: 10 }, seven_day: { used_percentage: 95 } };
+  const full = renderRateLimits({ rateLimits: rl, detail: 'full' });
+  assert.equal(renderRateLimits({ rateLimits: rl }), full, 'no width → assume roomy → full tier');
+  const narrow = renderRateLimits({ rateLimits: rl, width: 6 });
+  assert.ok(visibleWidth(narrow) <= 6);
+  assert.match(narrow, /95%/);
 });
 
 test('renderRecap prefixes ❯ and is empty for blank text', () => {
