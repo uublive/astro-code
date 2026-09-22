@@ -110,3 +110,43 @@ test('worker computes behind-count + version against a real clone/upstream', asy
   assert.equal(cache.installed, '0.1.0');
   assert.equal(cache.latest, '0.2.0');
 });
+
+test('ac update drops the update-check cache, so an applied update is no longer advertised (#40)', { skip: process.platform === 'win32' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-update-'));
+  const remote = join(dir, 'remote.git');
+  const clone = join(dir, 'clone');
+  const home = join(dir, 'home');
+  const git = (args, cwd) => spawnSync('git', args, { cwd, encoding: 'utf8' });
+
+  git(['init', '--bare', '-b', 'main', remote], dir);
+  git(['clone', remote, clone], dir);
+  for (const [k, v] of [['user.email', 'a@b.c'], ['user.name', 'Test']]) git(['config', k, v], clone);
+  writeFileSync(join(clone, 'package.json'), JSON.stringify({ version: '0.1.0' }));
+  git(['add', '.'], clone); git(['commit', '-m', 'v0.1.0'], clone); git(['push', '-u', 'origin', 'main'], clone);
+  const up = join(dir, 'up');
+  git(['clone', remote, up], dir);
+  for (const [k, v] of [['user.email', 'a@b.c'], ['user.name', 'Test']]) git(['config', k, v], up);
+  writeFileSync(join(up, 'package.json'), JSON.stringify({ version: '0.2.0' }));
+  git(['add', '.'], up); git(['commit', '-m', 'v0.2.0'], up); git(['push'], up);
+
+  // the cache a SessionStart worker wrote before the update
+  mkdirSync(join(home, '.claude'), { recursive: true });
+  const astroHome = join(home, '.astro', 'code');
+  mkdirSync(astroHome, { recursive: true });
+  const cacheFile = join(astroHome, 'update-check.json');
+  writeFileSync(cacheFile, JSON.stringify({ update_available: true, behind: 1, installed: '0.1.0', latest: '0.2.0', checked: Math.floor(Date.now() / 1000) }));
+
+  // `ac update` from a non-clone CLI runs `npm install -g <clone>`; stub npm so the test
+  // never touches the real global prefix
+  const bin = join(dir, 'bin');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'npm'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH}` };
+  delete env.CLAUDE_CONFIG_DIR;
+  delete env.CODEX_HOME;
+
+  const r = spawnSync(process.execPath, [join(FRAMEWORK, 'bin', 'ac.mjs'), 'update', clone], { env, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /now at v0\.2\.0/);
+  assert.ok(!existsSync(cacheFile), 'a cache describing the replaced version must not survive the update');
+});
