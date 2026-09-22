@@ -306,13 +306,26 @@ export function phaseTrack(ctx, lookahead = 2) {
 export function renderSegmentParts(ctx, { lookahead = 2 } = {}) {
   if (!ctx || (ctx.milestone == null && !ctx.phase)) return { identity: '', state: '' };
   const col = ctx.phase ? statusColor(ctx.phase.status) : ANSI.dim;
-  const identity = [
-    `${paint('⊡', col)} ${paint('astro', ANSI.magenta)}` +
-      (ctx.version ? paint(` v${ctx.version}`, ANSI.dim) : ''),
-  ];
-  if (ctx.milestone != null) identity.push(`M${ctx.milestone}`);
+  // D7: the `⊡` glyph already carries the identity — the word "astro" was ~6
+  // columns of redundancy on the most width-pressured line, funding the
+  // always-visible rate-limit bars (D1/D8).
+  const glyph = paint('⊡', col);
+  const hasVersion = Boolean(ctx.version);
+  const head = hasVersion ? `${glyph} ${paint(`v${ctx.version}`, ANSI.dim)}` : glyph;
+
+  const rest = [];
+  if (ctx.milestone != null) rest.push(`M${ctx.milestone}`);
   const track = phaseTrack(ctx, lookahead);
-  if (track) identity.push(track);
+  if (track) rest.push(track);
+
+  // No version → the head is a bare glyph, and the usual " · " joiner would
+  // then read as a dangling separator right off it (`⊡ ·`) — the word "astro"
+  // used to fill that gap before D7 dropped it (CONTEXT.md open question 1).
+  // Fold the first surviving item onto the glyph with a plain space instead;
+  // everything after it still joins on the normal middot.
+  const identity = hasVersion || !rest.length
+    ? [head, ...rest]
+    : [`${head} ${rest[0]}`, ...rest.slice(1)];
 
   const state = [];
   // A live bugfix leads the state half: it is what you are actually doing right

@@ -77,7 +77,8 @@ test('state.active_phase overrides the next-open heuristic', () => {
 test('renderSegment shows ⊡, milestone, phase, progress, blockers', () => {
   const root = project({ state: { blockers: [1] }, roadmap: ROADMAP });
   const seg = renderSegment(readContext(root, NOW));
-  assert.match(seg, /⊡ astro/);
+  assert.match(seg, /⊡/);
+  assert.doesNotMatch(seg, /\bastro\b/, 'D7: the redundant word is gone — the glyph carries the identity');
   assert.match(seg, /M1/);
   assert.match(seg, /‹2 \(P3\) P4/, 'windowed track: 2 behind, current, one queued');
   assert.doesNotMatch(seg, /close-ci-gates/, 'the slug is no longer on the status line');
@@ -89,11 +90,13 @@ test('renderSegment shows ⊡, milestone, phase, progress, blockers', () => {
 test('renderSegment shows the astro-code version by the brand mark when provided', () => {
   const root = project({ roadmap: ROADMAP });
   const seg = renderSegment({ ...readContext(root, NOW), version: '0.5.2' });
-  assert.match(seg, /⊡ astro v0\.5\.2 · M1/, 'version sits right after the astro mark');
-  // absent version → unchanged brand (never a bare "v")
+  assert.match(seg, /⊡ v0\.5\.2 · M1/, 'version sits right after the glyph');
+  // absent version → the milestone folds onto the glyph with a plain space, so
+  // the fallback never reads as a dangling middot ("⊡ ·") — D7's open question.
   const noV = renderSegment(readContext(root, NOW));
-  assert.match(noV, /⊡ astro · M1/);
-  assert.doesNotMatch(noV, /v0\.5\.2|astro v/);
+  assert.match(noV, /⊡ M1/);
+  assert.doesNotMatch(noV, /⊡\s*·/, 'no dangling separator right off the bare glyph');
+  assert.doesNotMatch(noV, /v0\.5\.2|\bastro\b|⊡\s*$|⊡\s*v\b/);
 });
 
 test('renderResumeNote (PreCompact) carries project/phase/status + next action + on-disk pointer', () => {
@@ -428,7 +431,7 @@ test('the statusline hook renders the project segment from a Claude stdin blob',
     encoding: 'utf8',
   });
   assert.equal(r.status, 0);
-  assert.match(r.stdout, /⊡ astro · M1 · ‹2 \(P3\)/);
+  assert.match(r.stdout, /⊡ M1 · ‹2 \(P3\)/);
 });
 
 test('the statusline hook composes model + context bar from stdin + transcript', () => {
@@ -455,7 +458,7 @@ test('the statusline hook composes model + context bar from stdin + transcript',
   assert.ok(!r.stdout.includes('ship the statusline'), 'the prompt is NOT echoed back');
   assert.match(r.stdout, /Opus 4\.8/, 'model');
   assert.match(r.stdout, /10% · 100k\/1M/, 'context-fill bar (Opus 4.8 → 1M window)');
-  assert.match(r.stdout, /⊡ astro · M1 · ‹2 \(P3\)/, 'astro segment still there');
+  assert.match(r.stdout, /⊡ M1 · ‹2 \(P3\)/, 'the project identity segment still there');
 });
 
 // --- narrow screens: iPad, phone, split pane ---------------------------------
@@ -524,7 +527,7 @@ test('renderSegmentParts splits identity from state; renderSegment still joins t
     version: '0.14.0', done: 0, total: 5,
   };
   const { identity, state } = renderSegmentParts(ctx);
-  assert.match(identity, /astro/);
+  assert.match(identity, /⊡/);
   assert.match(identity, /v0\.14\.0/);
   assert.match(identity, /M6/);
   assert.match(identity, /P15/);
@@ -558,7 +561,7 @@ test('on an iPad-width terminal the statusline still shows version, milestone an
       assert.ok(visibleWidth(row) <= columns,
         `at ${columns} cols a row overflowed (${visibleWidth(row)}): ${row}`);
     }
-    assert.match(out, /astro v0\.14\.0/, `version visible at ${columns} cols`);
+    assert.match(out, /⊡ v0\.14\.0/, `version visible at ${columns} cols`);
     assert.match(out, /M\d/, `milestone visible at ${columns} cols`);
     assert.match(out, /P\d/, `phase visible at ${columns} cols`);
   }
@@ -604,15 +607,18 @@ test('one line when it fits, two rows when it does not — identity always intac
   const wide = render(300);
   assert.equal(wide.split('\n').length, 1, 'a roomy terminal keeps one line');
   // Pick narrow widths from the fixture's own single-line length, so the test
-  // does not depend on how long this fixture's phase slug happens to be.
-  for (const columns of [40, 50]) {
+  // does not depend on how long this fixture's phase slug happens to be (D7's
+  // word removal shortened the line, which is exactly why this must be derived
+  // rather than hardcoded).
+  const wideLen = visibleWidth(wide.trim());
+  for (const columns of [wideLen - 20, wideLen - 10]) {
     const out = render(columns);
     assert.ok(out.split('\n').length >= 2, `at ${columns} cols it should use rows:\n${out}`);
     for (const row of out.split('\n')) {
       assert.ok(visibleWidth(row) <= columns,
         `row overflowed at ${columns} (${visibleWidth(row)}): ${row}`);
     }
-    assert.match(out, /astro v0\.14\.0/, `version survives at ${columns}`);
+    assert.match(out, /⊡ v0\.14\.0/, `version survives at ${columns}`);
     assert.match(out, /M\d/, `milestone survives at ${columns}`);
     assert.match(out, /P\d/, `phase survives at ${columns}`);
   }
