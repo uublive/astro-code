@@ -456,6 +456,7 @@ ac debt dismiss <id> --reason … # it was NEVER true — the verifier was wrong
 
 ac backlog add "<idea>"        # capture an idea (no file, no phase number spent)
 ac backlog list                # open ideas, oldest first
+ac backlog note <id> ["<text>"] # read/set/clear an item's note (the title stays fixed)
 ac backlog link <id> --phase N # fold it into a phase already in flight
 ac backlog promote <id>        # claim a phase number and seed CONTEXT.md from it
 ac backlog archive <id> --kind declined|obsolete --reason "…" # file it WITHOUT doing it

@@ -25,6 +25,7 @@ import {
   addBacklog, openBacklog, loadBacklog, findBacklog, backlogAgeDays, linkBacklog,
   closeBacklogFor, reopenBacklogFor, markPromoted, archiveBacklog, declinedMatches,
   promotionContext, ARCHIVE_KINDS, BACKLOG_STALE_DAYS,
+  setBacklogNote,
 } from '../lib/backlog.mjs';
 import { runFixturesCheck } from '../lib/fixtures.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
@@ -154,6 +155,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac backlog list [--all] [--json]    open ideas (oldest first); --all includes archived/promoted
   ac backlog add "<idea>" [--note …]  capture an idea (no phase/milestone spent)
   ac backlog show <id>                print the raw item as JSON
+  ac backlog note <id> ["<text>"]     read/set/clear an item's note (the title stays fixed)
   ac backlog link <id> --phase N      commit the item to a phase already in flight
   ac backlog promote <id>             claim a phase number and start it from this idea
   ac backlog archive <id> --kind declined|obsolete --reason "…"  file the idea WITHOUT doing it
@@ -521,6 +523,28 @@ async function main() {
         return;
       }
 
+      if (sub === 'note') {
+        // Read/set/clear an item's note, exactly like `ac phase note`.
+        //   ac backlog note <id>            READ
+        //   ac backlog note <id> "<text>"   WRITE
+        //   ac backlog note <id> ""         CLEAR
+        // The title stays immutable: it seeds the id and feeds the declined-match
+        // check, so a mutable title means a duplicate warning that silently changes
+        // what it compares against. A title wrong enough to matter is an `obsolete`
+        // archive plus a re-capture, which is what that exit is for.
+        if (pos.length < 3) {
+          console.log(item.note ?? '');
+        } else {
+          const updated = await setBacklogNote(r, item.id, pos.slice(2).join(' '));
+          console.log(
+            updated.note
+              ? `✓ backlog ${updated.id} note updated`
+              : `✓ backlog ${updated.id} note cleared`,
+          );
+        }
+        return;
+      }
+
       if (sub === 'archive') {
         checkFlags('backlog archive', flags);
         const kind = typeof flags.kind === 'string' ? flags.kind : '';
@@ -533,7 +557,7 @@ async function main() {
         return;
       }
 
-      die(`unknown: ac backlog ${sub} (add | list | show | link | promote | archive)`);
+      die(`unknown: ac backlog ${sub} (add | list | show | note | link | promote | archive)`);
     }
 
     case 'agents-md': {

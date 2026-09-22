@@ -264,3 +264,56 @@ test('an item record carries no priority, rank or score key — the backlog is a
   assert.equal(entry.rank, undefined);
   assert.equal(entry.score, undefined);
 });
+
+// ── editing a note (ADR-044's shape, one object over) ───────────────────────────────
+//
+// Notes are editable and reports are not. A fix keeps its report verbatim because the
+// symptom is evidence; debt is the verifier's own finding and editing it corrupts the
+// feed `drop`/`dismiss` measures. A backlog note is the author's intent, and intent
+// changes as an idea is understood. It also closes a rule nobody could follow: capture
+// warns that a note "reads like a plan" and asks for a rewrite, which was impossible.
+test('setBacklogNote sets, replaces and clears a note on an open item', async () => {
+  const root = project();
+  const { addBacklog, setBacklogNote, findBacklog } = await import('../lib/backlog.mjs');
+  const { entry: item } = await addBacklog(root, { title: 'A parked idea', note: 'first thoughts' });
+
+  await setBacklogNote(root, item.id, 'second thoughts, sharper');
+  assert.equal(findBacklog(root, item.id).note, 'second thoughts, sharper');
+
+  await setBacklogNote(root, item.id, '   ');
+  assert.equal(findBacklog(root, item.id).note, undefined, 'a blank note clears the field');
+
+  await setBacklogNote(root, item.id, 'back again');
+  assert.equal(findBacklog(root, item.id).note, 'back again');
+});
+
+test('setBacklogNote never touches the title, the id or the capture time', async () => {
+  const root = project();
+  const { addBacklog, setBacklogNote, findBacklog } = await import('../lib/backlog.mjs');
+  const { entry: item } = await addBacklog(root, { title: 'Stable identity', note: 'a' });
+  const before = findBacklog(root, item.id);
+
+  await setBacklogNote(root, item.id, 'b');
+  const after = findBacklog(root, item.id);
+  assert.equal(after.id, before.id);
+  assert.equal(after.title, before.title, 'the title seeds the id and the declined-match check');
+  assert.equal(after.captured_at, before.captured_at);
+  assert.equal(after.status, 'open');
+});
+
+test('setBacklogNote refuses an archived or promoted item — a closed record stays closed', async () => {
+  const root = project();
+  const { addBacklog, setBacklogNote, archiveBacklog, findBacklog } = await import('../lib/backlog.mjs');
+  const { entry: item } = await addBacklog(root, { title: 'Will be declined', note: 'original' });
+  await archiveBacklog(root, item.id, { kind: 'declined', reason: 'not worth it' });
+
+  await assert.rejects(() => setBacklogNote(root, item.id, 'rewritten'), /declined/);
+  assert.equal(findBacklog(root, item.id).note, 'original', 'the note is untouched after the refusal');
+  assert.equal(findBacklog(root, item.id).archive_reason, 'not worth it', 'and so is the reason');
+});
+
+test('setBacklogNote on an unknown id fails loudly', async () => {
+  const root = project();
+  const { setBacklogNote } = await import('../lib/backlog.mjs');
+  await assert.rejects(() => setBacklogNote(root, 'nope', 'x'), /no such backlog item/);
+});

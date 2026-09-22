@@ -11,7 +11,7 @@
     {
       "id": "2026-09-22-a-plugin-surface-for-adopters-with",
       "title": "A plugin surface for adopters with vertical requirements — undecided whether we want one",
-      "note": "Raised when the first adopters arrived with domain-specific needs. The finding that matters: CONVENTIONS.md is already the plugin system for behaviour, since execute-phase.mjs appends 'read and OBEY the project canon' to every agent prompt, and Claude Code already reads .claude/commands/ per repo — so domain rules and extra commands cost nothing today. What is genuinely closed is the ac verb switch, the loop's role list, and any way to package and share those. Four tiers, roughly: canon (free, exists), project-local commands/agents merged at install (small, the install pipeline already copies four flat dirs through a host adapter), packaged plugins with a manifest and namespacing (medium, and kits are the prior art), and lifecycle hooks into the loop (large, and probably wrong — it means declaring a stable internal API, which is the opposite of the tiny-markdown-core pillar, and unlike canon a plugin that silently does not fire is invisible). Undecided on purpose: worth collecting what two or three adopters actually ask for before picking a tier, because the honest answer may be that canon covers it.",
+      "note": "Canon is already the plugin system for behaviour — every agent is told to obey CONVENTIONS.md — and Claude Code reads .claude/commands per repo, so domain rules and extra commands cost nothing today. Genuinely closed: the ac verb switch, the loop's role list, and any way to share either. Open question is which tier is worth it, not how to build one.",
       "status": "open",
       "captured_at": "2026-09-22T13:59:42.439Z"
     },
