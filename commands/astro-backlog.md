@@ -1,10 +1,10 @@
 ---
-description: Capture an idea without planning it, or review the backlog and decide what to do with each item
-argument-hint: "[<idea>]"
+description: List the ideas you have parked, capture a new one, or review them one by one
+argument-hint: "[<idea> | review]"
 allowed-tools: Bash, Read, Grep, Glob, AskUserQuestion
 ---
 
-Capture an idea you are not ready to plan, or review the ones already waiting.
+List the ideas you have parked, capture a new one, or triage them.
 
 The backlog is a peer of debt and fixes, not a status inside either — an idea has no
 file and no recurrence, so it never belongs in the debt register (ADR-056). It is not a
@@ -13,7 +13,19 @@ phase, or archived with a reason.
 
 ## Steps
 
-If `$ARGUMENTS` is given, **capture** it:
+Three modes, keyed on `$ARGUMENTS`:
+
+| `$ARGUMENTS` | Mode |
+|---|---|
+| empty | **list** — print what is open and stop |
+| exactly `review` | **triage** — list, then offer each item its exits |
+| anything else | **capture** — treat it as the idea |
+
+Checking what you have parked is a glance, and it is the most frequent thing anyone does
+here. It must not cost a round of questions, or it stops being done. Triage is the rarer,
+deliberate act, so it is the one that asks to be named.
+
+### Capture — `$ARGUMENTS` is an idea
 
 1. **Capture the idea.** Run:
 
@@ -28,14 +40,22 @@ If `$ARGUMENTS` is given, **capture** it:
    If the command prints a similarity warning, relay it **in one line**, naming the
    existing item. Never refuse the capture over it — D5/D6 warn and proceed.
 
-If `$ARGUMENTS` is empty, **review**:
+### List — `$ARGUMENTS` is empty
 
 1. **Read the backlog.** Run `ac backlog list`. If there is no open idea, say so in one
-   line and stop — nothing to review is a good outcome, not an empty report to dress up.
+   line and stop — nothing parked is a good outcome, not an empty report to dress up.
 
 2. **Present it** as one line per item — the id, its age, a `⚠` on anything the CLI
    flagged as stale — never a table. Keep each item to its title plus the one line the
    CLI already gave you; do not paste the full record.
+
+   **Then stop.** Do not offer exits, do not raise an `AskUserQuestion`, do not suggest
+   what to do with any item. A glance that ends in a question is not a glance. At most,
+   close with one line naming `/astro-backlog review` for anyone who wants to act.
+
+### Triage — `$ARGUMENTS` is exactly `review`
+
+Do steps 1 and 2 above first, then:
 
 3. **Offer the exits**, one `AskUserQuestion` per item under discussion (or grouped if
    several are being reviewed at once):
