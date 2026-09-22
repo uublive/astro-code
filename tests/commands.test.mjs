@@ -839,3 +839,42 @@ test('the /astro-discuss backlog fold-in is anchored to round one, after the deb
       'silently un-anchors the backlog fold-in too',
   );
 });
+
+// ── /astro-backlog's bare invocation lists and stops ────────────────────────────────
+//
+// The command originally had two modes: an idea captured it, an empty argument opened a
+// triage round that asked what to do with every item. That made the most frequent action
+// — glancing at what you have parked — cost a round of questions, which is how a glance
+// stops being taken. Bare is now list-only and triage is named explicitly.
+//
+// The slot guard cannot see this: it checks that each slot STATES a bound, not which mode
+// the command lands in. So assert the dispatch directly, the same way phase 20's C9 fix
+// had to assert ordering the bound guard could not see.
+test('/astro-backlog lists and stops when given no argument; triage is opt-in', () => {
+  const src = LOOP_COMMAND_SRC.get('astro-backlog.md');
+
+  // The list mode must forbid the prompt, not merely omit it — an omission reads as an
+  // oversight to the next person editing the file, and gets "helpfully" restored.
+  const listMode = src.slice(src.indexOf('### List —'), src.indexOf('### Triage —'));
+  assert.ok(listMode, 'astro-backlog.md must carry a list mode section');
+  assert.match(
+    listMode,
+    /do not (offer exits|raise an `AskUserQuestion`)/i,
+    'the bare/list mode must explicitly forbid offering exits or asking a question — ' +
+      'a glance that ends in a question is not a glance',
+  );
+
+  // Triage must be reachable, and only by being named.
+  assert.match(
+    src,
+    /exactly `review`/,
+    'astro-backlog.md must route triage through an explicit `review` argument',
+  );
+  const triage = src.slice(src.indexOf('### Triage —'));
+  assert.match(
+    triage,
+    /AskUserQuestion/,
+    'the triage mode must still offer the exits — moving them out of the bare path must ' +
+      'not delete them',
+  );
+});

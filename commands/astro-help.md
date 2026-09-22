@@ -34,7 +34,7 @@ devs never collide.
   escalates anything systemic back to the full loop. Verified at best — `/astro-accept` closes it.
 
 **Capture without planning:**
-- `/astro-backlog ["<idea>"]` — file an idea with no phase spent, or (no argument) review what's open and promote/link/archive each one
+- `/astro-backlog` — list what's parked · `/astro-backlog "<idea>"` — file one, no phase spent · `/astro-backlog review` — triage each one (promote/link/archive)
 - `/astro-backlog-promote <id>` — turn a captured idea into a real phase, seeding its captured note into `CONTEXT.md`
 
 **Set up & navigate:**

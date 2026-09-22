@@ -254,7 +254,9 @@ as a discuss round, so `/astro-plan` still demands a real one. Or it can be **ar
 with a reason (`declined` or `obsolete`), keeping the record of why so a later "let's plan
 X" can be answered instead of re-litigated.
 
-`/astro-backlog` with no argument reviews what's open and offers those exits inline.
+`/astro-backlog` with no argument just lists what's open and stops — checking is a glance,
+so it never costs a round of questions. `/astro-backlog review` is the triage pass that
+offers each item its exits.
 
 ---
 
@@ -408,7 +410,9 @@ See [`templates/forge-knowledge.md`](./templates/forge-knowledge.md) for the ful
 /astro-fix-accept <id>    human gate on a fix — confirm the bug is gone, then archive it
 /astro-debt               review the debt register
 /astro-debt-pay <id>      take one debt item on and land it
-/astro-backlog ["<idea>"] capture an idea, or review the open backlog and decide each item
+/astro-backlog             list the open backlog and stop
+/astro-backlog "<idea>"    capture an idea (no phase or milestone spent)
+/astro-backlog review      triage: offer each item promote / link / archive
 /astro-backlog-promote <id> promote a backlog idea into a real phase
 /astro-milestone          start the next milestone cycle
 /astro-complete-milestone archive the finished milestone
