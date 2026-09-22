@@ -6,8 +6,9 @@
 // ~/.astro/code/statusline-chain.json; here we run it first (feeding it the same
 // stdin Claude gave us), then append astro segments. From Claude's stdin blob we
 // render, in order: a recap of the task in flight, the running model, a graphical
-// context-window-fill bar, the live project state (milestone/phase/status/activity),
-// the git branch — then, when the clone is behind origin, an update nudge.
+// context-window-fill bar, subscription rate-limit quota bars (5h/7d/spend cap,
+// when Claude sends them), the live project state (milestone/phase/status/activity),
+// and the git branch — then, when the clone is behind origin, an update nudge.
 // Uninstall restores the original command from that same map. There is
 // deliberately no session-cost segment: it was an estimate, not actionable
 // mid-session, and cost columns that now go to the rate-limit quota bars
@@ -20,6 +21,7 @@ import {
   findAstroRoot, readContext, renderSegment,
   readContextTokens, renderClaudeSegment, modelLimit,
   isBusy, renderStatus, termWidth, visibleWidth, packStatus, renderSegmentParts, STATUS_SEP,
+  renderRateLimits,
 } from './_astro-ctx.mjs';
 
 const HOME = join(homedir(), '.astro', 'code');
@@ -33,7 +35,7 @@ function readJson(p) {
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
 }
 
-// astro-code's own version, for the statusline brand mark (⊡ astro v0.5.2). Prefer the
+// astro-code's own version, for the statusline brand mark (⊡ v0.5.2). Prefer the
 // explicit `version` file written at install; fall back to the clone's package.json via
 // the `source` pointer. NEVER read HOME/package.json — it can be a stale leftover.
 function readVersion() {
@@ -52,13 +54,15 @@ function readVersion() {
 let data = null;
 try { data = JSON.parse(input); } catch { /* no/!json stdin */ }
 
+const nowSeconds = Math.floor(Date.now() / 1000);
+
 // (0) the leading busy/idle dot — is a turn in flight for this session? The
 // astro-session-state hooks stamp turn boundaries; we read this session's record.
 let status = '';
 try {
   const sid = data?.session_id;
   const map = readJson(join(HOME, 'session-state.json')) || {};
-  status = renderStatus(isBusy(sid ? map[sid] : null, Math.floor(Date.now() / 1000)));
+  status = renderStatus(isBusy(sid ? map[sid] : null, nowSeconds));
 } catch { /* default: idle */ }
 
 // (1) the original statusline, if any — runs first, keeps its own place.
@@ -89,6 +93,16 @@ if (data) {
   claude = renderClaudeSegment({ model: data.model, tokens, limit });
 }
 
+// (3) subscription rate-limit quota — how much of the rolling 5h/7d windows
+// (plus a gateway-only spend cap) is spent. Absent before the first API
+// response and for non-subscribers (D1's "absence is normal" — the segment
+// costs zero columns then), never threshold-gated once present. `full` is the
+// desktop tier tried first via `wide`; `rlDetail` is the cols-based fallback
+// for the row layout — the same lookahead-ladder shape `lookahead` below uses,
+// so a shrinking screen sheds bars, then all-but-the-hottest window (D4),
+// never a slice mid-token.
+const rateLimitsFull = data ? renderRateLimits({ rateLimits: data.rate_limits, nowSeconds, detail: 'full' }) : '';
+
 // (5) the astro project segment — current milestone/phase/status + live activity.
 // The cwd comes from Claude's stdin blob; from it we walk up to the `.astrocode/`.
 let projCtx = null;
@@ -96,7 +110,7 @@ const cwd = data?.workspace?.current_dir || data?.cwd || process.cwd();
 const cols = termWidth();
 try {
   const projRoot = findAstroRoot(cwd);
-  if (projRoot) projCtx = { ...readContext(projRoot, Math.floor(Date.now() / 1000)), version: readVersion() };
+  if (projRoot) projCtx = { ...readContext(projRoot, nowSeconds), version: readVersion() };
 } catch { /* not inside an astro-code project */ }
 
 // The phase track shrinks by dropping look-ahead entries, so a narrow screen
@@ -142,17 +156,24 @@ const lookahead = cols === 0 || cols >= 110 ? 3 : cols >= 70 ? 2 : 1;
 const { identity, state } = projectAt(lookahead);
 const project = [identity, state].filter(Boolean).join(' · ');
 
+// D4's narrow-degradation: bars go first, then all windows but the hottest
+// (the one nearest its limit — see renderRateLimits' hottest-first sort). D5:
+// no promotion to row 1 — this rides row 2 with branch/claude like every other
+// non-identity segment, shed wholesale by `packStatus`'s normal fit rules.
+const rlDetail = cols === 0 || cols >= 130 ? 'full' : cols >= 90 ? 'numbers' : 'hottest';
+const rateLimitsRow = data ? renderRateLimits({ rateLimits: data.rate_limits, nowSeconds, detail: rlDetail }) : '';
+
 // Phase state rides with the identity when there's room, and drops to the next
 // row when there isn't — rather than being silently dropped for lack of space.
 const stateFitsRow1 = !rowWidth ||
   visibleWidth([identity, state].filter(Boolean).join(STATUS_SEP)) <= rowWidth;
 
 const lines = packStatus({
-  wide: [base, claude, project, branch, update],
+  wide: [base, claude, rateLimitsFull, project, branch, update],
   groups: [
     // where am I — the answer the statusline exists to give, never sliced
     stateFitsRow1 ? [identity, state] : [identity],
-    stateFitsRow1 ? [branch, claude] : [state, branch, claude],
+    stateFitsRow1 ? [branch, claude, rateLimitsRow] : [state, branch, claude, rateLimitsRow],
     [base, update],
   ],
   width: rowWidth,
