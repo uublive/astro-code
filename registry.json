@@ -290,6 +290,16 @@
       "branch": "main",
       "claimed_at": "2026-09-21T09:55:17.821Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 21,
+      "milestone": 8,
+      "name": "Rate-limit usage on the statusline with a priority-aware responsive layout",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "main",
+      "claimed_at": "2026-09-22T10:34:56.438Z",
+      "status": "active"
     }
   ]
 }
