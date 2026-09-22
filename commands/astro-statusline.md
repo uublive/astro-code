@@ -20,13 +20,23 @@ Wire up (or refresh) astro-code's rich statusline for this machine, then show th
    - **context bar** — how full the context window is: a graphical `█░` bar +
      percent + `tokens/limit`, coloured green→yellow→red as it fills (the 1M-context
      Opus variant is detected from its `[1m]` id; everything else is the 200k window)
-   - **⊡ astro** — current milestone `M<n>` and phase `P<n> <name>` with its
+   - **rate-limit quota** — how much of your subscription's rolling **5h** and
+     **7d** windows is spent (`5h ██░░░ 23% · 7d ███░░ 41%`), plus a gateway-only
+     **spend cap** (`cap`) when present. Shown whenever Claude sends the data —
+     never threshold-gated, since a quota bar you only see once it's alarming
+     can't answer "do I have room for this?". Coloured on the same green→yellow→red
+     ramp as the context bar (yellow at 60%, red at 85%); a window at or past red
+     also appends its time-to-reset (`·2h12m`). Past 100% the bar stops while the
+     percentage keeps climbing — that's the spend cap blowing its budget, not a bug.
+     On a narrow line the bars go first, then the coolest window, so what survives
+     is whichever is actually about to stop you.
+   - **⊡** — current version, milestone `M<n>` and phase `P<n> <name>` with its
      lifecycle status (or live activity verb), phase progress `done/total`, and any `⚠blockers`
    - **debt nn** — technical-debt pressure (0–100), shown **only** once debt is actually
      costing you: yellow at 25+ (`watch`, something is concentrating), red at 50+
      (`pay-now`). It is not a count — filing more debt pushes it *down* — so the
      segment appearing at all is the signal. `/astro-debt` explains the number.
-   - **⎇ branch** — current git branch · **$cost** — session spend so far
+   - **⎇ branch** — current git branch
 4. Tell the user the line takes effect on the **next** statusline repaint (a
    keystroke or the next turn), but the busy/idle **dot** only starts toggling once
    Claude Code reloads `settings.json` — i.e. **restart Claude Code** (or start a
