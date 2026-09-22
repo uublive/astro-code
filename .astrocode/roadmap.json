@@ -15,15 +15,21 @@
       "number": 20,
       "name": "Backlog: capture ideas without planning them",
       "slug": "20-backlog-capture-ideas-without-planning-them",
-      "status": "verified",
-      "milestone": 8
+      "status": "complete",
+      "milestone": 8,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-22T13:41:14.263Z"
     },
     {
       "number": 21,
       "name": "Rate-limit usage on the statusline with a priority-aware responsive layout",
       "slug": "21-rate-limit-usage-on-the-statusline-with-a-priority-aware-responsive-layout",
-      "status": "pending",
-      "milestone": 8
+      "status": "complete",
+      "milestone": 8,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-22T13:41:14.314Z"
     }
   ]
 }

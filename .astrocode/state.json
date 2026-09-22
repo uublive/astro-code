@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 8,
-  "active_phase": "21-rate-limit-usage-on-the-statusline-with-a-priority-aware-responsive-layout",
+  "active_phase": null,
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-09-22T11:59:55.234Z",
+  "updated_at": "2026-09-22T13:41:14.317Z",
   "activity": null
 }
