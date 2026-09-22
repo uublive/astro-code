@@ -461,6 +461,100 @@ test('the statusline hook composes model + context bar from stdin + transcript',
   assert.match(r.stdout, /⊡ M1 · ‹2 \(P3\)/, 'the project identity segment still there');
 });
 
+// --- rate-limit quota: end-to-end through the real hook ----------------------
+
+// A fresh project + isolated HOME per call, so nothing leaks between cases.
+function runStatusline({ rateLimits, cost, version, columns = 200 } = {}) {
+  const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
+  const home = mkdtempSync(join(tmpdir(), 'ac-sl-rl-'));
+  mkdirSync(join(home, '.astro', 'code'), { recursive: true });
+  if (version) writeFileSync(join(home, '.astro', 'code', 'version'), `${version}\n`);
+  const blob = { session_id: 's1', workspace: { current_dir: root } };
+  if (rateLimits !== undefined) blob.rate_limits = rateLimits;
+  if (cost !== undefined) blob.cost = { total_cost_usd: cost };
+  const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
+  return spawnSync(process.execPath, [hook, join(home, '.claude')], {
+    input: JSON.stringify(blob),
+    env: { ...process.env, HOME: home, NO_COLOR: '1', COLUMNS: String(columns) },
+    encoding: 'utf8',
+  });
+}
+
+test('rate-limit quota: present data shows both windows on the live hook, at any usage level', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const r = runStatusline({ rateLimits: {
+    five_hour: { used_percentage: 23, resets_at: now + 7920 },
+    seven_day: { used_percentage: 41, resets_at: now + 400_000 },
+  } });
+  assert.equal(r.status, 0);
+  assert.match(r.stdout, /5h/);
+  assert.match(r.stdout, /7d/);
+  assert.match(r.stdout, /23%/);
+  assert.match(r.stdout, /41%/);
+
+  const low = runStatusline({ rateLimits: { five_hour: { used_percentage: 5 }, seven_day: { used_percentage: 8 } } });
+  assert.match(low.stdout, /5%/);
+  assert.match(low.stdout, /8%/, 'far below any alarm threshold — still shown (D1: never gated)');
+});
+
+test('rate-limit quota: absence is silent — the usual line renders, with no placeholder or broken value', () => {
+  const cases = [
+    undefined,                                                          // (a) no key at all
+    { five_hour: { used_percentage: 30, resets_at: Math.floor(Date.now() / 1000) + 7920 } },   // (b) five_hour only
+    { seven_day: { used_percentage: 30, resets_at: Math.floor(Date.now() / 1000) + 7920 } },   // (c) seven_day only
+    { five_hour: null, seven_day: { used_percentage: 'abc' }, spend_limit: {} },                // (d) garbage
+  ];
+  for (const rateLimits of cases) {
+    const r = runStatusline({ rateLimits });
+    assert.equal(r.status, 0);
+    assert.ok(r.stdout.trim().length > 0, 'a non-empty line still renders');
+    assert.match(r.stdout, /⊡/, 'identity mark still present');
+    assert.doesNotMatch(r.stdout, /NaN|undefined|null|Infinity|--%/, 'no broken/placeholder value leaks through');
+  }
+  // (a)/(d): nothing valid → no percentages at all.
+  for (const rateLimits of [cases[0], cases[3]]) {
+    const r = runStatusline({ rateLimits });
+    assert.doesNotMatch(r.stdout, /\d+%/, 'no rate-limit numbers when there is nothing valid');
+  }
+  // (b)/(c): exactly the one supplied window shows, the other stays silent.
+  const bOut = runStatusline({ rateLimits: cases[1] }).stdout;
+  assert.match(bOut, /30%/);
+  assert.match(bOut, /5h/);
+  assert.doesNotMatch(bOut, /7d/);
+  const cOut = runStatusline({ rateLimits: cases[2] }).stdout;
+  assert.match(cOut, /30%/);
+  assert.match(cOut, /7d/);
+  assert.doesNotMatch(cOut, /5h/);
+});
+
+test('rate-limit quota: an empty stdin blob still exits 0 with a non-empty line', () => {
+  const home = mkdtempSync(join(tmpdir(), 'ac-sl-empty-'));
+  mkdirSync(join(home, '.astro', 'code'), { recursive: true });
+  const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
+  const r = spawnSync(process.execPath, [hook, join(home, '.claude')], {
+    input: '', env: { ...process.env, HOME: home, NO_COLOR: '1', COLUMNS: '200' }, encoding: 'utf8',
+  });
+  assert.equal(r.status, 0);
+  assert.ok(r.stdout.length >= 0, 'never throws on empty stdin');
+});
+
+test('D8: no dollar cost segment renders at any width, even when cost.total_cost_usd is present', () => {
+  for (const columns of [200, 120, 80, 40]) {
+    const r = runStatusline({ cost: 4.2, columns });
+    assert.doesNotMatch(r.stdout, /\$\d/, `no $-amount at ${columns} cols`);
+  }
+});
+
+test('D7: with no version the identity mark still reads coherently — no dangling separator, no empty v', () => {
+  const r = runStatusline({ rateLimits: {
+    five_hour: { used_percentage: 23, resets_at: Math.floor(Date.now() / 1000) + 7920 },
+  } }); // version omitted → readVersion() finds nothing in this isolated HOME
+  assert.equal(r.status, 0);
+  assert.doesNotMatch(r.stdout, /⊡\s*·/, 'no dangling middot right off the glyph');
+  assert.doesNotMatch(r.stdout, /⊡\s*v(?!\d)/, 'no empty "v"');
+  assert.match(r.stdout, /⊡ M1/, 'the mark still binds the glyph to the milestone');
+});
+
 // --- narrow screens: iPad, phone, split pane ---------------------------------
 // A single status line loses its TAIL when the terminal is narrow, and the astro
 // segment sits near the tail — so milestone/phase/version were exactly what got
