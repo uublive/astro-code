@@ -55,9 +55,15 @@ function shade(line, row) {
   return out;
 }
 
-/** Colour only on a real terminal, and never when NO_COLOR is set (no-color.org). */
+/**
+ * Colour on a real terminal; never when NO_COLOR is set (no-color.org). FORCE_COLOR
+ * (any value but 0/false) turns it on where output is captured rather than a TTY — a
+ * CI log, or Claude Code's `!` prompt.
+ */
 export function wantColor(stream = process.stdout, env = process.env) {
-  return !!(stream && stream.isTTY) && !('NO_COLOR' in env) && env.TERM !== 'dumb';
+  if ('NO_COLOR' in env) return false;
+  if (env.FORCE_COLOR != null && !/^(0|false)$/i.test(env.FORCE_COLOR)) return true;
+  return !!(stream && stream.isTTY) && env.TERM !== 'dumb';
 }
 
 /** astro-code's version: the installed home's stamp first, else this checkout's package.json. */

@@ -37,6 +37,9 @@ test('colour only on a TTY, never with NO_COLOR or TERM=dumb', () => {
   assert.equal(wantColor({ isTTY: true }, {}), true);
   assert.equal(wantColor({ isTTY: true }, { NO_COLOR: '' }), false, 'NO_COLOR set to anything disables colour');
   assert.equal(wantColor({ isTTY: true }, { TERM: 'dumb' }), false);
+  assert.equal(wantColor({ isTTY: false }, { FORCE_COLOR: '1' }), true, 'FORCE_COLOR works where output is captured');
+  assert.equal(wantColor({ isTTY: false }, { FORCE_COLOR: '0' }), false);
+  assert.equal(wantColor({ isTTY: true }, { FORCE_COLOR: '1', NO_COLOR: '1' }), false, 'NO_COLOR wins');
 });
 
 test('`ac help` and `ac logo` lead with the mark; piped output is plain', () => {
