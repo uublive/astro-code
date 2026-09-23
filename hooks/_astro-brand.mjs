@@ -84,7 +84,9 @@ export function brandVersion() {
  * `color` shades the art and styles the text; plain output is byte-stable for places
  * that do not render ANSI (the SessionStart systemMessage, a model-relayed command).
  */
-export function renderLogo({ lines = [], color = false, version = brandVersion() } = {}) {
+// `lead` puts one empty line first: wherever the mark is printed after a prefix (Claude
+// Code's `└` output connector, a prompt), the art's top row would otherwise sit on it.
+export function renderLogo({ lines = [], color = false, version = brandVersion(), lead = true } = {}) {
   const right = [`${WORDMARK} · astro-code${version ? ` v${version}` : ''}`, ...lines];
   const rows = Math.max(LOGO_ART.length, right.length + 1);
   const out = [];
@@ -99,5 +101,5 @@ export function renderLogo({ lines = [], color = false, version = brandVersion()
     const pad = text ? ' '.repeat(Math.max(1, TEXT_COL - art.length)) : '';
     out.push((artOut + pad + textOut).replace(/\s+$/, ''));
   }
-  return out.join('\n');
+  return (lead ? '\n' : '') + out.join('\n');
 }

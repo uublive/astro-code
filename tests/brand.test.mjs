@@ -14,6 +14,8 @@ const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
 test('the plain logo is the art with the wordmark and version beside it, no ANSI', () => {
   const out = renderLogo({ lines: ['a tagline', 'next: x'], version: '9.9.9' });
+  assert.ok(out.startsWith('\n        PZÇP'), 'one empty line ahead of the art');
+  assert.ok(!renderLogo({ lead: false, version: '' }).startsWith('\n'), 'lead:false for embedding');
   assert.doesNotMatch(out, /\x1b\[/);
   for (const row of LOGO_ART) assert.ok(out.includes(row.trimEnd()), `missing art row: ${row}`);
   assert.match(out, new RegExp(`ääZPäP\\s+${WORDMARK.replace('|', '\\|')} · astro-code v9\\.9\\.9`));
@@ -45,7 +47,7 @@ test('colour only on a TTY, never with NO_COLOR or TERM=dumb', () => {
 test('`ac help` and `ac logo` lead with the mark; piped output is plain', () => {
   const help = spawnSync(process.execPath, [AC, 'help'], { encoding: 'utf8' });
   assert.equal(help.status, 0);
-  assert.match(help.stdout, /^ {8}PZÇP\n/, 'the logo comes first');
+  assert.match(help.stdout, /^\n {8}PZÇP\n/, 'the logo comes first, after one empty line of breathing room');
   assert.match(help.stdout, /4str0\|ize · astro-code/);
   assert.match(help.stdout, /ac init \[--name N\]/, 'the command list follows');
   assert.doesNotMatch(help.stdout, /\x1b\[/, 'piped (not a TTY) → plain');
