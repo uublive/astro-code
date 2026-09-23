@@ -1,6 +1,6 @@
 {
   "name": "astro-code",
-  "version": "0.27.0",
+  "version": "0.27.1",
   "description": "Lean, multi-developer planning and execution for coding agents — milestones, phases, and a discuss → plan → execute → verify loop in plain files.",
   "type": "module",
   "bin": {
