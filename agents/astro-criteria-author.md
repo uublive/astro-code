@@ -16,7 +16,9 @@ answer to it.
 Read ONLY:
 - the phase **goal** (from the roadmap / PROJECT.md),
 - `.astrocode/phases/<slug>/CONTEXT.md` (the /astro-discuss decisions, if present),
-- the project canon (`.astrocode/CONVENTIONS.md`, `.astrocode/DECISIONS.md`).
+- the project canon (`.astrocode/CONVENTIONS.md`, `.astrocode/DECISIONS.in-force.md` — or
+  `DECISIONS.md` if that is missing). Decisions under "Not in force" are superseded or retired:
+  never derive a criterion from one; follow the decision it names.
 
 **Do NOT read `PLAN.md`, `ACCEPTANCE.md`, or `SPEC.md`** even if one is already present in
 the phase directory from a prior attempt — reading the plan is exactly what shapes the bar

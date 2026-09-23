@@ -15,6 +15,12 @@ Begin a new milestone.
    `⚠ possible duplicate work` warning. If it errors with `run `ac registry init``,
    the orphan registry branch hasn't been created yet — run `ac registry init` (it
    needs an `origin` remote and backfills numbering from existing roadmaps), then retry.
+   **Is it the NEXT milestone, or a later one?** If the user is scheduling work for after
+   the current milestone (a destination, not the current work), use
+   `ac milestone new --planned --name "<theme>"` instead: it claims the number without
+   moving the project. When the time comes, `ac milestone activate <n>` starts it — and if
+   `ac status` shows a planned milestone when the user asks to start the next cycle,
+   activate that one rather than claiming a new number.
 3. Update `.astrocode/PROJECT.md` with the new milestone's theme/goal (`$ARGUMENTS`
    if given; otherwise ask the user briefly).
 4. Propose the milestone's phases and create them with `ac phase add "<name>"` (each

@@ -43,6 +43,15 @@ function fixture({ remote = true } = {}) {
   return dir;
 }
 
+// #37 — work can only target a claimed milestone now: declare 2..n as planned, the way a
+// user schedules ahead (the fixture's registry init claims milestone 1).
+function planUpTo(dir, n) {
+  for (let m = 2; m <= n; m++) {
+    const r = ac(['milestone', 'new', '--planned', '--name', `M${m}`], dir);
+    assert.equal(r.status, 0, r.stderr);
+  }
+}
+
 const phaseClaim = (dir, n) =>
   readRegistry(dir).registry.claims.find((c) => c.type === 'phase' && c.number === n);
 const roadmapPhase = (dir, n) => readJSON(paths(dir).roadmap).phases.find((p) => p.number === n);
@@ -53,6 +62,7 @@ test('#32: `ac phase milestone` moves the registry claim along with the roadmap'
   const dir = fixture();
   assert.equal(ac(['phase', 'add', 'A phase misfiled under M1', '--milestone', '1'], dir).status, 0);
   assert.equal(phaseClaim(dir, 1).milestone, 1);
+  planUpTo(dir, 3);
 
   const r = ac(['phase', 'milestone', '1', '3'], dir);
   assert.equal(r.status, 0, r.stderr);
@@ -88,6 +98,7 @@ test('#32: with no shared registry the move is local and says so', async () => {
 test('#32: `ac status` reports a phase whose roadmap and registry milestones differ', async () => {
   const dir = fixture();
   assert.equal(ac(['phase', 'add', 'drifted', '--milestone', '1'], dir).status, 0);
+  planUpTo(dir, 3);
   // the pre-fix state: roadmap moved, claim left behind
   const { setPhaseMilestone } = await import('../lib/roadmap.mjs');
   await setPhaseMilestone(dir, roadmapPhase(dir, 1).slug, 3);
@@ -106,6 +117,7 @@ test('#32: `ac status` reports a phase whose roadmap and registry milestones dif
 test('#32: `ac debt pay --as phase --milestone N` claims the phase under N', () => {
   const dir = fixture();
   assert.equal(ac(['debt', 'add', 'which emulator each system targets'], dir).status, 0);
+  planUpTo(dir, 3);
   const id = JSON.parse(readFileSync(join(paths(dir).dir, 'debt.json'), 'utf8')).debt[0].id;
 
   const r = ac(['debt', 'pay', id, '--as', 'phase', '--milestone', '3'], dir);
@@ -122,6 +134,7 @@ test('#32: `ac debt pay --as phase --milestone N` claims the phase under N', () 
 test('#29: a later-milestone phase neither blocks the close nor gets archived by it', () => {
   const dir = fixture();
   assert.equal(ac(['phase', 'add', 'done in m1'], dir).status, 0);
+  planUpTo(dir, 2);
   assert.equal(ac(['phase', 'add', 'planned for m2', '--milestone', '2'], dir).status, 0);
   assert.equal(ac(['phase', 'verify', '1'], dir).status, 0);
   assert.equal(ac(['phase', 'accept', '1'], dir).status, 0);
@@ -142,6 +155,7 @@ test('#29: a later-milestone phase neither blocks the close nor gets archived by
 test('#29: an unfinished phase of the closing milestone still refuses', () => {
   const dir = fixture();
   assert.equal(ac(['phase', 'add', 'still open in m1'], dir).status, 0);
+  planUpTo(dir, 2);
   assert.equal(ac(['phase', 'add', 'planned for m2', '--milestone', '2'], dir).status, 0);
   const r = ac(['milestone', 'complete'], dir);
   assert.notEqual(r.status, 0);
@@ -165,7 +179,9 @@ const registryDecisions = (dir) => {
   });
   return text;
 };
-const copies = (text) => (text.match(/^## ADR-\d+ — Keep one copy$/gm) || []).length;
+// full copies only: heading + date line. A collapsed duplicate stays as a heading-only
+// stub (#36), so its number is never reused — it is not a copy of the decision.
+const copies = (text) => (text.match(/^## ADR-\d+ — Keep one copy\n_/gm) || []).length;
 
 test('#45: dedupe collapses the registry copy, so pull and decision add no longer restore it', () => {
   const dir = fixture();

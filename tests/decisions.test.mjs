@@ -102,7 +102,10 @@ test('collapseDuplicates keeps the lowest id and leaves near-duplicates untouche
   assert.equal(removed[0].keptId, 'ADR-005');
 
   assert.match(collapsed, /## ADR-005/);
-  assert.doesNotMatch(collapsed, /## ADR-010/);
+  // #45/#36: the collapsed id stays as a stub pointing at the kept one — never a gap whose
+  // number the next `decision add` would hand out again
+  assert.match(collapsed, /## ADR-010 — .*\n\*\*Status:\*\* duplicate of ADR-005 \(\d{4}-\d{2}-\d{2}\)/);
+  assert.equal((collapsed.match(/^## ADR-010/gm) || []).length, 1);
   assert.match(collapsed, /## ADR-020/);
   assert.match(collapsed, /## ADR-021/);
 });

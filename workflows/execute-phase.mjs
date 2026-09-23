@@ -121,7 +121,9 @@ const SYNC_WORKTREE =
   `gap is the correct outcome; inventing the dependency is not.`
 
 const OBEY =
-  `\n\nRead and OBEY: ${root}/.astrocode/CONVENTIONS.md and ${root}/.astrocode/DECISIONS.md (project canon), ` +
+  `\n\nRead and OBEY: ${root}/.astrocode/CONVENTIONS.md and ${root}/.astrocode/DECISIONS.in-force.md ` +
+  `(project canon; if that file is missing, DECISIONS.md — decisions listed under "Not in force" are ` +
+  `superseded or retired: follow the one each names, never the retired one), ` +
   `plus ${root}/.astrocode/phases/${phaseSlug}/CONTEXT.md (this phase's decisions, if present).`
 
 // ADR-031 — the implementer sees the BAR it will be judged against.

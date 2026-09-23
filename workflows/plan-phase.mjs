@@ -28,7 +28,8 @@ if (!root || !phaseSlug) throw new Error('plan-phase requires args { root, phase
 // Agents read the canon + discussion brief from disk themselves.
 const OBEY =
   `\n\nRead and OBEY before answering:\n` +
-  `  - ${root}/.astrocode/CONVENTIONS.md and ${root}/.astrocode/DECISIONS.md (project canon)\n` +
+  `  - ${root}/.astrocode/CONVENTIONS.md and ${root}/.astrocode/DECISIONS.in-force.md (project canon; if ` +
+  `missing, DECISIONS.md — decisions under "Not in force" are superseded or retired: follow the one each names)\n` +
   `  - ${root}/.astrocode/phases/${phaseSlug}/CONTEXT.md (this phase's /astro-discuss decisions, if present)`
 
 // ADR-021 — the Criteria stage runs FIRST, before any research or plan exists, so the

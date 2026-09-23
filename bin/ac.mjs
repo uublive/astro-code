@@ -15,7 +15,7 @@ import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, setPhaseEffort, setPhaseNote, setPhaseMilestone, isPhasePlanned } from '../lib/roadmap.mjs';
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
-import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift } from '../lib/registry.mjs';
+import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims } from '../lib/registry.mjs';
 import { addFix, acceptFix, setFixStatus, findFix, openFixes, loadFixes, FIX_STATUSES } from '../lib/fixes.mjs';
 import {
   addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt,
@@ -29,7 +29,11 @@ import {
 } from '../lib/backlog.mjs';
 import { runFixturesCheck } from '../lib/fixtures.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
-import { canonText, loadCanon, addDecision, canonPull, canonPush, canonDedupe } from '../lib/canon.mjs';
+import {
+  canonText, loadCanon, addDecision, canonPull, canonPush, canonDedupe,
+  supersedeDecision, retireDecision, amendDecision, canonCheck, canonStats, canonDrift,
+} from '../lib/canon.mjs';
+import { inForceText } from '../lib/decisions.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
 import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME } from '../lib/install.mjs';
@@ -76,6 +80,14 @@ const ALLOWED_FLAGS = {
   'canon push': ['dry-run'],
   'canon dedupe': [],
   'decision add': ['why', 'rejected'],
+  // #36/#35 — these revise a published decision on the shared branch; a typo must not
+  // degrade into the wrong revision
+  'decision supersede': ['by', 'reason'],
+  'decision retire': ['reason'],
+  'decision amend': ['reason', 'why', 'rejected', 'body-file'],
+  'decision list': ['all'],
+  'canon check': [],
+  'canon stats': [],
   'registry init': ['force'],
   'phase accept': ['by', 'force', 'agent'],
   'phase reject': ['reason'],
@@ -90,7 +102,10 @@ const ALLOWED_FLAGS = {
   'backlog add': ['note'],
   'backlog link': ['phase'],
   'backlog archive': ['kind', 'reason'],
-  'backlog promote': [],
+  'backlog promote': ['milestone'],
+  // #37 — `--planned` declares without activating; `--number` is the guarded repair
+  'milestone new': ['name', 'vision', 'planned', 'number'],
+  'milestone activate': [],
   // #63 — the text is an argument, not a flag: `--note` (what `backlog add` takes) used to
   // be ignored here and the call read the note instead of writing it.
   'backlog note': [],
@@ -109,6 +124,22 @@ function checkFlags(key, flags) {
   const ok = allowed.length ? `accepted: ${allowed.map((f) => `--${f}`).join(', ')}` : 'this command takes no flags';
   die(`unknown flag${unknown.length > 1 ? 's' : ''} for \`ac ${key}\`: ${got} (${ok})`);
 }
+// #37 — work may only be put into a milestone the registry knows: planned or active. An
+// unclaimed number is how a phase used to reference a milestone nobody had reserved (#32's
+// add case), and a closed one is finished. With no shared registry there is nothing to
+// check against, as before.
+function checkMilestoneTarget(r, n) {
+  const reg = readRegistry(r);
+  if (reg.unreachable) die(`cannot reach the registry to check milestone ${n} — nothing was changed`);
+  if (!reg.available || !reg.registry.claims.length) return;
+  const c = milestoneClaims(reg.registry).get(n);
+  if (!c) {
+    die(`milestone ${n} is not claimed — declare it first: \`ac milestone new --planned --name "…"\` ` +
+      `(or \`--number ${n}\` if phases on the roadmap already reference it)`);
+  }
+  if (c.status === 'complete') die(`milestone ${n} is closed — pick a planned or active milestone`);
+}
+
 const root = () => findRoot() || die('no .astrocode/ found — run `ac init` first');
 const json = (obj) => console.log(JSON.stringify(obj, null, 2));
 
@@ -140,7 +171,10 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac activity <text> | clear          set/clear the live statusline + banner verb
   ac roadmap list                     list phases
   ac roadmap render                   regenerate .astrocode/ROADMAP.md
-  ac milestone new [--name "…"]       claim the next milestone number (+ dup-name check)
+  ac milestone new [--name "…"]       claim the next milestone number and start it (+ dup-name check)
+  ac milestone new --planned [--name "…"]  declare a later milestone without starting it
+                                       (--number N: one-time repair when phases already reference N)
+  ac milestone activate <n>           move the project into a planned milestone
   ac milestone check "<name>"         see if a milestone with a similar name exists
   ac milestone complete [--force]     archive the current milestone + retire its claims
                                        (refuses while a phase is not complete; --force overrides)
@@ -187,7 +221,12 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac canon [pull [--force] | push [--dry-run] | dedupe]  print canon; pull/push shares it on the
                                        orphan branch; dedupe collapses exact-duplicate decisions
   ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision (shared)
-  ac decision list                    list recorded decisions
+  ac decision list [--all]            decisions in force (stubs for retired ones); --all = the full log
+  ac decision supersede <id> --by <id> [--reason …]  mark a decision replaced by another (kept for audit)
+  ac decision retire <id> --reason …  mark a decision no longer in force (kept for audit)
+  ac decision amend <id> --reason … [--why …] [--rejected …] [--body-file p]  fix its prose; same id and title
+  ac canon check                      does the local canon match the registry? (per decision; non-zero on drift)
+  ac canon stats                      what every agent is handed: size, rough tokens, live vs retired
   ac stats [--since ISO|--session ID] token usage (fresh vs cache) + wall-clock from transcripts
   ac registry init [--force]          create the orphan registry branch + backfill from roadmaps
   ac registry show                    print the shared numbering registry
@@ -427,6 +466,7 @@ async function main() {
         if (flags.milestone !== undefined) {
           milestone = Number(flags.milestone);
           if (!Number.isInteger(milestone) || milestone < 1) die(`--milestone must be a positive integer, got "${flags.milestone}"`);
+          checkMilestoneTarget(r, milestone);
         }
         const res = claim({ root: r, type: 'phase', milestone, name: item.title });
         if (res.source === 'error') die(res.error);
@@ -537,7 +577,13 @@ async function main() {
         }
         const st = loadState(r) || {};
         const rm = loadRoadmap(r);
-        const milestone = st.active_milestone || rm.milestone || 1;
+        // #37 — promote straight into a planned milestone ("definitely, but after M3")
+        let milestone = st.active_milestone || rm.milestone || 1;
+        if (flags.milestone !== undefined) {
+          milestone = Number(flags.milestone);
+          if (!Number.isInteger(milestone) || milestone < 1) die(`--milestone must be a positive integer, got "${flags.milestone}"`);
+          checkMilestoneTarget(r, milestone);
+        }
         const res = claim({ root: r, type: 'phase', milestone, name: item.title });
         if (res.source === 'error') die(res.error);
         let phase;
@@ -708,6 +754,35 @@ async function main() {
         : reg.registry.claims.length ? `${registryBranch(r)} @ origin (team-coordinated)`
         : 'origin present, not initialized — run `ac registry init`';
       console.log(`Registry:  ${regState}`);
+      // #37 — planned milestones and what is already scheduled into them; and any phase that
+      // references a milestone the registry never claimed (#32's add case, for projects
+      // that reached that state before the check existed)
+      if (reg.available && reg.registry.claims.length) {
+        const ms = milestoneClaims(reg.registry);
+        for (const c of [...ms.values()].filter((x) => x.status === 'planned').sort((a, b) => a.number - b.number)) {
+          const ph = rm.phases.filter((p) => p.milestone === c.number).map((p) => p.number);
+          console.log(`Planned:   milestone ${c.number}${c.name ? ` "${c.name}"` : ''}${ph.length ? ` — phases ${ph.join(', ')}` : ' — nothing assigned yet'}  (\`ac milestone activate ${c.number}\`)`);
+        }
+        const unclaimed = [...new Set(rm.phases.map((p) => p.milestone).filter((m) => m != null && !ms.has(m)))];
+        for (const m of unclaimed) {
+          const ph = rm.phases.filter((p) => p.milestone === m).map((p) => p.number);
+          console.log(`  ⚠ milestone ${m} is not claimed on the registry, but phases ${ph.join(', ')} reference it — \`ac milestone new --planned --number ${m}\``);
+        }
+      }
+      // #35 — one line when the committed canon has drifted from the registry's copy
+      if (reg.available && reg.files && reg.files['DECISIONS.md'] != null) {
+        const { conventions, decisions } = loadCanon(r);
+        const d = canonDrift({
+          localDecisions: decisions,
+          registryDecisions: reg.files['DECISIONS.md'],
+          localConventions: conventions || null,
+          registryConventions: reg.files['CONVENTIONS.md'] ?? null,
+        });
+        if (!d.ok) {
+          const n = d.drift.length;
+          console.log(`  ⚠ canon differs from the registry: ${n ? `${n} decision(s)` : ''}${n && d.conventions !== 'same' ? ', ' : ''}${d.conventions !== 'same' ? 'CONVENTIONS.md' : ''} — \`ac canon check\` names them`);
+        }
+      }
       // #32 — the roadmap and the registry both carry each phase's milestone, and nothing
       // compared them: a diverged claim was visible only to someone who ran `registry show`.
       for (const d of reg.available ? claimDrift(rm, reg.registry) : []) {
@@ -793,13 +868,58 @@ async function main() {
     case 'milestone': {
       const r = root();
       if (pos[0] === 'new') {
+        checkFlags('milestone new', flags);
         const name = typeof flags.name === 'string' ? flags.name : pos.slice(1).join(' ').trim();
-        const res = claim({ root: r, type: 'milestone', name });
+        const planned = flags.planned === true;
+        let number;
+        if (flags.number !== undefined) {
+          // #37 — the guarded repair: ratify a milestone the roadmap ALREADY uses but the
+          // registry never claimed. Only when phases reference it, and never over a claim.
+          if (!planned) die('--number is only for `ac milestone new --planned` (the one-time repair)');
+          number = Number(flags.number);
+          if (!Number.isInteger(number) || number < 1) die(`--number must be a positive integer, got "${flags.number}"`);
+          const refs = (loadRoadmap(r).phases || []).filter((ph) => ph.milestone === number).map((ph) => ph.number);
+          if (!refs.length) {
+            const claims = milestoneClaims(readRegistry(r).registry);
+            const next = Math.max(0, ...claims.keys()) + 1;
+            die(`no phase on the roadmap references milestone ${number}, so there is nothing to repair — ` +
+              `\`ac milestone new --planned\` claims the next free number (${next})`);
+          }
+          console.log(`claiming ${number}: referenced by phase${refs.length > 1 ? 's' : ''} ${refs.join(', ')}`);
+        }
+        const res = claim({ root: r, type: 'milestone', name, status: planned ? 'planned' : 'active', number });
         if (res.source === 'error') die(res.error);
+        if (planned) {
+          // declared as a destination — the project stays on its current milestone
+          const cur = (loadState(r) || {}).active_milestone ?? loadRoadmap(r).milestone;
+          console.log(`✓ milestone ${res.number}${name ? ` "${name}"` : ''} planned [${res.source}] — the project stays on milestone ${cur}`);
+          console.log(`  assign work with \`--milestone ${res.number}\`; start it with \`ac milestone activate ${res.number}\``);
+          warnNameMatches(res.matches, gitIdentity(r).owner);
+          return;
+        }
         await updateState(r, (s) => ({ ...s, active_milestone: res.number, status: 'planning' }));
         await setMilestone(r, res.number);
         console.log(`✓ milestone ${res.number}${name ? ` "${name}"` : ''} [${res.source}] — ${res.message ?? ''}`);
+        for (const c of milestoneClaims(readRegistry(r).registry).values()) {
+          if (c.status === 'planned') console.log(`  note: milestone ${c.number}${c.name ? ` "${c.name}"` : ''} is planned — \`ac milestone activate ${c.number}\` starts a planned milestone instead`);
+        }
         warnNameMatches(res.matches, gitIdentity(r).owner);
+      } else if (pos[0] === 'activate') {
+        // #37 — the separate step that moves the project into a planned milestone
+        checkFlags('milestone activate', flags);
+        const n = Number(pos[1]);
+        if (!Number.isInteger(n) || n < 1) die('usage: ac milestone activate <n>');
+        const prev = (loadState(r) || {}).active_milestone ?? loadRoadmap(r).milestone;
+        if (prev === n) { console.log(`• milestone ${n} is already the active one`); return; }
+        const act = activateMilestone({ root: r, number: n });
+        if (!act.ok) die(act.error);
+        await updateState(r, (s) => ({ ...s, active_milestone: n, status: 'planning', active_phase: null }));
+        await setMilestone(r, n);
+        console.log(`✓ milestone ${n}${act.name ? ` "${act.name}"` : ''} is now active${act.source === 'remote' ? ` [${act.branch}]` : ' (no shared registry — local only)'}`);
+        const left = (loadRoadmap(r).phases || []).filter((ph) => ph.milestone === prev && ph.status !== 'complete');
+        if (left.length) {
+          console.log(`  milestone ${prev} still has ${left.length} unfinished phase(s): ${left.map((ph) => ph.number).join(', ')} — they stay on the roadmap`);
+        }
       } else if (pos[0] === 'check') {
         const name = pos.slice(1).join(' ').trim();
         if (!name) die('usage: ac milestone check "<name>"');
@@ -838,7 +958,7 @@ async function main() {
         if (released.ok && released.source === 'remote') console.log(`  retired ${released.changed} registry claim(s)`);
         console.log('  start the next cycle with `ac milestone new`');
       } else {
-        die('usage: ac milestone <new [--name …]|check "<name>"|complete>');
+        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|check "<name>"|complete>');
       }
       return;
     }
@@ -955,6 +1075,7 @@ async function main() {
         const st = loadState(r) || {};
         const rm = loadRoadmap(r);
         const milestone = Number(flags.milestone) || st.active_milestone || rm.milestone || 1;
+        if (flags.milestone !== undefined) checkMilestoneTarget(r, milestone);
         const res = claim({ root: r, type: 'phase', milestone, name });
         if (res.source === 'error') die(res.error);
         // The number is already committed to the shared registry by the time we get
@@ -1140,6 +1261,7 @@ async function main() {
           // Validate before either write, so a bogus value changes nothing anywhere.
           const target = Number(pos[2]);
           if (!Number.isInteger(target) || target < 1) die(`milestone must be a positive integer, got "${pos[2]}"`);
+          checkMilestoneTarget(r, target);
           const moved = repointPhaseClaim({ root: r, number: ph.number, milestone: target });
           if (!moved.ok) die(`${moved.error}\n  nothing was changed — the roadmap and the registry still agree`);
           const updated = await setPhaseMilestone(r, ph.slug, target);
@@ -1282,6 +1404,28 @@ async function main() {
 
     case 'canon': {
       const r = root();
+      if (pos[0] === 'check') {
+        // #35 — the gate projects built by hand: is the committed mirror the registry's copy?
+        checkFlags('canon check', flags);
+        const res = canonCheck(r);
+        if (res.error) die(res.error);
+        if (!res.available) { console.log(`• no shared registry in use (${res.reason}) — nothing to compare`); return; }
+        if (res.ok) { console.log(`✓ local canon matches ${res.branch}`); return; }
+        for (const d of res.drift) console.error(`✖ ${d.id}: ${d.kind}`);
+        if (res.conventions !== 'same') console.error(`✖ CONVENTIONS.md: ${res.conventions}`);
+        die(`local canon differs from ${res.branch} (${res.drift.length} decision(s)${res.conventions !== 'same' ? ', CONVENTIONS.md' : ''})`);
+      }
+      if (pos[0] === 'stats') {
+        checkFlags('canon stats', flags);
+        const s = canonStats(r);
+        const kb = (b) => `${(b / 1024).toFixed(1)} KB`;
+        console.log(`handed to every agent: ${kb(s.injectedBytes)} ≈ ${s.injectedTokens.toLocaleString('en-US')} tokens` +
+          (s.fullBytes > s.injectedBytes ? `  (the full log would be ${kb(s.fullBytes)})` : ''));
+        console.log(`  CONVENTIONS.md ${kb(s.conventionsBytes)} · DECISIONS.md ${kb(s.decisionsBytes)}`);
+        const c = s.counts;
+        console.log(`  decisions: ${c.live} in force · ${c.superseded} superseded · ${c.retired} retired · ${c.duplicate} duplicate stub(s)`);
+        return;
+      }
       if (pos[0] === 'pull') {
         checkFlags('canon pull', flags);
         const res = canonPull(r, { force: flags.force === true });
@@ -1421,10 +1565,34 @@ async function main() {
           }
         }
       } else if (pos[0] === 'list') {
+        checkFlags('decision list', flags);
         const { decisions } = loadCanon(r);
-        process.stdout.write((decisions || '(no decisions yet)') + '\n');
+        // #36 — by default what agents see (live in full, stubs for the rest); --all = the log
+        process.stdout.write((decisions ? (flags.all ? decisions : inForceText(decisions).trim()) : '(no decisions yet)') + '\n');
+      } else if (pos[0] === 'supersede' || pos[0] === 'retire' || pos[0] === 'amend') {
+        const sub = pos[0];
+        const id = String(pos[1] || '').toUpperCase();
+        if (!/^ADR-\d+$/.test(id)) die(`usage: ac decision ${sub} <ADR-NNN> …  (see \`ac help decision\`)`);
+        checkFlags(`decision ${sub}`, flags);
+        const str = (k) => (typeof flags[k] === 'string' ? flags[k] : undefined);
+        let res;
+        if (sub === 'supersede') {
+          res = supersedeDecision(r, id, { by: String(str('by') || '').toUpperCase(), reason: str('reason') || '' });
+        } else if (sub === 'retire') {
+          res = retireDecision(r, id, { reason: str('reason') || '' });
+        } else {
+          const bodyFile = str('body-file');
+          if (flags['body-file'] !== undefined && !bodyFile) die('--body-file needs a path');
+          const body = bodyFile ? readFileSync(bodyFile, 'utf8') : undefined;
+          res = amendDecision(r, id, { reason: str('reason') || '', why: str('why'), rejected: str('rejected'), body });
+        }
+        if (!res.ok) die(res.error);
+        const where = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
+        const what = sub === 'supersede' ? `superseded by ${String(str('by')).toUpperCase()}` : sub === 'retire' ? 'retired' : 'amended';
+        console.log(`✓ ${id} ${what} ${where}`);
+        if (sub !== 'amend') console.log('  agents now see it as a one-line stub — its full text stays in DECISIONS.md');
       } else {
-        die('usage: ac decision <add|list>');
+        die('usage: ac decision <add|list|supersede|retire|amend>');
       }
       return;
     }
