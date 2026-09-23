@@ -150,6 +150,16 @@ Execute phase `$ARGUMENTS`.
    Do **not** set `ac activity` for the pipelined plan: there is one activity slot and
    the executing phase owns it. Skip this entirely if the user passed `--no-pipeline`.
 
+   **Hold the pipelined plan's commit until this execution returns (#22).** `/astro-plan`
+   step 3b says to commit plan artifacts at once — NOT while a wave is in flight. Any
+   commit to the working branch mid-wave moves the base every running branch forked from.
+   The integrator now integrates a branch whose files don't overlap what moved (and runs
+   the test gate), but an overlapping one is still stale and re-run from scratch. The
+   untracked window is safe: the integrator is forbidden any unscoped `git stash`/`git
+   clean` (ADR-035). When you launch the pipelined plan, say so in one line — e.g.
+   `pipeline: planning phase 4 alongside — its commit waits until this run returns` — and
+   make that commit (step 3b's command) right after reporting the execute verdict.
+
    Two things this deliberately does not do: it never *starts* a phase (planning is
    read-only against the repo and writes only into the next phase's own directory), and
    it never reorders the human gates — you still report the execute verdict first, and
