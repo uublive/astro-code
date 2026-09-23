@@ -172,7 +172,14 @@ could later collide — set up an `origin` and run `ac registry init` first.
 > `ac phase note <n> "<text>"` for a note that survives.
 
 A phase's milestone lives **on the phase**. Scheduling a phase for a future milestone never
-moves the project; correct a wrong assignment with `ac phase milestone <n> <N>`, which
+moves the project. **Milestones have a lifecycle** — planned → active → complete:
+`ac milestone new --planned --name "…"` declares one as a destination without moving the
+project, work is assigned with `--milestone N` (`phase add`, `debt pay --as phase`,
+`backlog promote`), and `ac milestone activate <n>` is the separate step that starts it.
+Work can only target a claimed, unclosed milestone. A roadmap that already uses a
+milestone the registry never claimed is repaired once with
+`ac milestone new --planned --number N`, which only works when phases reference N.
+Correct a wrong assignment with `ac phase milestone <n> <N>`, which
 moves the phase's registry claim too (it refuses, changing nothing, if the registry is
 unreachable). `ac status` flags any phase whose roadmap and registry milestones differ.
 Closing a milestone archives only its own phases — ones scheduled for a later milestone
@@ -478,7 +485,9 @@ ac phase accept <n>            # human gate — requires a prior `verified`
 ac phase effort <n> deep       # per-phase verify→remediate budget (light|standard|deep)
 ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
 ac phase milestone <n> [<N>]   # read/correct a phase's milestone (never moves the project)
-ac milestone new               # claim the next milestone number
+ac milestone new               # claim the next milestone number and start it
+ac milestone new --planned     # declare a later milestone without starting it (--number N: repair)
+ac milestone activate <n>      # move the project into a planned milestone
 ac milestone complete          # archive the current milestone's phases (refuses over unfinished ones; --force)
 
 ac fix add "<what is broken>"  # open a bugfix (dated id, no phase number)
