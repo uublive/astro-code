@@ -91,6 +91,9 @@ const ALLOWED_FLAGS = {
   'backlog link': ['phase'],
   'backlog archive': ['kind', 'reason'],
   'backlog promote': [],
+  // #63 — the text is an argument, not a flag: `--note` (what `backlog add` takes) used to
+  // be ignored here and the call read the note instead of writing it.
+  'backlog note': [],
   'milestone complete': ['force'],
   // `tune` writes a settings.json that grants permissions, so a typo'd flag must be
   // refused rather than silently applying the tuning (#14).
@@ -506,7 +509,7 @@ async function main() {
       }
 
       const item = findBacklog(r, pos[1]);
-      if (['show', 'link', 'promote', 'archive'].includes(sub) && !item) {
+      if (['show', 'link', 'promote', 'archive', 'note'].includes(sub) && !item) {
         die(`no such backlog item: ${pos[1] || '(none given)'} — see \`ac backlog list\``);
       }
 
@@ -569,6 +572,10 @@ async function main() {
         // check, so a mutable title means a duplicate warning that silently changes
         // what it compares against. A title wrong enough to matter is an `obsolete`
         // archive plus a re-capture, which is what that exit is for.
+        if (flags.note !== undefined) {
+          die(`\`ac backlog note\` takes the text as an argument, not --note: ac backlog note ${item.id} "<text>" (nothing was changed)`);
+        }
+        checkFlags('backlog note', flags);
         if (pos.length < 3) {
           console.log(item.note ?? '');
         } else {
