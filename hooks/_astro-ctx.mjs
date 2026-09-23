@@ -622,6 +622,100 @@ export function renderRateLimits({ rateLimits, nowSeconds = Math.floor(Date.now(
   return '';
 }
 
+// --- prompt-cache gauge -------------------------------------------------------
+// `prompt_cache` on the statusline stdin blob (Claude Code 2.1.280+): whether the
+// session's prompt cache is warm, when it goes cold, the session hit ratio and the
+// cause of the most recent miss. Absent before the first request — like the quota
+// segment, absence costs zero columns. The number that matters in a 1M-context
+// session is the deadline: idle past it and the next turn re-writes the whole
+// prefix into the cache.
+
+// Short labels for Claude Code's miss-cause codes. An unmapped code falls back to
+// the code itself with underscores as spaces, so a new cause still reads.
+const CACHE_MISS_LABELS = {
+  system_prompt_changed: 'system prompt',
+  tools_changed: 'tools',
+  model_changed: 'model',
+  fast_mode_changed: 'fast mode',
+  cache_scope_or_ttl_changed: 'ttl',
+  betas_changed: 'betas',
+  effort_changed: 'effort',
+  thinking_mode_changed: 'thinking',
+  thinking_display_changed: 'thinking',
+  auto_mode_changed: 'auto mode',
+  overage_changed: 'usage limit',
+  extra_body_changed: 'request',
+  defer_loading_changed: 'tool loading',
+  messages_rewritten: 'history',
+  ttl_expired_5m: 'idle >5m',
+  ttl_expired_1h: 'idle >1h',
+  likely_server_side: 'server',
+  unknown: 'unknown',
+};
+
+// How long a miss's cause stays on the line. Long enough to connect "I just
+// switched model" to "that turn was slow"; after that it is history, not signal.
+export const CACHE_MISS_FRESH_SECONDS = 300;
+
+export function cacheMissLabel(code) {
+  return CACHE_MISS_LABELS[code] || String(code).replace(/_/g, ' ');
+}
+
+// Wall-clock HH:MM for an epoch-seconds instant, in local time. Unlike the quota
+// reset (D2, relative), the cache deadline is shown as a CLOCK time: the line only
+// re-renders on events, and the case that matters — you walked away — is exactly
+// when nothing re-renders, so a relative "4m" would sit there going stale. Claude
+// Code re-renders at `expires_at` itself, so the flip to cold is still live.
+export function formatClock(epochSeconds) {
+  const d = new Date(Number(epochSeconds) * 1000);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Render the prompt-cache segment. `detail` picks a tier:
+ *   'full'    — hit ratio, deadline or cold + re-cache cost, miss cause with tool deltas
+ *   'compact' — deadline or cold, plus a fresh miss cause
+ *   'minimal' — ONE fact, the most actionable: a fresh miss, else cold, else the deadline
+ * Empty when the blob has no cache data or caching was never observed.
+ */
+export function renderPromptCache({ promptCache: pc, nowSeconds = Math.floor(Date.now() / 1000), detail = 'full' } = {}) {
+  if (!pc || typeof pc !== 'object' || !pc.requests || !pc.caching_observed) return '';
+  const full = detail === 'full';
+  const bits = ['cache'];
+
+  const miss = pc.last_miss_cause;
+  const causes = (miss && Array.isArray(miss.causes)) ? miss.causes : [];
+  const fresh = causes.length > 0 && validPct(pc.last_miss_at) && nowSeconds - pc.last_miss_at <= CACHE_MISS_FRESH_SECONDS;
+
+  if (detail === 'minimal') {
+    if (fresh) return paint(`cache miss: ${cacheMissLabel(causes[0])}`, ANSI.yellow);
+    if (!pc.warm) return paint('cache cold', ANSI.yellow);
+    return validPct(pc.expires_at) ? `cache ${paint(`→${formatClock(pc.expires_at)}`, ANSI.green)}` : '';
+  }
+
+  if (full && validPct(pc.hit_ratio)) {
+    bits.push(paint(`${Math.round(pc.hit_ratio * 100)}%`, rampColor(1 - pc.hit_ratio)));
+  }
+  if (pc.warm && validPct(pc.expires_at)) {
+    bits.push(paint(`→${formatClock(pc.expires_at)}`, ANSI.green));
+  } else if (!pc.warm) {
+    const cost = full && validPct(pc.recache_tokens_if_cold) && pc.recache_tokens_if_cold > 0
+      ? ` ·${kfmt(pc.recache_tokens_if_cold)}` : '';
+    bits.push(paint(`cold${cost}`, ANSI.yellow));
+  }
+  let out = bits.join(' ');
+
+  if (fresh) {
+    let why = cacheMissLabel(causes[0]);
+    if (full && causes[0] === 'tools_changed' && validPct(miss.tools_added)) {
+      why += ` +${miss.tools_added}/-${miss.tools_removed || 0}`;
+    }
+    if (causes.length > 1) why += ` +${causes.length - 1}`;
+    out += ` · ${paint(`miss: ${why}`, ANSI.yellow)}`;
+  }
+  return out;
+}
+
 // A terse, PLAIN-text continuity note for the PreCompact hook. Context compaction
 // summarizes the conversation; this note is emitted right before it so the model's
 // astro-code position (milestone/phase/status/next action) survives INTO the summary

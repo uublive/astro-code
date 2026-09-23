@@ -30,6 +30,14 @@ Wire up (or refresh) astro-code's rich statusline for this machine, then show th
      percentage keeps climbing — that's the spend cap blowing its budget, not a bug.
      On a narrow line the bars go first, then the coolest window, so what survives
      is whichever is actually about to stop you.
+   - **cache** — the prompt cache (Claude Code 2.1.280+): `cache 96% →14:52` is the
+     session hit ratio and the clock time the cache goes cold if you stay idle;
+     `cache cold ·184k` means it already expired and the next turn re-writes that many
+     tokens. For five minutes after a miss it adds the cause (`miss: tools +3/-0`,
+     `miss: model`, `miss: idle >5m`), so switching model, effort, fast mode or MCP
+     tools shows up as what broke the cache. On a typical-width line it carries one
+     fact (a fresh miss, else cold, else the deadline), and it is dropped from the line
+     before it would force a second row. Absent until the first API request.
    - **⊡** — current version, milestone `M<n>` and phase `P<n> <name>` with its
      lifecycle status (or live activity verb), phase progress `done/total`, and any `⚠blockers`
    - **debt nn** — technical-debt pressure (0–100), shown **only** once debt is actually
