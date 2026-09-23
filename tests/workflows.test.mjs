@@ -156,8 +156,10 @@ function extractIntegrateWaveBody(wfSrc) {
   // explicit per-branch continue + bounded teardown) is longer than the pre-t7
   // prompt, so the window was widened from 2500 to 6500 — widen again rather than
   // truncate silently if a future task grows the prompt further.
-  const window = wfSrc.slice(startIdx, startIdx + 6500)
-  return window
+  // #22: to the END of the prompt (its `schema: INTEGRATE_SCHEMA` option) instead of a
+  // fixed 6500 — it had been widened by hand twice and #22 outgrew it again.
+  const endIdx = wfSrc.indexOf('schema: INTEGRATE_SCHEMA', startIdx)
+  return wfSrc.slice(startIdx, endIdx === -1 ? undefined : endIdx)
 }
 
 test('integrateWave prompt inlines wave task list as JSON scalar', () => {
@@ -1172,12 +1174,13 @@ test('t6: integrator prompt runs git merge-base HEAD <branch> staleness check (A
   const body = extractIntegratorPromptWindow(wfSrc)
   assert.ok(body, 'integrateWave definition not found in execute-phase.mjs')
 
-  // The prompt must instruct `git merge-base HEAD <branch>` — the cheap per-branch
-  // staleness check mandated by ADR-015.  Its absence means the integrator can
-  // silently cherry-pick a stale-base branch and stack duplicate code.
+  // The prompt must instruct a per-branch `git merge-base` — the cheap staleness check
+  // mandated by ADR-015.  Its absence means the integrator can silently cherry-pick a
+  // stale-base branch and stack duplicate code.  #22: measured against BASE (HEAD recorded
+  // before any pick), since the integrator's own picks move the live HEAD.
   assert.ok(
-    /git merge-base HEAD/.test(body),
-    'integrateWave prompt must instruct `git merge-base HEAD <branch>` for staleness detection (ADR-015)',
+    /git merge-base BASE <branch>/.test(body) && /BASE = \\`git rev-parse HEAD\\`/.test(body),
+    'integrateWave prompt must record BASE and instruct `git merge-base BASE <branch>` for staleness detection (ADR-015, #22)',
   )
 })
 
@@ -3838,4 +3841,75 @@ test('#21: the integrator is given the reported branches, and forbidden to claim
   const exec = execCalls(calls).find((c) => labelId(c.opts.label) === 'exec:t1')
   assert.ok(exec.opts.schema && exec.opts.schema.properties.branch, 'parallel executors report their branch through a schema')
   assert.match(exec.prompt, /git rev-parse --abbrev-ref HEAD/)
+})
+
+// ── #22: a moved base with no overlapping files is integrated, not re-run ───────
+// Committing anything to the working branch mid-wave (the pipelined plan of /astro-execute
+// 4b, committed per /astro-plan 3b) made every branch of the wave STALE by HEAD identity,
+// and the heal ladder re-ran all of them. Overlap still means stale; disjoint does not.
+
+test('#22: the staleness check is BASE-relative and distinguishes disjoint from overlapping', () => {
+  // read the prompt as the agent does: join the `…` + `…` pieces, unescape the backticks
+  const body = extractIntegratorPromptWindow(readFileSync(WF_FILE, 'utf8'))
+    .replace(/` \+\s*`/g, '')
+    .replace(/\\`/g, '`')
+  assert.match(body, /record BASE = `git rev-parse HEAD` NOW, before any cherry-pick/)
+  assert.match(body, /MOVED = `git diff --name-only FORK BASE`/)
+  assert.match(body, /MINE = `git diff --name-only FORK <branch>`/)
+  assert.match(body, /share NO file → MOVED BASE, DISJOINT/)
+  assert.match(body, /share ANY file → STALE — do NOT cherry-pick/, 'overlap keeps the ADR-015 guarantee')
+})
+
+test('#22: a moved-base branch is integrated and forces the test gate — no heal', async () => {
+  const { calls, result, logs } = await runWorkflow(
+    { root: '/tmp/p', phase: '09-x', strategy: 'parallel' },
+    {
+      discoverTasks: [
+        { id: 't6', title: 'T6', file: 'a.mjs', depends_on: [], done: false },
+        { id: 't7', title: 'T7', file: 'b.mjs', depends_on: [], done: false },
+      ],
+      integ: {
+        integrated: true,
+        branches: ['worktree-8', 'worktree-9'],
+        tornDown: ['worktree-8', 'worktree-9'],
+        movedBase: [
+          { branch: 'worktree-8', taskId: 't6', movedFiles: ['.astrocode/phases/10-next/PLAN.md'] },
+          { branch: 'worktree-9', taskId: 't7', movedFiles: ['.astrocode/phases/10-next/PLAN.md'] },
+        ],
+      },
+      gate: { ranSuite: true, passed: true },
+    },
+  )
+  assert.strictEqual(result.integrationFailed, null)
+  assert.ok(calls.some((c) => c.opts && c.opts.label === 'testgate'), 'a moved-base pick must be proven by the test gate')
+  assert.ok(!calls.some((c) => c.opts && c.opts.label && /^heal:/.test(c.opts.label)), 'no task is re-run')
+  assert.ok(logs.some((l) => /worktree-8.*integrated on a moved base, test gate required/.test(l)), logs.join('\n'))
+})
+
+test('#22: a moved-base wave whose test gate fails still stops the phase', async () => {
+  const { result } = await runWorkflow(
+    { root: '/tmp/p', phase: '09-x', strategy: 'parallel' },
+    {
+      discoverTasks: [
+        { id: 't6', title: 'T6', file: 'a.mjs', depends_on: [], done: false },
+        { id: 't7', title: 'T7', file: 'b.mjs', depends_on: [], done: false },
+      ],
+      integ: {
+        integrated: true,
+        branches: ['worktree-8', 'worktree-9'],
+        tornDown: [],
+        movedBase: [{ branch: 'worktree-8', taskId: 't6', movedFiles: ['x.md'] }],
+      },
+      gate: { ranSuite: true, passed: false, output: 'boom' },
+    },
+  )
+  assert.ok(result.integrationFailed, 'a red suite after a moved-base pick must fail the wave')
+})
+
+test('#22: the instructions no longer collide — the pipelined plan holds its commit', () => {
+  const root = join(dirname(WF_FILE), '..')
+  const exec = readFileSync(join(root, 'commands', 'astro-execute.md'), 'utf8')
+  const plan = readFileSync(join(root, 'commands', 'astro-plan.md'), 'utf8')
+  assert.match(exec, /Hold the pipelined plan's commit until this execution returns/)
+  assert.match(plan, /unless an `\/astro-execute` run is in flight on this working\s+branch/)
 })
