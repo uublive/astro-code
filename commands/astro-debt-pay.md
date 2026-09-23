@@ -39,7 +39,8 @@ spend an hour on debt" is a single command rather than five.
      it the way `/astro-fix` does: **reproduce first** with a failing test, diagnose the
      cause as distinct from the symptom, fix, re-run.
    - **Refactor-sized** — a structural change, a migration, anything touching several
-     files or needing a plan. → `ac debt pay <id> --as phase` puts it on the roadmap, then
+     files or needing a plan. → `ac debt pay <id> --as phase` puts it on the roadmap (add
+     `--milestone N` when it belongs to a later milestone than the active one), then
      stop and tell the user to run `/astro-discuss` on it. **Do not start implementing a
      phase from here.**
    - **Mechanical** — a one-line correction with no design content (the `renderRoadmapMd`

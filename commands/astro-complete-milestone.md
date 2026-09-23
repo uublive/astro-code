@@ -8,10 +8,11 @@ Complete and archive the current milestone.
 1. Confirm the milestone is truly done — every phase should be **complete**
    (verified by `/astro-verify` AND accepted by `/astro-accept`). List any phase that
    isn't `complete` and stop.
-2. Run `ac milestone complete`. It refuses (non-zero, naming them) while any phase is not
-   `complete`; `--force` archives unfinished phases anyway — use it only when the user has
-   said so explicitly. On success it:
-   - moves the milestone's phase directories to `.astrocode/milestones/<n>/`,
+2. Run `ac milestone complete`. It refuses (non-zero, naming them) while any of **this
+   milestone's** phases is not `complete`; `--force` archives them anyway — use it only when
+   the user has said so explicitly. Phases scheduled for a later milestone neither block the
+   close nor get archived: they stay on the roadmap. On success it:
+   - moves this milestone's phase directories to `.astrocode/milestones/<n>/`,
    - snapshots the roadmap,
    - clears the active roadmap for the next cycle,
    - and flips this milestone's claims to `complete` in the shared registry (so the
