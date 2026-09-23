@@ -29,7 +29,11 @@ import {
 } from '../lib/backlog.mjs';
 import { runFixturesCheck } from '../lib/fixtures.mjs';
 import { loadConfig, updateConfig } from '../lib/config.mjs';
-import { canonText, loadCanon, addDecision, canonPull, canonPush, canonDedupe } from '../lib/canon.mjs';
+import {
+  canonText, loadCanon, addDecision, canonPull, canonPush, canonDedupe,
+  supersedeDecision, retireDecision, amendDecision, canonCheck, canonStats, canonDrift,
+} from '../lib/canon.mjs';
+import { inForceText } from '../lib/decisions.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
 import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME } from '../lib/install.mjs';
@@ -76,6 +80,14 @@ const ALLOWED_FLAGS = {
   'canon push': ['dry-run'],
   'canon dedupe': [],
   'decision add': ['why', 'rejected'],
+  // #36/#35 — these revise a published decision on the shared branch; a typo must not
+  // degrade into the wrong revision
+  'decision supersede': ['by', 'reason'],
+  'decision retire': ['reason'],
+  'decision amend': ['reason', 'why', 'rejected', 'body-file'],
+  'decision list': ['all'],
+  'canon check': [],
+  'canon stats': [],
   'registry init': ['force'],
   'phase accept': ['by', 'force', 'agent'],
   'phase reject': ['reason'],
@@ -187,7 +199,12 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac canon [pull [--force] | push [--dry-run] | dedupe]  print canon; pull/push shares it on the
                                        orphan branch; dedupe collapses exact-duplicate decisions
   ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision (shared)
-  ac decision list                    list recorded decisions
+  ac decision list [--all]            decisions in force (stubs for retired ones); --all = the full log
+  ac decision supersede <id> --by <id> [--reason …]  mark a decision replaced by another (kept for audit)
+  ac decision retire <id> --reason …  mark a decision no longer in force (kept for audit)
+  ac decision amend <id> --reason … [--why …] [--rejected …] [--body-file p]  fix its prose; same id and title
+  ac canon check                      does the local canon match the registry? (per decision; non-zero on drift)
+  ac canon stats                      what every agent is handed: size, rough tokens, live vs retired
   ac stats [--since ISO|--session ID] token usage (fresh vs cache) + wall-clock from transcripts
   ac registry init [--force]          create the orphan registry branch + backfill from roadmaps
   ac registry show                    print the shared numbering registry
@@ -708,6 +725,20 @@ async function main() {
         : reg.registry.claims.length ? `${registryBranch(r)} @ origin (team-coordinated)`
         : 'origin present, not initialized — run `ac registry init`';
       console.log(`Registry:  ${regState}`);
+      // #35 — one line when the committed canon has drifted from the registry's copy
+      if (reg.available && reg.files && reg.files['DECISIONS.md'] != null) {
+        const { conventions, decisions } = loadCanon(r);
+        const d = canonDrift({
+          localDecisions: decisions,
+          registryDecisions: reg.files['DECISIONS.md'],
+          localConventions: conventions || null,
+          registryConventions: reg.files['CONVENTIONS.md'] ?? null,
+        });
+        if (!d.ok) {
+          const n = d.drift.length;
+          console.log(`  ⚠ canon differs from the registry: ${n ? `${n} decision(s)` : ''}${n && d.conventions !== 'same' ? ', ' : ''}${d.conventions !== 'same' ? 'CONVENTIONS.md' : ''} — \`ac canon check\` names them`);
+        }
+      }
       // #32 — the roadmap and the registry both carry each phase's milestone, and nothing
       // compared them: a diverged claim was visible only to someone who ran `registry show`.
       for (const d of reg.available ? claimDrift(rm, reg.registry) : []) {
@@ -1282,6 +1313,28 @@ async function main() {
 
     case 'canon': {
       const r = root();
+      if (pos[0] === 'check') {
+        // #35 — the gate projects built by hand: is the committed mirror the registry's copy?
+        checkFlags('canon check', flags);
+        const res = canonCheck(r);
+        if (res.error) die(res.error);
+        if (!res.available) { console.log(`• no shared registry in use (${res.reason}) — nothing to compare`); return; }
+        if (res.ok) { console.log(`✓ local canon matches ${res.branch}`); return; }
+        for (const d of res.drift) console.error(`✖ ${d.id}: ${d.kind}`);
+        if (res.conventions !== 'same') console.error(`✖ CONVENTIONS.md: ${res.conventions}`);
+        die(`local canon differs from ${res.branch} (${res.drift.length} decision(s)${res.conventions !== 'same' ? ', CONVENTIONS.md' : ''})`);
+      }
+      if (pos[0] === 'stats') {
+        checkFlags('canon stats', flags);
+        const s = canonStats(r);
+        const kb = (b) => `${(b / 1024).toFixed(1)} KB`;
+        console.log(`handed to every agent: ${kb(s.injectedBytes)} ≈ ${s.injectedTokens.toLocaleString('en-US')} tokens` +
+          (s.fullBytes > s.injectedBytes ? `  (the full log would be ${kb(s.fullBytes)})` : ''));
+        console.log(`  CONVENTIONS.md ${kb(s.conventionsBytes)} · DECISIONS.md ${kb(s.decisionsBytes)}`);
+        const c = s.counts;
+        console.log(`  decisions: ${c.live} in force · ${c.superseded} superseded · ${c.retired} retired · ${c.duplicate} duplicate stub(s)`);
+        return;
+      }
       if (pos[0] === 'pull') {
         checkFlags('canon pull', flags);
         const res = canonPull(r, { force: flags.force === true });
@@ -1421,10 +1474,34 @@ async function main() {
           }
         }
       } else if (pos[0] === 'list') {
+        checkFlags('decision list', flags);
         const { decisions } = loadCanon(r);
-        process.stdout.write((decisions || '(no decisions yet)') + '\n');
+        // #36 — by default what agents see (live in full, stubs for the rest); --all = the log
+        process.stdout.write((decisions ? (flags.all ? decisions : inForceText(decisions).trim()) : '(no decisions yet)') + '\n');
+      } else if (pos[0] === 'supersede' || pos[0] === 'retire' || pos[0] === 'amend') {
+        const sub = pos[0];
+        const id = String(pos[1] || '').toUpperCase();
+        if (!/^ADR-\d+$/.test(id)) die(`usage: ac decision ${sub} <ADR-NNN> …  (see \`ac help decision\`)`);
+        checkFlags(`decision ${sub}`, flags);
+        const str = (k) => (typeof flags[k] === 'string' ? flags[k] : undefined);
+        let res;
+        if (sub === 'supersede') {
+          res = supersedeDecision(r, id, { by: String(str('by') || '').toUpperCase(), reason: str('reason') || '' });
+        } else if (sub === 'retire') {
+          res = retireDecision(r, id, { reason: str('reason') || '' });
+        } else {
+          const bodyFile = str('body-file');
+          if (flags['body-file'] !== undefined && !bodyFile) die('--body-file needs a path');
+          const body = bodyFile ? readFileSync(bodyFile, 'utf8') : undefined;
+          res = amendDecision(r, id, { reason: str('reason') || '', why: str('why'), rejected: str('rejected'), body });
+        }
+        if (!res.ok) die(res.error);
+        const where = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
+        const what = sub === 'supersede' ? `superseded by ${String(str('by')).toUpperCase()}` : sub === 'retire' ? 'retired' : 'amended';
+        console.log(`✓ ${id} ${what} ${where}`);
+        if (sub !== 'amend') console.log('  agents now see it as a one-line stub — its full text stays in DECISIONS.md');
       } else {
-        die('usage: ac decision <add|list>');
+        die('usage: ac decision <add|list|supersede|retire|amend>');
       }
       return;
     }
