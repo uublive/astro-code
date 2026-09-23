@@ -81,6 +81,17 @@ if (prev && typeof prev.command === 'string' && prev.command) {
 // There is deliberately NO task recap here: it echoed the prompt the user had
 // just typed, which is already on screen directly above the status line — it
 // spent the most columns of any segment to say the least.
+// Terminal width, read once. Needed by the context and rate-limit gauges as well
+// as the row layout, so it is resolved before any of them.
+const cols = termWidth();
+
+// The narrowest single line on which the gauge BARS still fit alongside model,
+// branch, version and project state. Measured, not guessed: with bars the one-line
+// render is ~145 columns, so anything below this reflows — which is exactly the
+// C8 failure. Above it the bars are free; below it they cost a second row.
+const BAR_WIDTH_FLOOR = 150;
+const barsFit = cols === 0 || cols >= BAR_WIDTH_FLOOR;
+
 let claude = '';
 if (data) {
   const tp = data.transcript_path;
@@ -91,18 +102,9 @@ if (data) {
   // misleading >100% reading (the 236% bug) structurally impossible even if a model's
   // window grows and modelLimit hasn't caught up.
   if (tokens != null && limit && tokens > limit) limit = Math.max(1_000_000, tokens);
-  claude = renderClaudeSegment({ model: data.model, tokens, limit });
+  // Drawn like the quota gauges and shed the same way: bar above the floor, number below.
+  claude = renderClaudeSegment({ model: data.model, tokens, limit, bar: barsFit });
 }
-
-// Terminal width, read once. Needed by the rate-limit tier below as well as the
-// row layout, so it is resolved before either.
-const cols = termWidth();
-
-// The narrowest single line on which the quota BARS still fit alongside model,
-// branch, version and project state. Measured, not guessed: with bars the one-line
-// render is ~145 columns, so anything below this reflows — which is exactly the
-// C8 failure. Above it the bars are free; below it they cost a second row.
-const BAR_WIDTH_FLOOR = 150;
 
 // (3) subscription rate-limit quota — how much of the rolling 5h/7d windows
 // (plus a gateway-only spend cap) is spent. Absent before the first API
@@ -117,14 +119,14 @@ const BAR_WIDTH_FLOOR = 150;
 // to 145 columns and split a 110-column terminal into two rows: the bars were bought
 // with width the line did not have. Numbers alone still answer "how much is left",
 // which is the question; the bar is the luxury, so it is the first thing to go.
-const rlWide = cols === 0 || cols >= BAR_WIDTH_FLOOR ? 'full' : 'numbers';
+const rlWide = barsFit ? 'full' : 'numbers';
 const rateLimitsFull = data ? renderRateLimits({ rateLimits: data.rate_limits, nowSeconds, detail: rlWide }) : '';
 
 // (4) prompt cache — warm until when, or cold and what the next turn re-writes, plus
 // the cause of a miss for a few minutes after it. On the single line below the bar
 // floor it gets ONE fact (the `minimal` tier), and further down it is dropped from the
 // single line rather than being the segment that forces a second row — see below.
-const pcWide = cols === 0 || cols >= BAR_WIDTH_FLOOR ? 'full' : 'minimal';
+const pcWide = barsFit ? 'full' : 'minimal';
 let cacheWide = data ? renderPromptCache({ promptCache: data.prompt_cache, nowSeconds, detail: pcWide }) : '';
 
 // (5) the astro project segment — current milestone/phase/status + live activity.
