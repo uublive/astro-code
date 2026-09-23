@@ -176,11 +176,12 @@ test('the phase track windows around the current phase and counts the rest', () 
   assert.match(track(many, 1, 1), /^\(P1\) P2 \+10/);
 });
 
-test('renderBanner is plain multi-line with the creature logo + next action', () => {
+test('renderBanner is plain multi-line with the Astrolize logo + next action', () => {
   const root = project({ roadmap: ROADMAP });
   const banner = renderBanner(readContext(root, NOW));
-  assert.match(banner, /ASTRO·CODE/);
-  assert.match(banner, /▛▀▀▀▜/, 'robo-face logo is present');
+  assert.match(banner, /4str0\|ize · astro-code/, 'the wordmark is present');
+  assert.match(banner, /ääZPäP/, 'the Astrolize mark is present');
+  assert.doesNotMatch(banner, /\x1b\[/, 'plain: a systemMessage does not render ANSI');
   assert.match(banner, /next: \/astro-discuss 3/);
   assert.doesNotMatch(banner, /\x1b\[/, 'banner carries no ANSI (rides in a systemMessage)');
 });

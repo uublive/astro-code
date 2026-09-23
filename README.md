@@ -1,5 +1,16 @@
 # astro-code
 
+```text
+        PZÇP
+       ääZPäP       4str0|ize · astro-code
+      àääPPääà      lean, multi-developer planning for Claude Code
+      PäP  PäP
+     Pääà  àääP
+    àääP ºº Pää¥
+    Pää –²²– äää
+        °²²°
+```
+
 Planning and execution for coding agents. It runs a
 `discuss → plan → execute → verify → accept` loop over milestones and phases, kept as
 plain files in your repo — so an agent can't wander off, and nothing is ever marked done
