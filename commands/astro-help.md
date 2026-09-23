@@ -3,7 +3,10 @@ description: Short guide to astro-code — the loop, the commands, and how to go
 allowed-tools: Bash
 ---
 
-Print a concise guide to astro-code. Keep it scannable — this is a reference, not a
+Start with the astro-code mark: run `ac logo` and show its output verbatim inside a
+```text fenced block (it is plain text here — do not add colour or alter the art).
+
+Then print a concise guide to astro-code. Keep it scannable — this is a reference, not a
 tutorial. If the user passed a term in `$ARGUMENTS`, focus the guide on that (e.g.
 `speed`, `models`, `autonomous`, `milestone`) instead of printing everything.
 

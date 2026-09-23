@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SessionStart hook — the astro-code banner + "there's an update" notice.
 // Three responsibilities, all cheap and non-blocking:
-//   (1) when launched inside an astro-code project, print the creature logo banner with
+//   (1) when launched inside an astro-code project, print the Astrolize logo banner with
 //       the current milestone/phase/status and the suggested next command;
 //   (2) read the cached update check and, if the clone is behind origin, append
 //       an update nudge to the same systemMessage;
@@ -35,7 +35,7 @@ try {
 
 const lines = [];
 
-// (1) the creature logo banner, when we're inside an astro-code project. astro-code leans
+// (1) the Astrolize logo banner, when we're inside an astro-code project. astro-code leans
 // on `/clear` between steps, so only print the full logo on a genuine startup/resume
 // — not on every clear/compact (the statusline already carries the live state).
 const projRoot = findAstroRoot(cwd);

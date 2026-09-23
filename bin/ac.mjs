@@ -40,6 +40,7 @@ import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO
 import { applyTune, undoTune, tuneTarget, UNTUNABLE } from '../lib/tune.mjs';
 import { collectStats } from '../lib/stats.mjs';
 import { writeAgentsMd } from '../lib/agentsmd.mjs';
+import { renderLogo, wantColor, TAGLINE } from '../hooks/_astro-brand.mjs';
 
 function parseArgs(args) {
   const flags = {};
@@ -236,6 +237,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac update [clone-path]              git pull + refresh the global CLI and commands
   ac path [sub]                       print the framework dir, symlinks resolved (e.g. ac path workflows)
   ac help                             this help
+  ac logo                             the astro-code mark (colour on a terminal or with FORCE_COLOR=1; NO_COLOR wins)
 `;
 
 // A request for help must never run the verb (#14, #50). `--help` is the flag a
@@ -268,7 +270,13 @@ async function main() {
     case 'help':
     case '-h':
     case '--help':
-      process.stdout.write(HELP);
+      // the full help leads with the mark — in colour on a real terminal (NO_COLOR respected)
+      process.stdout.write(renderLogo({ lines: [TAGLINE], color: wantColor() }) + '\n\n' + HELP.replace(/^[^\n]*\n\n?/, ''));
+      return;
+
+    case 'logo':
+      // the mark alone — /astro-help shows this (plain: its output is relayed by the model)
+      process.stdout.write(renderLogo({ lines: [TAGLINE], color: wantColor() }) + '\n');
       return;
 
     // Refresh the managed AGENTS.md block on its own — for projects that predate

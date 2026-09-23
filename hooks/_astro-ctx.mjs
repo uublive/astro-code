@@ -6,6 +6,7 @@
 // bits it needs. Pure functions only; the hooks own all the I/O of stdin/stdout.
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname, parse } from 'node:path';
+import { renderLogo } from './_astro-brand.mjs';
 
 // A live activity verb older than this is treated as stale and ignored, so a
 // command that crashed before clearing can never pin a verb on the line forever.
@@ -742,10 +743,9 @@ export function renderResumeNote(ctx) {
   );
 }
 
-// The multi-line SessionStart banner (PLAIN text — it rides in a systemMessage,
-// which is not ANSI-rendered, so the art is flat monochrome: no colour, no real
-// image, just Unicode block glyphs). The creature is the astro-code mascot; the
-// compact ⊡ mark is kept for the single-line statusline (renderSegment).
+// The multi-line SessionStart banner: the Astrolize mark (hooks/_astro-brand.mjs) with
+// where-you-are beside it. PLAIN text — it rides in a systemMessage, which is not
+// ANSI-rendered. The compact ⊡ mark stays for the single-line statusline (renderSegment).
 export function renderBanner(ctx) {
   if (!ctx || (ctx.milestone == null && !ctx.phase)) return '';
   const ctxLine = [];
@@ -754,14 +754,10 @@ export function renderBanner(ctx) {
   if (ctx.activity) ctxLine.push(ctx.activity);
   else if (ctx.phase) ctxLine.push(ctx.phase.status);
   if (ctx.total) ctxLine.push(`${ctx.done}/${ctx.total} phases`);
-  const lines = [
-    '  ▛▀▀▀▜',
-    '  ▌▘ ▘▐   ASTRO·CODE',
-    '  ▙▄▄▄▟',
-  ];
-  if (ctxLine.length) lines.push('   ' + ctxLine.join(' · '));
-  lines.push('   next: ' + nextAction(ctx));
-  return lines.join('\n');
+  const lines = [];
+  if (ctxLine.length) lines.push(ctxLine.join(' · '));
+  lines.push('next: ' + nextAction(ctx));
+  return renderLogo({ lines, color: false });
 }
 
 // --- terminal width & narrow-screen layout -----------------------------------
