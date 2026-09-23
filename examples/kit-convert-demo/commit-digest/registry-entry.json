@@ -33,7 +33,8 @@
       {
         "source": "pip",
         "name": "python-dateutil",
-        "version": "2.8.2"
+        "version": "2.8.2",
+        "verify": "python3 -c \"import dateutil\""
       }
     ],
     "runtime": [

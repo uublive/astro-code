@@ -6,7 +6,8 @@ manifest_version field. Supports manifest_version 3 and 4.
 Stdlib-only CLI wrapper around scripts/_schema_engine.py. Produces
 line-precise error messages on stderr (D-04) and optional structured
 JSON on stdout (D-06). Warns (exit 0) when apt tools omit `version`
-(VALID-06). Exit codes follow Unix conventions (D-07):
+(VALID-06). Errors when a manifest v4 pip tool has no `verify`, or a verify
+that imports a hyphenated (invalid) module name — the registry rejects both (#11). Exit codes follow Unix conventions (D-07):
 
     0  clean — no errors; warnings alone are still 0
     1  validation errors present (user's kit.json is broken, or malformed JSON)
@@ -237,6 +238,63 @@ def collect_warnings(manifest: dict) -> list:
 
 
 # ---------------------------------------------------------------------------
+# pip `verify` (#11) — mandatory server-side, so mandatory here
+# ---------------------------------------------------------------------------
+
+# `python3 -c "import X"` / `python -c 'import X, Y'` — the import names checked.
+_IMPORT_VERIFY = re.compile(r"""python3?\s+-c\s+["']\s*import\s+([^"';]+)""")
+
+
+def check_pip_verify(manifest: dict) -> list:
+    """Errors for manifest v4 pip tools the hosted registry would reject (HTTP 422).
+
+    Without `verify`, the instance assumes the package installs a CLI named after
+    itself; when it doesn't, provisioning fails for EVERY kit on the instance. The
+    registry therefore rejects such manifests — this surfaces that offline instead
+    of after build + auth + upload. Also rejects a `python3 -c "import <name>"`
+    whose module name has a hyphen: that is not valid Python (the registry's own
+    hint suggests `import python-docx`; the module is `docx`).
+    """
+    errors: list = []
+    if not isinstance(manifest, dict) or manifest.get("manifest_version") != 4:
+        return errors
+    tools = manifest.get("requires", {}).get("tools", [])
+    if not isinstance(tools, list):
+        return errors
+    for i, tool in enumerate(tools):
+        if not isinstance(tool, dict) or tool.get("source") != "pip":
+            continue
+        name = tool.get("name", "")
+        verify = tool.get("verify")
+        if not verify:
+            errors.append(Error(
+                path=f"requires.tools[{i}]",
+                rule="pip-verify",
+                reason=(
+                    f"pip tool {name!r} has no \"verify\" — the registry rejects this (HTTP 422). "
+                    f"Add a command that exits 0 when the package works, usually an import of "
+                    f"its MODULE name, which can differ from the package name: "
+                    f"python-docx -> python3 -c \"import docx\", fpdf2 -> python3 -c \"import fpdf\""
+                ),
+            ))
+            continue
+        m = _IMPORT_VERIFY.search(verify)
+        if m:
+            bad = [mod.strip() for mod in m.group(1).split(",") if "-" in mod]
+            if bad:
+                errors.append(Error(
+                    path=f"requires.tools[{i}].verify",
+                    rule="pip-verify",
+                    reason=(
+                        f"verify imports {', '.join(repr(b) for b in bad)}, which is not a valid "
+                        f"Python module name — import the module the package provides "
+                        f"(python-docx -> docx), or provisioning fails for every kit on the instance"
+                    ),
+                ))
+    return errors
+
+
+# ---------------------------------------------------------------------------
 # Cross-artifact invariant (D-05 / R-AK-02)
 # ---------------------------------------------------------------------------
 
@@ -307,7 +365,7 @@ def validate_one(path_str: str, schema: dict, manifest: dict | None = None) -> t
         if manifest is None:
             return [fatal], [], 0
     raw_errors = validate(schema, manifest, "", root_schema=schema)
-    errors = _rewrite_sha256_errors(raw_errors, manifest)
+    errors = _rewrite_sha256_errors(raw_errors, manifest) + check_pip_verify(manifest)
     warnings = collect_warnings(manifest)
     return errors, warnings, 0
 

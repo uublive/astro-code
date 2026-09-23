@@ -34,8 +34,15 @@ Required fields: `name` (must equal the kit id / directory name), `version` (sem
 
 - `{ "source": "apt",  "name": "<debian-pkg>", "version": "<exact>" }` — omitting
   `version` is a validator warning (supply-chain risk).
-- `{ "source": "pip",  "name": "<pep503-name>", "version": "1.45.0", "verify": "..." }`
+- `{ "source": "pip",  "name": "python-docx", "version": "1.1.2", "verify": "python3 -c \"import docx\"" }`
   — name lowercase/hyphens; ranges (`>=`, `^`, `*`, `latest`) are REJECTED.
+  **`verify` is REQUIRED for pip tools** (the registry rejects the upload with HTTP 422
+  otherwise; `validate_manifest.py` catches it offline). Without it the instance assumes
+  the package installs a command named after itself, and when it doesn't, provisioning
+  fails for **every** kit on the instance — not just yours. Import the **module** name,
+  which often differs from the package name: `python-docx` → `import docx`, `fpdf2` →
+  `import fpdf`. `import python-docx` is not valid Python. Check it exits 0 locally
+  before publishing.
 - `{ "source": "npm",  "name": "@scope/pkg", "version": "2.1.0", "global": true }`
   — exact semver only.
 - `{ "source": "url",  "url": "https://...", "sha256": "<64-hex>", "filename": "...",
