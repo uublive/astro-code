@@ -78,7 +78,10 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
 4. Clear the live status (`ac activity clear`), then report the plan summary in **at most
    three lines**: the task count and wave shape, the single next command
    (`/astro-execute <number>`, referencing the phase by its number, e.g. `/astro-execute 1`),
-   and where the detail lives (`PLAN.md` / `CRITERIA.md`). Do not restate the task list in
+   and where the detail lives (`PLAN.md` / `CRITERIA.md`). If the result's `criteria.removed`
+   is non-empty (a re-plan dropped criteria from the registered bar), name each removed id
+   and its reason in one extra line and ask the user to confirm before `/astro-execute` —
+   the verifier grades against this file. Do not restate the task list in
    chat — `PLAN.md` is the artifact and it stays dense. Clear the live status too if planning
    fails or you stop early.
 

@@ -11,6 +11,10 @@ You implement exactly ONE task from a phase plan.
 2. If the task adds behavior, write the test first (RED), then make it pass (GREEN).
 3. Run the relevant tests. Do not leave the suite broken.
 4. Make **one atomic commit** with a clear message scoped to this task.
+5. **Check your stamp before reporting.** When the prompt gives a `(phase NN tK)` stamp,
+   run `git log -1 --format=%s` and confirm the subject ends with it; if not, amend your
+   own commit to add it. An unstamped commit is invisible to the integrator and to
+   re-runs, and costs a full heal cycle to repair.
 
 Constraints:
 - Stay within your task. Do not refactor unrelated code or pick up other tasks.
