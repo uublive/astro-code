@@ -671,6 +671,28 @@ const execPrompt = (t) =>
   NO_BROAD_STASH +
   SYNC_WORKTREE
 
+// #21 — a parallel executor reports WHERE its work is: the branch its worktree is on and
+// the commit it made. That is evidence from a second agent, independent of the integrator,
+// which used to be the only witness to what branches existed: when it failed to list one
+// (or excluded it as "the target" from inside the wrong tree), "I did not list it" became
+// "the task was never executed" — the heal ladder rebuilt the task differently, and in a
+// second report eleven downstream tasks had nothing to build on. The script still runs
+// no git (ADR-008); it compares two agents' accounts of the same branches.
+const EXEC_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    summary: { type: 'string' },
+    branch: { type: ['string', 'null'] },
+    commit: { type: ['string', 'null'] },
+  },
+  required: ['summary', 'branch', 'commit'],
+}
+const EXEC_IDENTITY =
+  `\nWhen done, report where your work is: branch = the output of \`git rev-parse --abbrev-ref HEAD\` ` +
+  `in your working directory, commit = \`git rev-parse HEAD\` if you committed (null if you made no ` +
+  `commit). The integrator is checked against this — report what git says, not what you expect.`
+
 const runOnBranch = (t) =>
   agent(execPrompt(t), { label: taskLabel('exec', t), phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor })
 
@@ -924,6 +946,14 @@ const INTEGRATE_SCHEMA = {
         },
         required: ['branch', 'reason'],
       } },
+    // #21 — where the integrator actually stood. Not in the main tree = it would fold onto
+    // the wrong branch and exclude a real candidate as "the target"; the wave stops.
+    position: {
+      type: 'object',
+      additionalProperties: false,
+      properties: { toplevel: { type: 'string' }, branch: { type: 'string' } },
+      required: ['toplevel', 'branch'],
+    },
     note: { type: 'string' },
   },
   required: ['integrated'],
@@ -952,7 +982,7 @@ const INTEGRATE_SCHEMA = {
 //   completely gates the overflow check — a stale branch is NEVER classified for
 //   overflow, it is always routed to heal regardless of whether the cherry-pick
 //   would apply cleanly.  Phase-04 proved textual cleanliness proves nothing.
-const integrateWave = (w, wave) =>
+const integrateWave = (w, wave, reported = []) =>
   agent(
     `You are the WAVE INTEGRATOR for phase ${phaseSlug}, running in the MAIN working tree of ${root} ` +
       `(you have NO worktree of your own). The parallel executors each committed on a separate ` +
@@ -962,6 +992,19 @@ const integrateWave = (w, wave) =>
       `branch so the next wave and the verifier see one combined tree.\n` +
       `Wave task list (taskId mapping target set + declared-file comparison): ` +
       `${JSON.stringify(wave.map((t) => ({ id: t.id, title: t.title, file: t.file || '' })))}\n` +
+      (reported.length
+        ? `Branches the executors REPORTED for this wave (their own \`git rev-parse\` output): ` +
+          `${JSON.stringify(reported)}\nEvery one of these MUST appear in exactly one of branches[], ` +
+          `staleBranches[], conflicts[] or leftover[] — the script checks, and an unaccounted one ` +
+          `stops the wave. Never exclude one because it is checked out or looks like the target: a ` +
+          `branch carrying a \`(phase ${phaseNum} tK)\` stamp for a wave task is a candidate, full stop. ` +
+          `Never write that a task "was never executed" — if you cannot find a task's work, say which ` +
+          `refs you enumerated and that the task is UNACCOUNTED FOR.\n`
+        : '') +
+      `0. POSITION: run \`git rev-parse --show-toplevel\` and \`git rev-parse --abbrev-ref HEAD\` and ` +
+      `return them as position {toplevel, branch}. If toplevel is not ${root}, or the branch starts ` +
+      `with \`worktree-\`, you are NOT in the main working tree: STOP — change nothing, return ` +
+      `integrated=false with a note saying where you are.\n` +
       `Do exactly this, in ${root}. Each candidate branch is reported under exactly ONE outcome, ` +
       `and once a branch is preserved you MUST CONTINUE to every remaining candidate — never ` +
       `abort the wave on the first bad branch. A preserved branch's clean peers still land in ` +
@@ -1269,10 +1312,11 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
   // B: isolated parallel executors, then fold the wave onto the working branch.
   const out = await parallel(
     wave.map((t) => () =>
-      agent(execPrompt(t), {
+      agent(execPrompt(t) + EXEC_IDENTITY, {
         label: taskLabel('exec', t),
         phase: 'Execute',
         isolation: 'worktree',
+        schema: EXEC_SCHEMA,
         agentType: 'astro-executor',
         model: models.executor, effort: reasoning.executor,
       }),
@@ -1311,8 +1355,63 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
       )
     }
   }
-  const integ = await integrateWave(w, wave)
+  // #21 — what the executors say they produced, by task. Only a commit counts: an executor
+  // that made none has nothing for the integrator to find.
+  const reported = wave
+    .map((t, i) => {
+      const o = out[i]
+      return o && typeof o === 'object' && o.branch && o.commit ? { taskId: t.id, branch: o.branch, commit: o.commit } : null
+    })
+    .filter(Boolean)
+  const integ = await integrateWave(w, wave, reported)
   noteLeftovers(w + 1, integ && integ.leftover)
+
+  // #21 — the integrator must have stood in the main tree. Excluding t3's branch "as the
+  // target" is what an integrator placed inside a worktree does; it then folds onto that
+  // worktree and every downstream task builds on nothing.
+  const pos = integ && integ.position
+  if (pos && (pos.toplevel !== root || /^worktree-/.test(pos.branch || ''))) {
+    log(`✖ wave ${w + 1}: the integrator ran in ${pos.toplevel} on \`${pos.branch}\`, not the main tree of ${root} — stopping before anything builds on it`)
+    integrationFailed = {
+      wave: w + 1,
+      taskId: null,
+      branch: pos.branch || null,
+      note:
+        `the integrator was not in the main working tree (toplevel ${pos.toplevel}, branch ` +
+        `${pos.branch}); it would fold onto the wrong branch and could exclude a real candidate as ` +
+        `"the target". Nothing was healed or rebuilt — re-run once the harness places it in ${root}.`,
+    }
+    continue
+  }
+
+  // #21 — every branch an executor reported must be accounted for by the integrator. One
+  // it did not list is NOT a task that never ran: the work is on that branch. Stop the
+  // wave naming it, instead of letting the heal ladder rebuild the task differently.
+  const accounted = new Set([
+    ...((integ && integ.branches) || []),
+    ...(((integ && integ.staleBranches) || []).map((s) => s.branch)),
+    ...(((integ && integ.conflicts) || []).map((c) => c.branch)),
+    ...(((integ && integ.leftover) || []).map((l) => l && l.branch)),
+  ])
+  const unaccounted = reported.filter((r) => !accounted.has(r.branch))
+  if (unaccounted.length) {
+    for (const u of unaccounted) {
+      log(`✖ wave ${w + 1}: task ${u.taskId}'s executor reported \`${u.branch}\` @ ${u.commit}, and the integrator did not account for it`)
+    }
+    const u0 = unaccounted[0]
+    integrationFailed = {
+      wave: w + 1,
+      taskId: u0.taskId,
+      branch: u0.branch,
+      note:
+        `${unaccounted.length} executor-reported branch(es) the integrator did not account for: ` +
+        unaccounted.map((u) => `${u.taskId} → ${u.branch} @ ${u.commit}`).join(', ') +
+        `. The work exists on those branches — it was NOT rebuilt. Recover it with ` +
+        `\`git cherry-pick <commit>\` onto the working branch, then start a FRESH run (not a resume, ` +
+        `which replays the cached integrator verdict); Discover skips the stamped tasks.`,
+    }
+    continue
+  }
 
   // ── Phase-14 t2 (ADR-027 decision 2): tornDown bound — pure data, no git ──
   //

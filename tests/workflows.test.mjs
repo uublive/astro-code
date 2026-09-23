@@ -235,10 +235,12 @@ test('integrateWave call site passes the wave tasks array', () => {
   const callArgs = callMatch[1].split(',').map((a) => a.trim())
 
   assert.deepEqual(
-    callArgs,
+    callArgs.slice(0, 2),
     ['w', 'wave'],
-    `integrateWave call site must pass (w, wave) — got (${callArgs.join(', ')})`,
+    `integrateWave call site must pass (w, wave) first — got (${callArgs.join(', ')})`,
   )
+  // #21 — and the executors' reported branches, so the integrator accounts for each one
+  assert.equal(callArgs[2], 'reported', `integrateWave must also receive the executor-reported branches — got (${callArgs.join(', ')})`)
 })
 
 // ── INTEGRATE_SCHEMA.conflicts items must be { branch, taskId } objects ───────
@@ -2635,7 +2637,7 @@ function chainTasks(n, doneIds = []) {
  *   behavior is unchanged).
  * @returns {Promise<{ calls: Array<object>, logs: Array<string>, result: object }>}
  */
-async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate, audit, teardown } = {}) {
+async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate, audit, teardown, execReports } = {}) {
   const calls = []
   const logs = []
   const agent = async (prompt, opts = {}) => {
@@ -2649,6 +2651,11 @@ async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate, a
     }
     if ('missing' in props) return audit || { missing: [] }   // ADR-040 stamp audit
     if ('removed' in props && teardown) return teardown          // #25 heal teardown, when a test supplies it
+    // #21 — a parallel executor reports its branch/commit; tests opt in per task id
+    if ('branch' in props && 'commit' in props) {
+      const id = (prompt.match(/^Implement task (\S+)/) || [])[1]
+      return { summary: 'done', branch: null, commit: null, ...((execReports && execReports[id]) || {}) }
+    }
     if ('integrated' in props) return integ || { integrated: true, branches: [] }
     if ('criteriaFound' in props) return { passed: true, criteriaFound: true, summary: 'ok', criteria: [] }
     // TESTGATE_SCHEMA is now the ONLY schema carrying `ranSuite` (ADR-028), so that is
@@ -3734,4 +3741,101 @@ test('#25: a clean teardown leaves nothing in result.leftovers', async () => {
     teardown: { removed: ['worktree-t2'] },
   })
   assert.deepStrictEqual(result.leftovers, [])
+})
+
+// ── #21: the integrator must account for every branch an executor reported ──
+// The script runs no git (ADR-008); it compares the executors' own report of where their
+// work is against the integrator's lists. A branch the integrator did not list is work
+// that EXISTS — it must stop the wave, never be "healed" into a different implementation.
+
+const TWO = [
+  { id: 't1', title: 'T1', file: 'a.mjs', depends_on: [], done: false },
+  { id: 't2', title: 'T2', file: 'b.mjs', depends_on: [], done: false },
+]
+const REPORTS = { t1: { branch: 'worktree-wf-20', commit: 'aaa1111' }, t2: { branch: 'worktree-wf-21', commit: '62231ee' } }
+
+test('#21: an executor-reported branch the integrator never listed stops the wave — no heal, no rebuild', async () => {
+  const { calls, result, logs } = await runWorkflow(
+    { root: '/tmp/p', phase: '09-x', strategy: 'parallel' },
+    {
+      discoverTasks: TWO,
+      execReports: REPORTS,
+      // the observed failure: -21 simply absent from the integrator's account
+      integ: { integrated: false, branches: ['worktree-wf-20'], tornDown: ['worktree-wf-20'], position: { toplevel: '/tmp/p', branch: 'main' } },
+    },
+  )
+  assert.ok(result.integrationFailed, 'an unaccounted branch must fail the wave')
+  assert.strictEqual(result.integrationFailed.taskId, 't2')
+  assert.strictEqual(result.integrationFailed.branch, 'worktree-wf-21')
+  assert.match(result.integrationFailed.note, /t2 → worktree-wf-21 @ 62231ee/)
+  assert.match(result.integrationFailed.note, /NOT rebuilt/)
+  assert.match(result.integrationFailed.note, /git cherry-pick/)
+  assert.ok(!calls.some((c) => c.opts && c.opts.label && labelId(c.opts.label) === 'heal:t2'), 'the task must not be rebuilt')
+  assert.ok(logs.some((l) => /executor reported `worktree-wf-21` @ 62231ee, and the integrator did not account for it/.test(l)))
+})
+
+test('#21: every reported branch accounted for (picked, stale, conflict or leftover) lets the wave proceed', async () => {
+  const { result } = await runWorkflow(
+    { root: '/tmp/p', phase: '09-x', strategy: 'parallel' },
+    {
+      discoverTasks: TWO,
+      execReports: REPORTS,
+      integ: {
+        integrated: true,
+        branches: ['worktree-wf-20'],
+        tornDown: ['worktree-wf-20'],
+        leftover: [{ branch: 'worktree-wf-21', worktree: null, reason: 'already integrated (residue)' }],
+        position: { toplevel: '/tmp/p', branch: 'main' },
+      },
+    },
+  )
+  assert.strictEqual(result.integrationFailed, null)
+})
+
+test('#21: a reported branch routed to heal as stale is accounted for, and heals normally', async () => {
+  const { calls } = await runWorkflow(
+    { root: '/tmp/p', phase: '09-x', strategy: 'parallel' },
+    {
+      discoverTasks: TWO,
+      execReports: REPORTS,
+      integ: {
+        integrated: false,
+        branches: ['worktree-wf-20'],
+        tornDown: ['worktree-wf-20'],
+        staleBranches: [{ branch: 'worktree-wf-21', taskId: 't2' }],
+        position: { toplevel: '/tmp/p', branch: 'main' },
+      },
+      gate: { ranSuite: true, passed: true },
+    },
+  )
+  assert.ok(calls.some((c) => c.opts && c.opts.label && labelId(c.opts.label) === 'heal:t2'), 'a stale branch still goes to the heal ladder')
+})
+
+test('#21: an integrator not standing in the main tree stops the wave before anything builds on it', async () => {
+  const { calls, result } = await runWorkflow(
+    { root: '/tmp/p', phase: '12-x', strategy: 'parallel' },
+    {
+      discoverTasks: TWO,
+      execReports: REPORTS,
+      integ: { integrated: true, branches: ['worktree-wf-21'], tornDown: [], position: { toplevel: '/tmp/p/.claude/worktrees/wf-20', branch: 'worktree-wf-20' } },
+    },
+  )
+  assert.ok(result.integrationFailed, 'wrong position must fail the wave')
+  assert.match(result.integrationFailed.note, /not in the main working tree/)
+  assert.ok(!calls.some((c) => c.opts && c.opts.label && /^heal:/.test(c.opts.label)), 'nothing is healed from a wrong-tree verdict')
+})
+
+test('#21: the integrator is given the reported branches, and forbidden to claim "never executed"', async () => {
+  const { calls } = await runWorkflow(
+    { root: '/tmp/p', phase: '09-x', strategy: 'parallel' },
+    { discoverTasks: TWO, execReports: REPORTS, integ: { integrated: true, branches: ['worktree-wf-20', 'worktree-wf-21'], tornDown: [], position: { toplevel: '/tmp/p', branch: 'main' } } },
+  )
+  const integ = calls.find((c) => c.opts && c.opts.label === 'integrate:w1')
+  assert.match(integ.prompt, /"branch":"worktree-wf-21","commit":"62231ee"/)
+  assert.match(integ.prompt, /Never write that a task "was never executed"/)
+  assert.match(integ.prompt, /UNACCOUNTED FOR/)
+  assert.match(integ.prompt, /0\. POSITION/)
+  const exec = execCalls(calls).find((c) => labelId(c.opts.label) === 'exec:t1')
+  assert.ok(exec.opts.schema && exec.opts.schema.properties.branch, 'parallel executors report their branch through a schema')
+  assert.match(exec.prompt, /git rev-parse --abbrev-ref HEAD/)
 })
