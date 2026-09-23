@@ -23,6 +23,20 @@
       "captured_at": "2026-09-22T10:35:22.120Z"
     },
     {
+      "id": "2026-09-23-astro-forge-autodrive-drives-only",
+      "title": "astro-forge autodrive drives only phases of the active milestone",
+      "note": "From the v0.28 consumer review (2026-09-23). The change lives in the astro-forge repo, not here. server/internal/autodrive/autodrive.go NextAction picks any pending/rejected phase from roadmap.json regardless of its milestone field. Harmless before v0.28; now that ac milestone new --planned lets phases be scheduled into a milestone that is not active yet, autodrive would start work meant for a later milestone before anyone runs ac milestone activate. Phases kept after ac milestone complete (later-milestone ones) are affected the same way. Fix: skip phases whose milestone is set and differs from state.json active_milestone (fall back to roadmap.milestone). Needed before the next astro-forge image build: its Dockerfile clones astro-code's default branch, so it picks up v0.28 automatically. Code change + PR only; rebuilding or restarting astro-forge stays with the owner.",
+      "status": "open",
+      "captured_at": "2026-09-23T16:29:09.254Z"
+    },
+    {
+      "id": "2026-09-23-keep-decisions-in-force-md-committed",
+      "title": "Keep DECISIONS.in-force.md committed, and make it safe to commit: staleness detection, generated-file marking, merge guidance; point the AGENTS.md template at it",
+      "note": "From the v0.28 consumer review (2026-09-23). DECISIONS.in-force.md stays COMMITTED like the rest of .astrocode/: ignoring it would leave fresh clones, tags and headless fleet jobs reading the full DECISIONS.md (superseded entries included) until something runs ac canon pull, undoing #36 exactly where nobody watches, and breaking git show <tag>:.astrocode/… (#35). The real problems with committing it, to fix in v0.28.1: (1) merge conflicts come in pairs: two branches adding decisions conflict in DECISIONS.md AND the generated view, and the right fix is to regenerate, not hand-merge; (2) it can go stale when DECISIONS.md is hand-edited or merged and committed without running ac, and nothing detects it; (3) diff noise, cosmetic. Proposal: ac canon check and ac status report a stale view (content != inForceText(DECISIONS.md)) and name the fix (ac canon pull regenerates; /astro-plan and /astro-execute already pull first); a .gitattributes entry marks it linguist-generated=true so GitHub collapses it in PR diffs while it stays committed; one MANUAL line: on a conflict in that file, resolve DECISIONS.md and run ac canon pull. Also: the AGENTS.md block astro-code generates (writeAgentsMd) still says 'Read CONVENTIONS.md and DECISIONS.md'; point it at the in-force view (seen in BoringPlatformV2 and ironvale-quote).",
+      "status": "open",
+      "captured_at": "2026-09-23T16:29:09.198Z"
+    },
+    {
       "id": "2026-09-23-opus-5-5-works-untouched-but-three",
       "title": "Opus 5.5 works untouched, but three places still name old model versions",
       "note": "Verified against the live model docs: astro-code needs no change to use claude-opus-5-5. Roles resolve to the tiers 'opus'/'sonnet' and the harness picks the model, and modelLimit defaults unknown ids to 1M — which is right for opus-5-5 and fable-5-1. What is stale is cosmetic: ARCHITECTURE.md says the session model is Opus 4.8, and ac statusline preview fakes a claude-opus-4-8 payload. Worth a sweep when something else touches those files.",
