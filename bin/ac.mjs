@@ -2,7 +2,7 @@
 // `ac` — the astro-code CLI. A thin, atomic state layer; the heavy thinking lives
 // in the markdown commands/agents and the Workflow scripts that Claude Code runs.
 import process from 'node:process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -91,6 +91,10 @@ const ALLOWED_FLAGS = {
   'backlog link': ['phase'],
   'backlog archive': ['kind', 'reason'],
   'backlog promote': [],
+  'milestone complete': ['force'],
+  // `tune` writes a settings.json that grants permissions, so a typo'd flag must be
+  // refused rather than silently applying the tuning (#14).
+  'tune': ['user', 'undo'],
 };
 
 function checkFlags(key, flags) {
@@ -135,7 +139,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac roadmap render                   regenerate .astrocode/ROADMAP.md
   ac milestone new [--name "…"]       claim the next milestone number (+ dup-name check)
   ac milestone check "<name>"         see if a milestone with a similar name exists
-  ac milestone complete               archive the current milestone + retire its claims
+  ac milestone complete [--force]     archive the current milestone + retire its claims
+                                       (refuses while a phase is not complete; --force overrides)
   ac phase add <name> [--milestone N] claim the next phase number + add it (+ dup-name check)
   ac phase check "<name>"             see if a phase with a similar name exists
   ac phase context <phase>            discuss-gate status: missing | stub | ready
@@ -187,11 +192,35 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac statusline [install|preview]     wire the rich statusline (recap·model·ctx-bar·M/P) or preview it
   ac install | uninstall              (un)install commands + agents into ~/.claude
   ac update [clone-path]              git pull + refresh the global CLI and commands
-  ac path [sub]                       print the framework dir (e.g. ac path workflows)
+  ac path [sub]                       print the framework dir, symlinks resolved (e.g. ac path workflows)
   ac help                             this help
 `;
 
+// A request for help must never run the verb (#14, #50). `--help` is the flag a
+// person types to find out what a command WOULD do, yet on a writing verb like
+// `tune` every spelling of it used to fall through to the default action. Caught
+// here, before dispatch, so it holds for every verb — including ones added later:
+// `--help` and `-h` anywhere in the tail (checked on the raw tail, so a `-h` that
+// parseArgs swallowed as a flag's value still counts), or a bare `help` as the
+// first positional. Prints the verb's own HELP lines when it has any.
+function verbHelp(verb) {
+  const lines = HELP.split('\n');
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].startsWith(`  ac ${verb} `) && lines[i] !== `  ac ${verb}`) continue;
+    out.push(lines[i]);
+    // continuation lines are indented past the command column
+    while (i + 1 < lines.length && /^ {10,}\S/.test(lines[i + 1])) out.push(lines[++i]);
+  }
+  return out.length ? out.join('\n') + '\n' : HELP;
+}
+const wantsHelp = tail.includes('--help') || tail.includes('-h') || pos[0] === 'help';
+
 async function main() {
+  if (cmd !== undefined && wantsHelp) {
+    process.stdout.write(verbHelp(cmd));
+    return;
+  }
   switch (cmd) {
     case undefined:
     case 'help':
@@ -765,6 +794,17 @@ async function main() {
           }
         }
       } else if (pos[0] === 'complete') {
+        // A milestone close archives every phase on the roadmap, so "every phase is
+        // complete" must be enforced here, not left as prose in the skill (#29) —
+        // `complete` is the human gate, and archiving over it would be the one place
+        // that gate could be skipped. `--force` archives unfinished phases on purpose.
+        checkFlags('milestone complete', flags);
+        const unfinished = (loadRoadmap(r)?.phases || []).filter((ph) => ph.status !== 'complete');
+        if (unfinished.length && !flags.force) {
+          const list = unfinished.map((ph) => `  ${String(ph.number).padStart(2, '0')}  ${ph.status.padEnd(9)} ${ph.name}`).join('\n');
+          die(`${unfinished.length} phase(s) are not complete — refusing to archive them:\n${list}\n` +
+            '  finish them (/astro-accept), or pass --force to archive them unfinished');
+        }
         const arch = await completeMilestone(r);
         const released = markComplete({ root: r, milestone: arch.milestone });
         await updateState(r, (s) => ({ ...s, status: 'milestone-complete', active_phase: null }));
@@ -1345,6 +1385,8 @@ async function main() {
     case 'tune': {
       // Apply (or undo) the astro-recommended Claude Code settings — the officially
       // supported settings.json subset only, additively and reversibly.
+      checkFlags('tune', flags);
+      if (pos.length) die(`unexpected argument${pos.length > 1 ? 's' : ''} for \`ac tune\`: ${pos.join(' ')} (usage: ac tune [--user] [--undo])`);
       const scope = flags.user ? 'user' : 'project';
       const target = tuneTarget(scope, {
         projectRoot: flags.user ? undefined : root(),
@@ -1504,7 +1546,17 @@ async function main() {
     }
 
     case 'path': {
-      console.log(pos[0] ? join(HOME_ROOT, pos[0]) : HOME_ROOT);
+      // Print the RESOLVED path (#15): where /home is a symlink (/var/home on ostree
+      // distros), the unresolved form never matches the directory Claude Code asks
+      // `permissions.additionalDirectories` to grant, so a grant copied from here
+      // silently failed. A sub-path that doesn't exist yet is joined onto the
+      // resolved home instead.
+      let home = HOME_ROOT;
+      try { home = realpathSync(HOME_ROOT); } catch { /* not installed yet — print as-is */ }
+      const target = pos[0] ? join(home, pos[0]) : home;
+      let out = target;
+      try { out = realpathSync(target); } catch { /* sub-path absent — keep the joined form */ }
+      console.log(out);
       return;
     }
 

@@ -123,6 +123,58 @@ test('ADR-029: read-only verbs are deliberately NOT guarded (no blanket enforcem
   assert.strictEqual(res.status, 0, 'a stray flag on a read-only verb stays harmless');
 });
 
+// ── 1b. asking for help never runs the verb (#14, #50) ────────────────────────
+
+// Sandboxed HOME + config dir, so a regression on the `--user` spellings would
+// write into a throwaway dir instead of the real ~/.claude.
+function runSandboxed(args, cwd) {
+  const home = mkdtempSync(join(tmpdir(), 'ac-home-'));
+  const res = spawnSync(process.execPath, [AC, ...args], {
+    cwd, encoding: 'utf8',
+    env: { ...process.env, HOME: home, CLAUDE_CONFIG_DIR: join(home, '.claude') },
+  });
+  return { ...res, home };
+}
+
+for (const spelling of [['--help'], ['-h'], ['help'], ['--user', '-h'], ['--undo', '--help']]) {
+  test(`\`ac tune ${spelling.join(' ')}\` prints help and writes NO settings.json`, () => {
+    const dir = mkWorkdir(null);
+    const res = runSandboxed(['tune', ...spelling], dir);
+    assert.strictEqual(res.status, 0, res.stderr);
+    assert.match(res.stdout, /ac tune \[--user\] \[--undo\]/, 'shows the verb\'s own usage line');
+    assert.doesNotMatch(res.stdout, /tuned/, 'must not report applying anything');
+    assert.ok(!existsSync(join(dir, '.claude', 'settings.json')), 'nothing may be written (project)');
+    assert.ok(!existsSync(join(res.home, '.claude', 'settings.json')), 'nothing may be written (user)');
+  });
+}
+
+test('`ac tune` refuses unknown flags and stray arguments, writing nothing (#14, #50)', () => {
+  const dir = mkWorkdir(null);
+  const flag = runSandboxed(['tune', '--dry-run'], dir);
+  assert.notStrictEqual(flag.status, 0);
+  assert.match(flag.stderr, /unknown flag/i);
+  assert.match(flag.stderr, /--undo/, 'the error must name what IS accepted');
+  const arg = runSandboxed(['tune', 'please'], dir);
+  assert.notStrictEqual(arg.status, 0);
+  assert.match(arg.stderr, /unexpected argument/i);
+  assert.ok(!existsSync(join(dir, '.claude', 'settings.json')), 'nothing may be written');
+});
+
+test('help is caught before dispatch for every verb, not just tune', () => {
+  const dir = mkWorkdir(null);
+  const res = run(['canon', 'push', '-h'], dir);
+  assert.strictEqual(res.status, 0, res.stderr);
+  assert.match(res.stdout, /ac canon/);
+  assert.doesNotMatch(res.stderr, /unknown flag/i);
+});
+
+test('plain `ac tune` still applies the tuning', () => {
+  const dir = mkWorkdir(null);
+  const res = runSandboxed(['tune'], dir);
+  assert.strictEqual(res.status, 0, res.stderr);
+  assert.ok(existsSync(join(dir, '.claude', 'settings.json')));
+});
+
 // ── 2. canon push --dry-run reads, never writes ───────────────────────────────
 
 test('ADR-029: canonPush dryRun reports a pending change and leaves the registry untouched', () => {

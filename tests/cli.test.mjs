@@ -289,3 +289,53 @@ test('a milestone bumped and completed with no phase added archives into its own
     "milestone 1's archived snapshot must be left byte-identical, never overwritten",
   );
 });
+
+// #29: `ac milestone complete` used to archive every phase regardless of status and
+// exit 0. It now refuses while any phase is not `complete`, unless --force is given.
+test('`ac milestone complete` refuses while a phase is unfinished; --force overrides (#29)', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const AC = new URL('../bin/ac.mjs', import.meta.url).pathname;
+  const run = (args, cwd) => spawnSync(process.execPath, [AC, ...args], { cwd, encoding: 'utf8' });
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  await addPhase(root, { number: 1, name: 'alpha', milestone: 1 });
+  await addPhase(root, { number: 2, name: 'beta', milestone: 1 });
+  await setPhaseStatus(root, findPhase(root, '1').slug, 'complete');
+
+  const refused = run(['milestone', 'complete'], root);
+  assert.notEqual(refused.status, 0, 'must not exit 0 over an unfinished phase');
+  assert.match(refused.stderr, /1 phase\(s\) are not complete/);
+  assert.match(refused.stderr, /beta/, 'names the unfinished phase');
+  assert.doesNotMatch(refused.stderr, /alpha/, 'does not list the complete one');
+  assert.equal(loadRoadmap(root).phases.length, 2, 'nothing archived');
+
+  const forced = run(['milestone', 'complete', '--force'], root);
+  assert.equal(forced.status, 0, forced.stderr);
+  assert.equal(loadRoadmap(root).phases.length, 0);
+
+  // a typo'd --force must not degrade into "archived" — even with nothing unfinished
+  const empty = fresh();
+  initPlanning(empty, { name: 'demo' });
+  const typo = run(['milestone', 'complete', '--froce'], empty);
+  assert.notEqual(typo.status, 0);
+  assert.match(typo.stderr, /unknown flag/);
+});
+
+// #15: `ac path` printed the unresolved home, which never matches the directory Claude
+// Code asks `additionalDirectories` to grant where /home is a symlink (/var/home).
+test('`ac path` prints symlink-resolved paths (#15)', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const { mkdirSync, symlinkSync, realpathSync } = await import('node:fs');
+  const AC = new URL('../bin/ac.mjs', import.meta.url).pathname;
+  const base = fresh();
+  const real = join(base, 'var-home');
+  mkdirSync(join(real, '.astro', 'code', 'workflows'), { recursive: true });
+  const link = join(base, 'home');
+  symlinkSync(real, link);
+  const run = (args) => spawnSync(process.execPath, [AC, ...args], { cwd: base, encoding: 'utf8', env: { ...process.env, HOME: link } });
+
+  const resolvedHome = realpathSync(join(real, '.astro', 'code'));
+  assert.equal(run(['path']).stdout.trim(), resolvedHome);
+  assert.equal(run(['path', 'workflows']).stdout.trim(), join(resolvedHome, 'workflows'));
+  assert.equal(run(['path', 'not-there']).stdout.trim(), join(resolvedHome, 'not-there'));
+});
