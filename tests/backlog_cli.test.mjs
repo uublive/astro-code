@@ -230,3 +230,43 @@ test('C7: debt score --json, debt list --json, and the statusline segment are by
   assert.strictEqual(item.rank, undefined);
   assert.strictEqual(item.score, undefined);
 });
+
+// `ac backlog note` — the CLI half of setBacklogNote.
+test('ac backlog note reads, writes and clears; the title is never editable', async () => {
+  const root = mkWorkdir();
+  run(['backlog', 'add', 'An idea to refine', '--note', 'first pass'], root);
+  const id = JSON.parse(run(['backlog', 'list', '--json'], root).stdout)[0].id;
+
+  // READ
+  const read = run(['backlog', 'note', id], root);
+  assert.equal(read.status, 0, read.stderr);
+  assert.match(read.stdout, /first pass/);
+
+  // WRITE
+  assert.equal(run(['backlog', 'note', id, 'sharper second pass'], root).status, 0);
+  assert.match(run(['backlog', 'note', id], root).stdout, /sharper second pass/);
+  assert.doesNotMatch(run(['backlog', 'note', id], root).stdout, /first pass/);
+
+  // CLEAR
+  assert.equal(run(['backlog', 'note', id, ''], root).status, 0);
+  assert.equal(run(['backlog', 'note', id], root).stdout.trim(), '');
+
+  // the title survives all of it — it seeds the id and the declined-match check
+  const after = JSON.parse(run(['backlog', 'list', '--json'], root).stdout)[0];
+  assert.equal(after.title, 'An idea to refine');
+  assert.equal(after.id, id);
+});
+
+test('ac backlog note refuses an archived item and leaves it untouched', async () => {
+  const root = mkWorkdir();
+  run(['backlog', 'add', 'Doomed idea', '--note', 'original'], root);
+  const id = JSON.parse(run(['backlog', 'list', '--json'], root).stdout)[0].id;
+  run(['backlog', 'archive', id, '--kind', 'declined', '--reason', 'we chose otherwise'], root);
+
+  const res = run(['backlog', 'note', id, 'rewritten after the fact'], root);
+  assert.notEqual(res.status, 0, 'a closed record must not be editable');
+
+  const after = JSON.parse(run(['backlog', 'list', '--all', '--json'], root).stdout)[0];
+  assert.equal(after.note, 'original');
+  assert.equal(after.archive_reason, 'we chose otherwise');
+});

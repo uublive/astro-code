@@ -7,7 +7,8 @@
 // stdin Claude gave us), then append astro segments. From Claude's stdin blob we
 // render, in order: a recap of the task in flight, the running model, a graphical
 // context-window-fill bar, subscription rate-limit quota bars (5h/7d/spend cap,
-// when Claude sends them), the live project state (milestone/phase/status/activity),
+// when Claude sends them), the prompt-cache state (warm-until / cold / last miss
+// cause, when Claude sends it), the live project state (milestone/phase/status/activity),
 // and the git branch — then, when the clone is behind origin, an update nudge.
 // Uninstall restores the original command from that same map. There is
 // deliberately no session-cost segment: it was an estimate, not actionable
@@ -21,7 +22,7 @@ import {
   findAstroRoot, readContext, renderSegment,
   readContextTokens, renderClaudeSegment, modelLimit,
   isBusy, renderStatus, termWidth, visibleWidth, truncateVisible, packStatus, renderSegmentParts, STATUS_SEP,
-  renderRateLimits,
+  renderRateLimits, renderPromptCache,
 } from './_astro-ctx.mjs';
 
 const HOME = join(homedir(), '.astro', 'code');
@@ -119,6 +120,13 @@ const BAR_WIDTH_FLOOR = 150;
 const rlWide = cols === 0 || cols >= BAR_WIDTH_FLOOR ? 'full' : 'numbers';
 const rateLimitsFull = data ? renderRateLimits({ rateLimits: data.rate_limits, nowSeconds, detail: rlWide }) : '';
 
+// (4) prompt cache — warm until when, or cold and what the next turn re-writes, plus
+// the cause of a miss for a few minutes after it. On the single line below the bar
+// floor it gets ONE fact (the `minimal` tier), and further down it is dropped from the
+// single line rather than being the segment that forces a second row — see below.
+const pcWide = cols === 0 || cols >= BAR_WIDTH_FLOOR ? 'full' : 'minimal';
+let cacheWide = data ? renderPromptCache({ promptCache: data.prompt_cache, nowSeconds, detail: pcWide }) : '';
+
 // (5) the astro project segment — current milestone/phase/status + live activity.
 // The cwd comes from Claude's stdin blob; from it we walk up to the `.astrocode/`.
 let projCtx = null;
@@ -177,6 +185,9 @@ const project = [identity, state].filter(Boolean).join(' · ');
 // non-identity segment, shed wholesale by `packStatus`'s normal fit rules.
 const rlDetail = cols === 0 || cols >= 130 ? 'full' : cols >= 90 ? 'numbers' : 'hottest';
 const rateLimitsRow = data ? renderRateLimits({ rateLimits: data.rate_limits, nowSeconds, detail: rlDetail }) : '';
+const cacheRow = data
+  ? renderPromptCache({ promptCache: data.prompt_cache, nowSeconds, detail: cols === 0 || cols >= 130 ? 'full' : 'compact' })
+  : '';
 
 // Phase state rides with the identity when there's room, and drops to the next
 // row when there isn't — rather than being silently dropped for lack of space.
@@ -204,9 +215,19 @@ const stateFitsRow1 = !rowWidth ||
 // mistakes it for the whole name. Below a floor it is dropped instead — three characters
 // and an ellipsis is worse than silence.
 const BRANCH_MIN = 12;
+// The cache is the one segment allowed to vanish from the single line to keep it single:
+// a cold cache costs tokens, a second row costs the layout every render. If the other
+// bounded segments fit but adding the cache would not, it goes. When the line is going
+// to split regardless, it keeps its place and rides row 2 via `cacheRow`.
+if (cacheWide && rowWidth) {
+  const without = [base, claude, rateLimitsFull, project, update].filter(Boolean);
+  const fitsWithout = visibleWidth(without.join(STATUS_SEP)) <= rowWidth;
+  const fitsWith = visibleWidth([...without, cacheWide].join(STATUS_SEP)) <= rowWidth;
+  if (fitsWithout && !fitsWith) cacheWide = '';
+}
 let branchWide = branch;
 if (branch && rowWidth) {
-  const bounded = [base, claude, rateLimitsFull, project, update].filter(Boolean);
+  const bounded = [base, claude, rateLimitsFull, cacheWide, project, update].filter(Boolean);
   const spent = visibleWidth(bounded.join(STATUS_SEP)) + (bounded.length ? visibleWidth(STATUS_SEP) : 0);
   const room = rowWidth - spent;
   if (room < BRANCH_MIN) branchWide = '';
@@ -214,11 +235,12 @@ if (branch && rowWidth) {
 }
 
 const lines = packStatus({
-  wide: [base, claude, rateLimitsFull, project, branchWide, update],
+  wide: [base, claude, rateLimitsFull, cacheWide, project, branchWide, update],
   groups: [
     // where am I — the answer the statusline exists to give, never sliced
     stateFitsRow1 ? [identity, state] : [identity],
-    stateFitsRow1 ? [claude, rateLimitsRow, branch] : [state, claude, rateLimitsRow, branch],
+    // cache sits after quota: a quota limit stops you, a cold cache only costs you.
+    stateFitsRow1 ? [claude, rateLimitsRow, cacheRow, branch] : [state, claude, rateLimitsRow, cacheRow, branch],
     [base, update],
   ],
   width: rowWidth,

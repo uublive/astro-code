@@ -18,6 +18,7 @@ import {
   isBusy, renderStatus, SESSION_STALE_SECONDS,
   termWidth, visibleWidth, truncateVisible, packStatus, renderSegmentParts, STATUS_SEP,
   rampColor, formatETA, renderRateLimits,
+  renderPromptCache, formatClock, cacheMissLabel, CACHE_MISS_FRESH_SECONDS,
 } from '../hooks/_astro-ctx.mjs';
 
 const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -483,6 +484,7 @@ const FIXTURE_BRANCH = 'feature/m8-agent-output-that-respects-the-reader';
 
 function runStatusline({
   rateLimits,
+  promptCache,
   cost,
   version = FIXTURE_VERSION,
   columns = 200,
@@ -502,6 +504,7 @@ function runStatusline({
   const blob = { session_id: 's1', workspace: { current_dir: root } };
   if (model) blob.model = model;
   if (rateLimits !== undefined) blob.rate_limits = rateLimits;
+  if (promptCache !== undefined) blob.prompt_cache = promptCache;
   if (cost !== undefined) blob.cost = { total_cost_usd: cost };
   const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
   return spawnSync(process.execPath, [hook, join(home, '.claude')], {
@@ -876,3 +879,124 @@ test('a hot window with a live reset countdown still leaves the wide line fittin
   }
 });
 
+
+// --- prompt-cache segment -----------------------------------------------------
+
+const warmCache = (now, over = {}) => ({
+  warm: true, caching_observed: true, ttl: '1h', expires_at: now + 3300,
+  requests: 42, misses: 1, expected_rebuilds: 0, hit_ratio: 0.964,
+  cache_write_tokens: 200_000, miss_recache_tokens: 150_000,
+  last_miss_at: null, last_miss_cause: null, miss_causes: {},
+  recache_tokens_if_cold: 184_000,
+  ...over,
+});
+
+test('renderPromptCache is empty with no data, no requests, or caching never observed', () => {
+  assert.equal(renderPromptCache({}), '');
+  assert.equal(renderPromptCache({ promptCache: null }), '');
+  const now = 1_800_000_000;
+  assert.equal(renderPromptCache({ promptCache: warmCache(now, { requests: 0 }), nowSeconds: now }), '');
+  assert.equal(renderPromptCache({ promptCache: warmCache(now, { caching_observed: false }), nowSeconds: now }), '');
+});
+
+test('renderPromptCache: warm shows the expiry as a clock time; hit ratio only in full', () => {
+  const now = 1_800_000_000;
+  const pc = warmCache(now);
+  const full = renderPromptCache({ promptCache: pc, nowSeconds: now, detail: 'full' });
+  assert.ok(full.includes(`→${formatClock(pc.expires_at)}`), full);
+  assert.match(full, /96%/);
+  const compact = renderPromptCache({ promptCache: pc, nowSeconds: now, detail: 'compact' });
+  assert.ok(compact.includes(`→${formatClock(pc.expires_at)}`), compact);
+  assert.doesNotMatch(compact, /%/, 'compact sheds the hit ratio');
+  assert.match(formatClock(pc.expires_at), /^\d\d:\d\d$/);
+});
+
+test('renderPromptCache: cold says so, and full carries what the next turn re-writes', () => {
+  const now = 1_800_000_000;
+  const pc = warmCache(now, { warm: false, expires_at: null });
+  assert.match(renderPromptCache({ promptCache: pc, nowSeconds: now }), /cold ·184k/);
+  const compact = renderPromptCache({ promptCache: pc, nowSeconds: now, detail: 'compact' });
+  assert.match(compact, /cold/);
+  assert.doesNotMatch(compact, /184k/);
+});
+
+test('renderPromptCache: a fresh miss names its cause; a stale one is dropped', () => {
+  const now = 1_800_000_000;
+  const cause = { causes: ['tools_changed'], tools_added: 3, tools_removed: 1 };
+  const fresh = warmCache(now, { last_miss_at: now - 60, last_miss_cause: cause });
+  assert.match(renderPromptCache({ promptCache: fresh, nowSeconds: now }), /miss: tools \+3\/-1/);
+  assert.match(renderPromptCache({ promptCache: fresh, nowSeconds: now, detail: 'compact' }), /miss: tools(?! \+)/);
+
+  const stale = warmCache(now, { last_miss_at: now - CACHE_MISS_FRESH_SECONDS - 1, last_miss_cause: cause });
+  assert.doesNotMatch(renderPromptCache({ promptCache: stale, nowSeconds: now }), /miss/);
+
+  const multi = warmCache(now, { last_miss_at: now - 10, last_miss_cause: { causes: ['model_changed', 'effort_changed'] } });
+  assert.match(renderPromptCache({ promptCache: multi, nowSeconds: now }), /miss: model \+1/);
+});
+
+test('renderPromptCache minimal carries one fact: fresh miss, else cold, else the deadline', () => {
+  const now = 1_800_000_000;
+  const min = (over) => renderPromptCache({ promptCache: warmCache(now, over), nowSeconds: now, detail: 'minimal' });
+  assert.equal(min({ last_miss_at: now - 5, last_miss_cause: { causes: ['model_changed'] } }), 'cache miss: model');
+  assert.equal(min({ warm: false, expires_at: null }), 'cache cold');
+  assert.equal(min({}), `cache →${formatClock(now + 3300)}`);
+});
+
+test('the cache is dropped from the single line rather than forcing a second row', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const rateLimits = { five_hour: { used_percentage: 23 }, seven_day: { used_percentage: 41 } };
+  // A cache fact far too long for the room left, so the only way to keep one row is to drop it.
+  const promptCache = warmCache(now, { last_miss_at: now - 5, last_miss_cause: { causes: ['a_very_long_future_cause_code_that_does_not_fit_anywhere'] } });
+  const base = runStatusline({ rateLimits, columns: 100 }).stdout;
+  assert.equal(base.split('\n').length, 1, `precondition: one row without the cache:\n${base}`);
+  const out = runStatusline({ rateLimits, promptCache, columns: 100 }).stdout;
+  assert.equal(out.split('\n').length, 1, `the cache forced a second row:\n${out}`);
+  assert.doesNotMatch(out, /cache/);
+});
+
+test('cacheMissLabel maps known codes and still reads an unknown one', () => {
+  assert.equal(cacheMissLabel('fast_mode_changed'), 'fast mode');
+  assert.equal(cacheMissLabel('ttl_expired_5m'), 'idle >5m');
+  assert.equal(cacheMissLabel('some_new_cause'), 'some new cause');
+});
+
+test('prompt cache on the live hook: shown when sent, absent when not', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const pc = warmCache(now);
+  const out = runStatusline({ promptCache: pc }).stdout;
+  assert.ok(out.includes(`cache 96% →${formatClock(pc.expires_at)}`), out);
+  assert.doesNotMatch(runStatusline({}).stdout, /cache/);
+});
+
+test('prompt cache + quota + a fresh miss still leave a single line at 110 and 100 columns, quota intact', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const rateLimits = {
+    five_hour: { used_percentage: 23, resets_at: now + 7920 },
+    seven_day: { used_percentage: 41, resets_at: now + 400_000 },
+  };
+  const promptCache = warmCache(now, {
+    last_miss_at: now - 30, last_miss_cause: { causes: ['tools_changed'], tools_added: 3, tools_removed: 0 },
+  });
+  for (const columns of [110, 100]) {
+    const out = runStatusline({ rateLimits, promptCache, columns }).stdout;
+    assert.equal(out.split('\n').length, 1, `${columns} cols should still be a single line:\n${out}`);
+    assert.ok(visibleWidth(out) <= columns, `line exceeded its own budget at ${columns}: ${visibleWidth(out)}`);
+    // Load-bearing, as in the quota guard above: the tier. One fact below the bar floor —
+    // and when the cache shows at all, the fact is the fresh miss, not the deadline.
+    assert.doesNotMatch(out, /96%|\+3\/-0|→/, `cache must be minimal at ${columns} cols:\n${out}`);
+    if (out.includes('cache')) assert.match(out, /cache miss: tools/, `minimal must pick the miss at ${columns}:\n${out}`);
+    assert.match(out, /5h\s+23%/, `the quota must survive the cache segment at ${columns} cols`);
+    assert.match(out, /7d\s+41%/);
+  }
+});
+
+test('width sweep: the cache segment never evicts the quota, and no row overflows', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const rateLimits = { five_hour: { used_percentage: 10 }, seven_day: { used_percentage: 95 } };
+  const promptCache = warmCache(now, { last_miss_at: now - 30, last_miss_cause: { causes: ['model_changed'] } });
+  for (const columns of [200, 160, 140, 120, 100, 90, 80, 70, 60, 50, 40]) {
+    const out = runStatusline({ rateLimits, promptCache, columns }).stdout;
+    if (out.includes('cache')) assert.ok(out.includes('95%'), `cache rode while the hot quota was shed at ${columns}:\n${out}`);
+    for (const row of out.split('\n')) assert.ok(visibleWidth(row) <= columns, `row overflowed at ${columns}: ${row}`);
+  }
+});
