@@ -2,7 +2,7 @@
 // `ac` — the astro-code CLI. A thin, atomic state layer; the heavy thinking lives
 // in the markdown commands/agents and the Workflow scripts that Claude Code runs.
 import process from 'node:process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { basename, join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -1492,6 +1492,10 @@ async function main() {
       }
 
       const res = installClaude(clone);
+      // The cached update check describes the version we just replaced; drop it so the
+      // banner/statusline stop advertising an applied update (the SessionStart hook
+      // re-runs the worker when the cache is missing).
+      rmSync(join(ASTRO_HOME, 'update-check.json'), { force: true });
       console.log(`✓ installed → ${res.home} (${res.commands} cmds, ${res.agents} agents, ${res.workflows} workflows, ${res.hooks} hooks) across ${res.targets.length} config dir(s)`);
       let version = '?';
       try { version = (JSON.parse(readFileSync(join(clone, 'package.json'), 'utf8')) || {}).version || '?'; } catch { /* ignore */ }
