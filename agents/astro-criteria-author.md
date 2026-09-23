@@ -22,6 +22,12 @@ Read ONLY:
 the phase directory from a prior attempt — reading the plan is exactly what shapes the bar
 to the implementation. You are plan-blind by contract.
 
+## Re-registration — an existing `CRITERIA.md` is the registered bar
+If `CRITERIA.md` already exists (a re-plan), read it first — it is criteria, not a plan.
+Keep every criterion and its id unless the goal or `CONTEXT.md` now contradicts it; add
+new ones after the highest id. Never drop one silently: a removal needs a stated reason,
+and it is reported to the human. Criteria a person added are the ones most at risk.
+
 ## Output — `.astrocode/phases/<slug>/CRITERIA.md`
 A short list of falsifiable criteria. Each one, exactly this shape:
 

@@ -38,9 +38,34 @@ const OBEY =
 // researcher parallel() array) so CRITERIA.md is written before the fan-out — the
 // researchers/planner may then aim the plan at the bar. The criteria author is plan-blind
 // by contract (agents/astro-criteria-author.md); the prompt restates it as defense-in-depth.
+// #23 — re-planning used to rewrite CRITERIA.md from scratch, silently dropping criteria a
+// human had added (15 → 9, the three from a recorded scope decision gone without a trace).
+// A pre-registration that changes on every run isn't one. The author now treats an
+// existing CRITERIA.md as the registered bar — keep, extend, and justify every removal —
+// and returns the delta, which is logged and returned so the caller can show it.
+const CRITERIA_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    count: { type: 'integer' },
+    previousCount: { type: 'integer' },
+    added: { type: 'array', items: { type: 'string' } },
+    removed: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { id: { type: 'string' }, title: { type: 'string' }, reason: { type: 'string' } },
+        required: ['id', 'title', 'reason'],
+      },
+    },
+  },
+  required: ['count', 'previousCount', 'added', 'removed'],
+}
+
 phase('Criteria')
 log(`pre-registering the bar for "${phaseSlug}" — plan-blind, goal-derived CRITERIA.md`)
-await agent(
+const criteria = await agent(
   `Author the pre-registered success criteria for phase "${phaseSlug}" (goal: ${goal}).\n` +
     `You are PLAN-BLIND: derive the criteria from the GOAL + CONTEXT + canon ONLY. No plan exists ` +
     `yet — do NOT read PLAN.md / ACCEPTANCE.md / SPEC.md even if one is present from a prior attempt.\n` +
@@ -51,10 +76,31 @@ await agent(
     `— independently runnable with only Read/Bash/Grep/Glob>\n` +
     `  - **Fails if:** <the failure mode that makes it FAIL>\n` +
     `Ban structural/existence checks (file-exists, grep-for-a-string, "function defined") — a ` +
-    `different valid implementation of the goal must still satisfy every criterion. Return a one-line count.` +
+    `different valid implementation of the goal must still satisfy every criterion.\n\n` +
+    `RE-REGISTRATION: if CRITERIA.md already exists, it is the REGISTERED bar — read it FIRST ` +
+    `(it is criteria, not a plan; reading it does not break plan-blindness). Keep every existing ` +
+    `criterion, with its id, unless the goal or CONTEXT.md now contradicts it — criteria a human ` +
+    `added (e.g. from a scope decision in CONTEXT.md) are exactly the ones that must survive. You ` +
+    `may add new ones after the highest existing id. Never drop one silently: every removal needs ` +
+    `a reason. Return count (criteria now in the file), previousCount (0 if there was no file), ` +
+    `added[] (new ids) and removed[] ({id,title,reason}).` +
     OBEY,
-  { phase: 'Criteria', agentType: 'astro-criteria-author', model: models.planner, effort: reasoning.planner },
+  { phase: 'Criteria', agentType: 'astro-criteria-author', model: models.planner, effort: reasoning.planner, schema: CRITERIA_SCHEMA },
 )
+const criteriaDelta = {
+  count: criteria?.count ?? null,
+  previousCount: criteria?.previousCount ?? 0,
+  added: criteria?.added || [],
+  removed: criteria?.removed || [],
+}
+if (criteriaDelta.previousCount) {
+  log(
+    `criteria re-registered: ${criteriaDelta.previousCount} → ${criteriaDelta.count}` +
+      (criteriaDelta.added.length ? ` · added ${criteriaDelta.added.join(', ')}` : '') +
+      (criteriaDelta.removed.length ? ` · REMOVED ${criteriaDelta.removed.map((r) => r.id).join(', ')}` : ''),
+  )
+  for (const r of criteriaDelta.removed) log(`⚠ criterion ${r.id} "${r.title}" removed from the registered bar — ${r.reason}`)
+}
 
 phase('Research')
 const ANGLES = [
@@ -123,4 +169,4 @@ const summary = await agent(
   { phase: 'Synthesize', agentType: 'astro-planner', model: models.planner, effort: reasoning.planner },
 )
 
-return { phase: phaseSlug, plan: summary }
+return { phase: phaseSlug, plan: summary, criteria: criteriaDelta }
