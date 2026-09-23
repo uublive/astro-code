@@ -334,7 +334,9 @@ test('a pre-existing duplicate pair is reported on every pull, and only collapse
   assert.equal(repaired.removed[0].keptId, 'ADR-001', 'the lowest-numbered id survives');
   assert.equal(repaired.removed[0].id, 'ADR-002');
   onDisk = readFileSync(paths(bob).decisions, 'utf8');
-  assert.equal((onDisk.match(/^##\s+ADR-00[12]\b/gm) || []).length, 1, 'exactly one of the pair remains');
+  // #45/#36: one LIVE copy remains; the other id stays as a stub so its number is never reused
+  assert.equal((onDisk.match(/Never hand-edit state\.json\n_/g) || []).length, 1, 'exactly one full copy of the pair remains');
+  assert.match(onDisk, /## ADR-002 — Never hand-edit state\.json\n\*\*Status:\*\* duplicate of ADR-001/, 'the collapsed id is a stub');
   assert.match(onDisk, /Never hand-edit state\.json/, "the survivor's body is intact");
 });
 

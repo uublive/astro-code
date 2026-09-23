@@ -303,10 +303,27 @@ It produces a **verified** phase at best — human `/astro-accept` still closes 
 orphan branch as the registry and injected into every plan/execute agent, so consistency
 across parallel work is enforced rather than hoped for.
 
-`ac decision add` appends to the shared log (ADR ids never collide across devs);
-`ac canon pull` refreshes your local mirror.
+`ac decision add` appends to the shared log (ADR ids never collide across devs, and each
+entry records the commit it was made at); `ac canon pull` refreshes your local mirror.
 
-> Read `CONVENTIONS.md` and `DECISIONS.md` before proposing an approach. Conventions are
+**A decision leaves the log without being deleted.** `ac decision supersede <id> --by <id>`
+and `ac decision retire <id> --reason "…"` stamp it with a status; the full entry stays in
+`DECISIONS.md` for audit, but agents read `DECISIONS.in-force.md` — every live decision in
+full, and a one-line stub (successor and date) for each one no longer in force, so a
+citation still resolves. `ac canon stats` shows what every agent is handed.
+`ac canon dedupe` leaves a stub too, so a collapsed number is never reissued.
+
+**Correcting prose is not a new decision.** `ac decision amend <id> --reason "…" --why "…"`
+(or `--rejected`, `--body-file`) fixes a dead link or a translation: same id, same title,
+and an `_Amended <date>: <reason>_` line records it. A decision that *changed* is a new one
+plus `supersede`.
+
+**Keep the mirror honest.** The committed `DECISIONS.md` is what ties canon to your code —
+`git show <tag>:.astrocode/DECISIONS.md` is the canon in force at that tag. `ac canon check`
+exits non-zero, per decision, when it differs from the registry (put it in CI or a hook);
+`ac status` flags it in one line. Never hand-edit a published entry: amend it.
+
+> Read `CONVENTIONS.md` and `DECISIONS.in-force.md` before proposing an approach. Conventions are
 > binding; decisions record what was already settled and why. Re-litigating a recorded
 > decision wastes the work that produced it.
 

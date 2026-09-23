@@ -165,7 +165,9 @@ const registryDecisions = (dir) => {
   });
   return text;
 };
-const copies = (text) => (text.match(/^## ADR-\d+ — Keep one copy$/gm) || []).length;
+// full copies only: heading + date line. A collapsed duplicate stays as a heading-only
+// stub (#36), so its number is never reused — it is not a copy of the decision.
+const copies = (text) => (text.match(/^## ADR-\d+ — Keep one copy\n_/gm) || []).length;
 
 test('#45: dedupe collapses the registry copy, so pull and decision add no longer restore it', () => {
   const dir = fixture();
