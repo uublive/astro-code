@@ -270,3 +270,37 @@ test('ac backlog note refuses an archived item and leaves it untouched', async (
   assert.equal(after.note, 'original');
   assert.equal(after.archive_reason, 'we chose otherwise');
 });
+
+// #62 — `ac backlog note` with an unknown id crashed on a null item; it now refuses like
+// show/link/promote/archive do.
+test('#62: `ac backlog note` on an unknown id refuses instead of crashing', () => {
+  const dir = mkWorkdir(null);
+  assert.equal(run(['backlog', 'add', 'Idea one', '--note', 'n'], dir).status, 0);
+  for (const args of [['backlog', 'note', 'nope'], ['backlog', 'note', 'nope', 'x']]) {
+    const res = run(args, dir);
+    assert.notEqual(res.status, 0);
+    assert.match(res.stderr, /no such backlog item: nope/);
+    assert.doesNotMatch(res.stderr, /Cannot read properties/);
+  }
+});
+
+// #63 — `ac backlog note` checked no flags: a typo was accepted, and `--note` (the flag
+// `backlog add` takes) turned an attempted write into a silent read.
+test('#63: `ac backlog note` rejects unknown flags, and --note is refused with the right form', () => {
+  const dir = mkWorkdir(null);
+  assert.equal(run(['backlog', 'add', 'Idea one', '--note', 'original'], dir).status, 0);
+  const id = JSON.parse(readFileSync(join(paths(dir).dir, 'backlog.json'), 'utf8')).backlog[0].id;
+
+  const typo = run(['backlog', 'note', id, 'rewritten', '--typo'], dir);
+  assert.notEqual(typo.status, 0);
+  assert.match(typo.stderr, /unknown flag for `ac backlog note`: --typo/);
+
+  const viaFlag = run(['backlog', 'note', id, '--note', 'via a flag'], dir);
+  assert.notEqual(viaFlag.status, 0, 'an attempted write must not exit 0 as a read');
+  assert.match(viaFlag.stderr, /takes the text as an argument, not --note/);
+  assert.match(viaFlag.stderr, new RegExp(`ac backlog note ${id} "<text>"`));
+
+  assert.equal(run(['backlog', 'note', id], dir).stdout.trim(), 'original', 'neither call changed the note');
+  assert.equal(run(['backlog', 'note', id, 'rewritten'], dir).status, 0, 'the documented form still writes');
+  assert.equal(run(['backlog', 'note', id], dir).stdout.trim(), 'rewritten');
+});

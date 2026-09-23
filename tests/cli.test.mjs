@@ -339,3 +339,37 @@ test('`ac path` prints symlink-resolved paths (#15)', async () => {
   assert.equal(run(['path', 'workflows']).stdout.trim(), join(resolvedHome, 'workflows'));
   assert.equal(run(['path', 'not-there']).stdout.trim(), join(resolvedHome, 'not-there'));
 });
+
+// #64: a second `ac milestone complete` of an already-closed milestone rewrote its archive
+// snapshot from the now-empty roadmap (`phases: []`) and printed ✓. It now refuses and
+// leaves the snapshot byte-identical.
+test('re-closing an already-closed milestone refuses and keeps its archive snapshot (#64)', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const AC = new URL('../bin/ac.mjs', import.meta.url).pathname;
+  const run = (args, cwd) => spawnSync(process.execPath, [AC, ...args], { cwd, encoding: 'utf8' });
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  await addPhase(root, { number: 1, name: 'done', milestone: 1 });
+  await setPhaseStatus(root, findPhase(root, '1').slug, 'complete');
+
+  assert.equal(run(['milestone', 'complete'], root).status, 0);
+  const snapFile = join(paths(root).dir, 'milestones', '1', 'roadmap.json');
+  const before = readFileSync(snapFile, 'utf8');
+  assert.match(before, /01-done/);
+
+  const again = run(['milestone', 'complete'], root);
+  assert.notEqual(again.status, 0, 'a re-close must not report success');
+  assert.match(again.stderr, /milestone 1 is already complete/);
+  assert.equal(readFileSync(snapFile, 'utf8'), before, 'the archive snapshot must be untouched');
+});
+
+test('a phase added to a closed milestone later is appended to its snapshot, not a replacement (#64)', async () => {
+  const root = fresh();
+  initPlanning(root, { name: 'demo' });
+  await addPhase(root, { number: 1, name: 'first', milestone: 1 });
+  await completeMilestone(root);
+  await addPhase(root, { number: 2, name: 'late', milestone: 1 });
+  await completeMilestone(root);
+  const snap = JSON.parse(readFileSync(join(paths(root).dir, 'milestones', '1', 'roadmap.json'), 'utf8'));
+  assert.deepEqual(snap.phases.map((p) => p.number).sort(), [1, 2]);
+});

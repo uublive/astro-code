@@ -168,9 +168,17 @@ Execute phase `$ARGUMENTS`.
    `git status` stays clean. It was caught only because a verifier volunteered it.
 
    **Say nothing when the sweep is clean.** If anything survives: **one line per
-   surviving worktree/branch**, plus its `git rev-list HEAD..<branch>` count, so the user
-   can see whether HEAD already supersedes it. **Do not delete anything automatically** —
-   a preserved branch may be the only copy of a failed heal (ADR-014).
+   surviving worktree/branch**, plus whether `git cherry HEAD <branch>` shows any `+`
+   line (a change HEAD does not hold) — so the user can see whether HEAD already
+   supersedes it. **Do not delete anything automatically** — a preserved branch may be
+   the only copy of a failed heal (ADR-014).
+
+   The workflow also returns `leftovers[]` (#25): each `{wave, branch, worktree, reason}`
+   is something cleanup could not remove — usually a command the project's own guard
+   denied, which the agents correctly did not work around. Name each one with its reason
+   and, when `git cherry` shows it fully integrated, the two commands that clear it
+   (`git worktree remove --force <path>` if it has one, then `git branch -D <branch>`),
+   for the user to run — never run them yourself.
 
 4d. **File the verifier's non-blocking findings as debt.** The workflow returns
    `findings[]` — things the verifier observed that no criterion covered. It has already

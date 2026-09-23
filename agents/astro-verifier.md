@@ -37,8 +37,11 @@ For EACH criterion, **assume it FAILS** until you have independently observed it
 
 Also keep the structural safeguards (these are necessary, not sufficient):
 - The phase's commits are present on the current branch (`git log --oneline`).
-- No `worktree-*` branch still holds un-integrated commits (`git for-each-ref
-  refs/heads/worktree-*`, then `git rev-list HEAD..<branch>` must be empty).
+- No `worktree-*` branch still holds un-integrated changes (`git for-each-ref
+  refs/heads/worktree-*`, then `git cherry HEAD <branch>` must print no `+` line). Use
+  `git cherry`, not `git rev-list HEAD..<branch>`: a cherry-pick makes new commit ids, so a
+  leftover branch whose changes are all in HEAD still lists commits there — residue a
+  guarded project could not delete, not stranded work.
 - Run the full test suite. If it fails to LOAD or COMPILE (a module imports/re-exports
   something deleted — e.g. a barrel `index` still exporting a removed module), name it:
   **wave boundary did not compile → a destructive edit was split from the consumer fixups it
