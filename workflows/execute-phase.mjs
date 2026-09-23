@@ -946,6 +946,21 @@ const INTEGRATE_SCHEMA = {
         },
         required: ['branch', 'reason'],
       } },
+    // #22 — branches whose fork point is behind BASE but whose files do not overlap what
+    // moved: picked, and the wave's test gate proves it. Overlap still routes to heal.
+    movedBase: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          branch: { type: 'string' },
+          taskId: { type: ['string', 'null'] },
+          movedFiles: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['branch', 'taskId', 'movedFiles'],
+      },
+    },
     // #21 — where the integrator actually stood. Not in the main tree = it would fold onto
     // the wrong branch and exclude a real candidate as "the target"; the wave stops.
     position: {
@@ -1004,7 +1019,10 @@ const integrateWave = (w, wave, reported = []) =>
       `0. POSITION: run \`git rev-parse --show-toplevel\` and \`git rev-parse --abbrev-ref HEAD\` and ` +
       `return them as position {toplevel, branch}. If toplevel is not ${root}, or the branch starts ` +
       `with \`worktree-\`, you are NOT in the main working tree: STOP — change nothing, return ` +
-      `integrated=false with a note saying where you are.\n` +
+      `integrated=false with a note saying where you are. Then record BASE = \`git rev-parse HEAD\` ` +
+      `NOW, before any cherry-pick: every staleness check below is against BASE, not the live ` +
+      `HEAD — your own picks move HEAD, and a peer you just picked must not make the next branch ` +
+      `look stale.\n` +
       `Do exactly this, in ${root}. Each candidate branch is reported under exactly ONE outcome, ` +
       `and once a branch is preserved you MUST CONTINUE to every remaining candidate — never ` +
       `abort the wave on the first bad branch. A preserved branch's clean peers still land in ` +
@@ -1032,11 +1050,18 @@ const integrateWave = (w, wave, reported = []) =>
       `wave task list above, AND add \`{branch,taskId}\` to unstamped[] — a fallback mapping is ` +
       `an anomaly the caller must see, never a silent success.\n` +
       `3. For each candidate — checks IN ORDER (staleness first, then overflow, then cherry-pick):\n` +
-      `  3a. STALENESS (ADR-015 cause #1): \`git merge-base HEAD <branch>\` vs \`git rev-parse HEAD\`. ` +
-      `If SHAs differ: STALE — do NOT cherry-pick (a clean pick proves nothing; phase-04 stacked ` +
-      `duplicate helpers with zero conflict markers). PRESERVE branch/worktree — do NOT tear it ` +
-      `down. Add \`{branch,taskId}\` (the taskId from step 2) to staleBranches[]. CONTINUE to the ` +
-      `next candidate.\n` +
+      `  3a. STALENESS (ADR-015 cause #1): FORK = \`git merge-base BASE <branch>\`. FORK == BASE → ` +
+      `level, go to 3b. FORK != BASE → the working branch moved while this branch was being built ` +
+      `(#22: often an unrelated commit, e.g. a pipelined plan). Compare what moved with what the ` +
+      `branch changed: MOVED = \`git diff --name-only FORK BASE\`, MINE = \`git diff --name-only ` +
+      `FORK <branch>\`.\n` +
+      `    - They share NO file → MOVED BASE, DISJOINT: go on to 3b/3c as normal, and add ` +
+      `\`{branch,taskId,movedFiles}\` (movedFiles = MOVED) to movedBase[] — the script runs the ` +
+      `test gate on this wave, so the pick is proven against the moved base rather than assumed.\n` +
+      `    - They share ANY file → STALE — do NOT cherry-pick (a clean pick proves nothing when ` +
+      `both sides touched the same file; phase-04 stacked duplicate helpers with zero conflict ` +
+      `markers). PRESERVE branch/worktree — do NOT tear it down. Add \`{branch,taskId}\` (the ` +
+      `taskId from step 2) to staleBranches[]. CONTINUE to the next candidate.\n` +
       `  3b. OVERFLOW (ADR-016 cause #2): \`git diff --name-only <merge-base>..<branch>\` vs ` +
       `declared file(s) from the wave task list. Extra files (changed but not declared):\n` +
       `    - Any extra file claimed by ANOTHER wave task → COLLISION: do NOT cherry-pick, ` +
@@ -1493,6 +1518,19 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
         `audit and re-runs cannot see it; stamp the commit rather than re-running the task.`,
     )
     unstampedBranches.push({ wave: w + 1, branch: u.branch, taskId: u.taskId ?? null })
+  }
+
+  // #22 — the working branch moved during the wave (a pipelined plan's commit, anything),
+  // but not in any file this branch changed. It used to be STALE by identity alone, and the
+  // heal ladder re-ran the task — up to every task of the wave, at executor tier, producing
+  // a different implementation. It is picked instead, and the test gate below must pass.
+  for (const mb of (integ && integ.movedBase) || []) {
+    log(
+      `⚠ wave ${w + 1}: \`${mb.branch}\`` + (mb.taskId ? ` (task ${mb.taskId})` : '') +
+        ` forked before ${(mb.movedFiles || []).length} file(s) changed on the working branch, none of ` +
+        `its own — integrated on a moved base, test gate required (#22)`,
+    )
+    overflowFlagged = true
   }
 
   for (const advisory of (integ && integ.advisories) || []) {

@@ -64,7 +64,11 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    `PLAN.md` and `ACCEPTANCE.md` and leaves them UNTRACKED. Untracked files in the shared
    working tree are one `git stash -u` / `git clean` away from gone — that is exactly how a
    completed plan was destroyed in benchmark #2, with every downstream step still reporting
-   success. Commit them now:
+   success. Commit them now — **unless an `/astro-execute` run is in flight on this working
+   branch** (the pipelined plan of `/astro-execute` step 4b): then leave them untracked and
+   commit right after that run returns. A commit mid-wave moves the base every running
+   branch forked from (#22); the integrator's ban on unscoped `git stash`/`git clean`
+   (ADR-035) covers the untracked window. Otherwise, commit now:
 
    ```
    git add .astrocode/phases/<slug>/ && git commit -m "plan(<slug>): pre-registered criteria + executable plan"
