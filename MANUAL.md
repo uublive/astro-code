@@ -47,6 +47,22 @@ It's idempotent; `ac uninstall` reverses it everywhere.
 refreshes the global CLI, and re-links across every profile. The first time, if it
 can't find your clone, run `ac update <path-to-clone>` once and it remembers it.
 
+### Letting Claude Code run the shipped workflows
+
+`/astro-plan`, `/astro-execute` and `/astro-fast` run workflow scripts that live in
+`~/.astro/code/workflows`, outside your project. Claude Code only reads a `scriptPath`
+outside the project when that directory is granted, so add it once — per project in
+`.claude/settings.local.json`, or for every project in `~/.claude/settings.json`:
+
+```json
+{ "permissions": { "additionalDirectories": ["<output of: ac path>"] } }
+```
+
+Paste what `ac path` prints, not a hand-typed `~/.astro/code`: it resolves symlinks, and
+on systems where `/home` is a link (`/var/home` on Fedora Silverblue, Bazzite and other
+ostree distros) only the resolved form matches. Don't copy the scripts into the project
+instead — a local copy silently goes stale after `ac update`.
+
 ### Windows / PowerShell
 
 `ac` is shadowed by PowerShell's built-in `Add-Content` alias (aliases beat external

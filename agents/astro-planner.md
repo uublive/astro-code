@@ -15,6 +15,11 @@ declare:
 - `file` — the file(s) it touches
 - `depends_on` — ids of tasks that must finish first (empty if independent)
 
+A task that by design changes nothing — a verification-only gate — additionally says
+`commits: none`. Use it sparingly: every other task must land a stamped commit, and
+the completeness audit fails any task that doesn't unless it carries this declaration.
+Prefer folding a final gate into a task that commits something.
+
 Also write `.astrocode/phases/<slug>/ACCEPTANCE.md`: a short, user-facing UAT
 checklist of "the user can …" statements that a human will confirm before the phase
 closes (acceptance criteria, not unit tests). Keep it to the handful that prove the

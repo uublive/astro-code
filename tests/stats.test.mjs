@@ -61,3 +61,24 @@ test('collectStats reports unavailable when the project has no transcripts', asy
     assert.equal(collectStats(ROOT).available, false);
   });
 });
+
+// #38: Claude Code slugs every non-alphanumeric character, not only '/'. A path
+// with a '.' or '_' must resolve to the same directory Claude Code writes to.
+test('transcriptDir matches Claude Code\'s slug for paths with dots and underscores', async () => {
+  const cfg = mkdtempSync(join(tmpdir(), 'ac-cfg-'));
+  await withCfg(cfg, ({ transcriptDir }) => {
+    assert.strictEqual(
+      transcriptDir('/var/home/luigi.lauro/Projects/retro_gaming'),
+      join(cfg, 'projects', '-var-home-luigi-lauro-Projects-retro-gaming'),
+    );
+  });
+});
+
+test('collectStats finds transcripts for a project path containing a dot (#38)', async () => {
+  const cfg = mkdtempSync(join(tmpdir(), 'ac-cfg-'));
+  const dir = join(cfg, 'projects', '-home-luigi-lauro-proj');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 's.jsonl'), JSON.stringify({ timestamp: '2026-06-01T10:00:00.000Z', message: { usage: { input_tokens: 7 } } }));
+  const res = await withCfg(cfg, ({ collectStats }) => collectStats('/home/luigi.lauro/proj'));
+  assert.notStrictEqual(res.available, false, `looked in ${res.dir}`);
+});

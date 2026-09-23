@@ -178,6 +178,12 @@ const TASK_SCHEMA = {
           file: { type: 'string' },
           depends_on: { type: 'array', items: { type: 'string' } },
           done: { type: 'boolean' },
+          // #10 — true ONLY when the plan explicitly declares the task commit-free (a
+          // verification-only gate). Such a task is exempt from the completeness audit,
+          // which otherwise fails it on every run and skips Verify. Declared, never
+          // inferred from a missing `file`: an undeclared no-commit task is still a
+          // silently dropped task and must still fail the audit.
+          no_commit: { type: 'boolean' },
         },
         // ADR-038 — `file` is REQUIRED. Benchmark #3: Discover omitted it for every task of
         // one 24-task phase (and supplied it for all 17 of another, same models, same plan
@@ -208,7 +214,10 @@ const disc = await agent(
     `that must complete before this one. Use the ids exactly as written in the plan.\n\n` +
     `For each task, set done:true or done:false using this EXACT check (replace <taskId> with the task id):\n` +
     `  git log --oneline --fixed-strings --grep "(phase ${phaseNum} <taskId>)"\n` +
-    `If the command returns at least one line, set done:true; otherwise set done:false.`,
+    `If the command returns at least one line, set done:true; otherwise set done:false.\n\n` +
+    `Set no_commit:true ONLY for a task the plan explicitly declares commits nothing ` +
+    `(\`commits: none\`, e.g. a verification-only gate). Omit it for every other task — never ` +
+    `infer it from a missing or empty file.`,
   { schema: TASK_SCHEMA, phase: 'Discover', model: models.discover, effort: reasoning.discover },
 )
 
@@ -612,6 +621,15 @@ if (strategy === 'sequential' && wildcardTasks && tasks.length > SEQ_BUDGET) {
   )
 }
 
+// Per-task agent label: `exec:t9 publish a partial unit…`. The id alone made a long
+// /workflows run a column of opaque codes (#39); the title is already on the task.
+// Truncated because the value is recognising the row, and the column is narrow.
+const LABEL_MAX = 48
+const taskLabel = (kind, t) => {
+  const full = t.title ? `${kind}:${t.id} ${String(t.title).replace(/\s+/g, ' ').trim()}` : `${kind}:${t.id}`
+  return full.length > LABEL_MAX ? full.slice(0, LABEL_MAX - 1) + '…' : full
+}
+
 // execPrompt carries the file-ownership hygiene sentence (phase-06 t3 / ADR-016):
 // executors must declare up-front if they touch files outside their declared set.
 // The integrator — NOT the executor — decides whether that overflow routes to the
@@ -619,6 +637,18 @@ if (strategy === 'sequential' && wildcardTasks && tasks.length > SEQ_BUDGET) {
 // contract in the prompt prevents silent cross-file pollution; the sentence must NOT
 // appear in healPrompt because heal re-runs are sequential on-branch and the
 // co-scheduling hazard is gone by then (CONTEXT.md note 1).
+// #24 — the executor verifies its OWN stamp before reporting. A rule that held for 15 of
+// 17 commits in one run is a rule whose failures stay invisible until the integrator
+// and the audit need the stamp — each miss then costs a full heal cycle on work that
+// was already complete and correct. The executor knows its task id; checking is one git
+// call, and amending its own not-yet-integrated commit is the cheapest place to fix it.
+const stampSelfCheck = (t) =>
+  `Before you report success, CHECK the stamp: run \`git log -1 --format=%s\` and confirm the ` +
+  `subject ends with \`(phase ${phaseNum} ${t.id})\`. If it does not, fix it with ` +
+  `\`git commit --amend -m "<subject> (phase ${phaseNum} ${t.id})"\` and check again. Never report ` +
+  `an unstamped commit as done: the integrator maps branches by this stamp, and a miss costs a ` +
+  `whole heal cycle to repair. `
+
 const execPrompt = (t) =>
   `Implement task ${t.id} — "${t.title}" — of phase ${phaseSlug} in project ${root}.\n` +
   `Plan/task file: ${t.file || `${root}/.astrocode/phases/${phaseSlug}/PLAN.md`}\n` +
@@ -629,14 +659,20 @@ const execPrompt = (t) =>
   `End the commit subject with the stamp \`(phase ${phaseNum} ${t.id})\` — this exact suffix ` +
   `enables idempotent re-execution (ADR-017): a later re-run of /astro-execute will detect ` +
   `the stamp and skip this task rather than re-executing it. ` +
+  (t.no_commit ? '' : stampSelfCheck(t)) +
   `Return a short summary of what you changed.` +
+  (t.no_commit
+    ? `\nThis task is declared COMMIT-FREE in the plan (a verification-only gate): do the ` +
+      `checks it describes and report the result, but make NO commit — there is nothing to ` +
+      `stamp, and an empty commit made only to satisfy an audit is a fake entry in history.`
+    : '') +
   OBEY +
   BAR +
   NO_BROAD_STASH +
   SYNC_WORKTREE
 
 const runOnBranch = (t) =>
-  agent(execPrompt(t), { label: `exec:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor })
+  agent(execPrompt(t), { label: taskLabel('exec', t), phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor })
 
 // healPrompt is DISTINCT from execPrompt — it tells the executor this is a HEAL
 // re-run after an integration cherry-pick conflict, so it must not blindly pick up
@@ -661,13 +697,14 @@ const healPrompt = (t, preservedBranch) =>
   `Match the project canon exactly (stack, naming, patterns). ` +
   `The stamp \`(phase ${phaseNum} ${t.id})\` must appear at the end of the commit subject — ` +
   `it enables idempotent re-execution (ADR-017) so future re-runs skip this healed task. ` +
+  stampSelfCheck(t) +
   `Return a short summary of what you changed.` +
   OBEY +
   BAR +
   NO_BROAD_STASH
 
 const runHealOnBranch = (t, preservedBranch) =>
-  agent(healPrompt(t, preservedBranch), { label: `heal:${t.id}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor })
+  agent(healPrompt(t, preservedBranch), { label: taskLabel('heal', t), phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor })
 
 // Strict schema for the healed-wave test gate (see the helper below).
 //
@@ -836,6 +873,20 @@ const INTEGRATE_SCHEMA = {
         required: ['branch', 'taskId', 'extraFiles'],
       },
     },
+    // #24 — branches mapped by the content FALLBACK because no commit carried the stamp.
+    // The fallback is right to exist; its silence was the defect.
+    unstamped: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          branch: { type: 'string' },
+          taskId: { type: ['string', 'null'] },
+        },
+        required: ['branch', 'taskId'],
+      },
+    },
     note: { type: 'string' },
   },
   required: ['integrated'],
@@ -893,7 +944,8 @@ const integrateWave = (w, wave) =>
       `wave task id → that taskId. Zero, or more than one distinct stamp → taskId:null (never ` +
       `guess — resolveHealList already falls back safely). FALLBACK, only for a branch with no ` +
       `stamped commit at all: infer taskId from the commit message and changed files against the ` +
-      `wave task list above.\n` +
+      `wave task list above, AND add \`{branch,taskId}\` to unstamped[] — a fallback mapping is ` +
+      `an anomaly the caller must see, never a silent success.\n` +
       `3. For each candidate — checks IN ORDER (staleness first, then overflow, then cherry-pick):\n` +
       `  3a. STALENESS (ADR-015 cause #1): \`git merge-base HEAD <branch>\` vs \`git rev-parse HEAD\`. ` +
       `If SHAs differ: STALE — do NOT cherry-pick (a clean pick proves nothing; phase-04 stacked ` +
@@ -1000,7 +1052,8 @@ const BATCH_SCHEMA = {
  */
 function missingFromBatch(orderedTasks, committed) {
   const c = new Set(committed)
-  return orderedTasks.filter((t) => !c.has(t.id))
+  // a declared commit-free task (#10) has no commit to report — never "missing"
+  return orderedTasks.filter((t) => !c.has(t.id) && !t.no_commit)
 }
 
 // batchPrompt is the FOURTH executor prompt (sibling to execPrompt/healPrompt/
@@ -1089,6 +1142,7 @@ const results = []
 // wave proceeds").
 const healedTaskIds = []
 let integrationFailed = null
+const unstampedBranches = [] // #24 — fallback-mapped branches, surfaced in the result
 // Adaptive worktree downgrade: once a parallel wave shows the MAJORITY of its
 // executors failing to get a worktree (the lock-race signature — partial success,
 // not a hard error), the environment is worktree-hostile.  This latch flips the
@@ -1164,7 +1218,7 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
   const out = await parallel(
     wave.map((t) => () =>
       agent(execPrompt(t), {
-        label: `exec:${t.id}`,
+        label: taskLabel('exec', t),
         phase: 'Execute',
         isolation: 'worktree',
         agentType: 'astro-executor',
@@ -1278,6 +1332,17 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
   // legitimate; blanket rejection would throw away good work).  Still, ANY wave
   // that deviated from its contract must run the test gate before later waves
   // build on it (CONTEXT.md § "The test gate extends to anomalous waves").
+  // #24 — a branch the integrator could only map by content: the work may be fine, but
+  // its commit lacks the ADR-017 stamp, so the audit and every re-run will miss it.
+  for (const u of (integ && integ.unstamped) || []) {
+    log(
+      `⚠ wave ${w + 1}: branch \`${u.branch}\`` + (u.taskId ? ` (task ${u.taskId})` : '') +
+        ` has NO \`(phase ${phaseNum} tK)\` stamp — mapped by content only. The completeness ` +
+        `audit and re-runs cannot see it; stamp the commit rather than re-running the task.`,
+    )
+    unstampedBranches.push({ wave: w + 1, branch: u.branch, taskId: u.taskId ?? null })
+  }
+
   for (const advisory of (integ && integ.advisories) || []) {
     log(
       `⚠ wave ${w + 1} overflow advisory: branch \`${advisory.branch}\`` +
@@ -1597,10 +1662,17 @@ const runStampAudit = (ids) =>
     { label: 'stamp-audit', phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: STAMP_AUDIT_SCHEMA },
   )
 
-if (!integrationFailed && executableTasks.length) {
-  const audit = await runStampAudit(executableTasks.map((t) => t.id))
+// #10 — a task the plan DECLARES commit-free (no_commit) has no stamp to find, so auditing
+// it failed every run identically and skipped Verify on a tree that was complete.
+const commitFreeTasks = executableTasks.filter((t) => t.no_commit)
+const auditedTasks = executableTasks.filter((t) => !t.no_commit)
+if (commitFreeTasks.length) {
+  log(`• completeness audit skips ${commitFreeTasks.length} declared commit-free task(s): ${commitFreeTasks.map((t) => t.id).join(', ')}`)
+}
+if (!integrationFailed && auditedTasks.length) {
+  const audit = await runStampAudit(auditedTasks.map((t) => t.id))
   const missing = (audit && Array.isArray(audit.missing) ? audit.missing : []).filter((id) =>
-    executableTasks.some((t) => t.id === id),
+    auditedTasks.some((t) => t.id === id),
   )
   if (missing.length) {
     // Two causes, and the message must not pretend to know which: the task produced no
@@ -1614,18 +1686,19 @@ if (!integrationFailed && executableTasks.length) {
       taskId: missing[0],
       branch: null,
       note:
-        `completeness audit: ${missing.length} of ${executableTasks.length} task(s) have no ` +
+        `completeness audit: ${missing.length} of ${auditedTasks.length} task(s) have no ` +
         `\`(phase ${phaseNum} tK)\` commit on the branch — ${missing.join(', ')}. Either the task ` +
         `produced no commit (work silently dropped: a pure-integration task whose dependencies ` +
         `lived in other worktrees can find nothing legitimate to commit from a stale fork base), ` +
         `or it committed without the ADR-017 stamp (which also breaks branch→task mapping and ` +
         `re-run resumability). Check \`git log --oneline\` for the work itself before re-running: ` +
         `if the change IS present but unstamped, amend the stamp; if it is absent, the task never ` +
-        `ran and a re-execute will pick it up.`,
+        `ran and a re-execute will pick it up. A task that is commit-free BY DESIGN must say ` +
+        `\`commits: none\` in the plan to be exempt.`,
     }
     log(`✖ completeness audit FAILED — ${missing.length} task(s) never landed a stamped commit: ${missing.join(', ')}`)
   } else {
-    log(`✓ completeness audit: all ${executableTasks.length} executable task(s) landed a stamped commit`)
+    log(`✓ completeness audit: all ${auditedTasks.length} committing task(s) landed a stamped commit`)
   }
 }
 
@@ -1838,6 +1911,7 @@ return {
   executed: results.length,
   skipped: skippedTaskIds,
   healed: healedTaskIds,
+  unstamped: unstampedBranches,
   remediationCycles,
   stoppedReason,
   integrationFailed,

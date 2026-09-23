@@ -396,8 +396,8 @@ test('runHealOnBranch is defined and calls agent with heal label and correct age
 
   // Must use label pattern `heal:${t.id}` or `heal:` prefix.
   assert.ok(
-    window.includes('heal:'),
-    'runHealOnBranch agent call must use a label with "heal:" prefix (e.g. `heal:${t.id}`)',
+    window.includes("taskLabel('heal', t)"),
+    'runHealOnBranch agent call must use a label with "heal:" prefix (taskLabel(\'heal\', t) — #39)',
   )
 
   // Must use agentType: 'astro-executor'.
@@ -805,7 +805,7 @@ test('static guard (t8-4): heal: agent label AND runTestSuite gate call are both
   // `heal:` label — present in runHealOnBranch's agent() call.  Absence means
   // the heal executor loses its identity in the Workflow event log.
   assert.ok(
-    wfSrc.includes('heal:'),
+    wfSrc.includes("taskLabel('heal', t)"),
     'execute-phase.mjs must contain a `heal:` agent label (ADR-014 heal-executor identity)',
   )
 
@@ -2674,6 +2674,8 @@ async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate, a
 // (`exec:batch`) or a per-task call (`exec:<id>`). This naturally excludes Discover/Verify
 // (no label), the integrator (`integrate:w<n>`), and heal re-runs (`heal:<id>`).
 const execCalls = (calls) => calls.filter((c) => c.opts && c.opts.label && c.opts.label.startsWith('exec:'))
+// Per-task labels carry the task title after the id (#39) — compare on the id part.
+const labelId = (label) => String(label).split(' ')[0]
 
 test('t4 (phase 13, C1): default sequential + >=2 not-done tasks -> exactly ONE executor call carrying ALL ids in waves.flat() order', async () => {
   const discoverTasks = chainTasks(3)
@@ -2704,10 +2706,12 @@ test('t4 (phase 13, C2): args.execMode:"per-task" restores N single-task executo
   const exec = execCalls(calls)
   assert.strictEqual(exec.length, 3, 'execMode:"per-task" must yield N (=3) single-task executor calls')
   assert.deepStrictEqual(
-    exec.map((c) => c.opts.label).sort(),
+    exec.map((c) => labelId(c.opts.label)).sort(),
     ['exec:t1', 'exec:t2', 'exec:t3'],
     'each call must carry exactly one task id, never a single call carrying all tasks',
   )
+  // #39: the label names the task, not just its id.
+  assert.ok(exec.some((c) => c.opts.label === 'exec:t2 Task 2'), `labels must carry the task title; got ${exec.map((c) => c.opts.label)}`)
 })
 
 test('t4 (phase 13, C2): args.leanExecution:false restores N single-task executor calls (no batch call)', async () => {
@@ -2720,7 +2724,7 @@ test('t4 (phase 13, C2): args.leanExecution:false restores N single-task executo
   const exec = execCalls(calls)
   assert.strictEqual(exec.length, 3, 'leanExecution:false must yield N (=3) single-task executor calls')
   assert.deepStrictEqual(
-    exec.map((c) => c.opts.label).sort(),
+    exec.map((c) => labelId(c.opts.label)).sort(),
     ['exec:t1', 'exec:t2', 'exec:t3'],
     'each call must carry exactly one task id, never a single call carrying all tasks',
   )
@@ -2763,9 +2767,9 @@ test('t4 (phase 13, C4): a batch that under-reports commits triggers a per-task 
   const exec = execCalls(calls)
   assert.strictEqual(exec.length, 2, 'expected the batch call PLUS exactly one per-task recovery call')
   assert.strictEqual(exec[0].opts.label, 'exec:batch', 'the first exec call must be the batch call')
-  assert.strictEqual(exec[1].opts.label, 'exec:t2', 'the recovery call must carry exactly the missing task (t2)')
+  assert.strictEqual(labelId(exec[1].opts.label), 'exec:t2', 'the recovery call must carry exactly the missing task (t2)')
   assert.ok(
-    !exec.some((c) => c.opts.label === 'exec:t1' || c.opts.label === 'exec:t3'),
+    !exec.some((c) => labelId(c.opts.label) === 'exec:t1' || labelId(c.opts.label) === 'exec:t3'),
     't1 and t3 (already reported committed) must NOT be re-run',
   )
 })
@@ -2802,7 +2806,7 @@ const threeIndependentTasks = () => [
   { id: 't2', title: 'Task 2', file: 'b.mjs', depends_on: [], done: false },
   { id: 't3', title: 'Task 3', file: 'c.mjs', depends_on: [], done: false },
 ]
-const byLabel = (calls, label) => calls.find((c) => c.opts && c.opts.label === label)
+const byLabel = (calls, label) => calls.find((c) => c.opts && c.opts.label && labelId(c.opts.label) === label)
 
 test('t2 (phase 14, C1): the wave integrator floors to sonnet when models.integrator is unset (ADR-035), an explicit override wins, and heal/testgate/teardown stay at the executor tier', async () => {
   const discoverTasks = threeIndependentTasks()
@@ -2849,7 +2853,7 @@ test('t2 (phase 14, C2): one bad branch does not cost the wave — exactly one i
   assert.strictEqual(integrateCalls.length, 1, 'exactly one integrator call must settle the wave')
   const healCalls = calls.filter((c) => c.opts && c.opts.label && c.opts.label.startsWith('heal:'))
   assert.strictEqual(healCalls.length, 1, 'exactly one heal call, for the bad branch alone')
-  assert.strictEqual(healCalls[0].opts.label, 'heal:t2')
+  assert.strictEqual(labelId(healCalls[0].opts.label), 'heal:t2')
   assert.deepStrictEqual(result.healed, ['t2'])
   assert.strictEqual(result.verdict.passed, true, 'the run must still reach a passing verdict')
 
@@ -2863,7 +2867,7 @@ test('t2 (phase 14, C2): one bad branch does not cost the wave — exactly one i
   const { calls: calls2 } = await runWorkflow(args, { discoverTasks, integ: integConflictOnT1 })
   const healCalls2 = calls2.filter((c) => c.opts && c.opts.label && c.opts.label.startsWith('heal:'))
   assert.strictEqual(healCalls2.length, 1)
-  assert.strictEqual(healCalls2[0].opts.label, 'heal:t1', 'the heal call must follow the conflict wherever it is reported')
+  assert.strictEqual(labelId(healCalls2[0].opts.label), 'heal:t1', 'the heal call must follow the conflict wherever it is reported')
 })
 
 test('t2 (phase 14, C3): a tornDown claim outside the cleanly-integrated set is caught as pure data and surfaced as an integration failure', async () => {
@@ -2919,7 +2923,7 @@ test('t2 (phase 14, C4): an unclaimed overflow advisory still integrates with a 
     tornDown: ['worktree-t1', 'worktree-t2', 'worktree-t3'],
   }
   const { calls, logs } = await runWorkflow(args, { discoverTasks, integ: advisoryOnly })
-  assert.ok(!calls.some((c) => c.opts && c.opts.label === 'heal:t1'), 'the advisory branch integrated — it must not heal')
+  assert.ok(!calls.some((c) => c.opts && c.opts.label && labelId(c.opts.label) === 'heal:t1'), 'the advisory branch integrated — it must not heal')
   assert.ok(
     logs.some((l) => l.includes('⚠') && l.includes('worktree-t1') && l.includes('z.mjs')),
     'a ⚠ log line must name the branch and the overflow file',
@@ -2957,7 +2961,7 @@ test('t2 (phase 14): source guard — the integrate agent() options line reads m
     'the integrate call must read models.integrator || \'sonnet\'',
   )
 
-  for (const needle of ['label: `heal:', "label: 'testgate'", 'label: `teardown:w']) {
+  for (const needle of ["label: taskLabel('heal', t)", "label: 'testgate'", 'label: `teardown:w']) {
     const line = lines.find((l) => l.includes(needle))
     assert.ok(line, `${needle} agent() options line not found`)
     assert.ok(line.includes('model: models.executor'), `${needle} must still read model: models.executor`)
@@ -3538,3 +3542,113 @@ test('deep effort escalates BOTH the tier and the reasoning, consistently', () =
   assert.match(src, /effort === 'deep'[\s\S]{0,200}executor: 'opus', verifier: 'opus'/);
   assert.match(src, /effort === 'deep'[\s\S]{0,300}executor: 'xhigh', verifier: 'xhigh'/);
 });
+
+// #39: a long title is truncated so the /workflows column stays readable.
+test('per-task labels carry a truncated title (#39)', async () => {
+  const long = 'publish a partial unit under its own identity so the manifest never lies about it'
+  const discoverTasks = [{ id: 't9', title: long, file: 'a.mjs', depends_on: [], done: false }, ...chainTasks(1)]
+  const { calls } = await runWorkflow(
+    { root: '/tmp/proj', phase: '13-warm-batched-sequential-executor', strategy: 'sequential', execMode: 'per-task' },
+    { discoverTasks },
+  )
+  const label = execCalls(calls).map((c) => c.opts.label).find((l) => l.startsWith('exec:t9 '))
+  assert.ok(label, 'the t9 call must be labeled exec:t9 <title>')
+  assert.ok(label.length <= 48, `label must be truncated; got ${label.length} chars`)
+  assert.ok(label.endsWith('…'))
+})
+
+// #10: a task the plan DECLARES commit-free (a verification-only gate) has no stamp to
+// find. Auditing it failed every run identically and skipped Verify on a complete tree.
+test('#10: a declared commit-free task is exempt from the completeness audit and Verify runs', async () => {
+  const tasks = chainTasks(3)
+  tasks[2] = { ...tasks[2], no_commit: true }
+  const { calls, result, logs } = await runWorkflow(
+    { root: '/tmp/p', phase: '40-x', strategy: 'sequential' },
+    // the batch reports only the committing tasks; the real audit would name t3 missing
+    { discoverTasks: tasks, batchCommitted: ['t1', 't2'], audit: { missing: ['t3'] } },
+  )
+  assert.strictEqual(result.integrationFailed, null, 'a commit-free task must not fail integration')
+  assert.ok(result.verdict && result.verdict.criteriaFound, 'Verify must run')
+  const audit = calls.find((c) => c.opts && c.opts.label === 'stamp-audit')
+  assert.ok(audit && !audit.prompt.includes('"t3"'), 'the commit-free task is not audited')
+  assert.ok(!execCalls(calls).some((c) => labelId(c.opts.label) === 'exec:t3'), 'no per-task re-run for a task that was never meant to commit')
+  assert.ok(logs.some((l) => /skips 1 declared commit-free task\(s\): t3/.test(l)), 'the exemption is visible in the log')
+})
+
+test('#10: a task with no file but NO declaration is still audited — absence is never inferred', async () => {
+  const tasks = [{ id: 't1', title: 'T1', file: '', depends_on: [], done: false }]
+  const { result } = await runWorkflow(
+    { root: '/tmp/p', phase: '40-x', strategy: 'sequential' },
+    { discoverTasks: tasks, audit: { missing: ['t1'] } },
+  )
+  assert.ok(result.integrationFailed, 'an undeclared no-commit task is still a dropped task')
+})
+
+// #24: an executor must check its own stamp before reporting, and a branch the
+// integrator could only map by content is a reported anomaly, not a silent success.
+test('#24: exec and heal prompts carry the stamp self-check; commit-free tasks do not', async () => {
+  const tasks = chainTasks(2)
+  tasks[1] = { ...tasks[1], no_commit: true }
+  const { calls } = await runWorkflow(
+    { root: '/tmp/p', phase: '40-x', strategy: 'sequential', execMode: 'per-task' },
+    { discoverTasks: tasks, audit: { missing: [] } },
+  )
+  const t1 = execCalls(calls).find((c) => labelId(c.opts.label) === 'exec:t1')
+  const t2 = execCalls(calls).find((c) => labelId(c.opts.label) === 'exec:t2')
+  assert.match(t1.prompt, /git log -1 --format=%s/, 'exec prompt must tell the executor to check its stamp')
+  assert.match(t1.prompt, /\(phase 40 t1\)/)
+  assert.doesNotMatch(t2.prompt, /git log -1 --format=%s/, 'a commit-free task has no stamp to check')
+  assert.match(readFileSync(WF_FILE, 'utf8'), /\+\s*stampSelfCheck\(t\) \+\s*`Return a short summary/, 'healPrompt carries it too')
+})
+
+test('#24: fallback-mapped (unstamped) branches are logged and returned', async () => {
+  const { result, logs } = await runWorkflow(
+    { root: '/tmp/p', phase: '40-x', strategy: 'parallel' },
+    {
+      discoverTasks: [
+        { id: 't1', title: 'T1', file: 'a.mjs', depends_on: [], done: false },
+        { id: 't2', title: 'T2', file: 'b.mjs', depends_on: [], done: false },
+      ],
+      integ: { integrated: true, branches: ['worktree-a', 'worktree-b'], tornDown: ['worktree-a', 'worktree-b'], unstamped: [{ branch: 'worktree-b', taskId: 't2' }] },
+    },
+  )
+  assert.deepStrictEqual(result.unstamped, [{ wave: 1, branch: 'worktree-b', taskId: 't2' }])
+  assert.ok(logs.some((l) => /worktree-b.*task t2.*NO `\(phase 40 tK\)` stamp/.test(l)), `expected an unstamped warning; logs:\n${logs.join('\n')}`)
+})
+
+// #23: re-planning silently replaced a registered CRITERIA.md. The criteria author now
+// keeps the registered bar and returns the delta; removals are logged and returned.
+async function runPlanPhase(criteriaReturn) {
+  const src = readFileSync(PLAN_PHASE_FILE, 'utf8').replace(/^export const meta/m, 'const meta')
+  const fn = new AsyncFunction('phase', 'agent', 'parallel', 'log', 'args', src)
+  const calls = []
+  const logs = []
+  const agent = async (prompt, opts = {}) => {
+    calls.push({ prompt, opts })
+    return opts.phase === 'Criteria' ? criteriaReturn : 'ok'
+  }
+  const parallel = (thunks) => Promise.all(thunks.map((f) => f()))
+  const result = await fn(() => {}, agent, parallel, (m) => logs.push(String(m)), { root: '/tmp/p', phase: '09-x' })
+  return { calls, logs, result }
+}
+
+test('#23: the criteria author is told an existing CRITERIA.md is the registered bar', async () => {
+  const { calls } = await runPlanPhase({ count: 3, previousCount: 0, added: ['C1', 'C2', 'C3'], removed: [] })
+  const c = calls.find((x) => x.opts.phase === 'Criteria')
+  assert.match(c.prompt, /RE-REGISTRATION/)
+  assert.match(c.prompt, /Never drop one silently/)
+  assert.ok(c.opts.schema && c.opts.schema.properties.removed, 'the delta must be structured, not prose')
+})
+
+test('#23: a re-plan that removes criteria reports each one, in the log and the result', async () => {
+  const removed = [{ id: 'C13', title: 'a thousand rows stay fast', reason: 'goal no longer covers bulk import' }]
+  const { logs, result } = await runPlanPhase({ count: 14, previousCount: 15, added: [], removed })
+  assert.deepStrictEqual(result.criteria.removed, removed)
+  assert.ok(logs.some((l) => /15 → 14.*REMOVED C13/.test(l)), logs.join('\n'))
+  assert.ok(logs.some((l) => /⚠ criterion C13 .*removed/.test(l)))
+})
+
+test('#23: a first registration logs no re-registration delta', async () => {
+  const { logs } = await runPlanPhase({ count: 5, previousCount: 0, added: ['C1'], removed: [] })
+  assert.ok(!logs.some((l) => /re-registered/.test(l)))
+})

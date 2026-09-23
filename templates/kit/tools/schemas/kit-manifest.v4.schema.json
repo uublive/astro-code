@@ -60,7 +60,7 @@
         "verify": {
           "type": "string",
           "minLength": 1,
-          "description": "Optional POSIX shell one-liner Astro runs post-install to confirm the tool is functional. Exit code 0 = healthy. Semantic meaning specified in Astro installer spec (Phase 37)."
+          "description": "POSIX shell one-liner Astro runs post-install to confirm the package is functional (exit 0 = healthy), usually an import of its module name: python3 -c \"import docx\" for python-docx. Required by the hosted registry for pip tools (validate_manifest.py enforces it): without it the instance assumes a CLI named after the package, and a missing one breaks provisioning for every kit."
         }
       }
     },
