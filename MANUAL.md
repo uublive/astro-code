@@ -172,7 +172,11 @@ could later collide — set up an `origin` and run `ac registry init` first.
 > `ac phase note <n> "<text>"` for a note that survives.
 
 A phase's milestone lives **on the phase**. Scheduling a phase for a future milestone never
-moves the project; correct a wrong assignment with `ac phase milestone <n> <N>`.
+moves the project; correct a wrong assignment with `ac phase milestone <n> <N>`, which
+moves the phase's registry claim too (it refuses, changing nothing, if the registry is
+unreachable). `ac status` flags any phase whose roadmap and registry milestones differ.
+Closing a milestone archives only its own phases — ones scheduled for a later milestone
+stay on the roadmap.
 
 ---
 
@@ -201,7 +205,8 @@ debt. You type nothing; `ac debt list` is the quality dashboard you check when y
 like it.
 
 An item is never worked in place: it **graduates** into the objects that already exist —
-`ac debt pay <id>` opens a **fix**, `--as phase` puts it on the **roadmap** — and closes
+`ac debt pay <id>` opens a **fix**, `--as phase` puts it on the **roadmap** (under the
+active milestone, or `--milestone N` for a later one) — and closes
 when that work is *accepted*, never on a promise.
 
 That automatic outflow is the whole design: a list whose entries only leave when a human
@@ -457,7 +462,7 @@ ac phase effort <n> deep       # per-phase verify→remediate budget (light|stan
 ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
 ac phase milestone <n> [<N>]   # read/correct a phase's milestone (never moves the project)
 ac milestone new               # claim the next milestone number
-ac milestone complete          # archive the current milestone
+ac milestone complete          # archive the current milestone's phases (refuses over unfinished ones; --force)
 
 ac fix add "<what is broken>"  # open a bugfix (dated id, no phase number)
 ac fix list                    # what is open
@@ -466,7 +471,7 @@ ac fix accept <id> --agent <n> # machine-signed (ADR-033): records accepted_kind
 
 ac debt list [--stale]         # open technical debt (the verifier files it automatically)
 ac debt score                  # pay-it-down-now signal, 0-100, with the evidence
-ac debt pay <id> [--as phase]  # graduate it into a fix (default) or a roadmap phase
+ac debt pay <id> [--as phase] [--milestone N]  # graduate it into a fix (default) or a roadmap phase
 ac debt drop <id> --reason "…" # it WAS true and stopped being true
 ac debt dismiss <id> --reason … # it was NEVER true — the verifier was wrong
 
