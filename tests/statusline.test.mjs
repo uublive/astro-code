@@ -319,11 +319,16 @@ test('truncate collapses whitespace and ellipsizes past the cap', () => {
   assert.equal(truncate('abcdefghij', 5), 'abcd…');
 });
 
-test('renderClaudeSegment shows model + a coloured fill bar; model-only when no tokens', () => {
+test('renderClaudeSegment shows model + a ctx gauge drawn like the quota; model-only when no tokens', () => {
   const seg = renderClaudeSegment({ model: { display_name: 'Opus 4.8' }, tokens: 104_000, limit: 200_000 });
   assert.match(seg, /Opus 4\.8/);
-  assert.match(seg, /[█░]/, 'graphical bar present');
-  assert.match(seg, /52% · 104k\/200k/);
+  assert.match(seg, /ctx [█░]{5} 52%/, 'label, 5-cell bar (the quota width), percent');
+  assert.doesNotMatch(seg, /104k|200k/, 'no tokens/limit tail');
+  assert.equal(
+    renderClaudeSegment({ model: { display_name: 'Opus 4.8' }, tokens: 104_000, limit: 200_000, bar: false }),
+    'Opus 4.8 ctx 52%',
+    'bar shed first, like the quota numbers tier',
+  );
   assert.equal(renderClaudeSegment({ model: { display_name: 'Opus 4.8' }, tokens: null, limit: 200_000 }), 'Opus 4.8');
   assert.equal(renderClaudeSegment({}), '', 'empty with no model');
 });
@@ -458,7 +463,7 @@ test('the statusline hook composes model + context bar from stdin + transcript',
   // already on screen right above the status line.
   assert.ok(!r.stdout.includes('ship the statusline'), 'the prompt is NOT echoed back');
   assert.match(r.stdout, /Opus 4\.8/, 'model');
-  assert.match(r.stdout, /10% · 100k\/1M/, 'context-fill bar (Opus 4.8 → 1M window)');
+  assert.match(r.stdout, /ctx [█░]{5} 10%/, 'context gauge (Opus 4.8 → 1M window)');
   assert.match(r.stdout, /⊡ M1 · ‹2 \(P3\)/, 'the project identity segment still there');
 });
 

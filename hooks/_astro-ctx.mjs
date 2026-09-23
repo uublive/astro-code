@@ -488,17 +488,23 @@ export function rampColor(fraction) {
   return f >= 0.85 ? ANSI.red : f >= 0.6 ? ANSI.yellow : ANSI.green;
 }
 
-// model name + a context-fill bar (bar+percent+tokens/limit). `tokens`/`limit`
-// may be null (no transcript yet) → only the model shows. Colour ramps
-// green→yellow→red as the window fills. Empty when there's no model at all.
-export function renderClaudeSegment({ model, tokens, limit } = {}) {
+// model name + a context-fill gauge drawn exactly like the quota windows:
+// `ctx █░░░░ 13%` — label, 5-cell bar, percent, one ramp. `bar: false` sheds the
+// bar first, as the quota does on a narrow line. The old `130k/1M` tail is gone:
+// the percent answers "how full", and the denominator was 1M on every current model.
+// `tokens`/`limit` may be null (no transcript yet) → only the model shows. Empty
+// when there's no model at all.
+export function renderClaudeSegment({ model, tokens, limit, bar = true } = {}) {
   const parts = [];
   const name = model && (model.display_name || model.id);
   if (name) parts.push(paint(name, ANSI.cyan));
   if (tokens != null && limit) {
     const f = tokens / limit;
     const col = rampColor(f);
-    parts.push(`${paint(progressBar(f), col)} ${Math.round(f * 100)}% · ${kfmt(tokens)}/${kfmt(limit)}`);
+    const bits = ['ctx'];
+    if (bar) bits.push(paint(progressBar(f, RATE_LIMIT_BAR_WIDTH), col));
+    bits.push(paint(`${Math.round(f * 100)}%`, col));
+    parts.push(bits.join(' '));
   }
   return parts.join(' ');
 }

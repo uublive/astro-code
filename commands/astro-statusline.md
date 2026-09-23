@@ -17,9 +17,9 @@ Wire up (or refresh) astro-code's rich statusline for this machine, then show th
      in flight (Claude is working), a hollow dim **○** when idle/waiting for you
    - **❯ recap** — the task in flight (your last request, squished to one line)
    - **model** — the running model (e.g. `Opus 4.8`)
-   - **context bar** — how full the context window is: a graphical `█░` bar +
-     percent + `tokens/limit`, coloured green→yellow→red as it fills (the 1M-context
-     Opus variant is detected from its `[1m]` id; everything else is the 200k window)
+   - **ctx** — how full the context window is, drawn like the quota windows:
+     `ctx █░░░░ 13%`, on the same green→yellow→red ramp. On a narrow line the bar goes
+     first (`ctx 13%`). Current models have a 1M window; Haiku and legacy models 200k
    - **rate-limit quota** — how much of your subscription's rolling **5h** and
      **7d** windows is spent (`5h ██░░░ 23% · 7d ███░░ 41%`), plus a gateway-only
      **spend cap** (`cap`) when present. Shown whenever Claude sends the data —
