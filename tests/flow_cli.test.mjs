@@ -17,11 +17,11 @@
 // is fully self-contained and can be executed in any order without depending on
 // flow.test.mjs loading first.
 //
-// GITHUB URL + PUSHURL TRICK (from flow.test.mjs t5/t7 pattern):
-//   git remote set-url origin https://github.com/… — fetch URL for compare-URL
-//   git remote set-url --push origin <bare-path>    — push URL stays local
-// This gives us a recognizable compare URL in assertions while the actual git
-// push lands on the local bare filesystem (no network needed).
+// GITHUB URL + INSTEADOF TRICK (see withRegistryAndGithubUrl):
+//   git remote set-url origin https://github.com/…        — URL for compare-URL
+//   git config url.<bare-path>.insteadOf https://github.com/… — all traffic local
+// This gives us a recognizable compare URL in assertions while every fetch and
+// push lands on the local bare filesystem (no network needed — see #49).
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -98,19 +98,22 @@ function withRegistry(dir) {
   return dir
 }
 
-// Wire up a bare remote with a github-style fetch URL so parseCompareUrl
-// returns a recognizable URL, but keep the pushurl as the local bare path so
-// no network is needed. Returns the bare path for ls-remote assertions.
+// Wire up a bare remote with a github-style URL so parseCompareUrl returns a
+// recognizable URL, while a repo-local `url.<bare>.insteadOf` rewrites that URL
+// back to the bare repo for every transport — fetch, ls-remote and push all stay
+// local. The old fetch-URL/pushurl split sent fetches and the registry probe to
+// github.com, which hung on a desktop credential prompt (#49) and left the
+// registry read always "unreachable". getRemoteUrl reads the configured URL, so
+// the compare URL still says github.com. Returns the bare path for ls-remote.
+const GITHUB_TEST_URL = 'https://github.com/test-owner/test-repo.git'
 function withRegistryAndGithubUrl(dir) {
   const bare = mkBareRemote()
   git(['remote', 'add', 'origin', bare], { cwd: dir })
   git(['push', '-u', 'origin', 'main'], { cwd: dir })
   const res = initRegistry({ root: dir })
   assert.equal(res.ok, true, `initRegistry failed: ${res.error}`)
-  // Override the fetch URL to a github-like URL for compare-URL construction.
-  // The pushurl stays as the bare filesystem path so the actual push lands locally.
-  git(['remote', 'set-url', 'origin', 'https://github.com/test-owner/test-repo.git'], { cwd: dir })
-  git(['remote', 'set-url', '--push', 'origin', bare], { cwd: dir })
+  git(['remote', 'set-url', 'origin', GITHUB_TEST_URL], { cwd: dir })
+  git(['config', `url.${bare}.insteadOf`, GITHUB_TEST_URL], { cwd: dir })
   return bare
 }
 
@@ -127,6 +130,9 @@ function ac(args, cwd) {
   return spawnSync(process.execPath, [join(FRAMEWORK, 'bin', 'ac.mjs'), ...args], {
     cwd,
     encoding: 'utf8',
+    // Backstop for #49: should any git call still reach a real remote, fail
+    // instead of waiting on a credential prompt nobody will answer.
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
   })
 }
 
@@ -195,6 +201,24 @@ test('ac flow pr exits 0 and prints a compare URL on a prepared feature branch',
   const lsRemote = git(['ls-remote', bare, `refs/heads/${head}`])
   assert.equal(lsRemote.status, 0, `ls-remote failed: ${lsRemote.stderr}`)
   assert.match(lsRemote.stdout, new RegExp(head.replace(/\//g, '\\/')), `remote ref ${head} not found after ac flow pr`)
+})
+
+// #49: with the github URL rewritten to the bare repo, the registry read is real,
+// so `ac flow` names the branch from the milestone's registry claim — not the
+// "registry unreachable" `m<N>` fallback these tests used to hit by accident.
+test('ac flow names the feature branch from the registry claim behind a github URL', () => {
+  const dir = scaffold(mkRepo())
+  enableFlow(dir)
+  withRegistryAndGithubUrl(dir)
+  flowInit(dir)
+
+  const ms = ac(['milestone', 'new', '--name', 'Offline Registry'], dir)
+  assert.equal(ms.status, 0, `ac milestone new failed: ${ms.stderr}`)
+
+  const r = ac(['flow'], dir)
+  assert.equal(r.status, 0, `ac flow failed: ${r.stderr}`)
+  const head = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir }).stdout.trim()
+  assert.match(head, /^feature\/m\d+-offline-registry$/, `branch should carry the registry name; got ${head}`)
 })
 
 // ---------------------------------------------------------------------------

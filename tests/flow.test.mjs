@@ -76,6 +76,18 @@ function mkBareRemote() {
   return bare
 }
 
+// Point origin at a github-like URL (so parseCompareUrl yields a recognizable
+// compare URL) WITHOUT any network: a repo-local `url.<bare>.insteadOf` rewrites
+// that URL back to the bare repo for every transport — fetch, ls-remote, push.
+// The old fetch-URL/pushurl split left fetches and the registry probe going to
+// github.com, which hung on a desktop credential prompt (#49). getRemoteUrl reads
+// the configured URL, so the compare URL still says github.com.
+const GITHUB_TEST_URL = 'https://github.com/test-owner/test-repo.git'
+function useGithubUrlOffline(dir, bare) {
+  git(['remote', 'set-url', 'origin', GITHUB_TEST_URL], { cwd: dir })
+  git(['config', `url.${bare}.insteadOf`, GITHUB_TEST_URL], { cwd: dir })
+}
+
 // Wire up a bare remote, push main, then run initRegistry so the orphan branch
 // exists and registryBranch(root) resolves. Returns the dir (fluent helper).
 function withRegistry(dir) {
@@ -586,11 +598,9 @@ test('flowPR pushes feature/m<N>-* to origin and returns a github compare URL ta
   assert.equal(br.ok, true, br.error || '')
   commitOnBranch(dir) // ensure feature branch has commits ahead of develop
 
-  // Override the fetch URL to a github-like URL so parseCompareUrl returns a real
-  // compare URL. Set a pushurl back to the filesystem bare so the actual push works
-  // without network access.
-  git(['remote', 'set-url', 'origin', 'https://github.com/test-owner/test-repo.git'], { cwd: dir })
-  git(['remote', 'set-url', '--push', 'origin', bare], { cwd: dir })
+  // Give origin a github-like URL so parseCompareUrl returns a real compare URL,
+  // and rewrite that URL back to the bare repo so every fetch/push stays local.
+  useGithubUrlOffline(dir, bare)
 
   const res = flowPR(dir)
 
@@ -753,10 +763,9 @@ test('flowRelease pushes develop and returns a develop→main compare URL', asyn
   git(['switch', 'develop'], { cwd: dir })
   commitOnBranch(dir, 'release-ready commit')
 
-  // Override fetch URL to a github-like URL for compare-URL construction; push
-  // URL stays as the bare filesystem path so no network access is required.
-  git(['remote', 'set-url', 'origin', 'https://github.com/test-owner/test-repo.git'], { cwd: dir })
-  git(['remote', 'set-url', '--push', 'origin', bare], { cwd: dir })
+  // Give origin a github-like URL so parseCompareUrl returns a real compare URL,
+  // and rewrite that URL back to the bare repo so every fetch/push stays local.
+  useGithubUrlOffline(dir, bare)
 
   const res = flowRelease(dir)
 
