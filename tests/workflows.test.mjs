@@ -1143,10 +1143,11 @@ test('t5: wave loop logs •/✖ for stale-base branches routed to heal', () => 
 function extractIntegratorPromptWindow(wfSrc) {
   const startIdx = wfSrc.indexOf('const integrateWave')
   if (startIdx === -1) return null
-  // Phase-14 t7: widened from 3000 to 6500 alongside extractIntegrateWaveBody —
-  // the stamp-mapping + explicit continue + bounded-teardown rewrite pushed the
-  // prompt's tail (teardown/confirm/return) past the old 3000-char cutoff.
-  return wfSrc.slice(startIdx, startIdx + 6500)
+  // To the END of the prompt (its `schema: INTEGRATE_SCHEMA` option), not a fixed byte
+  // count: this was widened by hand from 3000 to 6500 once already, and #25 grew the
+  // prompt past that too. A fixed window asserts POSITION when the claim is PRESENCE.
+  const endIdx = wfSrc.indexOf('schema: INTEGRATE_SCHEMA', startIdx)
+  return wfSrc.slice(startIdx, endIdx === -1 ? undefined : endIdx)
 }
 
 /**
@@ -2634,7 +2635,7 @@ function chainTasks(n, doneIds = []) {
  *   behavior is unchanged).
  * @returns {Promise<{ calls: Array<object>, logs: Array<string>, result: object }>}
  */
-async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate, audit } = {}) {
+async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate, audit, teardown } = {}) {
   const calls = []
   const logs = []
   const agent = async (prompt, opts = {}) => {
@@ -2647,6 +2648,7 @@ async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate, a
       return { committed, summary: 'batch landed' }
     }
     if ('missing' in props) return audit || { missing: [] }   // ADR-040 stamp audit
+    if ('removed' in props && teardown) return teardown          // #25 heal teardown, when a test supplies it
     if ('integrated' in props) return integ || { integrated: true, branches: [] }
     if ('criteriaFound' in props) return { passed: true, criteriaFound: true, summary: 'ok', criteria: [] }
     // TESTGATE_SCHEMA is now the ONLY schema carrying `ranSuite` (ADR-028), so that is
@@ -3290,9 +3292,8 @@ test('ADR-031: the batch executor prompt carries the bar', async () => {
 
 test('ADR-035: the integrator prompt forbids unscoped destructive git in the shared tree', () => {
   const wfSrc = readFileSync(WF_FILE, 'utf8')
-  const i = wfSrc.indexOf('const integrateWave')
-  assert.ok(i !== -1, 'integrateWave not found')
-  const body = wfSrc.slice(i, i + 6000)
+  const body = extractIntegratorPromptWindow(wfSrc)
+  assert.ok(body, 'integrateWave not found')
   assert.ok(/git stash -u/.test(body) && /NEVER/.test(body), 'must explicitly forbid a bare `git stash -u`')
   assert.ok(/git clean/.test(body) && /reset --hard/.test(body), 'must forbid the other unscoped destroyers too')
   // Forbidding without offering the correct form just pushes it to improvise.
@@ -3651,4 +3652,86 @@ test('#23: a re-plan that removes criteria reports each one, in the log and the 
 test('#23: a first registration logs no re-registration delta', async () => {
   const { logs } = await runPlanPhase({ count: 5, previousCount: 0, added: ['C1'], removed: [] })
   assert.ok(!logs.some((l) => /re-registered/.test(l)))
+})
+
+// ── #25: teardown has a degraded mode ────────────────────────────────────────
+// A project's own guard may deny a cleanup command. The agents correctly refuse to work
+// around it; the run must then REPORT what was left, not strand the sequence silently.
+
+test('#25: cleanup is best-effort, one command at a time, and never runs `git worktree prune`', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const integ = joinTemplateLiteral(extractIntegratorPromptWindow(wfSrc))
+  assert.match(wfSrc, /Attempt each step even if the other was refused/)
+  assert.match(wfSrc, /do NOT work around the guard/)
+  assert.match(wfSrc, /Do NOT run \\`git worktree prune\\`/)
+  assert.doesNotMatch(wfSrc, /and finally \\`git worktree prune\\`/, 'prune is no longer a step of the chain')
+  assert.match(integ, /CLEANUP_STEPS\('<branch>'\)/, 'the integrator uses the same best-effort steps')
+  assert.match(integ, /A refused cleanup does NOT make the wave fail/)
+})
+
+test('#25: the integrator skips already-integrated residue via git cherry, and the verifier agrees', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const integ = joinTemplateLiteral(extractIntegratorPromptWindow(wfSrc))
+  assert.match(integ, /git cherry HEAD <branch>/)
+  assert.match(integ, /already integrated \(residue\)/)
+  assert.doesNotMatch(integ, /Keep only branches where \\`git rev-list HEAD\.\.<branch>\\` is non-empty/)
+  const verifier = readFileSync(join(dirname(WF_FILE), '..', 'agents', 'astro-verifier.md'), 'utf8')
+  assert.match(verifier, /git cherry HEAD <branch>/, 'a residue branch must not false-FAIL verification')
+})
+
+test('#25: integrator leftovers are reported in the result and the run still passes', async () => {
+  const { result, logs } = await runWorkflow(
+    { root: '/tmp/p', phase: '40-x', strategy: 'parallel' },
+    {
+      discoverTasks: [
+        { id: 't1', title: 'T1', file: 'a.mjs', depends_on: [], done: false },
+        { id: 't2', title: 'T2', file: 'b.mjs', depends_on: [], done: false },
+      ],
+      integ: {
+        integrated: true,
+        branches: ['worktree-a', 'worktree-b'],
+        tornDown: ['worktree-a'],
+        leftover: [
+          { branch: 'worktree-b', worktree: '/p/.claude/worktrees/b', reason: '`git branch -D` denied by a PreToolUse hook' },
+          { branch: 'worktree-old', worktree: null, reason: 'already integrated (residue)' },
+        ],
+      },
+    },
+  )
+  assert.strictEqual(result.integrationFailed, null, 'a refused cleanup is not an integration failure')
+  assert.deepStrictEqual(result.leftovers.map((l) => l.branch).sort(), ['worktree-b', 'worktree-old'])
+  const b = result.leftovers.find((l) => l.branch === 'worktree-b')
+  assert.deepStrictEqual(b, { wave: 1, branch: 'worktree-b', worktree: '/p/.claude/worktrees/b', reason: '`git branch -D` denied by a PreToolUse hook' })
+  assert.ok(logs.some((l) => /left `worktree-b` .*denied by a PreToolUse hook.*clean up manually/.test(l)), logs.join('\n'))
+})
+
+test('#25: heal-teardown leftovers carry their reason; an unreported branch is still listed', async () => {
+  const { result } = await runWorkflow(HEAL_ARGS, {
+    discoverTasks: wideTasks(3),
+    integ: HEAL_INTEG,
+    gate: { ranSuite: true, passed: true },
+    teardown: { removed: [], leftover: [{ branch: 'worktree-t2', worktree: null, reason: '`git branch -D` denied' }] },
+  })
+  const t2 = (result.leftovers || []).find((l) => l.branch === 'worktree-t2')
+  assert.ok(t2, `the healed branch that could not be removed must be in result.leftovers: ${JSON.stringify(result.leftovers)}`)
+  assert.strictEqual(t2.reason, '`git branch -D` denied')
+
+  const silent = await runWorkflow(HEAL_ARGS, {
+    discoverTasks: wideTasks(3),
+    integ: HEAL_INTEG,
+    gate: { ranSuite: true, passed: true },
+    teardown: { removed: [] },
+  })
+  const s2 = (silent.result.leftovers || []).find((l) => l.branch === 'worktree-t2')
+  assert.ok(s2 && /did not report removing it/.test(s2.reason), 'a branch neither removed nor reported must not vanish')
+})
+
+test('#25: a clean teardown leaves nothing in result.leftovers', async () => {
+  const { result } = await runWorkflow(HEAL_ARGS, {
+    discoverTasks: wideTasks(3),
+    integ: HEAL_INTEG,
+    gate: { ranSuite: true, passed: true },
+    teardown: { removed: ['worktree-t2'] },
+  })
+  assert.deepStrictEqual(result.leftovers, [])
 })

@@ -763,6 +763,21 @@ const runTestSuite = () =>
     { label: 'testgate', phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: TESTGATE_SCHEMA },
   )
 
+// #25 — cleanup is BEST-EFFORT, one command at a time. It used to be a fixed three-verb
+// chain (remove the worktree, delete the branch, prune); a project whose guard denied
+// only the last verb stranded all three, and an agent that correctly refuses to work
+// around an owner-approved guard then left every branch behind, reported nowhere but
+// prose. `git worktree prune` is gone entirely: `git worktree remove` already
+// deregisters the worktree, so prune only mattered for directories deleted by hand.
+// Anything that cannot be removed comes back as a structured leftover with a reason.
+const CLEANUP_STEPS = (target) =>
+  `clean it up best-effort, ONE command at a time: (1) if it has a worktree (find it with ` +
+  `\`git worktree list\`), \`git worktree remove --force <path>\`; (2) \`git branch -D ${target}\`. ` +
+  `Attempt each step even if the other was refused. If a command is DENIED (a hook, a permission ` +
+  `rule) or fails, do NOT retry it another way and do NOT work around the guard — record it in ` +
+  `leftover[] as {branch, worktree (its path, or null if removed/none), reason (the command and ` +
+  `why it did not run)} and move on. Do NOT run \`git worktree prune\`.`
+
 // The strict schema (like TESTGATE_SCHEMA) prevents a silent no-op teardown from
 // reading as success: `removed` is required, so the script can diff it against the
 // branches it asked for and ⚠-flag any leftover instead of assuming cleanup happened.
@@ -771,6 +786,17 @@ const TEARDOWN_SCHEMA = {
   additionalProperties: false,
   properties: {
     removed: { type: 'array', items: { type: 'string' } },
+    // #25 — what could not be removed, and why (a denied command is a normal outcome)
+    leftover: { type: 'array', items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          branch: { type: 'string' },
+          worktree: { type: ['string', 'null'] },
+          reason: { type: 'string' },
+        },
+        required: ['branch', 'reason'],
+      } },
     note: { type: 'string' },
   },
   required: ['removed'],
@@ -796,11 +822,10 @@ const runTeardown = (w, branches) =>
       `re-implemented fresh and committed on the current branch, and the post-heal test suite ` +
       `passed — so these branches now hold only the stale, superseded attempts:\n` +
       `${JSON.stringify(branches)}\n` +
-      `For EACH listed branch, in ${root}: find its worktree path via \`git worktree list\`, run ` +
-      `\`git worktree remove --force <path>\` (skip if no worktree), then \`git branch -D <branch>\`, ` +
-      `and finally \`git worktree prune\`. Touch ONLY the listed branches — any other ` +
-      `\`worktree-*\` branch must stay untouched (it may be a preserved failed heal under ` +
-      `inspection). Return removed=[the branches you actually removed].`,
+      `For EACH listed branch, in ${root}, ${CLEANUP_STEPS('<branch>')} Touch ONLY the listed ` +
+      `branches — any other \`worktree-*\` branch must stay untouched (it may be a preserved ` +
+      `failed heal under inspection). Return removed=[the branches whose branch ref you actually ` +
+      `deleted] and leftover=[everything you could not fully remove].`,
     { label: `teardown:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: TEARDOWN_SCHEMA },
   )
 
@@ -887,6 +912,18 @@ const INTEGRATE_SCHEMA = {
         required: ['branch', 'taskId'],
       },
     },
+    // #25 — cleanly picked branches this run could not fully remove, plus candidates skipped
+    // as already integrated (residue of earlier waves). Reported, never an error.
+    leftover: { type: 'array', items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          branch: { type: 'string' },
+          worktree: { type: ['string', 'null'] },
+          reason: { type: 'string' },
+        },
+        required: ['branch', 'reason'],
+      } },
     note: { type: 'string' },
   },
   required: ['integrated'],
@@ -934,7 +971,12 @@ const integrateWave = (w, wave) =>
       `for a stronger model — that is exactly the textual rescue ADR-014/ADR-015 forbid; a bad ` +
       `branch's task is re-run by the heal ladder, never by you.\n` +
       `1. List candidates: \`git for-each-ref --format='%(refname:short)' refs/heads/ | grep '^worktree-'\`. ` +
-      `Keep only branches where \`git rev-list HEAD..<branch>\` is non-empty.\n` +
+      `Keep only branches where \`git cherry HEAD <branch>\` prints at least one line starting with ` +
+      `\`+\` (a change HEAD does not already hold). NOT \`git rev-list HEAD..<branch>\`: a cherry-pick ` +
+      `makes new commit ids, so an already-integrated branch still lists commits there and would be ` +
+      `re-evaluated every wave (#25). A branch whose \`git cherry\` lines are all \`-\` is residue of an ` +
+      `earlier wave: do NOT evaluate or touch it — add {branch, worktree, reason:"already integrated ` +
+      `(residue)"} to leftover[].\n` +
       `2. MAP each candidate to a taskId — MECHANICAL, never a judgement call about commit ` +
       `messages: run \`git log --format=%s HEAD..<branch>\` and look for the stamp ` +
       `\`(phase ${phaseNum} t<id>)\` among the commit subjects — the closing paren is required ` +
@@ -967,11 +1009,11 @@ const integrateWave = (w, wave) =>
       `do NOT run \`git worktree remove\` or \`git branch -D\` on a conflicting branch. ` +
       `Add it to conflicts[] with the taskId from step 2 (or null if step 2 could not map it). ` +
       `Return integrated=false, CONTINUE to the next candidate.\n` +
-      `4. TEARDOWN — BOUNDED: run \`git worktree remove --force <path>\`, \`git branch -D <branch>\`, ` +
-      `\`git worktree prune\` ONLY on a branch YOU cherry-picked cleanly in THIS run (non-stale, ` +
-      `non-collision, conflict-free). NEVER on a preserved/stale/conflicted branch and NEVER on a ` +
-      `pre-existing branch you did not pick this run. Add every branch you tear down to ` +
-      `tornDown[] — and tornDown[] must contain NOTHING else. The script cross-checks tornDown[] ` +
+      `4. TEARDOWN — BOUNDED: ONLY on a branch YOU cherry-picked cleanly in THIS run (non-stale, ` +
+      `non-collision, conflict-free): ${CLEANUP_STEPS('<branch>')} NEVER on a preserved/stale/` +
+      `conflicted branch and NEVER on a pre-existing branch you did not pick this run. Add a branch ` +
+      `to tornDown[] only when its branch ref was actually deleted — and tornDown[] must contain ` +
+      `NOTHING else. A refused cleanup does NOT make the wave fail. The script cross-checks tornDown[] ` +
       `against the branches you report cleanly integrated as pure data and fails the wave loudly ` +
       `on any mismatch (ADR-008: it still runs no git).\n` +
       `5. Confirm: \`git log --oneline -n 20\`.\n\n` +
@@ -1143,6 +1185,16 @@ const results = []
 const healedTaskIds = []
 let integrationFailed = null
 const unstampedBranches = [] // #24 — fallback-mapped branches, surfaced in the result
+// #25 — worktrees/branches cleanup could not remove, by branch (latest report wins), so a
+// guarded project's residue is visible in the result instead of only in agent prose.
+const leftovers = new Map()
+const noteLeftovers = (wave, items) => {
+  for (const l of items || []) {
+    if (!l || !l.branch) continue
+    leftovers.set(l.branch, { wave, branch: l.branch, worktree: l.worktree ?? null, reason: l.reason || 'not removed' })
+    log(`⚠ wave ${wave}: left \`${l.branch}\`${l.worktree ? ` (worktree ${l.worktree})` : ''} — ${l.reason || 'not removed'} — clean up manually`)
+  }
+}
 // Adaptive worktree downgrade: once a parallel wave shows the MAJORITY of its
 // executors failing to get a worktree (the lock-race signature — partial success,
 // not a hard error), the environment is worktree-hostile.  This latch flips the
@@ -1260,6 +1312,7 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
     }
   }
   const integ = await integrateWave(w, wave)
+  noteLeftovers(w + 1, integ && integ.leftover)
 
   // ── Phase-14 t2 (ADR-027 decision 2): tornDown bound — pure data, no git ──
   //
@@ -1528,10 +1581,12 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
         // the branch and tested. But silence would read as success, so name
         // every leftover branch for manual cleanup (and so the user knows why
         // the final verifier might flag it).
-        const leftover = healedBranches.filter((b) => !removed.includes(b))
-        if (leftover.length) {
-          log(`⚠ preserved branch(es) not removed — clean up manually: ${leftover.join(', ')}`)
-        }
+        const reported = teardown && Array.isArray(teardown.leftover) ? teardown.leftover : []
+        noteLeftovers(w + 1, reported)
+        // a branch neither removed nor reported still must not vanish from the result
+        const unreported = healedBranches.filter((b) => !removed.includes(b) && !reported.some((l) => l && l.branch === b))
+        noteLeftovers(w + 1, unreported.map((b) => ({ branch: b, worktree: null, reason: 'teardown did not report removing it' })))
+        for (const b of removed) leftovers.delete(b)
       }
     }
   }
@@ -1765,8 +1820,9 @@ const runVerify = (focusIds = []) =>
       `output as evidence; actively try its "Fails if:". A green suite is not evidence for a ` +
       `criterion unless it actually exercises that behavior.\n\n` +
       `Also confirm the phase's commits are present (\`git log --oneline\`) and that no \`worktree-*\` ` +
-      `branch still holds un-integrated commits (\`git for-each-ref refs/heads/worktree-*\`, then ` +
-      `\`git rev-list HEAD..<branch>\` must be empty). Run the full test suite. Flag any project-canon ` +
+      `branch still holds un-integrated changes (\`git for-each-ref refs/heads/worktree-*\`, then ` +
+      `\`git cherry HEAD <branch>\` must print no \`+\` line — a leftover branch whose changes are ` +
+      `all in HEAD is residue, not stranded work). Run the full test suite. Flag any project-canon ` +
       `violation.\n\n` +
       `PASS only if EVERY criterion has independent passing evidence you gathered yourself AND the ` +
       `structural checks hold. Otherwise FAIL — name the unmet criterion, the command you ran, the ` +
@@ -1912,6 +1968,7 @@ return {
   skipped: skippedTaskIds,
   healed: healedTaskIds,
   unstamped: unstampedBranches,
+  leftovers: [...leftovers.values()],
   remediationCycles,
   stoppedReason,
   integrationFailed,
