@@ -20,7 +20,7 @@
       "number": 24,
       "name": "Review workflow: a batch review command that dedupes against what was accepted and rejected",
       "slug": "24-review-workflow-a-batch-review-command-that-dedupes-against-what-was-accepted-and-rejected",
-      "status": "pending",
+      "status": "verified",
       "milestone": 9
     },
     {

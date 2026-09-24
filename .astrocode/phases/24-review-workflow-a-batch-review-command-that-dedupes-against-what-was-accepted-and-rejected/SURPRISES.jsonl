@@ -1,0 +1,1 @@
+{"at":"2026-09-24T18:00:24.174Z","phase":"24-review-workflow-a-batch-review-command-that-dedupes-against-what-was-accepted-and-rejected","signals":["remediation"],"note":"first verify failed on C1 (concurrent captures of the same statement); one remediation closed it"}

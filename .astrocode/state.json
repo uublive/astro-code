@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 9,
-  "active_phase": "23-capture-at-the-moments-of-intent-discuss-decision-accept-and-milestone-close-propose-principles",
+  "active_phase": "24-review-workflow-a-batch-review-command-that-dedupes-against-what-was-accepted-and-rejected",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-09-24T14:08:29.102Z",
+  "updated_at": "2026-09-24T18:00:20.976Z",
   "activity": null
 }
