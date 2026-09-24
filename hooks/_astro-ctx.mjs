@@ -311,6 +311,9 @@ export function readContext(root, nowSeconds) {
     // Debt pressure, for the statusline. One small file read; the band is what
     // decides whether the segment renders at all (see renderSegmentParts).
     debt: debtPressure(readJson(join(root, '.astrocode', 'debt.json')), nowSeconds * 1000),
+    // Phase 26 (P7, D8): stat-only, never cached (see unsweptSessions's header) — cheap
+    // enough to read on every prompt even against a huge transcript directory.
+    mine: { unswept: unsweptSessions(root) },
   };
 }
 
@@ -452,6 +455,12 @@ export function renderSegmentParts(ctx, { lookahead = 2 } = {}) {
   // other segment here is either a word or a symbol with an obvious referent (⎇, $).
   if (ctx.debt && ctx.debt.band !== 'healthy') {
     state.push(paint(`debt ${ctx.debt.pressure}`, ctx.debt.band === 'pay-now' ? ANSI.red : ANSI.yellow));
+  }
+  // Same "only past the threshold" logic as debt above: below MINE_NUDGE_SESSIONS this
+  // would just be wallpaper on every project with any transcript history at all, and it
+  // would punish the very act of having worked — the segment appearing IS the signal.
+  if (ctx.mine && ctx.mine.unswept >= MINE_NUDGE_SESSIONS) {
+    state.push(paint(`${ctx.mine.unswept} unswept → /astro-mine`, ANSI.yellow));
   }
   return { identity: identity.join(' · '), state: state.join(' · ') };
 }
@@ -856,6 +865,9 @@ export function renderBanner(ctx) {
   const lines = [];
   if (ctxLine.length) lines.push(ctxLine.join(' · '));
   lines.push('next: ' + nextAction(ctx));
+  if (ctx.mine && ctx.mine.unswept >= MINE_NUDGE_SESSIONS) {
+    lines.push(`${ctx.mine.unswept} unswept sessions here — /astro-mine proposes principles from them`);
+  }
   // Claude Code trims leading blank lines from a systemMessage, which seats the art's top
   // row right on the "SessionStart says:" line. U+2800 (braille blank) renders empty but
   // is not whitespace, so it survives the trim and keeps a row of air above the mark.
