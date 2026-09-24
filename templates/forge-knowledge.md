@@ -1,34 +1,37 @@
-# Forge knowledge graph — read/write/degradation spec
+# Forge knowledge graph — read/degradation spec
 
 astro-code is standalone by default. The FORGEMASTER knowledge graph ("the brain") is an
 **opportunistic bonus**, never a requirement: with no forge MCP server connected, every
 step below is a silent no-op and the command runs exactly as if this file did not exist.
 Callers reference this file — `` `$(ac path templates)/forge-knowledge.md` `` — they never
-copy its rules. A command or agent that restates the detection order, the degradation
-paths, or the capture contract inline instead of pointing here is a defect (drift bait):
-the two copies will diverge and one of them will be wrong. This is the single source of
-truth for read, write, and degradation; a reader must be able to answer everything below
-without opening any other file.
+copy its rules. A command or agent that restates the detection order or the degradation
+paths inline instead of pointing here is a defect (drift bait): the two copies will
+diverge and one of them will be wrong. This is the single source of truth for read and
+degradation; a reader must be able to answer everything below without opening any other
+file.
 
-## The three tools
+astro-code no longer writes to forge (D1): the write tool and its capture contract have
+been removed from this spec and from every command's grant. Capture now proposes into the
+personal principle store instead — see `` `$(ac path templates)/principle-capture.md` ``
+for that path in full.
 
-- **Read — search:** `mcp__forge__forge_knowledge` — a natural-language question or phrase.
+## The two read tools
+
+- **Search:** `mcp__forge__forge_knowledge` — a natural-language question or phrase.
   Returns matching nodes. **This is the default read.**
-- **Read — browse:** `mcp__forge__forge_knowledge_list` — enumerate what EXISTS by
+- **Browse:** `mcp__forge__forge_knowledge_list` — enumerate what EXISTS by
   `type` / `tag` / `recency`. Use it when there is no specific question yet, only a
   category worth sweeping (see the READ protocol below).
-- **Write:** `mcp__forge__forge_capture_knowledge`
 
-All three ids are confirmed against a live connection — the server slug is `forge`, and
-these three are the only ones astro-code ever names. If forge ever renames one, the
-integration degrades to a silent no-op by design; that is not a bug to route around here,
-it is the same "absence is invisible" path described below.
+Both ids are confirmed against a live connection — the server slug is `forge`, and these
+two are the only ones astro-code ever names. If forge ever renames one, the integration
+degrades to a silent no-op by design; that is not a bug to route around here, it is the
+same "absence is invisible" path described below.
 
-A caller only ever invokes the tools its own frontmatter grants: read-only callers hold
-the two read tools, write-only callers hold `mcp__forge__forge_capture_knowledge`, and a
-role that has no business writing to the queue (every parallel executor, every read-only
-judgement role) holds neither. No caller holds both a read tool and the write tool by
-accident — the split is the point.
+A caller only ever invokes the tools its own frontmatter grants: a caller with a real
+question holds the two read tools, and a role with no business reading the graph (every
+parallel executor, every judgement role with no phase goal to search against) holds
+neither.
 
 ## Detection order (load-bearing)
 
@@ -38,8 +41,8 @@ command run**:
 1. **Check the live toolset** for `mcp__forge__forge_knowledge`. If it is there, forge is
    connected — proceed.
 2. **If it is not there, run exactly one probe** — one identical probe string for every
-   caller, naming **all three** tools so there is a single form to keep correct:
-   `ToolSearch("select:mcp__forge__forge_knowledge,mcp__forge__forge_knowledge_list,mcp__forge__forge_capture_knowledge")`
+   caller, naming **both** tools so there is a single form to keep correct:
+   `ToolSearch("select:mcp__forge__forge_knowledge,mcp__forge__forge_knowledge_list")`
    before concluding the tools are absent. Omitting a tool from the probe leaves it
    deferred and uncallable even though forge is connected — the same silent failure this
    step exists to prevent, just narrowed to one tool.
@@ -94,47 +97,12 @@ These are deliberately asymmetric, and the asymmetry is the point:
   phase can itself become the next captured signal, so the error compounds across runs
   instead of staying contained to one.
 
-## WRITE protocol
-
-Capture is **conditional by construction**, never automatic:
-
-- **Lift the generator.** Strip every project noun, filename, number and proper name from
-  what is being captured. If what survives is vacuous or untrue as a general rule, **the
-  caller captures nothing, and says so in one line.** ADR-027 ("the wave integrator is the
-  single documented exception to the opus→sonnet-only rule…") is the worked example of an
-  ADR that does not lift: its content is inseparable from this project's specific model
-  ladder. A graph filled with forced generalizations is worse than a smaller, honest one —
-  and the ADR itself is preserved either way, in `.astrocode/DECISIONS.md`, regardless of
-  whether it was liftable.
-- **No confirmation prompt before writing.** `forge_capture_knowledge` writes to a
-  human-approval **queue**, not directly into the graph — a human gate already exists
-  downstream of every capture. A second gate here would add exactly the friction that
-  stops people from recording ADRs in the first place.
-- **The capture never precedes or gates the caller's primary effect.** It runs strictly
-  after the ADR is recorded / the verdict is reported / the run has otherwise already
-  succeeded on its own terms, and a failed capture never fails or changes that outcome.
-
-## Capture contract (owned by forge — conform exactly, invent no fields)
-
-Every `forge_capture_knowledge` call must supply:
-
-- `node_type` — one of exactly `Principle`, `Pattern`, `AntiPattern`, `Preference`.
-- `node_body` — the lifted, **project-agnostic** generator (see "Lift the generator"
-  above).
-- `signal_body` — the concrete evidence: the ADR text and id, or the specific observation
-  that grounded the capture.
-- `node_slug` / `signal_slug` — distinct from each other, kebab-case, no whitespace.
-- `edge_type` — matches the node type, e.g. `PrincipleEvidencedBySignal` for a `Principle`
-  node.
-- `source` — a short provenance string, e.g. `"astro-code ← /astro-decision"`.
-- `third_party_content` — `false`.
-
 ## Verification note
 
-Connected mode (reads returning real content, captures actually reaching the queue) is a
-**documented manual check**, not an automated test. Every touched command and agent here
-is prose interpreted by Claude, not code executed by a runtime — a harness that simulated
-a connected MCP toolset would only be testing a simulation of Claude's behavior, never
-Claude's actual behavior. The standalone (tools-absent) path is exactly the opposite: it
-is real code (`bin/ac.mjs`, the engine under `lib/`) exercised by an automated test that
-proves nothing forge-related ever leaks into it.
+Connected mode (reads returning real content) is a **documented manual check**, not an
+automated test. Every touched command and agent here is prose interpreted by Claude, not
+code executed by a runtime — a harness that simulated a connected MCP toolset would only
+be testing a simulation of Claude's behavior, never Claude's actual behavior. The
+standalone (tools-absent) path is exactly the opposite: it is real code (`bin/ac.mjs`, the
+engine under `lib/`) exercised by an automated test that proves nothing forge-related ever
+leaks into it.

@@ -650,13 +650,12 @@ const SLOTS = [
   { command: 'astro-execute.md', slot: '4d debt findings', start: '4d. **File the verifier', end: '4e. **Check fixture currency' },
   { command: 'astro-execute.md', slot: '4e fixtures check', start: '4e. **Check fixture currency', end: '5. Clear the live status' },
   { command: 'astro-execute.md', slot: '5 verdict lead line + PASS/FAIL branches', start: '5. Clear the live status', end: '**The assembled summary' },
-  { command: 'astro-execute.md', slot: '5 assembled summary shape', start: '**The assembled summary', end: '**Opportunistic capture' },
-  { command: 'astro-execute.md', slot: '5 opportunistic capture', start: '**Opportunistic capture', end: 'Execution + the in-workflow verifier produce' },
+  { command: 'astro-execute.md', slot: '5 assembled summary shape', start: '**The assembled summary', end: '**Record surprises for the milestone sweep' },
+  { command: 'astro-execute.md', slot: '5 surprise note', start: '**Record surprises for the milestone sweep', end: 'Execution + the in-workflow verifier produce' },
 
   // astro-verify.md
   { command: 'astro-verify.md', slot: '3 PASS/FAIL verdict', start: '3. Clear the live status first', end: '3b. **On PASS only' },
-  { command: 'astro-verify.md', slot: '3b debt findings', start: '3b. **On PASS only', end: '4. **Opportunistic capture' },
-  { command: 'astro-verify.md', slot: '4 opportunistic capture', start: '4. **Opportunistic capture', end: 'Verification is the machine gate' },
+  { command: 'astro-verify.md', slot: '3b debt findings', start: '3b. **On PASS only', end: 'Verification is the machine gate' },
 
   // astro-accept.md
   { command: 'astro-accept.md', slot: '1 not-verified stop', start: '1. Resolve the phase slug. Confirm its status', end: '2. Read' },
