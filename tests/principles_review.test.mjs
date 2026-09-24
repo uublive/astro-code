@@ -9,10 +9,28 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const AC = join(ROOT, 'bin', 'ac.mjs');
 
 function mkStoreDir() {
   return mkdtempSync(join(tmpdir(), 'ac-principles-review-'));
+}
+
+/** Run `ac <argv>` as a real child process against `dir`, resolving with its result. */
+function runAc(argv, dir) {
+  return new Promise((resolve) => {
+    const env = { ...process.env, ASTRO_PRINCIPLES_DIR: dir };
+    const child = spawn(process.execPath, [AC, ...argv], { env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+  });
 }
 
 function mdFiles(dir) {
@@ -61,6 +79,38 @@ test('C1 (pinned count guard): 1 proposal + 3 formatting variants gives exactly 
   assert.equal(proposed[0].statement, 'Always use pnpm, never npm, for lockfiles');
   assert.deepEqual(proposed[0].sightings.map((s) => s.project).sort(), ['p1', 'p2', 'p3']);
   for (const s of proposed[0].sightings) assert.ok(s.excerpt);
+});
+
+// --- phase 24 remediation: propose-time dedupe must be race-safe --------------------
+// A prior version ran `loadPrinciples` + `findCandidates` OUTSIDE the lock (only the
+// write was locked), so N *separate processes* racing `ac principles add --propose` on
+// the identical statement each read "no match yet" before any of them had written, and
+// each minted its own entry. Reproduces the actual failing shape from the phase-24
+// verifier report — real child processes via `spawn`, not in-process promises, since a
+// single Node process never truly interleaves this fully-synchronous read/write path.
+// The read-decide-write sequence must be one locked critical section.
+
+test('phase 24 remediation: N separate processes racing `ac principles add --propose` on the identical statement mint exactly one entry', async () => {
+  const dir = mkStoreDir();
+
+  const N = 10;
+  const results = await Promise.all(
+    Array.from({ length: N }, (_, i) => runAc([
+      'principles', 'add', '--propose', 'Parallel capture rule',
+      '--kind', 'preference', '--why', 'w', '--from-project', `p${i}`,
+    ], dir)),
+  );
+
+  for (const r of results) {
+    assert.equal(r.status, 0, `ac principles add exited non-zero: ${r.stderr}`);
+  }
+
+  const files = mdFiles(dir);
+  assert.equal(files.length, 1, `expected exactly one proposed entry, got: ${files.join(', ')}`);
+
+  const text = readFileSync(join(dir, files[0]), 'utf8');
+  const sightingCount = (text.match(/^sighting: /gm) || []).length;
+  assert.equal(sightingCount, N - 1, 'the other racing proposals should each land as a sighting, not a new entry');
 });
 
 // --- C2: repeats against accepted entries never re-queue, text unchanged -----------
