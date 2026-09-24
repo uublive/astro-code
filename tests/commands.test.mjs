@@ -640,14 +640,14 @@ const SLOTS = [
   // astro-discuss.md
   { command: 'astro-discuss.md', slot: '1b debt fold-in: items when present', start: '1b. **Check the debt register', end: 'Say nothing at all when there is no relevant debt' },
   { command: 'astro-discuss.md', slot: '1b debt fold-in: silence when absent', start: 'Say nothing at all when there is no relevant debt', end: '2. **Map the gray areas.' },
-  { command: 'astro-discuss.md', slot: '2 brain-settled fork', start: 'the forge brain already settled a fork', end: '3. **Discuss in rounds' },
+  { command: 'astro-discuss.md', slot: '2 principle-settled fork', start: 'a personal principle already settled a fork', end: '3. **Discuss in rounds' },
   { command: 'astro-discuss.md', slot: '4 capture report', start: '4. **Capture.', end: '5. **Promote firm choices.' },
   { command: 'astro-discuss.md', slot: '6 hand-off', start: '6. Clear the live status', end: 'Keep it conversational' },
   { command: 'astro-discuss.md', slot: 'closing trivial-phase skip', start: 'Keep it conversational', end: null },
 
   // astro-plan.md
-  { command: 'astro-plan.md', slot: '2 discuss-gate canon refusal relay', start: '2. **Discuss gate', end: 'opportunistically, run ONE scoped' },
-  { command: 'astro-plan.md', slot: '2 forge result relay', start: 'opportunistically, run ONE scoped', end: '3. Mark the live status' },
+  { command: 'astro-plan.md', slot: '2 discuss-gate canon refusal relay', start: '2. **Discuss gate', end: 'run ONE `ac principles ask' },
+  { command: 'astro-plan.md', slot: '2 principles result relay', start: 'run ONE `ac principles ask', end: '3. Mark the live status' },
   { command: 'astro-plan.md', slot: '3 workflow launched (background)', start: 'It runs in the background — say so', end: '3b. **Commit the plan artifacts' },
   { command: 'astro-plan.md', slot: '3b commit of plan artifacts', start: '3b. **Commit the plan artifacts', end: '4. Clear the live status' },
   { command: 'astro-plan.md', slot: '4 plan summary', start: '4. Clear the live status', end: 'Only fan out when the phase is worth parallel research' },

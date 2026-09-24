@@ -1,7 +1,7 @@
 ---
 description: Talk through a phase before planning — adaptive questions that surface decisions and edge cases, captured to CONTEXT.md
 argument-hint: <phase number or slug>
-allowed-tools: Bash, Read, Grep, Glob, Write, AskUserQuestion, ToolSearch, mcp__forge__forge_knowledge
+allowed-tools: Bash, Read, Grep, Glob, Write, AskUserQuestion, ToolSearch
 ---
 
 Discuss phase `$ARGUMENTS` with the developer before any plan is written. The goal is
@@ -11,10 +11,8 @@ about — and to capture the answers so planning is grounded, not guessed.
 1. **Get grounded.** Surface the live status (`ac activity '✎ discussing'`), then read
    `.astrocode/PROJECT.md`, the phase's roadmap entry/goal, the canon (`ac canon`), and
    skim the relevant code (Grep/Glob/Read) so your questions are specific to THIS
-   project, not generic. Then, opportunistically, run ONE scoped
-   `mcp__forge__forge_knowledge` query built from the phase goal — see
-   `` `$(ac path templates)/forge-knowledge.md` `` for the full detection/degradation
-   rules (tools absent → skip silently, no output).
+   project, not generic. Then run ONE `ac principles ask "<question built from the phase
+   goal>"` — one call, weigh what it returns alongside the rest, don't relitigate it.
 1b. **Check the debt register for the ground this phase will touch.** Run `ac debt list`,
    and for each file/area the phase goal implicates, `ac debt list --file <path>`. Debt is
    paid cheaply when you are **already in the file with the context loaded**, and expensively
@@ -56,10 +54,10 @@ about — and to capture the answers so planning is grounded, not guessed.
    - edge cases, failure modes, and data/permission concerns,
    - anything the goal leaves ambiguous or assumes.
    Skip anything the code or canon already answers — never re-ask a settled decision. If
-   the forge brain already settled a fork, say so in one line ("the brain already
-   settled X — not re-asking") and proceed instead of dropping it silently — the
-   developer can override on the spot. A brain opinion is never grounds to silently
-   drop a question the code/canon do NOT already answer.
+   a personal principle already settled a fork, say so in one line ("a personal
+   principle already settled X — not re-asking") and proceed instead of dropping it
+   silently — the developer can override on the spot. A principle is never grounds to
+   silently drop a question the code/canon do NOT already answer.
 3. **Discuss in rounds, and let the user steer.** Ask the **2–4 questions that actually
    matter** with `AskUserQuestion` — concrete pickable options, the recommended one
    first. Then, after **every** round, explicitly ask whether to keep going:
