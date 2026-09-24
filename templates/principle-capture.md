@@ -54,6 +54,24 @@ One fenced `sh` block, exactly this line (placeholders in `<…>`):
 ac principles add "<lifted statement>" --kind <principle|pattern|preference|antipattern> --why "<why>" --propose --from-project "<project>" --from-ref "<ref>" --excerpt "<the user's own words>"
 ```
 
+Before running the invocation above, consult the candidates:
+
+```sh
+ac principles match "<lifted statement>" --json
+```
+
+- `exact` non-empty → run the invocation above anyway. The engine records the repeat as a
+  sighting mechanically; nothing is skipped.
+- `overlap` candidates only → decide whether this is the same principle or a different one:
+  - **same** → run this instead of proposing:
+
+    ```sh
+    ac principles sight <id> --from-project "<project>" --from-ref "<ref>" --excerpt "<the user's own words>"
+    ```
+
+  - **different** → propose (the invocation above).
+- Never rephrase a statement to dodge a rejected match.
+
 Evidence table:
 
 | Moment | `--from-ref` | `--excerpt` |
@@ -69,8 +87,8 @@ Evidence table:
 hosts, stats) — do not probe for one.
 
 Never call `accept`/`amend`/`reject`/`retire` verbs and never write under
-`~/.astro/principles/` directly — the propose path above is the only way in (ADR-058). The
-engine redacts the excerpt; do not pre-mask it.
+`~/.astro/principles/` directly — the propose path above and `sight` are the only way in
+(ADR-058). The engine redacts the excerpt; do not pre-mask it.
 
 ## 6. Ordering
 
@@ -89,6 +107,13 @@ Zero proposals → **say nothing** (never "proposed 0"). A failed call → one l
 `⚠ principle capture failed: <first error>`. No inline accept prompt, ever — review is
 batched (`ac principles list --proposed`).
 
+When repeats were recorded (an `exact` match sighted instead of proposed, or an overlap
+sighted via §5's `sight` alternative), the same single line gains `, M seen again` before
+the ` — `. With zero proposals but M > 0, the line reads
+`M principle(s) seen again — ac principles list --proposed`. With nothing at all (zero
+proposals and zero sightings), say nothing, as before. Review the queue with
+`ac principles list --proposed`, or `/astro-review`.
+
 ## 8. Milestone sweep recurrence rule (D2.4)
 
 Candidates are grouped by theme across the harvest's four sources (ADRs, human CONTEXT,
@@ -96,7 +121,10 @@ human rejections, surprises). A theme qualifies only when it recurs in **≥2 ph
 single surprise, rejection or answer proposes nothing here; the per-moment captures
 already had their shot at one-offs. Rank by phase count, take at most 3 (§3 still applies).
 
-## 9. Known gap
+## 9. Dedupe
 
-No dedupe until phase 24: a capture may re-propose. Never "fix" that by editing or
-rejecting entries from a command — the propose path (§5) is the only way in.
+Exact repeats are handled by the engine: `ac principles add --propose` records a sighting
+instead of a new entry (§5). Overlap candidates are handled by the capturing agent: `match`
+surfaces them, and the agent decides same (`sight`) or different (propose). Nothing merges
+on similarity alone — never "fix" a near-duplicate by editing or rejecting entries from a
+command; the propose path and `sight` (§5) are the only way in.
