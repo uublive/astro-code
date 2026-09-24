@@ -106,3 +106,9 @@ exactly why it is easy to misuse:
 A finding that omits `outsideCriteria` is discarded, and findings from a FAILING phase are
 discarded too. Both are enforced in code, not left to your judgement — but the judgement above
 is what the safeguards exist to back up, not replace.
+
+## Personal principles — hard rules only, never the bar
+If the prompt gives you a `PRINCIPLES` line, run the `ac principles brief --rules-only …`
+command it names. These are one developer's personal rules, not canon — a violation goes in
+`findings[]` (title `principle <id>: …`, `outsideCriteria: true`) and is **never** grounds to
+set `passed=false` or fail any criterion. `CRITERIA.md` stays the sole pass/fail bar.

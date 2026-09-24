@@ -126,6 +126,35 @@ const OBEY =
   `superseded or retired: follow the one each names, never the retired one), ` +
   `plus ${root}/.astrocode/phases/${phaseSlug}/CONTEXT.md (this phase's decisions, if present).`
 
+// principles-block:start
+// (phase 25 P10, D1) — a workflow script runs no shell (ADR-008), so it cannot read
+// the developer's personal principle store itself; instead it tells the agent to run
+// its OWN `ac principles brief` (with its stage/files) and apply what comes back —
+// the shortlist is scoped and rendered entirely by `ac`, this file only names the
+// stage. Personal principles are advisory, not canon: OBEY above still governs when
+// the two conflict. CITE closes the loop (D9): the agent records what it actually
+// applied, both to `ac principles cite` (the usage log) and as one line in its
+// summary — no workflow result schema gains a field (every `additionalProperties:
+// false` schema stays byte-identical).
+function principlesFor(stage, role, files) {
+  const filesFlag = files ? ` --files "${files}"` : ''
+  return `\n\nPRINCIPLES (personal, advisory — OBEY above is canon and always wins): run ` +
+    `\`ac principles brief --stage ${stage}${filesFlag} --by ${role}\` in ${root} and apply ` +
+    `anything it returns — HARD RULES always, the IN SCOPE index at your judgement.`
+}
+const CITE =
+  `\n\nWhen you are done, run \`ac principles cite <id>… --stage <stage> --by <role>\` for every ` +
+  `principle you actually applied (skip if you applied none), and add one line to your summary: ` +
+  `\`principles applied: <ids | none>\`.`
+// (D2) — the verifier sees hard rules ONLY, non-blocking: a violation is a finding, never a
+// criterion failure (CRITERIA.md stays the sole bar, ADR-021).
+const VERIFY_RULES =
+  `\n\nPRINCIPLES (hard rules only, personal — never the bar): run ` +
+  `\`ac principles brief --stage verify --rules-only --by verifier\` in ${root}. A violation goes ` +
+  `in findings[] titled "principle <id>: …" with outsideCriteria:true — it is NEVER grounds to set ` +
+  `passed=false or fail any criterion.`
+// principles-block:end
+
 // ADR-031 — the implementer sees the BAR it will be judged against.
 //
 // CRITERIA.md is pre-registered, goal-derived and plan-blind (ADR-021), written BEFORE the
@@ -670,6 +699,8 @@ const execPrompt = (t) =>
     : '') +
   OBEY +
   BAR +
+  principlesFor('execute', 'executor', t.file) +
+  CITE +
   NO_BROAD_STASH +
   SYNC_WORKTREE
 
@@ -725,6 +756,8 @@ const healPrompt = (t, preservedBranch) =>
   `Return a short summary of what you changed.` +
   OBEY +
   BAR +
+  principlesFor('heal', 'executor', t.file) +
+  CITE +
   NO_BROAD_STASH
 
 const runHealOnBranch = (t, preservedBranch) =>
@@ -1226,6 +1259,8 @@ const batchPrompt = (orderedTasks) =>
   `Return committed=[the task ids whose stamp you found] and a short summary.` +
   OBEY +
   BAR +
+  principlesFor('execute', 'executor', "each task's own `file`") +
+  CITE +
   NO_BROAD_STASH
 
 // runBatchOnBranch — a single agent() call carrying the WHOLE ordered task list
@@ -1979,7 +2014,8 @@ const runVerify = (focusIds = []) =>
       `none of their business. If it bears on a criterion at all, it belongs in that criterion's verdict ` +
       `— FAIL the phase. Uncertain whether it is covered? FAIL; never park a doubt here. Report nothing ` +
       `rather than pad the list: findings[] is for things you actually observed while driving the code.` +
-      OBEY,
+      OBEY +
+      VERIFY_RULES,
     { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier, effort: reasoning.verifier, schema: VERIFY_SCHEMA },
   )
 
@@ -2009,7 +2045,9 @@ const remediatePrompt = (unmet, cycle) =>
   `with the stamp \`(phase ${phaseNum} remediate-c${cycle})\` (ADR-017 idempotency). After committing, ` +
   `run \`git rev-parse HEAD\` again and report it as headAfter. Match the project canon exactly ` +
   `(stack, naming, patterns). Return headBefore, headAfter, and a short summary of what you changed.` +
-  OBEY
+  OBEY +
+  principlesFor('remediate', 'executor') +
+  CITE
 
 const runRemediation = (unmet, cycle) =>
   agent(remediatePrompt(unmet, cycle), {

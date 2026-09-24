@@ -128,17 +128,23 @@ test('no commands/, agents/, templates/ or workflows/ file references the forge 
   assert.deepEqual(offenders, [], `forge_capture_knowledge must not appear anywhere: ${offenders.join(', ')}`);
 });
 
-test('astro-execute.md and workflows/ never mention `ac principles` — execute only ever records surprises', () => {
+// Phase 25 (P10) legitimately adds `ac principles brief`/`cite` RETRIEVAL calls to
+// execute-phase.mjs (D1) — this guard narrows to the CAPTURE verbs D3 forbade
+// (propose a new entry, or record a sighting of one), which execute must still
+// never do; it only ever records surprises via `ac phase surprise`.
+const CAPTURE_VERB_RE = /ac principles (add\b[^\n]*--propose|sight\b)/;
+
+test('astro-execute.md and workflows/ never mention `ac principles` capture verbs — execute only ever records surprises', () => {
   assert.ok(
-    !cmd('astro-execute.md').includes('ac principles'),
-    'astro-execute.md must not mention `ac principles` — it records surprises (D3), it does not propose (CONTEXT.md D3)',
+    !CAPTURE_VERB_RE.test(cmd('astro-execute.md')),
+    'astro-execute.md must not mention an `ac principles` capture verb — it records surprises (D3), it does not propose (CONTEXT.md D3)',
   );
   for (const rel of readdirSync(WORKFLOWS_DIR, { recursive: true })) {
     const full = join(WORKFLOWS_DIR, rel);
     if (!statSync(full).isFile()) continue;
     assert.ok(
-      !readFileSync(full, 'utf8').includes('ac principles'),
-      `workflows/${rel} must not mention \`ac principles\``,
+      !CAPTURE_VERB_RE.test(readFileSync(full, 'utf8')),
+      `workflows/${rel} must not mention an \`ac principles\` capture verb`,
     );
   }
 });

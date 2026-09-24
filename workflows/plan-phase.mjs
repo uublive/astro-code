@@ -32,6 +32,22 @@ const OBEY =
   `missing, DECISIONS.md — decisions under "Not in force" are superseded or retired: follow the one each names)\n` +
   `  - ${root}/.astrocode/phases/${phaseSlug}/CONTEXT.md (this phase's /astro-discuss decisions, if present)`
 
+// principles-block:start
+// (phase 25 P10, D1/D2) — same contract as execute-phase.mjs's principlesFor: this
+// script runs no shell (ADR-008), so it tells the agent to run its own
+// `ac principles brief` and apply what comes back (advisory — OBEY above is canon
+// and always wins). Deliberately NOT given to the Criteria phase (D2): the
+// criteria-author stays plan-blind AND principle-blind, so a personal preference can
+// never shape the pre-registered, goal-derived bar the plan is later judged against.
+const PRINCIPLES_RESEARCH =
+  `\n\nPRINCIPLES (personal, advisory): run \`ac principles brief --stage research --by researcher\` ` +
+  `in ${root} and weigh anything it returns alongside your own findings.`
+const PRINCIPLES_PLAN =
+  `\n\nPRINCIPLES (personal, advisory — OBEY above is canon and always wins): run ` +
+  `\`ac principles brief --stage plan --by planner\` in ${root} and apply anything it returns — ` +
+  `HARD RULES always, the IN SCOPE index at your judgement.`
+// principles-block:end
+
 // ADR-021 — the Criteria stage runs FIRST, before any research or plan exists, so the
 // verifier's bar is pre-registered from the GOAL and can never be shaped by the
 // implementation (the Terminal-Bench 2.0 false-PASS this closes: a plan-derived bar
@@ -118,7 +134,8 @@ const findings = await parallel(
         `Your angle: ${angle}\n` +
         `Read the relevant files under ${root} and ${root}/.astrocode/. ` +
         `Return concise, concrete findings (no preamble).` +
-        OBEY,
+        OBEY +
+        PRINCIPLES_RESEARCH,
       { label: `research:${i + 1}`, phase: 'Research', agentType: 'Explore', model: models.researcher, effort: reasoning.researcher },
     ),
   ),
@@ -166,7 +183,8 @@ const summary = await agent(
     `two same-file tasks never both have empty depends_on, every task declares its file(s) ` +
     `— and fix any violation.\n\n` +
     `Return a one-line summary of the plan.` +
-    OBEY,
+    OBEY +
+    PRINCIPLES_PLAN,
   { phase: 'Synthesize', agentType: 'astro-planner', model: models.planner, effort: reasoning.planner },
 )
 
