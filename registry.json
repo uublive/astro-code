@@ -329,6 +329,16 @@
       "branch": "develop",
       "claimed_at": "2026-09-24T08:05:07.395Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 24,
+      "milestone": 9,
+      "name": "Review workflow: a batch review command that dedupes against what was accepted and rejected",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-09-24T08:05:10.323Z",
+      "status": "active"
     }
   ]
 }
