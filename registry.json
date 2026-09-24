@@ -300,6 +300,15 @@
       "branch": "main",
       "claimed_at": "2026-09-22T10:34:56.438Z",
       "status": "complete"
+    },
+    {
+      "type": "milestone",
+      "number": 9,
+      "name": "Second Nature",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-09-24T08:04:59.408Z",
+      "status": "active"
     }
   ]
 }
