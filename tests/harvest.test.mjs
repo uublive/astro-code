@@ -310,3 +310,53 @@ test('milestoneHarvest: an unknown milestone — neither current nor archived �
 
   await assert.rejects(() => milestoneHarvest(root, 999), /milestone 999|neither current nor archived/i);
 });
+
+// C9 (phase 23, second verify): a milestone that closes with NO ADRs used to stamp
+// `adr_watermark: null`, which reads as "not checked" and sent both harvests back to the
+// day-granular date window — so the next milestone's same-day ADR landed in both.
+test('milestoneHarvest: closing with zero ADRs stamps watermark 0, so a same-day ADR belongs only to the next milestone', async () => {
+  const { addDecision } = await import('../lib/canon.mjs');
+  const { milestoneHarvest } = await import('../lib/harvest.mjs');
+  const root = await scaffold();
+
+  await completeMilestone(root);
+  assert.strictEqual(readJSON(join(paths(root).dir, 'milestones', '1', 'roadmap.json')).adr_watermark, 0);
+  await setMilestone(root, 2);
+  await addDecision(root, { title: 'Decided in milestone two', why: 'same-day follow-up' });
+
+  assert.deepEqual((await milestoneHarvest(root, 1)).adrs, [], 'milestone 1 closed with no ADRs');
+  assert.deepEqual((await milestoneHarvest(root, 2)).adrs.map((a) => a.title), ['Decided in milestone two']);
+});
+
+// C3/C9 (phase 23, second verify): the gate and the sweep share ONE classifier.
+test('classifyContext: one classifier for the discuss gate and the sweep', async () => {
+  const { classifyContext, contextAuthor } = await import('../lib/planning.mjs');
+
+  // A reflowed human marker is still human.
+  assert.strictEqual(classifyContext('<!--astro-discuss: captured-->\n# ctx\n').kind, 'human');
+  // A human brief that quotes the agent form in its prose stays human.
+  assert.strictEqual(
+    classifyContext('<!-- astro-discuss: captured -->\n# ctx\nheadless runs write `<!-- astro-discuss: captured by agent: x -->`\n').kind,
+    'human',
+  );
+  // An agent marker below a heading or front matter still declares agent provenance.
+  assert.deepEqual(classifyContext('# b\n<!-- astro-discuss: captured by agent: fleet -->\n'), { kind: 'agent', author: 'fleet' });
+  assert.strictEqual(classifyContext('---\ntitle: d\n---\n<!-- astro-discuss: captured by agent: fleet -->\n').kind, 'agent');
+  // Colon-less and non-standard agent forms are agent, never human.
+  assert.strictEqual(classifyContext('<!-- astro-discuss: captured by agent -->\n').kind, 'agent');
+  assert.strictEqual(classifyContext('<!-- astro-discuss: captured by fleet-bot -->\n').kind, 'agent');
+  assert.strictEqual(contextAuthor('<!-- astro-discuss: captured by agent -->\n'), '');
+  // No marker at all.
+  assert.strictEqual(classifyContext('# just notes\n').kind, 'stub');
+});
+
+test('milestoneHarvest: a reflowed human CONTEXT marker is harvested, not silently dropped', async () => {
+  const { milestoneHarvest } = await import('../lib/harvest.mjs');
+  const root = await scaffold();
+  const ph = await addPhase(root, { number: 1, name: 'reflowed', milestone: 1 });
+  mkdirSync(join(paths(root).phases, ph.slug), { recursive: true });
+  writeFileSync(join(paths(root).phases, ph.slug, 'CONTEXT.md'), '<!--astro-discuss: captured-->\n# ctx\nhuman answers\n');
+
+  const result = await milestoneHarvest(root, 1);
+  assert.equal(result.contexts.length, 1, 'the human brief must reach the sweep');
+});
