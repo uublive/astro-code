@@ -197,6 +197,16 @@
       "file": "bin/ac.mjs"
     },
     {
+      "id": "2026-09-24-a-in-the-agent-name-in-a-context-marker",
+      "title": "A '>' in the agent name in a CONTEXT marker makes the file read as 'stub'",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-09-24T14:08:29.189Z",
+      "why": "The marker patterns use [^>]*, so '<!-- astro-discuss: captured by agent: a>b -->' prints 'none'/'stub'. It still proposes nothing, but /astro-plan treats the phase as undiscussed and the harvest does not count it in skipped.agentContexts.",
+      "phase": "23",
+      "file": "lib/planning.mjs"
+    },
+    {
       "id": "2026-09-24-accept-statement-edit-records-only-an",
       "title": "accept --statement / --edit records only an edited history line, never an accepted one",
       "status": "open",
