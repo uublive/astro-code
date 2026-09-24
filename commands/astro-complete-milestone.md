@@ -18,6 +18,19 @@ Complete and archive the current milestone.
    - and flips this milestone's claims to `complete` in the shared registry (so the
      numbers are visibly retired for the whole team).
 3. Report what was archived and where.
+3b. **Sweep the milestone for principles.** Run `ac milestone harvest --json` (it defaults
+   to the milestone just archived) and read its four sources — the window's ADRs, human
+   CONTEXT files, human rejection reasons, and surprise notes. Agent-captured CONTEXT and
+   agent-signed rejections are already excluded by the harvest — nothing further to check
+   here. Group the results by theme; a theme qualifies only when it recurs across **at
+   least 2 phases** — a single surprise, rejection or answer proposes nothing here, the
+   per-moment captures already had their shot at one-offs. Rank by phase count and take
+   at most 3. For each qualifying theme follow
+   `` `$(ac path templates)/principle-capture.md` `` in full (lift the generator, pick a
+   kind, a non-empty `--why`) and run its invocation with `--from-ref "milestone <n>"`
+   and the excerpt the user's own words from one recurring source. Report exactly the
+   spec's one line, or say nothing when nothing recurs. An unattended close (no user in
+   this session) proposes nothing.
 4. **Triage stale debt.** Run `ac debt list --stale`. Milestone close is the natural beat
    for this: you are already stepping back from the work, and an item nobody has touched
    in a month is either worth planning into the next cycle or is no longer true.
