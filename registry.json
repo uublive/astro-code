@@ -359,6 +359,16 @@
       "branch": "develop",
       "claimed_at": "2026-09-24T08:05:15.949Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 27,
+      "milestone": 9,
+      "name": "Forge import and handover: bring the forge graph over, then forge reads astro-code",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-09-24T08:05:18.914Z",
+      "status": "active"
     }
   ]
 }
