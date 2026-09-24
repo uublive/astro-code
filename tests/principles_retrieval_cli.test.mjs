@@ -54,7 +54,7 @@ function mkProject(home, store, { stack = true } = {}) {
 }
 
 function addAccepted(home, store, statement, extra = []) {
-  const r = run(['principles', 'add', statement, '--kind', 'convention', ...extra], process.cwd(), home, store);
+  const r = run(['principles', 'add', statement, '--kind', 'pattern', ...extra], process.cwd(), home, store);
   assert.strictEqual(r.status, 0, r.stderr);
   const m = r.stdout.match(/principle (\S+)/);
   return m[1];
