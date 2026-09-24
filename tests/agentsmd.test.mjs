@@ -83,3 +83,17 @@ test('the shipped block explains the loop and both invocation styles', () => {
   assert.match(text, /no.{0,3} custom slash commands/i, 'the Codex gotcha is stated outright');
   assert.match(text, /verified/, 'the verified-vs-complete distinction');
 });
+
+// Phase 25 (P10, D1) — other hosts get no SessionStart hook, so the ONLY way they learn
+// about a developer's personal principles is a static bullet telling them to run the
+// command themselves. The content itself (statements, why, ids) must never be baked
+// into this file — it lives outside the repo, per-developer (ADR-057), and would
+// otherwise leak into a teammate's clone the next time they pulled.
+test('the shipped block tells the agent to run `ac principles brief`, never bakes in principle content', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ac-agentsmd-principles-'));
+  writeAgentsMd(root);
+  const text = readFileSync(join(root, 'AGENTS.md'), 'utf8');
+  assert.match(text, /ac principles brief/, 'must tell the agent to run `ac principles brief`');
+  assert.match(text, /ac principles cite/, 'must tell the agent to cite what it applied');
+  assert.ok(!/statement:|why:/i.test(text), 'must never bake principle text into the repo file');
+});

@@ -59,6 +59,13 @@ different claims and must not be conflated.
   unmet is a failed phase.
 - **Reports to a human lead with the change or decision, not the process** — the rule
   lives in `CONVENTIONS.md` §Voice. It's narration — nothing checks it.
+- **Before starting a task, run `ac principles brief --stage <stage> --by <role>`**
+  (`--stage execute`, `plan`, `research`, `verify`, …) for a personal shortlist of the
+  developer's own standing rules and preferences — a hard rule always applies, the rest
+  is scoped to what you're touching. This file never carries that content itself (it
+  lives outside the repo, per-developer); run the command instead of guessing what it
+  would say. After applying any, run `ac principles cite <id>… --stage <stage>` so the
+  developer can see what actually got used.
 
 ### Invoking the commands
 
