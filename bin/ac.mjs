@@ -205,6 +205,13 @@ function reportPrinciplesSync(res) {
   if (res.state === 'unreachable') {
     console.log('⚠ principles remote unreachable — kept locally, will sync on the next command');
   }
+  if (res.state === 'diverged') {
+    console.log(
+      '⚠ principles store could not merge with the remote — local history diverged in a shape ' +
+        'this machine could not reconcile automatically; nothing was pushed (git status in ' +
+        'the store directory to resolve by hand)',
+    );
+  }
 }
 
 // `syncPrinciples` acquires its lock by `mkdirSync`-ing `<dir>/.lock` with no parent

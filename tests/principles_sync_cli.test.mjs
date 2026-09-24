@@ -172,7 +172,7 @@ test('C10: entries added on either machine reach the other, with no manual git a
   assert.ok(idP1, `--propose must still print an id, got: ${p1.stdout}`);
 
   // A amends x concurrently with B accepting p1 — different entries, must not conflict.
-  const amendA = run(A, ['principles', 'amend', idX, '--statement', 'X amended by A']);
+  const amendA = run(A, ['principles', 'amend', idX, '--reason', 'sync test amend', '--statement', 'X amended by A']);
   assert.strictEqual(amendA.status, 0, amendA.stderr);
   const acceptB = run(B, ['principles', 'accept', idP1]);
   assert.strictEqual(acceptB.status, 0, acceptB.stderr);
@@ -218,7 +218,7 @@ test('C11: every command still succeeds locally while the remote is unreachable,
     const acceptProposed = run(A, ['principles', 'accept', idProposed]);
     assert.strictEqual(acceptProposed.status, 0, acceptProposed.stderr);
 
-    const amend = run(A, ['principles', 'amend', idOffline, '--statement', 'Amended while unreachable']);
+    const amend = run(A, ['principles', 'amend', idOffline, '--reason', 'sync test amend', '--statement', 'Amended while unreachable']);
     assert.strictEqual(amend.status, 0, amend.stderr);
 
     const listOffline = list(A);
@@ -265,11 +265,11 @@ test('C12: the same entry amended differently on both machines is reported as a 
   // exactly as C11 does, then bring it back and let both sides sync.
   const movedAside = `${remoteBare}.outage`;
   renameSync(remoteBare, movedAside);
-  const amendA = run(A, ['principles', 'amend', idX, '--statement', 'X-from-A']);
+  const amendA = run(A, ['principles', 'amend', idX, '--reason', 'A offline amend', '--statement', 'X-from-A']);
   assert.strictEqual(amendA.status, 0, amendA.stderr);
-  const amendAY = run(A, ['principles', 'amend', idY, '--statement', 'Y-from-A-only']);
+  const amendAY = run(A, ['principles', 'amend', idY, '--reason', 'A offline amend', '--statement', 'Y-from-A-only']);
   assert.strictEqual(amendAY.status, 0, amendAY.stderr);
-  const amendB = run(B, ['principles', 'amend', idX, '--statement', 'X-from-B']);
+  const amendB = run(B, ['principles', 'amend', idX, '--reason', 'B offline amend', '--statement', 'X-from-B']);
   assert.strictEqual(amendB.status, 0, amendB.stderr);
   renameSync(movedAside, remoteBare);
 
