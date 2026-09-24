@@ -208,3 +208,39 @@ test('brief --files: absolute, subdirectory-relative and symlinked paths all ser
   const miss = run(['principles', 'brief', '--work', 'code', '--files', 'src/x.mjs'], proj, home, store);
   assert.doesNotMatch(miss.stdout, /ZEBRALIB/, 'a path outside lib/ must not match');
 });
+
+// Phase 25 verify, C13 — the ranking and the served log are what C5/C6 promise, so each
+// needs a test that fails when it breaks. Store order is id order (a dated slug of the
+// statement), so the AAA… entry loads first: an unsorted `ask` would list it first.
+test('C5: ask lists a three-term match above a one-term match that loads first', async () => {
+  const { home, store } = mkHome();
+  const proj = mkProject(home, store);
+  const weak = addAccepted(home, store, 'AAAWEAK reports go in the reports folder');
+  const strong = addAccepted(home, store, 'ZZZSTRONG concurrent filesystem writes take a lock');
+  const r = run(['principles', 'ask', 'concurrent filesystem writes in reports'], proj, home, store);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const iStrong = r.stdout.indexOf(strong);
+  const iWeak = r.stdout.indexOf(weak);
+  assert.ok(iStrong >= 0 && iWeak >= 0, r.stdout);
+  assert.ok(iStrong < iWeak, `the 3-term match must rank first:\n${r.stdout}`);
+});
+
+test('C6: list --usage --json puts a twice-served, never-cited entry in ignored with served 2', async () => {
+  const { home, store } = mkHome();
+  const proj = mkProject(home, store);
+  const u1 = addAccepted(home, store, 'ZEBRA1 usage one default', ['--stack', 'node']);
+  const u2 = addAccepted(home, store, 'ZEBRA1 usage two default', ['--stack', 'node']);
+  const u3 = addAccepted(home, store, 'ZEBRA1 usage three default', ['--stack', 'go']);
+
+  run(['principles', 'brief', '--stage', 'session'], proj, home, store);
+  run(['principles', 'brief', '--stage', 'session'], proj, home, store);
+  run(['principles', 'cite', u1, '--stage', 'execute', '--by', 'executor'], proj, home, store);
+
+  const l = run(['principles', 'list', '--usage', '--json'], proj, home, store);
+  assert.strictEqual(l.status, 0, l.stderr);
+  const report = JSON.parse(l.stdout);
+  assert.deepEqual(report.ignored.map((e) => [e.id, e.served]), [[u2, 2]]);
+  const unused = report.unused.map((e) => e.id);
+  assert.ok(unused.includes(u3), 'the go-scoped entry was never served');
+  assert.ok(!unused.includes(u1) && !unused.includes(u2), 'served entries are not unused');
+});
