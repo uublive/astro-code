@@ -357,6 +357,31 @@ with no conflict — they're append-only evidence, never a decision to arbitrate
 - `ac principles reopen <id> --reason "…"` — rejected → proposed, the only way back.
 - `ac principles merge <dup> --into <id>` — fold a duplicate's evidence into the survivor; the duplicate stays citable as `merged`.
 
+**Retrieval — a structural shortlist, not a search engine.** `ac principles brief [--stage
+s] [--work w,…] [--files a,b] [--rules-only] [--by role] [--json]` prints the per-task
+shortlist: every `strength: rule` entry in full, plus a compact index (id, kind/strength,
+first-sentence statement, ≤ 25 lines) of *in-scope* accepted defaults — a default is in
+scope when EVERY non-empty scope dimension (stack/work/files) matches something in the
+task's context (stack ∩ project tags, work ∩ requested work, a requested file matching a
+glob); an unscoped dimension on either side is a wildcard, but no `--files` at all means a
+file-scoped entry stays silent — a glob is a narrow claim nothing confirms it against.
+Stack is detected from manifests at the project root (`package.json` deps, `go.mod`,
+`Cargo.toml`, …), overridable with `ac config set stack '["rust"]'`; the tags used are
+always printed, so a wrong detection is visible, never silent. Nothing served ⇒ empty
+stdout (hooks key their silence on that) and one line on stderr. `ac principles ask
+"<question>"` ranks by keyword — statement, why and scope tags, weighted — and says WHY
+each result matched (no embeddings, ever). `ac principles cite <id>… --stage s --by role`
+records what you actually applied; `ac principles list --usage` surfaces served-often-
+never-cited ("ignored") and never-served ("unused") entries from that log, which lives at
+`~/.astro/principles/.local/usage.jsonl` — per-machine, unsynced, ids only. A shortlist
+that shares words with your project's `CONVENTIONS.md`/`DECISIONS.md` prints `⚠ canon may
+override: ADR-nnn` — a candidate only; canon always wins and nothing is resolved for you.
+Every astro agent (executor, researcher, planner) runs `brief` for its own stage and
+`cite`s what it applies; the verifier only ever sees hard rules, non-blocking (a violation
+is filed as debt, never a failed criterion). The Claude Code session gets the same
+shortlist injected automatically at start/compact; on any other host, the managed
+`AGENTS.md` block tells the agent to run `ac principles brief` itself.
+
 ---
 
 ## The fast lane
