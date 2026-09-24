@@ -750,14 +750,24 @@ export function renderBanner(ctx) {
   if (!ctx || (ctx.milestone == null && !ctx.phase)) return '';
   const ctxLine = [];
   if (ctx.milestone != null) ctxLine.push(`M${ctx.milestone}`);
-  if (ctx.phase) ctxLine.push(`P${ctx.phase.number} ${phaseLabel(ctx.phase)}`);
+  if (ctx.phase) ctxLine.push(`P${ctx.phase.number} ${clip(phaseLabel(ctx.phase), BANNER_LABEL_MAX)}`);
   if (ctx.activity) ctxLine.push(ctx.activity);
   else if (ctx.phase) ctxLine.push(ctx.phase.status);
   if (ctx.total) ctxLine.push(`${ctx.done}/${ctx.total} phases`);
   const lines = [];
   if (ctxLine.length) lines.push(ctxLine.join(' · '));
   lines.push('next: ' + nextAction(ctx));
-  return renderLogo({ lines, color: false });
+  // Claude Code trims leading blank lines from a systemMessage, which seats the art's top
+  // row right on the "SessionStart says:" line. U+2800 (braille blank) renders empty but
+  // is not whitespace, so it survives the trim and keeps a row of air above the mark.
+  return BANNER_AIR + renderLogo({ lines, color: false });
+}
+
+// A long phase name wraps the text column under the art and breaks the mark.
+const BANNER_LABEL_MAX = 25;
+const BANNER_AIR = '\u2800';
+function clip(s, max) {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
 // --- terminal width & narrow-screen layout -----------------------------------
