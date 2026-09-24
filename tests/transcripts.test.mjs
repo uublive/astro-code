@@ -125,6 +125,26 @@ test('sessionFiles: the realpath variant of the root is also found', async () =>
   assert.ok(files.some((f) => f.session === 'sess-a'));
 });
 
+// C9 remediation: a Codex rollout with no readable `session_meta` line (so its `cwd` is
+// unrecoverable) must fail OPEN in default project scope — it can never be proven to
+// belong to a DIFFERENT project, so "unknown ≠ empty" (ADR-043/054) means it stays in
+// scope rather than vanishing as if the sweep found nothing at all.
+test('sessionFiles: a Codex rollout with an unrecoverable cwd (no session_meta line) still appears in default project scope', async () => {
+  const { sessionFiles } = await import(TRANSCRIPTS);
+  const sb = sandbox();
+  const root = join(sb.home, 'proj');
+  mkdirSync(root, { recursive: true });
+  const dir = join(sb.codex, 'sessions', '2026', '09', '24');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-no-meta.jsonl');
+  appendLines(file, [
+    { type: 'future_codex_event', a: 1 },
+    { type: 'future_codex_event', a: 2 },
+  ]);
+  const files = sessionFiles({ roots: [root], env: sb.env });
+  assert.ok(files.some((f) => f.host === 'codex' && f.file === file));
+});
+
 // ── Claude classification ───────────────────────────────────────────────────────────
 
 test('classifyClaudeLine: typed human turns (with and without origin) are human', async () => {

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 import { git } from '../lib/git.mjs';
-import { sandbox as fixtureSandbox, addProfile, writeClaudeSession, writeCodexRollout, cHuman, cAssistant, cToolResult, cMeta, GARBAGE_LINES, SECRETS, xUser } from './fixtures/minefixtures.mjs';
+import { sandbox as fixtureSandbox, addProfile, writeClaudeSession, writeCodexRollout, cHuman, cAssistant, cToolResult, cMeta, GARBAGE_LINES, SECRETS, xUser, appendLines } from './fixtures/minefixtures.mjs';
 
 const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
 const AC = join(FRAMEWORK, 'bin', 'ac.mjs');
@@ -109,6 +109,26 @@ test('C9: garbage lines never crash the sweep; skipped is reported', () => {
 
   const text = run(['principles', 'mine'], P, sb);
   assert.match(text.stdout, /⚠ skipped/);
+});
+
+test('C9 remediation: a Codex rollout entirely of unrecognised lines (no readable session_meta) is reported, not read as "nothing new"', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  const dir = join(sb.codex, 'sessions', '2026', '09', '24');
+  const file = join(dir, 'rollout-no-meta.jsonl');
+  appendLines(file, [
+    { type: 'future_codex_event', a: 1 },
+    { type: 'future_codex_event', a: 2 },
+    { type: 'future_codex_event', a: 3 },
+    { type: 'future_codex_event', a: 4 },
+  ]);
+
+  const res = run(['principles', 'mine', '--json'], P, sb);
+  assert.strictEqual(res.status, 0, res.stderr);
+  const j = JSON.parse(res.stdout);
+  assert.strictEqual(j.nothingNew, false, 'an unrecognised-only Codex rollout must not read as a clean/empty run');
+  assert.ok(j.sessions.scanned >= 1);
+  assert.ok(j.skipped.unrecognised >= 4);
 });
 
 test('ADR-029: an unknown flag dies; --advance of an unknown sweep dies', () => {

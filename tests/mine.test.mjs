@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { sandbox, writeClaudeSession, cHuman, cAssistant, SECRETS } from './fixtures/minefixtures.mjs';
+import { sandbox, writeClaudeSession, cHuman, cAssistant, SECRETS, appendLines } from './fixtures/minefixtures.mjs';
 import { addPrinciple, proposePrinciple, rejectPrinciple } from '../lib/principles.mjs';
 
 const MINE = '../lib/mine.mjs';
@@ -44,6 +44,19 @@ test('C4 keying: casing/politeness collapse to one key; polarity keeps "never" s
   assert.equal(a.key, c.key);
   assert.notEqual(a.key, d.key);
   assert.equal(a.keyHash.length, 16);
+});
+
+test('C4 remediation: negation phrased three different ways collapses to one key; a redundant "No," prefix on a short steer no longer splits it', async () => {
+  const { steerKey } = await import(MINE);
+  const s1 = steerKey("No, don't add semicolons at the end of lines in TypeScript files.");
+  const s2 = steerKey("Don't add semicolons at the end of lines in TypeScript files.");
+  const s3 = steerKey('Do not add semicolons at the end of lines in TypeScript files.');
+  assert.equal(s1.key, s2.key);
+  assert.equal(s2.key, s3.key);
+
+  const t1 = steerKey('No, never use tabs for indentation!');
+  const t2 = steerKey('never use tabs for indentation please');
+  assert.equal(t1.key, t2.key);
 });
 
 test('C4 grouping + cap/rank + redaction + store matches via a real sweep', async () => {
@@ -115,6 +128,46 @@ test('C4 grouping + cap/rank + redaction + store matches via a real sweep', asyn
   const semicolonSighting = result.sightings.find((s) => s.status === 'rejected');
   assert.ok(semicolonSighting, 'an exact restatement of a rejected entry must be a sighting with its status');
   assert.ok(!result.candidates.some((c) => /semicolons/.test(c.text)));
+});
+
+test('C4 remediation via a real sweep: three different phrasings of the same negation across three sessions group into ONE candidate', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  writeClaudeSession(sb.claude, root, 'r1', [
+    cHuman("No, don't add semicolons at the end of lines in TypeScript files."),
+  ]);
+  writeClaudeSession(sb.claude, root, 'r2', [
+    cHuman("Don't add semicolons at the end of lines in TypeScript files."),
+  ]);
+  writeClaudeSession(sb.claude, root, 'r3', [
+    cHuman('Do not add semicolons at the end of lines in TypeScript files.'),
+  ]);
+
+  const { sweep } = await import(MINE);
+  const result = await sweep({ scope: { mode: 'project', roots: [root] }, storeDir: sb.store, env: sb.env });
+  const semicolon = result.candidates.filter((c) => /semicolons/.test(c.text));
+  assert.equal(semicolon.length, 1, 'the three phrasings must group into exactly one candidate');
+  assert.equal(semicolon[0].recurrence, 3);
+});
+
+test('C9 remediation: a Codex rollout with an unrecoverable cwd is scanned (not silently absent) in default project scope', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  const dir = join(sb.codex, 'sessions', '2026', '09', '24');
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, 'rollout-no-meta.jsonl');
+  appendLines(file, [
+    { type: 'future_codex_event', a: 1 },
+    { type: 'future_codex_event', a: 2 },
+    { type: 'future_codex_event', a: 3 },
+    { type: 'future_codex_event', a: 4 },
+  ]);
+
+  const { sweep } = await import(MINE);
+  const result = await sweep({ scope: { mode: 'project', roots: [root] }, storeDir: sb.store, env: sb.env });
+  assert.equal(result.nothingNew, false, 'must not read as a clean/empty run');
+  assert.equal(result.sessions.scanned, 1);
+  assert.equal(result.skipped.unrecognised, 4);
 });
 
 test('C4 across sweeps: a one-off, advanced, then repeated in a new session qualifies via seen', async () => {
