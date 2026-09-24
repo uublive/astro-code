@@ -160,6 +160,31 @@ test('accept moves proposed to accepted', async () => {
   assert.equal(accepted.status, 'accepted');
 });
 
+test('accept with a reworded statement or why records BOTH edited and accepted history lines (D7)', async () => {
+  const { acceptPrinciple } = await import('../lib/principles.mjs');
+  const dir = mkStoreDir();
+  const now = new Date('2026-09-24T08:00:00.000Z');
+
+  const p = await proposedEntry(dir, now, 'use tabs');
+  const accepted = await acceptPrinciple(dir, p.id, { statement: 'Use two-space indentation', now });
+  assert.equal(accepted.status, 'accepted');
+  const lastTwo = accepted.history.slice(-2);
+  assert.equal(lastTwo[0].action, 'edited');
+  assert.equal(lastTwo[0].statement, 'use tabs');
+  assert.equal(lastTwo[1].action, 'accepted');
+
+  const p2 = await proposedEntry(dir, now, 'Reword my why only');
+  const acceptedWhy = await acceptPrinciple(dir, p2.id, { why: 'A clearer reason', now });
+  const lastTwoWhy = acceptedWhy.history.slice(-2);
+  assert.equal(lastTwoWhy[0].action, 'edited');
+  assert.equal(lastTwoWhy[1].action, 'accepted');
+
+  const p3 = await proposedEntry(dir, now, 'A plain acceptance');
+  const plainAccepted = await acceptPrinciple(dir, p3.id, { now });
+  assert.equal(plainAccepted.history.length, 1);
+  assert.equal(plainAccepted.history[0].action, 'accepted');
+});
+
 test('reject moves proposed to rejected and requires a reason', async () => {
   const { rejectPrinciple } = await import('../lib/principles.mjs');
   const dir = mkStoreDir();

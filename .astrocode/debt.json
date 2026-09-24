@@ -209,12 +209,14 @@
     {
       "id": "2026-09-24-accept-statement-edit-records-only-an",
       "title": "accept --statement / --edit records only an edited history line, never an accepted one",
-      "status": "open",
+      "status": "dropped",
       "cost": "small",
       "found_at": "2026-09-24T10:53:09.552Z",
       "why": "the status is correct, but the entry's history never shows when it was accepted; a plain accept does record it",
       "phase": "22",
-      "file": "lib/principles.mjs"
+      "file": "lib/principles.mjs",
+      "dropped_at": "2026-09-24T17:13:48.183Z",
+      "drop_reason": "fixed in phase 24 (t5): an edited accept records edited + accepted"
     }
   ]
 }
