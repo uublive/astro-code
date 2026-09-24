@@ -27,8 +27,11 @@
       "number": 25,
       "name": "Retrieval into prompts: structural scopes, a compact index with full text on demand, hard rules, ac principles ask",
       "slug": "25-retrieval-into-prompts-structural-scopes-a-compact-index-with-full-text-on-demand-hard-rules-ac-principles-ask",
-      "status": "pending",
-      "milestone": 9
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-24T22:39:37.996Z"
     },
     {
       "number": 26,
