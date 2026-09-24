@@ -387,3 +387,10 @@ _2026-09-24 · at 8708356_
 
 **Rejected:** YAML front matter (zero-deps rule, and the header shape doesn't need a parser); a JSON index file (one file per entry is what makes different-entry merges conflict-free by construction); orphan-branch CAS sync like the team registry (a personal store has exactly one owner across many machines — nothing to arbitrate); automatic conflict resolution (a human's considered edit must never be silently overwritten)
 
+## ADR-060 — Principle-capture specifics this plan pinned: single spec at templates/principle-capture.md; SURPRISES.jsonl + the verb-owned gate; rejections persisted on the roadmap entry with declared kind; ac milestone harvest as the sweep's only read, ADR window from the previous close; verify's forge capture deleted without replacement
+_2026-09-24 · at 789361b_
+
+**Why:** phase 23's four capture moments and the milestone sweep all need the same lift/volume/one-line/human-only rules and the same evidence shape; pinning the invocation, storage and read paths once here keeps every command and the templates spec converging on identical values instead of each command inventing its own, and keeps the record findable once the plan itself is stale
+
+**Rejected:** a per-command copy of the capture rules (drift bait — the two copies would diverge and one of them would be wrong); execute proposing principles directly instead of only recording a surprise note (execute is not a human-answered moment, ADR-058); reading reject reasons from state.blockers (transient scratch, not durable evidence the milestone sweep can rely on); guessing a session id when none reaches a command (checked: hooks, hosts, stats — none carry one)
+
