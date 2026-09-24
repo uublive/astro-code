@@ -6,6 +6,9 @@
 // bits it needs. Pure functions only; the hooks own all the I/O of stdin/stdout.
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname, parse } from 'node:path';
+import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { renderLogo } from './_astro-brand.mjs';
 
 // A live activity verb older than this is treated as stale and ignored, so a
@@ -846,4 +849,63 @@ function fitRow(segments, width, sep = STATUS_SEP) {
     if (visibleWidth(candidate) <= width) row = candidate;
   }
   return row;
+}
+
+// ── Principles delivery (phase 25, P10, D1) ─────────────────────────────────────
+//
+// Hooks are copied STANDALONE (module header) so this never imports `lib/retrieval.mjs`
+// — it shells out to `ac` exactly the way a teammate would, resolving the entry in
+// order: the clone this hook was copied FROM (`<hookDir>/../bin/ac.mjs`), then the
+// installed clone recorded at `~/.astro/code/source`, then whatever `ac` is on PATH.
+// Any failure — not found, non-zero exit, empty stdout, a timeout — yields no
+// section and no error text: a broken principles read must never break a session
+// start or a compaction.
+
+/** The `ac` entry point to spawn from a standalone hook (P10). */
+export function resolveAcEntry(hookDir) {
+  const local = join(hookDir, '..', 'bin', 'ac.mjs');
+  if (existsSync(local)) return local;
+  const sourceFile = join(homedir(), '.astro', 'code', 'source');
+  const source = readFileSync(sourceFile, 'utf8').trim();
+  if (source) {
+    const installed = join(source, 'bin', 'ac.mjs');
+    if (existsSync(installed)) return installed;
+  }
+  return 'ac';
+}
+
+function safeResolveAcEntry(hookDir) {
+  try { return resolveAcEntry(hookDir); } catch { return 'ac'; }
+}
+
+/**
+ * `ac principles brief --stage <stage> --by <by>`'s stdout, or `''` on any failure
+ * (P10) — never inside an astro project (`root` absent) either.
+ *
+ * @param {string} root
+ * @param {string} hookDir directory of the calling hook file (`import.meta.url`)
+ * @param {{ stage?: string, by?: string }} [opts]
+ * @returns {string}
+ */
+export function principlesBrief(root, hookDir, { stage = 'session', by = 'session' } = {}) {
+  if (!root) return '';
+  const entry = safeResolveAcEntry(hookDir);
+  const args = entry.endsWith('.mjs')
+    ? [entry, 'principles', 'brief', '--stage', stage, '--by', by]
+    : ['principles', 'brief', '--stage', stage, '--by', by];
+  const cmd = entry.endsWith('.mjs') ? process.execPath : entry;
+  try {
+    const r = spawnSync(cmd, args, {
+      cwd: root, encoding: 'utf8', timeout: 5000, windowsHide: true,
+    });
+    if (r.status !== 0 || r.error) return '';
+    return (r.stdout || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+/** `import.meta.url` -> the directory to pass as `hookDir` above. */
+export function hookDirOf(metaUrl) {
+  return dirname(fileURLToPath(metaUrl));
 }
