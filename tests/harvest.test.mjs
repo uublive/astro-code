@@ -101,6 +101,26 @@ test('milestoneHarvest: human CONTEXT is included, agent CONTEXT is excluded and
   assert.equal(result.skipped.agentContexts, 1);
 });
 
+// C9 remediation: contextAuthor() searched the WHOLE file for the agent-marker pattern,
+// so a human CONTEXT.md that merely QUOTES the agent marker's text in its prose (e.g. to
+// document ADR-037's two forms, as this phase's own CONTEXT.md does) was misread as
+// agent-authored and dropped from the sweep — a human capture, silently skipped.
+test('milestoneHarvest: a human CONTEXT that quotes the agent marker in its prose is still counted human', async () => {
+  const { milestoneHarvest } = await import('../lib/harvest.mjs');
+  const root = await scaffold();
+  const human = await addPhase(root, { number: 1, name: 'human discussed, quotes agent form', milestone: 1 });
+  writeFileSync(
+    join(paths(root).phases, human.slug, 'CONTEXT.md'),
+    '<!-- astro-discuss: captured -->\n\n# Discussion\n\n' +
+      'Some phases instead carry `<!-- astro-discuss: captured by agent: … -->`, a headless form.\n',
+  );
+
+  const result = await milestoneHarvest(root, 1);
+
+  assert.deepEqual(result.contexts.map((c) => c.phase), [human.slug], 'a human CONTEXT must not be dropped from the sweep');
+  assert.equal(result.skipped.agentContexts, 0);
+});
+
 test('milestoneHarvest: a human rejection of a phase later accepted still comes back with its reason', async () => {
   const { milestoneHarvest } = await import('../lib/harvest.mjs');
   const root = await scaffold();
