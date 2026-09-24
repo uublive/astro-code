@@ -55,6 +55,8 @@ import { editText } from '../lib/editor.mjs';
 import { syncPrinciples, openConflicts, getRemote, setRemote, resolveConflict } from '../lib/principlesync.mjs';
 import { STAGE_WORK } from '../lib/principlebrief.mjs';
 import { shortlist, askStore, cite, usageReview, clashesFor, projectContext } from '../lib/retrieval.mjs';
+import { sweep, advanceSweep } from '../lib/mine.mjs';
+import { findAstroRoot } from '../hooks/_astro-ctx.mjs';
 
 function parseArgs(args) {
   const flags = {};
@@ -161,6 +163,9 @@ const ALLOWED_FLAGS = {
   'principles brief': ['stage', 'work', 'files', 'rules-only', 'by', 'json'],
   'principles ask': ['stage', 'by', 'json'],
   'principles cite': ['stage', 'by'],
+  // Phase 26 (P1) — the transcript sweep. Read-only towards the watermark unless
+  // --advance is given; a typo'd flag must not silently degrade into the wrong scope.
+  'principles mine': ['all', 'project', 'rescan', 'json', 'advance'],
 };
 
 function checkFlags(key, flags) {
@@ -211,7 +216,7 @@ function flagValues(rawTail, name) {
 // (e.g. `ac principles add --propose "statement"`). Left alone, the statement silently
 // vanishes from the positionals. Detected and repaired once, right where `pos`/`flags`
 // are read for this command, rather than teaching `parseArgs` about individual verbs.
-const PRINCIPLES_BOOLEAN_FLAGS = ['propose', 'edit', 'all', 'proposed', 'accepted', 'rejected', 'json', 'rules-only', 'usage'];
+const PRINCIPLES_BOOLEAN_FLAGS = ['propose', 'edit', 'all', 'proposed', 'accepted', 'rejected', 'json', 'rules-only', 'usage', 'rescan'];
 function fixPrinciplesBooleanFlags(flags, pos) {
   for (const key of PRINCIPLES_BOOLEAN_FLAGS) {
     if (typeof flags[key] === 'string') {
@@ -365,6 +370,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac principles ask "<question>" [--stage s] [--by role] [--json]  keyword-ranked search, says why it matched
   ac principles cite <id>… [--stage s] [--by role]  record that these principles were applied
   ac principles list --usage [--json]  served-never-cited and never-served, from the local usage log
+  ac principles mine [--all|--project <path>] [--rescan] [--json]   sweep past sessions for steers (read-only)
+  ac principles mine --advance <sweep-id>   mark that sweep's material as processed
   ac phase reject <phase> --reason … [--agent name]  UAT failed → rejected + record a blocker
                                        (--agent: machine-signed rejection, not human UAT)
   ac phase surprise <phase> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]
@@ -1359,7 +1366,55 @@ async function main() {
         return;
       }
 
-      die(`unknown: ac principles ${sub} (add | list | show | accept | reject | retire | supersede | amend | promote | remote | resolve | match | sight | reopen | merge | brief | ask | cite)`);
+      if (sub === 'mine') {
+        checkFlags('principles mine', flags);
+        if (flags.all && flags.project) die('ac principles mine: --all and --project are mutually exclusive');
+
+        if (typeof flags.advance === 'string' || flags.advance === true) {
+          const sweepId = typeof flags.advance === 'string' ? flags.advance : pos[1];
+          if (!sweepId) die('usage: ac principles mine --advance <sweep-id>');
+          try {
+            await advanceSweep({ storeDir: dir, id: sweepId });
+          } catch (e) { die(e.message); }
+          console.log(`✓ advanced sweep ${sweepId}`);
+          return;
+        }
+
+        await principlesSync(dir);
+        const root = flags.project ? resolve(String(flags.project)) : (findAstroRoot(process.cwd()) || process.cwd());
+        // realpathSync throws on a non-existent path — fall back to the given root
+        // rather than dying on a read-only sweep (macOS /var vs /private/var, D-P2).
+        let real = root;
+        try { real = realpathSync(root); } catch { /* keep root */ }
+        const scope = flags.all
+          ? { mode: 'all', roots: [] }
+          : { mode: 'project', roots: [...new Set([root, real])] };
+        let result;
+        try {
+          result = await sweep({ scope, rescan: !!flags.rescan, storeDir: dir });
+        } catch (e) { die(e.message); }
+
+        if (flags.json) { json(result); return; }
+
+        if (result.nothingNew) {
+          console.log(`• nothing new to mine (${result.sessions.scanned} session file(s) checked)`);
+          return;
+        }
+        console.log(`• ${result.candidates.length} candidate(s) from ${result.sessions.scanned} session file(s) — sweep ${result.sweep}`);
+        result.candidates.forEach((c, i) => {
+          const strength = c.explicit ? 'rule' : `${c.recurrence} sessions`;
+          console.log(`  ${i + 1}. [${strength}] ${c.text}`);
+        });
+        if (result.sightings.length) console.log(`• ${result.sightings.length} exact repeat(s) to record as sightings`);
+        if (result.remaining) console.log(`• ${result.remaining} more candidate(s) held for the next sweep`);
+        const skippedTotal = result.skipped.malformed + result.skipped.unrecognised + result.skipped.oversized + result.skipped.stalePending;
+        if (skippedTotal > 0) {
+          console.log(`⚠ skipped ${skippedTotal} transcript line(s): ${result.skipped.malformed} malformed, ${result.skipped.unrecognised} unrecognised, ${result.skipped.oversized} oversized`);
+        }
+        return;
+      }
+
+      die(`unknown: ac principles ${sub} (add | list | show | accept | reject | retire | supersede | amend | promote | remote | resolve | match | sight | reopen | merge | brief | ask | cite | mine)`);
     }
 
     case 'agents-md': {
