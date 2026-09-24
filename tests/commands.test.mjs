@@ -600,11 +600,18 @@ const VERIFIER_MD = join(ROOT, 'agents', 'astro-verifier.md');
 // alternative ("two or three sentences") to cover astro-debt.md's pre-existing assessment
 // slot, which the phase-19 audit already judged compliant (PLAN.md) but which the plan's
 // literal P4 regex does not match — still a stated numeric bound, just an "X or Y" range.
-// Phase 23 t14 adds "nothing extra" — astro-accept.md's 4b principle-capture slot states
-// the silence rule as "proposes nothing and prints nothing extra" rather than "say
-// nothing"; same silence concept, a different but equally general phrasing of it.
+//
+// Phase 23 remediation (C5): a `\bnothing extra\b` alternative was added here to make
+// astro-accept.md's 4b principle-capture slot pass WITHOUT the slot actually stating its
+// own bound — the slot's only matching phrase ("A plain acceptance proposes nothing and
+// prints nothing extra") described a DIFFERENT case (the accept path, which never even
+// reaches 4b) rather than the capture step's own reporting bound. Widening the regex to
+// catch that unrelated phrase is exactly the gaming this guard exists to prevent (C2:
+// only deleting/weakening the BOUND, never widening the matcher, may turn a slot green).
+// The fix belongs in the doc: 4b now states its own "one line" bound directly, so the
+// alternative is removed rather than kept as a foothold for the next copyedit to lean on.
 const BOUND_RE =
-  /\b(?:in|at most|no more than|to)\s+(?:exactly\s+)?(?:one|two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\b(?:one|two|three|\d+)\s+or\s+(?:two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\bone[- ]liner\b|\bone line\b|\bsay nothing\b|\bnothing at all\b|\bno output\b|\bsilence means\b|\bnothing extra\b|\bskip (?:this|it) (?:silently|in silence)\b/i;
+  /\b(?:in|at most|no more than|to)\s+(?:exactly\s+)?(?:one|two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\b(?:one|two|three|\d+)\s+or\s+(?:two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\bone[- ]liner\b|\bone line\b|\bsay nothing\b|\bnothing at all\b|\bno output\b|\bsilence means\b|\bskip (?:this|it) (?:silently|in silence)\b/i;
 
 /**
  * Slice `src` between two literal anchors (the numbered-step / bullet markers already

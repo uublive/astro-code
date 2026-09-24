@@ -1448,7 +1448,7 @@ async function main() {
           die('usage: ac milestone harvest [<n>] [--json]');
         }
         let result;
-        try { result = milestoneHarvest(r, nArg); } catch (e) { die(e.message); }
+        try { result = await milestoneHarvest(r, nArg); } catch (e) { die(e.message); }
         if (flags.json) { json(result); return; }
 
         console.log(`milestone ${result.milestone} sweep material (${result.source === 'archive' ? 'archived' : 'live'})`);
@@ -1665,8 +1665,12 @@ async function main() {
           const status = phaseContextStatus(r, ph.slug);
           if (status !== 'ready') { console.log('none'); return; }
           const file = join(paths(r).phases, ph.slug, 'CONTEXT.md');
+          // `contextAuthor` returns `null` for the plain human marker and a (possibly
+          // empty) string for the agent form — an empty string still DECLARES agent
+          // provenance (`<!-- astro-discuss: captured by agent:  -->`, no name given),
+          // so a truthy check on the name wrongly reported that capture as 'human'.
           const author = contextAuthor(readFileSync(file, 'utf8'));
-          console.log(author ? `agent ${author}` : 'human');
+          console.log(author !== null ? `agent${author ? ` ${author}` : ''}` : 'human');
           return;
         }
         console.log(phaseContextStatus(r, ph.slug));
@@ -1730,17 +1734,24 @@ async function main() {
         // on the human's behalf; `kind` is DECLARED via `--agent`, never detected, for
         // the same reason `phase accept --agent` declares it: only the caller knows
         // whether a human actually made the judgement. Default stays 'human'.
-        const agentSigner = typeof flags.agent === 'string' ? flags.agent : null;
-        await rejectPhase(r, ph.slug, { reason, agent: agentSigner || undefined });
+        //
+        // `--agent` present at all — bare (parseArgs gives `true`) or with an empty
+        // name (`--agent ""`) — still DECLARES agent provenance; only its ABSENCE
+        // (the key never passed) means human. A truthy-string check on the name
+        // collapsed both declared-but-unnamed forms back into 'human', letting a
+        // stand-in agent's rejection masquerade as genuine human UAT.
+        const isAgentSigner = flags.agent !== undefined;
+        const agentSigner = typeof flags.agent === 'string' ? flags.agent : '';
+        await rejectPhase(r, ph.slug, { reason, agent: isAgentSigner ? agentSigner : undefined });
         await updateState(r, (s) => ({
           ...s,
           blockers: [...(s.blockers || []), {
-            phase: ph.slug, reason, kind: agentSigner ? 'agent' : 'human', at: new Date().toISOString(),
+            phase: ph.slug, reason, kind: isAgentSigner ? 'agent' : 'human', at: new Date().toISOString(),
           }],
         }));
         console.log(
           `✗ phase ${ph.number} "${ph.name}" → rejected${reason ? `: ${reason}` : ''}` +
-            `${agentSigner ? ' (AGENT — machine-signed, not human UAT)' : ''}`,
+            `${isAgentSigner ? ' (AGENT — machine-signed, not human UAT)' : ''}`,
         );
         // Q1: a linked item whose phase is REJECTED reverts to open rather than being
         // stranded as `linked` forever — nothing is silently lost either way.

@@ -166,7 +166,7 @@ test('C10: entries added on either machine reach the other, with no manual git a
 
   // A different proposal (p1) exists so A can amend x while B accepts something else —
   // two different entries changing at once must never collide.
-  const p1 = run(B, ['principles', 'add', 'A proposal only B will accept', '--kind', 'preference', '--propose']);
+  const p1 = run(B, ['principles', 'add', 'A proposal only B will accept', '--kind', 'preference', '--propose', '--why', 'Seen more than once.']);
   assert.strictEqual(p1.status, 0, p1.stderr);
   const idP1 = extractId(p1.stdout);
   assert.ok(idP1, `--propose must still print an id, got: ${p1.stdout}`);
@@ -212,7 +212,7 @@ test('C11: every command still succeeds locally while the remote is unreachable,
 
     // idOffline is already accepted by default (`add` with no `--propose`), so exercise
     // `accept` against a separately proposed entry instead of a redundant no-op.
-    const propose = run(A, ['principles', 'add', 'Proposed while unreachable', '--kind', 'preference', '--propose']);
+    const propose = run(A, ['principles', 'add', 'Proposed while unreachable', '--kind', 'preference', '--propose', '--why', 'Seen more than once.']);
     assert.strictEqual(propose.status, 0, propose.stderr);
     const idProposed = extractId(propose.stdout);
     const acceptProposed = run(A, ['principles', 'accept', idProposed]);

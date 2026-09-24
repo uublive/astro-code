@@ -53,8 +53,10 @@ human accepts. This is the **human gate** after `/astro-verify` (the AI gate).
     when it was recorded WITHOUT `--agent` (a stand-in agent's rejection is not a human
     judgement — propose nothing from it). Follow
     `$(ac path templates)/principle-capture.md` in full: `--from-ref "phase <N>"`,
-    excerpt = that `--reason`, verbatim, quoted, never paraphrased. A plain acceptance
-    proposes nothing and prints nothing extra.
+    excerpt = that `--reason`, verbatim, quoted, never paraphrased. Report the capture
+    itself in **one line** per that template's own reporting rule (§7); say nothing when
+    it proposes nothing. This step never runs on the accept path — a plain acceptance
+    never reaches it, so nothing here is printed then either.
 5. On accept, close with an optional **one-line** context nudge: the phase is
    **complete** and all state is saved to `.astrocode/`, so running `/clear` before the
    next phase keeps the context lean and loses nothing (each command re-grounds from

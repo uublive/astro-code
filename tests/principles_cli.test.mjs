@@ -185,7 +185,7 @@ test('C3: proposals queue separately from accepted entries, and list filters by 
     '--kind', 'antipattern',
   ]);
 
-  const propose = run(['principles', 'add', 'Prefer small PRs', '--kind', 'preference', '--propose'], dir, home);
+  const propose = run(['principles', 'add', 'Prefer small PRs', '--kind', 'preference', '--propose', '--why', 'Seen more than once.'], dir, home);
   assert.strictEqual(propose.status, 0, propose.stderr);
   const proposedId = extractId(propose.stdout);
   assert.ok(proposedId);
@@ -215,14 +215,14 @@ test('C4: the lifecycle is enforced — reasons required, illegal transitions re
   const dir = mkProject(home);
 
   // proposed -> accepted
-  const p1 = run(['principles', 'add', 'Adopt trunk-based development', '--kind', 'pattern', '--propose'], dir, home);
+  const p1 = run(['principles', 'add', 'Adopt trunk-based development', '--kind', 'pattern', '--propose', '--why', 'Seen more than once.'], dir, home);
   const id1 = extractId(p1.stdout);
   const accept1 = run(['principles', 'accept', id1], dir, home);
   assert.strictEqual(accept1.status, 0, accept1.stderr);
   assert.strictEqual(showJSON(id1, home, dir).status, 'accepted');
 
   // proposed -> rejected (reason required)
-  const p2 = run(['principles', 'add', 'Ship on Fridays', '--kind', 'preference', '--propose'], dir, home);
+  const p2 = run(['principles', 'add', 'Ship on Fridays', '--kind', 'preference', '--propose', '--why', 'Seen more than once.'], dir, home);
   const id2 = extractId(p2.stdout);
   const before2 = readFileSync(entryFile(home, id2), 'utf8');
   const rejNoReason = run(['principles', 'reject', id2], dir, home);
@@ -261,7 +261,7 @@ test('C4: the lifecycle is enforced — reasons required, illegal transitions re
   assert.strictEqual(readFileSync(entryFile(home, id4), 'utf8'), before5);
 
   // illegal moves
-  const p5 = run(['principles', 'add', 'Use conventional commits', '--kind', 'preference', '--propose'], dir, home);
+  const p5 = run(['principles', 'add', 'Use conventional commits', '--kind', 'preference', '--propose', '--why', 'Seen more than once.'], dir, home);
   const id5 = extractId(p5.stdout);
   const before5b = readFileSync(entryFile(home, id5), 'utf8');
   assert.notStrictEqual(run(['principles', 'retire', id5, '--reason', 'x'], dir, home).status, 0, 'cannot retire a proposed entry');
@@ -278,7 +278,7 @@ test('C5: a proposal can be reworded on accept, and an accepted entry is amended
   const home = mkHome();
   const dir = mkProject(home);
 
-  const p = run(['principles', 'add', 'Use pnpm', '--kind', 'preference', '--propose'], dir, home);
+  const p = run(['principles', 'add', 'Use pnpm', '--kind', 'preference', '--propose', '--why', 'Seen more than once.'], dir, home);
   assert.strictEqual(p.status, 0, p.stderr);
   const id = extractId(p.stdout);
 
@@ -291,7 +291,7 @@ test('C5: a proposal can be reworded on accept, and an accepted entry is amended
   assert.match(accepted.statement, /Always use pnpm/);
 
   // an unedited --edit must be refused (git's commit-template rule)
-  const p2 = run(['principles', 'add', 'Use npm', '--kind', 'preference', '--propose'], dir, home);
+  const p2 = run(['principles', 'add', 'Use npm', '--kind', 'preference', '--propose', '--why', 'Seen more than once.'], dir, home);
   const id2 = extractId(p2.stdout);
   const acceptNoop = run(['principles', 'accept', id2, '--edit'], dir, home, { EDITOR: 'true' });
   assert.notStrictEqual(acceptNoop.status, 0, 'unedited text on --edit must be refused');
@@ -475,7 +475,7 @@ test('C15: `add --propose` never touches an already-accepted entry, even with th
   const acceptedId = addAccepted(home, dir, 'Review every migration before merge', ['--kind', 'principle']);
   const before = readFileSync(entryFile(home, acceptedId), 'utf8');
 
-  const propose = run(['principles', 'add', 'Review every migration before merge', '--kind', 'principle', '--propose'], dir, home);
+  const propose = run(['principles', 'add', 'Review every migration before merge', '--kind', 'principle', '--propose', '--why', 'Seen more than once.'], dir, home);
   assert.strictEqual(propose.status, 0, propose.stderr);
   const proposedId = extractId(propose.stdout);
   assert.notStrictEqual(proposedId, acceptedId, 'a propose must never target an existing accepted entry\'s file');

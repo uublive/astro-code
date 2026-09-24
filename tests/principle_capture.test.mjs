@@ -326,13 +326,13 @@ test('C15/D6 known gap: re-running the invocation over accepted, rejected and am
   assert.strictEqual(accepted.status, 0, accepted.stderr);
   const acceptedId = extractId(accepted.stdout);
 
-  const proposedForRejection = run(['principles', 'add', statement, '--kind', 'principle', '--propose'], dir, home);
+  const proposedForRejection = run(['principles', 'add', statement, '--kind', 'principle', '--propose', '--why', 'Seen more than once.'], dir, home);
   assert.strictEqual(proposedForRejection.status, 0, proposedForRejection.stderr);
   const rejectedId = extractId(proposedForRejection.stdout);
   const reject = run(['principles', 'reject', rejectedId, '--reason', 'too broad as stated'], dir, home);
   assert.strictEqual(reject.status, 0, reject.stderr);
 
-  const proposedForAmend = run(['principles', 'add', statement, '--kind', 'principle', '--propose'], dir, home);
+  const proposedForAmend = run(['principles', 'add', statement, '--kind', 'principle', '--propose', '--why', 'Seen more than once.'], dir, home);
   assert.strictEqual(proposedForAmend.status, 0, proposedForAmend.stderr);
   const amendedId = extractId(proposedForAmend.stdout);
   const accept2 = run(['principles', 'accept', amendedId], dir, home);

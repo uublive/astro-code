@@ -56,6 +56,30 @@ test('an --agent reject is tagged kind:agent with by set to the agent name', asy
   assert.equal(ph.rejections[0].by, 'bot');
 });
 
+test('an --agent reject with a bare flag (agent: true) is still tagged kind:agent, with no `by`', async () => {
+  const { rejectPhase, loadRoadmap } = await import('../lib/roadmap.mjs');
+  const { root, slug } = await scaffold();
+
+  await rejectPhase(root, slug, { reason: 'bare agent flag', agent: true });
+
+  const ph = loadRoadmap(root).phases.find((p) => p.slug === slug);
+  assert.equal(ph.rejections.length, 1);
+  assert.equal(ph.rejections[0].kind, 'agent', 'a bare --agent still declares agent provenance');
+  assert.equal('by' in ph.rejections[0], false, 'no name was declared, so no `by`');
+});
+
+test('an --agent reject with an empty name (agent: "") is still tagged kind:agent, with no `by`', async () => {
+  const { rejectPhase, loadRoadmap } = await import('../lib/roadmap.mjs');
+  const { root, slug } = await scaffold();
+
+  await rejectPhase(root, slug, { reason: 'empty agent', agent: '' });
+
+  const ph = loadRoadmap(root).phases.find((p) => p.slug === slug);
+  assert.equal(ph.rejections.length, 1);
+  assert.equal(ph.rejections[0].kind, 'agent', 'an explicitly empty name still declares agent provenance');
+  assert.equal('by' in ph.rejections[0], false, 'an empty name is never recorded as `by`');
+});
+
 test('two rejections accumulate in order rather than replacing each other', async () => {
   const { rejectPhase, loadRoadmap } = await import('../lib/roadmap.mjs');
   const { root, slug } = await scaffold();

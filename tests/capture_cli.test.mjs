@@ -98,6 +98,34 @@ test('ac phase reject --agent records an agent-kind rejection with the AGENT mar
   assert.ok(!principlesStoreExists(home), 'a rejection must never create the principle store');
 });
 
+test('ac phase reject --agent, bare (no name), still records an agent-kind rejection', () => {
+  const home = mkHome();
+  const dir = mkProject(home);
+  const { number, slug } = addPhase(dir, home, 'capture flow bare agent');
+
+  const reject = run(['phase', 'reject', String(number), '--reason', 'bare agent flag', '--agent'], dir, home);
+  assert.strictEqual(reject.status, 0, reject.stderr);
+  assert.match(reject.stdout, /AGENT — machine-signed, not human UAT/);
+
+  const ph = phaseEntry(dir, slug);
+  assert.equal(ph.rejections[0].kind, 'agent', 'a bare --agent still declares agent provenance');
+  assert.equal('by' in ph.rejections[0], false, 'no name was declared, so no `by`');
+});
+
+test('ac phase reject --agent "" (explicitly empty name) still records an agent-kind rejection', () => {
+  const home = mkHome();
+  const dir = mkProject(home);
+  const { number, slug } = addPhase(dir, home, 'capture flow empty agent');
+
+  const reject = run(['phase', 'reject', String(number), '--agent', '', '--reason', 'empty agent'], dir, home);
+  assert.strictEqual(reject.status, 0, reject.stderr);
+  assert.match(reject.stdout, /AGENT — machine-signed, not human UAT/);
+
+  const ph = phaseEntry(dir, slug);
+  assert.equal(ph.rejections[0].kind, 'agent', 'an explicitly empty name still declares agent provenance');
+  assert.equal('by' in ph.rejections[0], false, 'an empty name is never recorded as `by`');
+});
+
 test('a plain ac phase reject (no --agent) records a human-kind rejection', () => {
   const home = mkHome();
   const dir = mkProject(home);
@@ -186,6 +214,18 @@ test('ac phase context --author prints human, agent <name> and none for the thre
   const stub = run(['phase', 'context', String(number), '--author'], dir, home);
   assert.strictEqual(stub.status, 0, stub.stderr);
   assert.equal(stub.stdout.trim(), 'none');
+});
+
+test('ac phase context --author prints "agent" (no name) for an agent marker with an empty name', () => {
+  const home = mkHome();
+  const dir = mkProject(home);
+  const { number, slug } = addPhase(dir, home, 'context phase empty agent');
+  const contextFile = join(paths(dir).phases, slug, 'CONTEXT.md');
+
+  writeFileSync(contextFile, '<!-- astro-discuss: captured by agent:  -->\n\n# Discussion\n\nreal content\n');
+  const result = run(['phase', 'context', String(number), '--author'], dir, home);
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'agent', 'a declared-but-unnamed agent marker must never read as human');
 });
 
 test('milestone harvest sees the human rejection live, then still sees it archived; the agent one stays skipped', () => {

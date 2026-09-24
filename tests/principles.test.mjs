@@ -62,9 +62,26 @@ test('addPrinciple with propose:true creates a proposed entry instead', async ()
   const { addPrinciple } = await import('../lib/principles.mjs');
   const dir = mkStoreDir();
   const entry = await addPrinciple(dir, {
-    statement: 'Prefer composition over inheritance', kind: 'principle', propose: true,
+    statement: 'Prefer composition over inheritance', kind: 'principle', why: 'Seen twice this month.', propose: true,
   });
   assert.equal(entry.status, 'proposed');
+});
+
+// A fresh proposal (D4b, CRITERIA C5) carries no signal for a human reviewer without its
+// why — a plain human `add` (propose:false) still allows an empty why (D7: manual add is
+// not subject to the review rules), so the refusal is scoped to the propose path only.
+test('a fresh proposal (no id) without a why is refused, and writes nothing', async () => {
+  const { addPrinciple } = await import('../lib/principles.mjs');
+  const dir = join(mkStoreDir(), 'does-not-exist-yet');
+  await assert.rejects(
+    () => addPrinciple(dir, { statement: 'No why here', kind: 'principle', propose: true }),
+    /why/i,
+  );
+  await assert.rejects(
+    () => addPrinciple(dir, { statement: 'Empty why', kind: 'principle', why: '   ', propose: true }),
+    /why/i,
+  );
+  assert.ok(!existsSync(dir), 'the store must not be created when a proposal is refused');
 });
 
 // --- validation leaves the store untouched -------------------------------------------
@@ -131,7 +148,7 @@ test('resolvePrinciple: exact id wins, unique prefix resolves, ambiguous and unk
 
 async function proposedEntry(dir, now, statement = 'A proposed principle') {
   const { addPrinciple } = await import('../lib/principles.mjs');
-  return addPrinciple(dir, { statement, kind: 'principle', propose: true, now });
+  return addPrinciple(dir, { statement, kind: 'principle', why: 'Seen more than once.', propose: true, now });
 }
 
 test('accept moves proposed to accepted', async () => {
@@ -310,7 +327,7 @@ test('proposePrinciple({id}) refreshes a plain proposed entry', async () => {
   const { proposePrinciple } = await import('../lib/principles.mjs');
   const dir = mkStoreDir();
   const now = new Date('2026-09-24T08:00:00.000Z');
-  const first = await proposePrinciple(dir, { statement: 'Observed pattern', kind: 'pattern', now });
+  const first = await proposePrinciple(dir, { statement: 'Observed pattern', kind: 'pattern', why: 'Seen more than once.', now });
   assert.equal(first.ok, true);
   const later = new Date('2026-09-24T09:00:00.000Z');
   const refreshed = await proposePrinciple(dir, {
@@ -334,7 +351,7 @@ test('proposePrinciple({id}) refuses to touch accepted, rejected or edited-on-ac
   assert.equal(resAccepted.ok, false);
   assert.deepEqual(readFileSync(acceptedFile), acceptedBytes);
 
-  const proposed1 = await proposePrinciple(dir, { statement: 'Will be rejected', kind: 'principle', now });
+  const proposed1 = await proposePrinciple(dir, { statement: 'Will be rejected', kind: 'principle', why: 'Seen more than once.', now });
   const rejected = await rejectPrinciple(dir, proposed1.entry.id, { reason: 'not useful', now });
   const rejectedFile = join(dir, `${rejected.id}.md`);
   const rejectedBytes = readFileSync(rejectedFile);
@@ -342,7 +359,7 @@ test('proposePrinciple({id}) refuses to touch accepted, rejected or edited-on-ac
   assert.equal(resRejected.ok, false);
   assert.deepEqual(readFileSync(rejectedFile), rejectedBytes);
 
-  const proposed2 = await proposePrinciple(dir, { statement: 'Will be edited on accept', kind: 'principle', now });
+  const proposed2 = await proposePrinciple(dir, { statement: 'Will be edited on accept', kind: 'principle', why: 'Seen more than once.', now });
   const editedAccepted = await acceptPrinciple(dir, proposed2.entry.id, { statement: 'A human reworded this', now });
   const editedFile = join(dir, `${editedAccepted.id}.md`);
   const editedBytes = readFileSync(editedFile);
@@ -357,7 +374,7 @@ test('no propose path can ever yield an accepted entry', async () => {
   const { proposePrinciple } = await import('../lib/principles.mjs');
   const dir = mkStoreDir();
   const now = new Date('2026-09-24T08:00:00.000Z');
-  const first = await proposePrinciple(dir, { statement: 'Never accepted directly', kind: 'principle', now });
+  const first = await proposePrinciple(dir, { statement: 'Never accepted directly', kind: 'principle', why: 'Seen more than once.', now });
   assert.equal(first.entry.status, 'proposed');
   const refreshed = await proposePrinciple(dir, { id: first.entry.id, statement: 'still not accepted', kind: 'principle', now });
   assert.equal(refreshed.entry.status, 'proposed');

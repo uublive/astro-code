@@ -252,6 +252,38 @@ test('milestoneHarvest: a superseded ADR inside the window is excluded', async (
   assert.deepEqual(result.adrs.map((a) => a.id).sort(), ['ADR-001', 'ADR-003']);
 });
 
+// C9 remediation: `closed_at`/`decisionDate` are both day-granular (DECISIONS.md never
+// records a time), so an ADR added just before one milestone's close and another added
+// just after — on the SAME calendar day — used to both land inside (or both fall outside)
+// the date-only window. `completeMilestone` now stamps `adr_watermark` (lib/milestone.mjs)
+// and `resolveSince` compares by ADR NUMBER when it is present, which is immune to the
+// same-day ambiguity a pure date range cannot resolve.
+test('milestoneHarvest: an ADR added right after a same-day close never leaks into the PRIOR milestone, and vice versa', async () => {
+  const { addDecision } = await import('../lib/canon.mjs');
+  const { milestoneHarvest } = await import('../lib/harvest.mjs');
+  const root = await scaffold();
+
+  await addDecision(root, { title: 'Use plain files for state', why: 'simple and diffable' });
+  await completeMilestone(root);
+  await setMilestone(root, 2);
+  await addDecision(root, { title: 'Second decision', why: 'same-day follow-up' });
+  await completeMilestone(root);
+
+  const milestone2 = await milestoneHarvest(root, 2);
+  assert.deepEqual(
+    milestone2.adrs.map((a) => a.title),
+    ['Second decision'],
+    'ADR-001 belongs to milestone 1 and must not leak into milestone 2\'s same-day harvest',
+  );
+
+  const milestone1 = await milestoneHarvest(root, 1);
+  assert.deepEqual(
+    milestone1.adrs.map((a) => a.title),
+    ['Use plain files for state'],
+    'ADR-002 belongs to milestone 2 and must not leak into milestone 1\'s archived harvest',
+  );
+});
+
 test('milestoneHarvest: an unknown milestone — neither current nor archived — throws', async () => {
   const { milestoneHarvest } = await import('../lib/harvest.mjs');
   const root = await scaffold();

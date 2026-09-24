@@ -195,7 +195,7 @@ test('promoting a PROPOSED entry exits non-zero and changes nothing', () => {
   const bare = mkBareRemote();
   const dir = mkProject(home, bare, 'proj-refuse-proposed');
 
-  const add = run(['principles', 'add', 'A proposed antipattern', '--kind', 'antipattern', '--propose'], dir, home);
+  const add = run(['principles', 'add', 'A proposed antipattern', '--kind', 'antipattern', '--propose', '--why', 'Seen more than once.'], dir, home);
   assert.strictEqual(add.status, 0, add.stderr);
   const id = extractPrincipleId(add.stdout);
   assert.ok(id);
