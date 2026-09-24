@@ -85,10 +85,31 @@ test('templates/principle-capture.md forbids an inline accept prompt', () => {
   );
 });
 
-test('templates/principle-capture.md states --from-session is always omitted', () => {
+test('templates/principle-capture.md states --from-session is omitted in every moment except the transcript sweep', () => {
   assert.ok(
-    /--from-session.{0,40}always omitted/is.test(specSrc.replace(/\n/g, ' ')),
-    'the spec must state --from-session is always omitted (no session id reaches a command)',
+    /--from-session.{0,60}omitted in every moment except the transcript sweep/is.test(specSrc.replace(/\n/g, ' ')),
+    '--from-session is omitted everywhere except the transcript sweep, whose candidates carry a session id',
+  );
+});
+
+test('templates/principle-capture.md names a transcript-sweep row stating 10 per sweep, strongest first, this moment only', () => {
+  assert.ok(/\bTranscript sweep\b/.test(specSrc), 'the spec must name the transcript sweep');
+  assert.ok(/\*\*10\*\*\s+per sweep/.test(specSrc), 'the spec must state 10 per sweep');
+  assert.ok(/strongest first/i.test(specSrc), 'the spec must state "strongest first"');
+  assert.ok(/this moment only/i.test(specSrc), 'the spec must state "this moment only"');
+});
+
+test('templates/principle-capture.md still states the at-most-3 guard', () => {
+  assert.ok(
+    /\bat most\s+\*{0,2}3\*{0,2}\b/i.test(specSrc) || /\b3\s+proposals per moment/i.test(specSrc),
+    'the spec must still state the volume cap of 3 proposals per moment (D4)',
+  );
+});
+
+test('templates/principle-capture.md names "N more candidates — run again" in §7', () => {
+  assert.ok(
+    specSrc.includes('N more candidates — run again'),
+    'the spec must name the transcript-sweep "N more candidates — run again" line',
   );
 });
 

@@ -20,6 +20,10 @@ judgement proposes nothing:
 - **Milestone sweep** — the session is attended by the user, and the material comes only
   from `ac milestone harvest`, which already excludes agent-captured CONTEXT and
   agent-signed rejections.
+- **Transcript sweep (`/astro-mine`)** — material comes only from
+  `ac principles mine --json`, which emits only turns the human typed: the engine
+  excludes tool results, injected context, command bodies, subagent and headless
+  sessions.
 
 ## 2. Lift the generator
 
@@ -34,6 +38,10 @@ ladder, so it is never lifted, and it stays recorded either way, in
 
 At most **3** proposals per moment. Each must lift (§2) AND carry a non-empty `--why`.
 Fewer is better. Nothing qualifies → propose nothing.
+
+One exception, stated once: the transcript sweep (`/astro-mine`) takes at most **10**
+per sweep, strongest first (recurrence, then explicit rule), for this moment only. The
+engine emits no more than that and holds the rest.
 
 ## 4. Kind
 
@@ -80,11 +88,18 @@ Evidence table:
 | `/astro-discuss` | `"phase <N>"` | the user's answer with its reason |
 | `/astro-accept` rejection | `"phase <N>"` | the reject reason verbatim |
 | Milestone sweep | `"milestone <n>"` | the user's words from one recurring source |
+| Transcript sweep | the candidate's `fromRef` (`"transcript <host>:<session>"`) | the candidate's `excerpt` |
 
 `<project>` is the `Project:` line of `ac status`.
 
-`--from-session` is **always omitted**: no session id reaches a command (checked: hooks,
-hosts, stats) — do not probe for one.
+`--from-session` is omitted in every moment except the transcript sweep, whose candidates
+carry the transcript's session id:
+
+```sh
+ac principles add "<lifted statement>" --kind <principle|pattern|preference|antipattern> --why "<why>" --propose --from-session "<fromSession>" --from-ref "<fromRef>" --excerpt "<excerpt>"
+```
+
+Elsewhere no session id reaches a command, so do not probe for one.
 
 Never call `accept`/`amend`/`reject`/`retire` verbs and never write under
 `~/.astro/principles/` directly — the propose path above and `sight` are the only way in
@@ -114,6 +129,9 @@ the ` — `. With zero proposals but M > 0, the line reads
 proposals and zero sightings), say nothing, as before. Review the queue with
 `ac principles list --proposed`, or `/astro-review`.
 
+The transcript sweep alone may add at most one `N more candidates — run again` line,
+only when the miner held candidates back.
+
 ## 8. Milestone sweep recurrence rule (D2.4)
 
 Candidates are grouped by theme across the harvest's four sources (ADRs, human CONTEXT,
@@ -121,7 +139,12 @@ human rejections, surprises). A theme qualifies only when it recurs in **≥2 ph
 single surprise, rejection or answer proposes nothing here; the per-moment captures
 already had their shot at one-offs. Rank by phase count, take at most 3 (§3 still applies).
 
-## 9. Dedupe
+## 9. Transcript sweep threshold (D5)
+
+A steer qualifies when it recurs in **≥2 distinct sessions** or was stated once as an
+**explicit rule**. The engine applies this; exact repeats are recorded as sightings.
+
+## 10. Dedupe
 
 Exact repeats are handled by the engine: `ac principles add --propose` records a sighting
 instead of a new entry (§5). Overlap candidates are handled by the capturing agent: `match`
