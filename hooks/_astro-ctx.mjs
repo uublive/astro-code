@@ -4,7 +4,7 @@
 // Hooks are copied STANDALONE into ~/.astro/code/hooks (lib/ is never copied
 // there), so this file must NOT import from ../lib — it re-implements the tiny
 // bits it needs. Pure functions only; the hooks own all the I/O of stdin/stdout.
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, parse } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +44,102 @@ export function findAstroRoot(startDir) {
     if (up === dir) return null;
     dir = up;
   }
+}
+
+// --- transcript / watermark path helpers (P7, phase 26) ----------------------
+//
+// This file (not `lib/`) owns these because hooks are copied STANDALONE into
+// `~/.astro/code/hooks` — a hook can never `import from '../lib'`, so a path helper the
+// statusline needs for the "N unswept sessions" nudge has to live here, and `lib/`
+// imports it back (ADR-046's one-copy direction: hooks never import lib, lib may import
+// hooks). Two things below are MIRRORS of a `lib/hosts/claude.mjs` shape rather than
+// imports of it, for the same reason — each is guarded by a parity test against the real
+// one so the two can never quietly drift apart:
+//   - `claudeConfigDirs` mirrors `[...configTargets().keys()]`
+//   - `principlesStoreDir` mirrors `lib/principles.mjs`'s `principlesDir`
+//
+// `unsweptSessions` is stat-only (D8): it never opens a transcript, only
+// `readdirSync`/`statSync`, so the statusline hook — which runs on every prompt — stays
+// cheap even against a multi-GB transcript directory. It is also never cached: a cache
+// would go stale the instant a sweep runs (C11 d), and `statSync` is cheap enough that
+// caching buys nothing.
+
+/** The ONE slug rule (#38): every non-alphanumeric character folds to `-`. `lib/stats.mjs`
+ *  imports this rather than keeping its own copy. */
+export function transcriptSlug(root) {
+  return String(root).replace(/[^a-zA-Z0-9]/g, '-');
+}
+
+/** Mirror of `lib/principles.mjs`'s `principlesDir` — same env, same default. */
+export function principlesStoreDir(env = process.env) {
+  return env.ASTRO_PRINCIPLES_DIR || join(env.HOME || homedir(), '.astro', 'principles');
+}
+
+/** Mirror of `lib/hosts/claude.mjs`'s `[...configTargets().keys()]`. */
+export function claudeConfigDirs(env = process.env) {
+  const def = join(env.HOME || homedir(), '.claude');
+  let base = def;
+  try {
+    const meta = JSON.parse(readFileSync(join(def, '.jean-claude', 'meta.json'), 'utf8'));
+    if (meta.claudeConfigPath) base = meta.claudeConfigPath;
+  } catch { /* no jean-claude */ }
+  if (base === def && env.CLAUDE_CONFIG_DIR) base = env.CLAUDE_CONFIG_DIR;
+  const dirs = [base];
+  try {
+    const reg = JSON.parse(readFileSync(join(base, '.jean-claude', 'profiles.json'), 'utf8'));
+    for (const p of Object.values(reg.profiles || {})) {
+      if (p.configDir && !dirs.includes(p.configDir)) dirs.push(p.configDir);
+    }
+  } catch { /* no profiles registry */ }
+  if (env.CLAUDE_CONFIG_DIR && !dirs.includes(env.CLAUDE_CONFIG_DIR)) dirs.push(env.CLAUDE_CONFIG_DIR);
+  return dirs;
+}
+
+/** `<store>/.local/mine/files/<slug>.json` — the ONE path both the engine and this
+ *  stat-only nudge read (P6). */
+export function mineFilesPath(storeDir, slug) {
+  return join(storeDir, '.local', 'mine', 'files', `${slug}.json`);
+}
+
+// The threshold past which the statusline/banner bother mentioning /astro-mine at all —
+// below it the segment would be permanent wallpaper (mirrors the debt-pressure comment
+// a few sections down: a signal that is always on is not a signal).
+export const MINE_NUDGE_SESSIONS = 10;
+
+/**
+ * How many top-level `*.jsonl` session files under `root`'s Claude project dirs (every
+ * config dir) have bytes past their recorded watermark offset (absent offset = 0).
+ * `readdirSync` + `statSync` only — never opens a transcript (D8). Codex is
+ * deliberately not counted here: its rollouts are date-sharded, so attributing one to a
+ * project means reading its first line, which is exactly the parse-in-the-hot-path cost
+ * this function exists to avoid.
+ */
+export function unsweptSessions(root, env = process.env) {
+  const slug = transcriptSlug(root);
+  const storeDir = principlesStoreDir(env);
+  const filesPath = mineFilesPath(storeDir, slug);
+  let recorded = {};
+  try {
+    recorded = JSON.parse(readFileSync(filesPath, 'utf8'))?.files || {};
+  } catch { /* absent or corrupt reads as "nothing swept" */ }
+
+  let count = 0;
+  for (const configDir of claudeConfigDirs(env)) {
+    const dir = join(configDir, 'projects', slug);
+    let dirents;
+    try {
+      dirents = readdirSync(dir, { withFileTypes: true });
+    } catch { continue; }
+    for (const d of dirents) {
+      if (!d.isFile() || !d.name.endsWith('.jsonl')) continue;
+      const file = join(dir, d.name);
+      let size;
+      try { size = statSync(file).size; } catch { continue; }
+      const offset = recorded[file]?.offset || 0;
+      if (size > offset) count++;
+    }
+  }
+  return count;
 }
 
 // --- debt pressure -----------------------------------------------------------
