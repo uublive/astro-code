@@ -180,3 +180,31 @@ test('empty/absent store: brief exits 0 with empty stdout', async () => {
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(r.stdout.trim(), '');
 });
+
+// Phase 25 verify, C1/C13 — `--files` scopes the same however the path is spelled:
+// root-relative, absolute, relative to a subdirectory, or through a symlink to the
+// project. Driven through the real CLI so the wiring in shortlist(), not just
+// projectRelative(), is what this pins.
+test('brief --files: absolute, subdirectory-relative and symlinked paths all serve a lib/** principle', async () => {
+  const { symlinkSync } = await import('node:fs');
+  const { home, store } = mkHome();
+  const proj = mkProject(home, store);
+  mkdirSync(join(proj, 'sub'), { recursive: true });
+  addAccepted(home, store, 'ZEBRALIB applies under lib', ['--files', 'lib/**', '--work', 'code']);
+  const link = join(mkdtempSync(join(tmpdir(), 'ac-retrieval-link-')), 'plink');
+  symlinkSync(proj, link);
+
+  const cases = [
+    ['absolute', proj, join(proj, 'lib', 'x.mjs')],
+    ['from a subdirectory', join(proj, 'sub'), '../lib/x.mjs'],
+    ['from lib itself', join(proj, 'lib'), 'x.mjs'],
+    ['through a symlink', proj, join(link, 'lib', 'x.mjs')],
+  ];
+  for (const [label, cwd, file] of cases) {
+    const r = run(['principles', 'brief', '--work', 'code', '--files', file], cwd, home, store);
+    assert.strictEqual(r.status, 0, `${label}: ${r.stderr}`);
+    assert.match(r.stdout, /ZEBRALIB/, `${label}: the lib/** principle must be served`);
+  }
+  const miss = run(['principles', 'brief', '--work', 'code', '--files', 'src/x.mjs'], proj, home, store);
+  assert.doesNotMatch(miss.stdout, /ZEBRALIB/, 'a path outside lib/ must not match');
+});
