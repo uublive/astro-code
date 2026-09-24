@@ -336,6 +336,27 @@ at most 3, each carrying its own why, and ends with at most one line —
 `ac principles list --proposed` reviews the queue. See
 [`templates/principle-capture.md`](./templates/principle-capture.md) for the full spec.
 
+**Review and dedupe.** An EXACT repeat of any existing statement — normalised for case,
+punctuation and whitespace, never a similarity score — never mints a second entry,
+regardless of the existing entry's status: it records a *sighting* on it instead ("seen
+again N"), so an already-accepted principle just accumulates evidence and an
+already-rejected one stays rejected without re-entering the queue. An OVERLAP
+candidate (a statement that shares real content words with an existing one, short of
+being the exact same wording) is only ever *surfaced* — `ac principles match
+"<statement>"` names it and the words that matched — never acted on: the capturing
+agent, or you, decides whether it's the same principle (`ac principles sight <id>`
+instead of proposing) or a genuinely different one. `/astro-review` walks the proposed
+queue in batches — accept, edit-then-accept, reject (reason required) or skip each
+item, and offers `ac principles merge <dup> --into <id>` for a near-duplicate group
+instead of rejecting one of them for "no". `ac principles reopen <id> --reason "…"` is
+the only way back from rejected. Sightings recorded on two machines merge across a sync
+with no conflict — they're append-only evidence, never a decision to arbitrate.
+
+- `ac principles match "<statement>" [--json]` — exact/overlap candidates, explainable, never acted on.
+- `ac principles sight <id> [--from-project …] [--excerpt …]` — record an explicit sighting.
+- `ac principles reopen <id> --reason "…"` — rejected → proposed, the only way back.
+- `ac principles merge <dup> --into <id>` — fold a duplicate's evidence into the survivor; the duplicate stays citable as `merged`.
+
 ---
 
 ## The fast lane
