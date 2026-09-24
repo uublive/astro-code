@@ -80,6 +80,25 @@ test('C1: brief --work code --files lib/x.mjs vs --work review, scope matrix', a
   assert.ok(!r2.stdout.includes(a));
 });
 
+test('C8: brief --files accepts a single value with space/semicolon-separated paths (workflow claimedFiles shape)', async () => {
+  const { home, store } = mkHome();
+  const proj = mkProject(home, store);
+  mkdirSync(join(proj, 'tests'), { recursive: true });
+  writeFileSync(join(proj, 'tests', 'x.test.mjs'), '// t\n');
+  const c = addAccepted(home, store, 'ZEBRAC lib scoped default', ['--files', 'lib/**']);
+  const t = addAccepted(home, store, 'ZEBRAT tests scoped default', ['--files', 'tests/**']);
+
+  const r = run(['principles', 'brief', '--stage', 'execute', '--files', 'lib/x.mjs tests/x.test.mjs', '--by', 'executor'], proj, home, store);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes(c), 'a space-separated --files value must still scope in lib/**');
+  assert.ok(r.stdout.includes(t), 'a space-separated --files value must still scope in tests/**');
+
+  const r2 = run(['principles', 'brief', '--stage', 'execute', '--files', 'lib/x.mjs;tests/x.test.mjs', '--by', 'executor'], proj, home, store);
+  assert.strictEqual(r2.status, 0, r2.stderr);
+  assert.ok(r2.stdout.includes(c), 'a semicolon-separated --files value must still scope in lib/**');
+  assert.ok(r2.stdout.includes(t), 'a semicolon-separated --files value must still scope in tests/**');
+});
+
 test('C4: stack tags line names node from package.json; go.mod-only dir without ac init', async () => {
   const { home, store } = mkHome();
   const proj = mkProject(home, store);

@@ -7,11 +7,11 @@ Prefer lean-ctx MCP tools over native equivalents for token savings.
 Full rules: @LEAN-CTX.md
 <!-- /lean-ctx -->
 
-## Forge knowledge graph (optional)
+## External knowledge graph (retired)
 
-astro-code stays standalone by default. If a FORGEMASTER knowledge-graph MCP server is
-connected, a few commands opportunistically query or capture to it; with no server
-connected, those steps are a silent no-op. See `templates/forge-knowledge.md`.
+astro-code no longer reads or writes an external knowledge-graph MCP server. Phase 25
+replaced every one of those calls with `ac principles ask` / `ac principles brief` — a
+personal store, local and always available.
 
 <!-- astro-code -->
 ## astro-code

@@ -18,7 +18,7 @@ For *why* it is built this way, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 - [Models, thinking and effort](#models-thinking-and-effort)
 - [GitFlow branching (opt-in)](#gitflow-branching-opt-in)
 - [Astro kits](#astro-kits)
-- [Forge knowledge graph (optional)](#forge-knowledge-graph-optional)
+- [External knowledge graph (retired)](#external-knowledge-graph-retired)
 - [Command reference](#command-reference)
 - [Layout and development](#layout-and-development)
 
@@ -519,17 +519,14 @@ A kit is developed as a standalone astro-code project and goes through the norma
 
 ---
 
-## Forge knowledge graph (optional)
+## External knowledge graph (retired)
 
-If a FORGEMASTER knowledge-graph MCP server happens to be connected, astro-code
-opportunistically *reads* it — querying before `/astro-discuss`, `/astro-plan`, and
-`/astro-new-project` decide. astro-code no longer writes to it: every principle a moment
-captures now proposes into your own personal store instead (see "How proposals arrive"
-below). With no server connected, every read is a silent no-op — nothing printed, nothing
-missing.
-
-astro-code still never *hosts* an MCP server; it only optionally reads from someone else's.
-See [`templates/forge-knowledge.md`](./templates/forge-knowledge.md) for the full spec.
+astro-code used to make one opportunistic read against an external knowledge-graph MCP
+server before `/astro-discuss`, `/astro-plan`, and `/astro-new-project`. Phase 25 replaced
+every one of those calls with `ac principles ask` / `ac principles brief` — a personal
+store, local and always available, with no connect/degrade dance to document. No astro-code
+command or agent reads (or hosts) an external knowledge-graph server any more; retrieval
+now runs entirely through `ac principles` (see [Principles](#principles)).
 
 ---
 

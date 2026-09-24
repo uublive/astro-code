@@ -95,6 +95,56 @@ test('a promotion into a DIFFERENT project still flags', async () => {
   assert.ok(candidates.length > 0);
 });
 
+test('a preamble line before any ## heading is never turned into a canon item (no "CONVENTIONS §" with no section name)', async () => {
+  const { canonItems } = await import('../lib/principlecanon.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'astro-canon-'));
+  mkdirSync(join(root, '.astrocode'));
+  writeFileSync(
+    join(root, '.astrocode', 'CONVENTIONS.md'),
+    `# Conventions\n\n> The rules new code MUST follow.\n\n## Naming\n\n- Named function exports only, no default exports\n`,
+  );
+  writeFileSync(join(root, '.astrocode', 'DECISIONS.md'), DECISIONS);
+  const items = canonItems(root);
+  assert.ok(!items.some((i) => i.ref === 'CONVENTIONS §'), 'a preamble bullet must not produce a headingless ref');
+});
+
+test('a long canon paragraph sharing only two generic, low-signal words with an unrelated principle is not flagged (ratio guard)', async () => {
+  const { canonItems, clashCandidates } = await import('../lib/principlecanon.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'astro-canon-'));
+  mkdirSync(join(root, '.astrocode'));
+  writeFileSync(
+    join(root, '.astrocode', 'CONVENTIONS.md'),
+    '# Conventions\n\n## Process\n\n'
+      + '- Keep pull requests small, reviewers read every diff line by line and leave notes '
+      + 'inline, then the author addresses each one before merge and the branch is deleted '
+      + 'once the pipeline goes green across every stage\n',
+  );
+  writeFileSync(join(root, '.astrocode', 'DECISIONS.md'), '');
+  const items = canonItems(root);
+  const e = entry('Read the existing code before touching anything');
+  const candidates = clashCandidates(e, items, { root, project: basename(root) });
+  assert.deepEqual(candidates, []);
+});
+
+test('three words shared with a long ADR title is still too thin a slice of that title to flag', async () => {
+  const { canonItems, clashCandidates } = await import('../lib/principlecanon.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'astro-canon-'));
+  mkdirSync(join(root, '.astrocode'));
+  writeFileSync(join(root, '.astrocode', 'CONVENTIONS.md'), '# Conventions\n\n## Naming\n\n- Files end in .mjs\n');
+  writeFileSync(
+    join(root, '.astrocode', 'DECISIONS.md'),
+    "## ADR-037 — ADR-034's canon-pull rescue anchors to true end-of-input so a preserved ADR "
+      + 'keeps its body, not just its heading; the discuss gate accepts ADR-035\'s agent marker '
+      + 'as well as the human one and exposes contextAuthor(); and every remaining haiku '
+      + "recommendation is purged from the agent-facing docs the ADR-035 revert missed.\n"
+      + '_2026-01-01_\n\n**Why:** narrows a rescue path and drops stale guidance.\n',
+  );
+  const items = canonItems(root);
+  const e = entry('Keep pull requests small, one concern each');
+  const candidates = clashCandidates(e, items, { root, project: basename(root) });
+  assert.deepEqual(candidates, []);
+});
+
 test('no .astrocode/ ⇒ canonItems is []', async () => {
   const { canonItems } = await import('../lib/principlecanon.mjs');
   const root = mkdtempSync(join(tmpdir(), 'astro-canon-none-'));

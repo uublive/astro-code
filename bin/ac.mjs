@@ -1312,7 +1312,10 @@ async function main() {
           die(`unknown --stage "${stage}" — valid stages: ${Object.keys(STAGE_WORK).join(', ')}`);
         }
         const work = flagValues(tail, 'work');
-        const filesRaw = flagValues(tail, 'files').flatMap((f) => f.split(',').map((s) => s.trim()).filter(Boolean));
+        // Split on comma, semicolon OR whitespace — the workflow scripts' claimedFiles()
+        // (lib/waves.mjs/execute-phase.mjs) hands agents a task's files the same way, and
+        // a `--files "a b"` from that instruction must scope exactly like `--files a,b`.
+        const filesRaw = flagValues(tail, 'files').flatMap((f) => f.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean));
         const files = filesRaw.map((f) => (f.startsWith('./') ? f.slice(2) : f));
         const by = typeof flags.by === 'string' ? flags.by : 'cli';
         const result = await shortlist({
