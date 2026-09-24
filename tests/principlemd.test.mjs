@@ -328,3 +328,220 @@ test('compareRevisions: equal histories with different text is a conflict', asyn
   const b = withHistory([h1], { statement: 'X-from-B' });
   assert.equal(compareRevisions(a, b), 'conflict');
 });
+
+// --- phase 24, P2: sightings (a new repeatable header key rendered after history) --
+
+// Two sighting records: a plain evidence line and one carrying `mergedFrom` (folded in
+// by `mergePrinciple`). Exercises the full `source`-shaped record plus the merge tag.
+function entryWithSightings() {
+  return {
+    ...fullEntry(),
+    sightings: [
+      { project: 'astro-code', at: '2026-09-24T11:00:00.000Z', excerpt: 'seen again' },
+      {
+        session: 'sess-2', project: 'other', at: '2026-09-24T12:00:00.000Z',
+        ref: 'ref-2', mergedFrom: '2026-09-24-other-entry',
+      },
+    ],
+  };
+}
+
+const SIGHTING_LINES = [
+  `sighting: ${JSON.stringify({ project: 'astro-code', at: '2026-09-24T11:00:00.000Z', excerpt: 'seen again' })}`,
+  `sighting: ${JSON.stringify({
+    session: 'sess-2', project: 'other', at: '2026-09-24T12:00:00.000Z',
+    ref: 'ref-2', mergedFrom: '2026-09-24-other-entry',
+  })}`,
+];
+
+// Sighting lines land right after the `history:` lines and before the `---` separator
+// (P2: "rendered after `history`"), inserted into the existing fullEntry canonical text.
+const CANONICAL_TEXT_WITH_SIGHTINGS = (() => {
+  const lines = CANONICAL_TEXT.split('\n');
+  const sepIdx = lines.indexOf('---');
+  lines.splice(sepIdx, 0, ...SIGHTING_LINES);
+  return lines.join('\n');
+})();
+
+test('an entry with sightings round-trips deep-equal and byte-exact, rendered after history', async () => {
+  const { renderPrinciple, parsePrinciple } = await import('../lib/principlemd.mjs');
+  const entry = entryWithSightings();
+  const text = renderPrinciple(entry);
+  assert.equal(text, CANONICAL_TEXT_WITH_SIGHTINGS);
+  const parsed = parsePrinciple(text, { file: FILE, id: entry.id });
+  assert.deepEqual(parsed, entry);
+});
+
+test('an entry without sightings parses with no sightings key at all', async () => {
+  const { parsePrinciple } = await import('../lib/principlemd.mjs');
+  const parsed = parsePrinciple(CANONICAL_TEXT, { file: FILE, id: '2026-09-24-never-mock-the-database' });
+  assert.equal('sightings' in parsed, false);
+});
+
+test('a sighting: line with unparseable JSON throws naming the file', async () => {
+  const { parsePrinciple } = await import('../lib/principlemd.mjs');
+  const text = minimalCanonical({ addLine: 'sighting: {not json' });
+  assert.throws(
+    () => parsePrinciple(text, { file: FILE, id: '2026-09-24-minimal' }),
+    (err) => err instanceof Error && err.message.includes(FILE) && /sighting/i.test(err.message),
+  );
+});
+
+// --- phase 24, P3: `merged` terminal state ------------------------------------------
+
+function mergedEntry() {
+  return {
+    id: '2026-09-24-merged-example',
+    kind: 'principle',
+    strength: 'default',
+    status: 'merged',
+    created: '2026-09-24T08:00:00.000Z',
+    scopes: { stack: [], files: [], work: [] },
+    statement: 'A minimal statement',
+    why: '',
+    mergedInto: '2026-09-24-survivor',
+    promotions: [],
+    history: [{ at: '2026-09-24T08:10:00.000Z', action: 'merged', into: '2026-09-24-survivor' }],
+  };
+}
+
+test('status merged + merged-into round-trips', async () => {
+  const { renderPrinciple, parsePrinciple } = await import('../lib/principlemd.mjs');
+  const entry = mergedEntry();
+  const text = renderPrinciple(entry);
+  assert.match(text, /^merged-into: 2026-09-24-survivor$/m);
+  const parsed = parsePrinciple(text, { file: FILE, id: entry.id });
+  assert.deepEqual(parsed, entry);
+});
+
+test('status merged without merged-into is damaged, naming the file', async () => {
+  const { parsePrinciple } = await import('../lib/principlemd.mjs');
+  const text = minimalCanonical({ replaceLine: ['status:', 'status: merged'] });
+  assert.throws(
+    () => parsePrinciple(text, { file: FILE, id: '2026-09-24-minimal' }),
+    (err) => err instanceof Error && err.message.includes(FILE) && /merged-into/i.test(err.message),
+  );
+});
+
+test('merged-into present on an accepted entry is damaged, naming the file', async () => {
+  const { parsePrinciple } = await import('../lib/principlemd.mjs');
+  const text = minimalCanonical({
+    replaceLine: ['status:', 'status: accepted'],
+    addLine: 'merged-into: 2026-09-24-survivor',
+  });
+  assert.throws(
+    () => parsePrinciple(text, { file: FILE, id: '2026-09-24-minimal' }),
+    (err) => err instanceof Error && err.message.includes(FILE) && /merged-into/i.test(err.message),
+  );
+});
+
+// --- phase 24, P2: header key order is now enforced by the parser ------------------
+
+test('a header with status placed after created throws naming the file, out of order', async () => {
+  const { parsePrinciple } = await import('../lib/principlemd.mjs');
+  const text = [
+    '<!-- astro-principle -->',
+    'id: 2026-09-24-minimal',
+    'kind: principle',
+    'strength: default',
+    'created: 2026-09-24T08:00:00.000Z',
+    'status: proposed',
+    '---',
+    '',
+    '# A minimal statement',
+    '',
+    '',
+  ].join('\n');
+  assert.throws(
+    () => parsePrinciple(text, { file: FILE, id: '2026-09-24-minimal' }),
+    (err) => err instanceof Error && err.message.includes(FILE) && /out of order/i.test(err.message),
+  );
+});
+
+test('a header with history before source throws naming the file, out of order', async () => {
+  const { parsePrinciple } = await import('../lib/principlemd.mjs');
+  const text = [
+    '<!-- astro-principle -->',
+    'id: 2026-09-24-minimal',
+    'kind: principle',
+    'strength: default',
+    'status: proposed',
+    'created: 2026-09-24T08:00:00.000Z',
+    `history: ${JSON.stringify({ at: '2026-09-24T08:10:00.000Z', action: 'proposed' })}`,
+    `source: ${JSON.stringify({ at: '2026-09-24T08:00:00.000Z' })}`,
+    '---',
+    '',
+    '# A minimal statement',
+    '',
+    '',
+  ].join('\n');
+  assert.throws(
+    () => parsePrinciple(text, { file: FILE, id: '2026-09-24-minimal' }),
+    (err) => err instanceof Error && err.message.includes(FILE) && /out of order/i.test(err.message),
+  );
+});
+
+test('a byte-exact phase-22-shaped canonical entry (no sighting or merged-into keys) still parses (C9)', async () => {
+  const { parsePrinciple } = await import('../lib/principlemd.mjs');
+  const parsed = parsePrinciple(CANONICAL_TEXT, { file: FILE, id: '2026-09-24-never-mock-the-database' });
+  assert.equal(parsed.status, 'accepted');
+  assert.equal('sightings' in parsed, false);
+  assert.equal('mergedInto' in parsed, false);
+});
+
+// --- phase 24, P4: sync merges sightings append-only --------------------------------
+
+test('unionSightings deduplicates and sorts deterministically regardless of argument order', async () => {
+  const { unionSightings } = await import('../lib/principlemd.mjs');
+  const s1 = { project: 'a', at: '2026-09-24T09:00:00.000Z' };
+  const s2 = { project: 'b', at: '2026-09-24T08:00:00.000Z' };
+  const s3 = { project: 'a', at: '2026-09-24T09:00:00.000Z' }; // duplicate of s1
+  const forward = unionSightings([s1], [s2, s3]);
+  const backward = unionSightings([s2, s3], [s1]);
+  assert.deepEqual(forward, [s2, s1]);
+  assert.deepEqual(forward, backward);
+});
+
+test('reconcileRevisions: equal history, differing sightings on both sides gives same with the union', async () => {
+  const { reconcileRevisions } = await import('../lib/principlemd.mjs');
+  const h = [{ at: '2026-09-24T08:10:00.000Z', action: 'accepted' }];
+  const sA = { project: 'a', at: '2026-09-24T09:00:00.000Z' };
+  const sB = { project: 'b', at: '2026-09-24T08:00:00.000Z' };
+  const a = { ...fullEntry(), history: h, sightings: [sA] };
+  const b = { ...fullEntry(), history: h, sightings: [sB] };
+  const result = reconcileRevisions(a, b);
+  assert.equal(result.outcome, 'same');
+  assert.deepEqual(result.entry.sightings, [sB, sA]);
+});
+
+test('reconcileRevisions: an extended history wins the lifecycle, and both sides sightings survive', async () => {
+  const { reconcileRevisions } = await import('../lib/principlemd.mjs');
+  const h1 = { at: '2026-09-24T08:10:00.000Z', action: 'proposed' };
+  const h2 = { at: '2026-09-24T08:20:00.000Z', action: 'accepted' };
+  const sA = { project: 'a', at: '2026-09-24T09:00:00.000Z' };
+  const sB = { project: 'b', at: '2026-09-24T08:00:00.000Z' };
+  const older = { ...fullEntry(), status: 'proposed', history: [h1], sightings: [sA] };
+  const newer = { ...fullEntry(), status: 'accepted', history: [h1, h2], sightings: [sB] };
+
+  const result = reconcileRevisions(newer, older);
+  assert.equal(result.outcome, 'newer');
+  assert.equal(result.entry.status, 'accepted');
+  assert.deepEqual(result.entry.history, [h1, h2]);
+  assert.deepEqual(result.entry.sightings, [sB, sA]);
+
+  const reverse = reconcileRevisions(older, newer);
+  assert.equal(reverse.outcome, 'older');
+  assert.equal(reverse.entry.status, 'accepted');
+  assert.deepEqual(reverse.entry.sightings, [sB, sA]);
+});
+
+test('reconcileRevisions: divergent history off the same base is a conflict', async () => {
+  const { reconcileRevisions } = await import('../lib/principlemd.mjs');
+  const base = { at: '2026-09-24T08:10:00.000Z', action: 'accepted' };
+  const fromA = { at: '2026-09-24T08:20:00.000Z', action: 'amended', reason: 'r', statement: 'X-from-A', why: 'w' };
+  const fromB = { at: '2026-09-24T08:20:00.000Z', action: 'amended', reason: 'r', statement: 'X-from-B', why: 'w' };
+  const a = { ...fullEntry(), history: [base, fromA], statement: 'X-from-A', sightings: [{ project: 'a', at: '2026-09-24T09:00:00.000Z' }] };
+  const b = { ...fullEntry(), history: [base, fromB], statement: 'X-from-B', sightings: [{ project: 'b', at: '2026-09-24T09:30:00.000Z' }] };
+  const result = reconcileRevisions(a, b);
+  assert.deepEqual(result, { outcome: 'conflict' });
+});
