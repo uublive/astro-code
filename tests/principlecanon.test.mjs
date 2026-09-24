@@ -166,3 +166,50 @@ test('canon files are byte-identical afterwards (read-only)', async () => {
   };
   assert.deepEqual(before, after);
 });
+
+// Phase 25 verify, C7 — the fresh-template false positives, the basename collision and
+// the doubled ref, each pinned.
+function rootWith(conventions) {
+  const root = mkdtempSync(join(tmpdir(), 'astro-canon-'));
+  mkdirSync(join(root, '.astrocode'));
+  writeFileSync(join(root, '.astrocode', 'CONVENTIONS.md'), conventions);
+  return root;
+}
+
+test('an unfilled template (label-only bullets, wrapped Voice prose) flags no ordinary principle', async () => {
+  const { canonItems, clashCandidates } = await import('../lib/principlecanon.mjs');
+  const template = readFileSync(new URL('../templates/CONVENTIONS.md', import.meta.url), 'utf8');
+  const root = rootWith(template);
+  const items = canonItems(root);
+  for (const statement of [
+    'Cover error handling paths with tests',
+    'Load config and secrets from the environment',
+    'Pin the language runtime version in CI',
+    'Name test files after the module they cover',
+    'Keep functions short',
+    'Status messages should be one line',
+    'ZEBRAMULTI first sentence here. Second sentence follows.',
+  ]) {
+    assert.deepEqual(clashCandidates({ id: 'x', statement, promotions: [] }, items, { root }), [], statement);
+  }
+});
+
+test('a promotion into a different project with the SAME basename still flags', async () => {
+  const { canonItems, clashCandidates } = await import('../lib/principlecanon.mjs');
+  const root = tempRoot();
+  const items = canonItems(root);
+  const e = {
+    id: 'e1', statement: 'Use default exports for modules',
+    promotions: [{ project: basename(root), path: '/elsewhere/' + basename(root), as: 'decision', ref: 'ADR-001' }],
+  };
+  assert.ok(clashCandidates(e, items, { root }).length > 0, 'a shared directory name is not the same project');
+});
+
+test('several bullets in one section yield that section once', async () => {
+  const { canonItems, clashCandidates } = await import('../lib/principlecanon.mjs');
+  const root = rootWith('# C\n\n## Naming\n\n- Named function exports only\n- Default exports are banned in modules\n');
+  const refs = clashCandidates({ id: 'x', statement: 'Use default exports for modules', promotions: [] }, canonItems(root), { root })
+    .map((c) => c.ref);
+  assert.deepEqual(refs, [...new Set(refs)]);
+  assert.deepEqual(refs, ['CONVENTIONS §Naming']);
+});

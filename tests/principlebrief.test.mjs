@@ -161,3 +161,14 @@ test('renderBrief: zero served returns empty string', async () => {
   const text = renderBrief(brief, { stack: [], work: [], files: [] });
   assert.equal(text, '');
 });
+
+// Phase 25 verify, C1 — `--files` handed as absolute (or cwd-relative from a subdir)
+// paths must scope exactly like project-relative ones.
+test('projectRelative: absolute and subdir-relative paths become project-relative', async () => {
+  const { projectRelative } = await import('../lib/retrieval.mjs');
+  const root = '/work/proj';
+  assert.deepEqual(projectRelative(['/work/proj/lib/x.mjs', './lib/y.mjs', 'lib/z.mjs'], { root, cwd: root }),
+    ['lib/x.mjs', 'lib/y.mjs', 'lib/z.mjs']);
+  assert.deepEqual(projectRelative(['x.mjs'], { root, cwd: '/work/proj/lib' }), ['lib/x.mjs']);
+  assert.deepEqual(projectRelative(['/other/place/a.mjs'], { root, cwd: root }), ['/other/place/a.mjs']);
+});
