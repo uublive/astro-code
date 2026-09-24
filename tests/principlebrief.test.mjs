@@ -84,7 +84,7 @@ test('renderBrief: a default renders one line, its why never appears', async () 
   const brief = selectBrief(entries, { stack: [], work: [], files: [] });
   const text = renderBrief(brief, { stack: [], work: [], files: [] });
   assert.ok(text.includes('D1'));
-  assert.ok(text.includes('kind/default'));
+  assert.ok(text.includes('convention/default'));
   assert.ok(!text.includes('WHYDEFAULT'));
 });
 
@@ -124,7 +124,7 @@ test('renderBrief: tags line names every tag source', async () => {
   const { selectBrief, renderBrief } = await import('../lib/principlebrief.mjs');
   const entries = [entry('D1', { scopes: { stack: [], files: [], work: [] } })];
   const brief = selectBrief(entries, { stack: ['node', 'express'], work: [], files: [] });
-  const ctx = { stack: ['node', 'express'], work: [], files: [], sources: ['package.json'] };
+  const ctx = { stack: ['node', 'express'], work: [], files: [], sources: [{ file: 'package.json', tags: ['node', 'express'] }] };
   const text = renderBrief(brief, ctx);
   assert.ok(text.includes('node'));
   assert.ok(text.includes('express'));
