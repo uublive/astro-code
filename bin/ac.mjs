@@ -229,10 +229,14 @@ async function principlesSync(dir) {
 // machines, until `ac principles resolve` (t13) clears it.
 function reportPrinciplesConflicts(dir) {
   for (const c of openConflicts(dir)) {
-    console.log(
-      `⚠ conflict on ${c.id} — this machine's version kept; the other is in ${c.file} ` +
-        `(ac principles resolve ${c.id} [--take theirs])`,
-    );
+    const where =
+      c.mine === 'entry' ? `this machine's version is in the entry; the other is in ${c.file}`
+        : c.mine === 'copy' ? `the entry holds the OTHER machine's version; this machine's is in ${c.file}`
+          : `two versions, neither made on this machine: the entry and ${c.file}`;
+    const how = c.mine === 'unknown'
+      ? `ac principles resolve ${c.id} --take entry|copy`
+      : `ac principles resolve ${c.id} keeps yours, --take theirs keeps the other`;
+    console.log(`⚠ conflict on ${c.id} — ${where} (${how})`);
   }
 }
 
@@ -320,7 +324,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
                                        [--stack …] [--files …] [--work …]  reword/rescope, id unchanged
   ac principles promote <id> [--as decision|convention]  accepted → this project's canon (personal copy stays)
   ac principles remote [<url>]        set (and sync) the store's private git remote, or print it
-  ac principles resolve <id> [--take mine|theirs]  clear an open sync conflict on one entry
+  ac principles resolve <id> [--take mine|theirs|entry|copy]  clear an open sync conflict (mine = this machine's version)
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac phase note <phase> ["<text>"]    read/set/clear a durable phase note (survives ROADMAP.md renders)
@@ -1084,10 +1088,12 @@ async function main() {
         checkFlags('principles resolve', flags);
         await principlesSync(dir);
         const id = pos[1];
-        if (!id) die('usage: ac principles resolve <id> [--take mine|theirs]');
-        const take = flags.take === 'theirs' ? 'theirs' : 'mine';
-        try { await resolveConflict(dir, id, { take }); } catch (e) { die(e.message); }
-        console.log(`✓ resolved conflict on ${id} (took ${take})`);
+        if (!id) die('usage: ac principles resolve <id> [--take mine|theirs|entry|copy]');
+        const take = typeof flags.take === 'string' ? flags.take : 'mine';
+        if (!['mine', 'theirs', 'entry', 'copy'].includes(take)) die(`--take must be mine, theirs, entry or copy, got "${take}"`);
+        let res;
+        try { res = await resolveConflict(dir, id, { take }); } catch (e) { die(e.message); }
+        console.log(`✓ resolved conflict on ${id} (kept the ${res && res.kept === 'copy' ? 'conflict copy' : 'entry'}${take === 'mine' || take === 'theirs' ? ` — ${take}` : ''})`);
         await principlesSync(dir);
         reportPrinciplesConflicts(dir);
         return;

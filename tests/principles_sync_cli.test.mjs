@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mkdtempSync, existsSync, readdirSync, readFileSync, renameSync,
+  mkdtempSync, existsSync, readdirSync, readFileSync, renameSync, rmSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -310,4 +310,89 @@ test('C12: the same entry amended differently on both machines is reported as a 
   assert.strictEqual(afterResolve.status, 0, afterResolve.stderr);
   assert.strictEqual(conflictLines(afterResolve.stdout).length, 0, 'resolving must clear the warning');
   assert.strictEqual(showJSON(B, idX).statement, 'X-from-A', '--take theirs adopts the other machine\'s text');
+});
+
+// ── phase-22 verify fixes ──────────────────────────────────────────────────────
+// Each test is the verifier's own reproduction. Edits are made through the lib (no
+// sync) so both machines diverge offline, exactly as it did.
+
+test('C12: the machine that only PULLS a conflict is told the truth, and resolve keeps its own edit', async () => {
+  const { addPrinciple, amendPrinciple } = await import('../lib/principles.mjs');
+  const bare = mkBareRemote();
+  const A = mkMachine('a12');
+  const B = mkMachine('b12');
+  const x = await addPrinciple(storeDir(A), { statement: 'Entry x original', kind: 'principle' });
+  assert.equal(run(A, ['principles', 'remote', bare]).status, 0);
+  assert.equal(run(B, ['principles', 'remote', bare]).status, 0);
+
+  await amendPrinciple(storeDir(A), x.id, { reason: 'a', statement: 'X-from-A' });
+  await amendPrinciple(storeDir(B), x.id, { reason: 'b', statement: 'X-from-B' });
+  list(A); // A pushes its amendment
+  const onB = conflictLines(list(B).stdout); // B merges: files the conflict, keeps its own
+  assert.equal(onB.length, 1);
+  assert.match(onB[0], /this machine's version is in the entry/);
+  const onA = conflictLines(list(A).stdout); // A only pulls B's resolution
+  assert.equal(onA.length, 1);
+  assert.match(onA[0], /the entry holds the OTHER machine's version; this machine's is in conflicts\//,
+    `A must not be told its own version was kept:\n${onA[0]}`);
+
+  const res = run(A, ['principles', 'resolve', x.id]); // default: mine
+  assert.equal(res.status, 0, res.stderr);
+  assert.equal(showJSON(A, x.id).statement, 'X-from-A', 'resolve (mine) keeps THIS machine\'s edit');
+  assert.ok(JSON.stringify(showJSON(A, x.id).history).includes('X-from-B'), 'the other version is recorded, not lost');
+  assert.equal(conflictLines(list(A).stdout).length, 0);
+});
+
+test('C12: a machine that made neither version must choose explicitly — nothing is resolved on a guess', async () => {
+  const { addPrinciple, amendPrinciple } = await import('../lib/principles.mjs');
+  const bare = mkBareRemote();
+  const A = mkMachine('a12c'); const B = mkMachine('b12c'); const C = mkMachine('c12c');
+  const x = await addPrinciple(storeDir(A), { statement: 'Entry y original', kind: 'principle' });
+  for (const m of [A, B, C]) assert.equal(run(m, ['principles', 'remote', bare]).status, 0);
+  await amendPrinciple(storeDir(A), x.id, { reason: 'a', statement: 'Y-from-A' });
+  await amendPrinciple(storeDir(B), x.id, { reason: 'b', statement: 'Y-from-B' });
+  list(A); list(B);
+  const onC = conflictLines(list(C).stdout);
+  assert.match(onC[0], /neither made on this machine/);
+  const guess = run(C, ['principles', 'resolve', x.id]);
+  assert.notEqual(guess.status, 0);
+  assert.match(guess.stderr, /cannot tell which version .* nothing was changed/);
+  assert.equal(run(C, ['principles', 'resolve', x.id, '--take', 'copy']).status, 0);
+});
+
+test('C10/C6: two different principles made on two machines never share an id or conflict', async () => {
+  const { addPrinciple } = await import('../lib/principles.mjs');
+  const bare = mkBareRemote();
+  const A = mkMachine('a10'); const B = mkMachine('b10');
+  assert.equal(run(A, ['principles', 'remote', bare]).status, 0);
+  assert.equal(run(B, ['principles', 'remote', bare]).status, 0);
+  const a = await addPrinciple(storeDir(A), { statement: 'Never mock the database in integration tests for payments', kind: 'principle' });
+  const b = await addPrinciple(storeDir(B), { statement: 'Never mock the database in integration suites for billing', kind: 'antipattern' });
+  assert.notEqual(a.id, b.id, 'same 40-char slug prefix, different statements → different ids');
+  list(A); const onB = list(B); const onA = list(A);
+  assert.equal(conflictLines(onB.stdout).length + conflictLines(onA.stdout).length, 0, 'no conflict');
+  for (const m of [A, B]) {
+    assert.equal(showJSON(m, a.id).statement, 'Never mock the database in integration tests for payments');
+    assert.equal(showJSON(m, b.id).kind, 'antipattern');
+  }
+});
+
+test('C1: a $HOME that is a git repo without .git/info, or a linked worktree, never breaks a command', () => {
+  // dotfiles repo with no .git/info/
+  const h1 = mkHome('dot1');
+  git(['init', '--quiet'], { cwd: h1 });
+  rmSync(join(h1, '.git', 'info'), { recursive: true, force: true });
+  const M1 = { name: 'dot1', home: h1, cwd: mkCwd('dot1') };
+  assert.equal(run(M1, ['principles', 'add', 'Dotfiles two', '--kind', 'principle']).status, 0);
+  assert.equal(run(M1, ['principles', 'list']).status, 0);
+  // $HOME as a linked worktree (.git is a file)
+  const base = mkHome('wtbase');
+  git(['init', '--quiet', '-b', 'main'], { cwd: base });
+  git(['-c', 'user.email=a@b.c', '-c', 'user.name=a', 'commit', '--quiet', '--allow-empty', '-m', 'init'], { cwd: base });
+  const h2 = join(mkHome('wt'), 'home');
+  git(['worktree', 'add', '--quiet', '-b', 'home', h2], { cwd: base });
+  const M2 = { name: 'wt', home: h2, cwd: mkCwd('wt') };
+  assert.equal(run(M2, ['principles', 'add', 'Worktree home', '--kind', 'principle']).status, 0);
+  assert.equal(run(M2, ['principles', 'list']).status, 0);
+  assert.doesNotMatch(git(['status', '--porcelain'], { cwd: h2 }).stdout, /\.astro/, 'the store is hidden from the enclosing repo');
 });
