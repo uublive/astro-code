@@ -45,11 +45,12 @@ import { collectStats } from '../lib/stats.mjs';
 import { writeAgentsMd } from '../lib/agentsmd.mjs';
 import { renderLogo, wantColor, TAGLINE } from '../hooks/_astro-brand.mjs';
 import {
-  principlesDir, loadPrinciples, resolvePrinciple, addPrinciple,
+  principlesDir, loadPrinciples, resolvePrinciple, addPrinciple, proposePrinciple,
   acceptPrinciple, rejectPrinciple, retirePrinciple, supersedePrinciple, amendPrinciple,
-  recordPromotion,
+  recordPromotion, recordSighting, matchPrinciple, reopenPrinciple, mergePrinciple,
 } from '../lib/principles.mjs';
 import { indexLine } from '../lib/principlemd.mjs';
+import { buildReviewQueue } from '../lib/principlematch.mjs';
 import { editText } from '../lib/editor.mjs';
 import { syncPrinciples, openConflicts, getRemote, setRemote, resolveConflict } from '../lib/principlesync.mjs';
 
@@ -148,6 +149,11 @@ const ALLOWED_FLAGS = {
   'principles promote': ['as'],
   'principles remote': [],
   'principles resolve': ['take'],
+  // Phase 24 (P6) — the review workflow.
+  'principles match': ['json'],
+  'principles sight': ['from-session', 'from-project', 'from-ref', 'excerpt'],
+  'principles reopen': ['reason'],
+  'principles merge': ['into'],
 };
 
 function checkFlags(key, flags) {
@@ -342,6 +348,10 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac principles promote <id> [--as decision|convention]  accepted → this project's canon (personal copy stays)
   ac principles remote [<url>]        set (and sync) the store's private git remote, or print it
   ac principles resolve <id> [--take mine|theirs|entry|copy]  clear an open sync conflict (mine = this machine's version)
+  ac principles match "<stmt>" [--json]  surface exact/overlap candidates against the store — never acts on them
+  ac principles sight <id> [--from-session …] [--from-project …] [--from-ref …] [--excerpt …]  record an explicit sighting
+  ac principles reopen <id> --reason …  rejected → proposed, the only way back
+  ac principles merge <dup> --into <id>  fold a duplicate's evidence into the survivor, dup stays citable as merged
   ac phase reject <phase> --reason … [--agent name]  UAT failed → rejected + record a blocker
                                        (--agent: machine-signed rejection, not human UAT)
   ac phase surprise <phase> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]
@@ -835,12 +845,28 @@ async function main() {
         const source = fromSession || fromProject || fromRef || excerpt
           ? { session: fromSession, project: fromProject, ref: fromRef, excerpt }
           : undefined;
+        // `--propose` calls `proposePrinciple` directly (not `addPrinciple`) so an exact
+        // repeat (D2) can be reported as what it actually did — a sighting, never a
+        // second entry queued — instead of the generic "(status)" line a plain add uses.
+        if (flags.propose === true) {
+          let result;
+          try {
+            result = await proposePrinciple(dir, { statement, kind, strength, why, stack, files, work, source });
+          } catch (e) { die(e.message); }
+          if (result.sighted) {
+            const { id, status } = result.matched;
+            const reason = result.entry.reason;
+            console.log(`• seen again: ${id} (${status}${reason ? `: ${reason}` : ''}) — sighting recorded (${(result.entry.sightings || []).length} total), not re-queued`);
+          } else {
+            console.log(`✓ principle ${result.entry.id} (${result.entry.status})`);
+          }
+          await principlesSync(dir);
+          reportPrinciplesConflicts(dir);
+          return;
+        }
         let entry;
         try {
-          entry = await addPrinciple(dir, {
-            statement, kind, strength, why, stack, files, work, source,
-            propose: flags.propose === true,
-          });
+          entry = await addPrinciple(dir, { statement, kind, strength, why, stack, files, work, source });
         } catch (e) { die(e.message); }
         console.log(`✓ principle ${entry.id} (${entry.status})`);
         await principlesSync(dir);
@@ -858,12 +884,37 @@ async function main() {
           : flags.rejected ? 'rejected'
           : flags.accepted ? 'accepted'
           : 'accepted';
-        const shown = status === null ? entries : entries.filter((e) => e.status === status);
+        // Every entry carries `sightings` (default []) and `sightingCount` (P6). The
+        // proposed queue additionally carries `matches`/`groupWith` — the per-item data
+        // a review needs (C11) — via `buildReviewQueue`, which already filters to
+        // proposed-only.
+        const enriched = entries.map((e) => {
+          const sightings = e.sightings ?? [];
+          return { ...e, sightings, sightingCount: sightings.length };
+        });
+        const shown = status === 'proposed'
+          ? buildReviewQueue(entries)
+          : status === null ? enriched : enriched.filter((e) => e.status === status);
         if (flags.json) { json(shown); return; }
         if (!shown.length) {
           console.log('• no principles yet');
         } else {
-          for (const e of shown) console.log(indexLine(e));
+          for (const e of shown) {
+            console.log(indexLine(e));
+            if (status !== 'proposed') continue;
+            const parts = [];
+            if (e.sightingCount) parts.push(`seen again ${e.sightingCount}`);
+            const rejectedMatch = e.matches.find((m) => m.status === 'rejected');
+            if (rejectedMatch) parts.push(`rejected match ${rejectedMatch.id} ("${rejectedMatch.reason}")`);
+            const overlaps = e.matches.filter((m) => m.match === 'overlap');
+            if (overlaps.length) {
+              const ids = overlaps.map((o) => o.id).join(', ');
+              const tokens = [...new Set(overlaps.flatMap((o) => o.shared))].join(', ');
+              parts.push(`overlaps ${ids} on ${tokens}`);
+            }
+            if (e.groupWith.length) parts.push(`group: ${e.groupWith.join(', ')}`);
+            if (parts.length) console.log(`  ↳ ${parts.join(' · ')}`);
+          }
         }
         const proposedCount = entries.filter((e) => e.status === 'proposed').length;
         if (status !== null && status !== 'proposed' && proposedCount) {
@@ -876,11 +927,14 @@ async function main() {
       if (sub === 'show') {
         checkFlags('principles show', flags);
         await principlesSync(dir);
-        let entry;
-        try { entry = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        let resolved;
+        try { resolved = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const sightings = resolved.sightings ?? [];
+        const entry = { ...resolved, sightings, sightingCount: sightings.length };
         if (flags.json) { json(entry); return; }
         const statusLine = entry.reason ? `${entry.status} — ${entry.reason}`
           : entry.supersededBy ? `${entry.status} — superseded by ${entry.supersededBy}`
+          : entry.mergedInto ? `${entry.status} — into ${entry.mergedInto}`
           : entry.status;
         console.log(`${entry.id}  ${statusLine}`);
         console.log(`kind: ${entry.kind}/${entry.strength}`);
@@ -908,6 +962,18 @@ async function main() {
           console.log('');
           console.log('history:');
           for (const h of entry.history) console.log(`  ${h.at}  ${h.action}${h.reason ? ` — ${h.reason}` : ''}`);
+        }
+        if (entry.sightings.length) {
+          console.log('');
+          console.log(`sightings (${entry.sightings.length}):`);
+          for (const s of entry.sightings) {
+            const pointers = [
+              s.session && `session ${s.session}`, s.project && `project ${s.project}`, s.ref, s.at,
+              s.mergedFrom && `from ${s.mergedFrom}`,
+            ].filter(Boolean);
+            console.log(`  ${pointers.join(' · ')}`);
+            if (s.excerpt) console.log(`    "${s.excerpt}"`);
+          }
         }
         reportPrinciplesConflicts(dir);
         return;
@@ -1126,7 +1192,76 @@ async function main() {
         return;
       }
 
-      die(`unknown: ac principles ${sub} (add | list | show | accept | reject | retire | supersede | amend | promote | remote | resolve)`);
+      if (sub === 'match') {
+        checkFlags('principles match', flags);
+        await principlesSync(dir);
+        const statement = pos.slice(1).join(' ').trim();
+        if (!statement) die('usage: ac principles match "<statement>" [--json]');
+        const result = matchPrinciple(dir, statement);
+        if (flags.json) { json(result); return; }
+        if (!result.exact.length && !result.overlap.length) {
+          console.log('• no candidates');
+        } else {
+          for (const m of result.exact) {
+            console.log(`exact    ${m.id}  ${m.status}${m.reason ? ` — ${m.reason}` : ''}`);
+          }
+          for (const m of result.overlap) {
+            console.log(`overlap  ${m.id}  ${m.status}${m.reason ? ` — ${m.reason}` : ''}  matched on: ${m.shared.join(', ')}`);
+          }
+        }
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'sight') {
+        checkFlags('principles sight', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const fromSession = typeof flags['from-session'] === 'string' ? flags['from-session'] : undefined;
+        const fromProject = typeof flags['from-project'] === 'string' ? flags['from-project'] : undefined;
+        const fromRef = typeof flags['from-ref'] === 'string' ? flags['from-ref'] : undefined;
+        const excerpt = typeof flags.excerpt === 'string' ? flags.excerpt : undefined;
+        const source = fromSession || fromProject || fromRef || excerpt
+          ? { session: fromSession, project: fromProject, ref: fromRef, excerpt }
+          : undefined;
+        let result;
+        try { result = await recordSighting(dir, target.id, { source }); } catch (e) { die(e.message); }
+        console.log(`✓ sighting recorded on ${result.entry.id} (${result.entry.status}) — ${(result.entry.sightings || []).length} total`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'reopen') {
+        checkFlags('principles reopen', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        let entry;
+        try { entry = await reopenPrinciple(dir, target.id, { reason }); } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} → proposed (reopened)`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'merge') {
+        checkFlags('principles merge', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const into = typeof flags.into === 'string' ? flags.into : '';
+        let result;
+        try { result = await mergePrinciple(dir, target.id, { into }); } catch (e) { die(e.message); }
+        console.log(`✓ merged ${result.merged.id} into ${result.survivor.id} — kept ${result.survivor.id}, folded ${result.merged.id}'s evidence in as sightings`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      die(`unknown: ac principles ${sub} (add | list | show | accept | reject | retire | supersede | amend | promote | remote | resolve | match | sight | reopen | merge)`);
     }
 
     case 'agents-md': {
