@@ -53,6 +53,8 @@ import { indexLine } from '../lib/principlemd.mjs';
 import { buildReviewQueue } from '../lib/principlematch.mjs';
 import { editText } from '../lib/editor.mjs';
 import { syncPrinciples, openConflicts, getRemote, setRemote, resolveConflict } from '../lib/principlesync.mjs';
+import { STAGE_WORK } from '../lib/principlebrief.mjs';
+import { shortlist, askStore, cite, usageReview, clashesFor, projectContext } from '../lib/retrieval.mjs';
 
 function parseArgs(args) {
   const flags = {};
@@ -139,7 +141,7 @@ const ALLOWED_FLAGS = {
   // (including `promote`/`remote`/`resolve`, implemented in t13) so a typo on any of
   // them is refused from day one, and t13 only has to add code, never a flag list.
   'principles add': ['kind', 'strength', 'why', 'stack', 'files', 'work', 'propose', 'from-session', 'from-project', 'from-ref', 'excerpt'],
-  'principles list': ['proposed', 'accepted', 'rejected', 'all', 'json'],
+  'principles list': ['proposed', 'accepted', 'rejected', 'all', 'json', 'usage'],
   'principles show': ['json'],
   'principles accept': ['edit', 'statement', 'why'],
   'principles reject': ['reason'],
@@ -154,6 +156,11 @@ const ALLOWED_FLAGS = {
   'principles sight': ['from-session', 'from-project', 'from-ref', 'excerpt'],
   'principles reopen': ['reason'],
   'principles merge': ['into'],
+  // Phase 25 (P1) — retrieval never runs `principlesSync` (hot path of every agent
+  // task and session start), so its flags are read-only knobs only.
+  'principles brief': ['stage', 'work', 'files', 'rules-only', 'by', 'json'],
+  'principles ask': ['stage', 'by', 'json'],
+  'principles cite': ['stage', 'by'],
 };
 
 function checkFlags(key, flags) {
@@ -204,7 +211,7 @@ function flagValues(rawTail, name) {
 // (e.g. `ac principles add --propose "statement"`). Left alone, the statement silently
 // vanishes from the positionals. Detected and repaired once, right where `pos`/`flags`
 // are read for this command, rather than teaching `parseArgs` about individual verbs.
-const PRINCIPLES_BOOLEAN_FLAGS = ['propose', 'edit', 'all', 'proposed', 'accepted', 'rejected', 'json'];
+const PRINCIPLES_BOOLEAN_FLAGS = ['propose', 'edit', 'all', 'proposed', 'accepted', 'rejected', 'json', 'rules-only', 'usage'];
 function fixPrinciplesBooleanFlags(flags, pos) {
   for (const key of PRINCIPLES_BOOLEAN_FLAGS) {
     if (typeof flags[key] === 'string') {
@@ -352,6 +359,12 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac principles sight <id> [--from-session …] [--from-project …] [--from-ref …] [--excerpt …]  record an explicit sighting
   ac principles reopen <id> --reason …  rejected → proposed, the only way back
   ac principles merge <dup> --into <id>  fold a duplicate's evidence into the survivor, dup stays citable as merged
+  ac principles brief [--stage s] [--work w,…] [--files a,b] [--rules-only] [--by role] [--json]
+                                       the per-task shortlist: hard rules in full + a compact
+                                       in-scope index, never syncs (empty stdout when nothing served)
+  ac principles ask "<question>" [--stage s] [--by role] [--json]  keyword-ranked search, says why it matched
+  ac principles cite <id>… [--stage s] [--by role]  record that these principles were applied
+  ac principles list --usage [--json]  served-never-cited and never-served, from the local usage log
   ac phase reject <phase> --reason … [--agent name]  UAT failed → rejected + record a blocker
                                        (--agent: machine-signed rejection, not human UAT)
   ac phase surprise <phase> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]
@@ -368,6 +381,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac flow hotfix finish               merge hotfix into main+develop, tag v<N>.<k>, push
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
+                                       (stack override: ac config set stack '["rust"]' — replaces detection)
   ac models [max|balanced|fast] [--preview]  apply a per-role model preset (speed switch)
   ac preflight                        warn if HEAD diverged from upstream (silent when in sync)
   ac fixtures check [--phase N]       advisory: warn if this phase's stamped commits changed
@@ -874,6 +888,24 @@ async function main() {
         return;
       }
 
+      if (sub === 'list' && flags.usage) {
+        // (D4/P8) — the review surface: served-often-never-cited and never-served.
+        // Never syncs, like brief/ask/cite (P1) — it reads the local, per-machine log.
+        checkFlags('principles list', flags);
+        const review = usageReview({ dir });
+        if (flags.json) { json(review); return; }
+        if (review.ignored.length) {
+          console.log('served, never cited:');
+          for (const r of review.ignored) console.log(`  ${r.id}  served ${r.served}× · last ${r.lastServed}`);
+        }
+        if (review.unused.length) {
+          console.log('never served:');
+          for (const r of review.unused) console.log(`  ${r.id}`);
+        }
+        if (!review.ignored.length && !review.unused.length) console.log('• nothing to review');
+        return;
+      }
+
       if (sub === 'list') {
         checkFlags('principles list', flags);
         await principlesSync(dir);
@@ -887,10 +919,15 @@ async function main() {
         // Every entry carries `sightings` (default []) and `sightingCount` (P6). The
         // proposed queue additionally carries `matches`/`groupWith` — the per-item data
         // a review needs (C11) — via `buildReviewQueue`, which already filters to
-        // proposed-only.
+        // proposed-only. Accepted entries also carry `canonClash` (D5, P6) — a
+        // candidate against the project's canon, never resolved automatically.
+        const pctx = projectContext(process.cwd());
+        const withClash = clashesFor(entries.filter((e) => e.status === 'accepted'), pctx);
+        const clashById = new Map(withClash.map((e) => [e.id, e.clash]));
         const enriched = entries.map((e) => {
           const sightings = e.sightings ?? [];
-          return { ...e, sightings, sightingCount: sightings.length };
+          const canonClash = clashById.get(e.id) || [];
+          return { ...e, sightings, sightingCount: sightings.length, canonClash };
         });
         const shown = status === 'proposed'
           ? buildReviewQueue(entries)
@@ -901,6 +938,9 @@ async function main() {
         } else {
           for (const e of shown) {
             console.log(indexLine(e));
+            if (e.canonClash && e.canonClash.length) {
+              console.log(`  ↳ canon may override: ${e.canonClash.map((c) => c.ref).join(', ')}`);
+            }
             if (status !== 'proposed') continue;
             const parts = [];
             if (e.sightingCount) parts.push(`seen again ${e.sightingCount}`);
@@ -1261,7 +1301,62 @@ async function main() {
         return;
       }
 
-      die(`unknown: ac principles ${sub} (add | list | show | accept | reject | retire | supersede | amend | promote | remote | resolve | match | sight | reopen | merge)`);
+      // (P1/D1) — brief/ask/cite never call `principlesSync`: they sit on the hot path
+      // of every agent task and every session start, and a hook must never wait on a
+      // `git fetch`. Open sync conflicts are still surfaced, but on STDERR, so a
+      // shortlist on stdout stays clean for hooks and agents to consume directly.
+      if (sub === 'brief') {
+        checkFlags('principles brief', flags);
+        const stage = typeof flags.stage === 'string' ? flags.stage : 'session';
+        if (!Object.prototype.hasOwnProperty.call(STAGE_WORK, stage)) {
+          die(`unknown --stage "${stage}" — valid stages: ${Object.keys(STAGE_WORK).join(', ')}`);
+        }
+        const work = flagValues(tail, 'work');
+        const filesRaw = flagValues(tail, 'files').flatMap((f) => f.split(',').map((s) => s.trim()).filter(Boolean));
+        const files = filesRaw.map((f) => (f.startsWith('./') ? f.slice(2) : f));
+        const by = typeof flags.by === 'string' ? flags.by : 'cli';
+        const result = await shortlist({
+          dir, cwd: process.cwd(), stage, work: work.length ? work : undefined, files,
+          rulesOnly: flags['rules-only'] === true, by,
+        });
+        if (flags.json) { json(result.json); return; }
+        if (result.text) console.log(result.text);
+        else console.error(`• no principles in scope — stack: ${(result.ctx.stack || []).join(', ') || '(none)'}`);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'ask') {
+        checkFlags('principles ask', flags);
+        const question = pos.slice(1).join(' ').trim();
+        if (!question) die('usage: ac principles ask "<question>" [--stage s] [--by role] [--json]');
+        const stage = typeof flags.stage === 'string' ? flags.stage : 'ask';
+        if (!Object.prototype.hasOwnProperty.call(STAGE_WORK, stage)) {
+          die(`unknown --stage "${stage}" — valid stages: ${Object.keys(STAGE_WORK).join(', ')}`);
+        }
+        const by = typeof flags.by === 'string' ? flags.by : 'cli';
+        const { results, text } = await askStore({ dir, cwd: process.cwd(), question, stage, by });
+        if (flags.json) { json(results); return; }
+        console.log(text);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'cite') {
+        checkFlags('principles cite', flags);
+        const refs = pos.slice(1);
+        if (!refs.length) die('usage: ac principles cite <id>… [--stage s] [--by role]');
+        const stage = typeof flags.stage === 'string' ? flags.stage : 'cli';
+        const by = typeof flags.by === 'string' ? flags.by : 'cli';
+        const { resolved, unresolved } = await cite({ dir, cwd: process.cwd(), refs, stage, by });
+        for (const ref of unresolved) console.error(`⚠ could not resolve principle "${ref}"`);
+        if (!resolved.length) die('no principle reference resolved — nothing was cited');
+        console.log(`✓ cited ${resolved.length} principle(s)`);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      die(`unknown: ac principles ${sub} (add | list | show | accept | reject | retire | supersede | amend | promote | remote | resolve | match | sight | reopen | merge | brief | ask | cite)`);
     }
 
     case 'agents-md': {
