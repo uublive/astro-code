@@ -382,6 +382,32 @@ is filed as debt, never a failed criterion). The Claude Code session gets the sa
 shortlist injected automatically at start/compact; on any other host, the managed
 `AGENTS.md` block tells the agent to run `ac principles brief` itself.
 
+**Transcript sweep — on demand, opt-in.** `/astro-mine` (or `ac principles mine`) sweeps
+past session transcripts for steers you kept giving — corrections, preferences, explicit
+rules — and turns what recurs into proposed principles, exactly like every other capture
+moment. It runs ONLY when you ask for it: never from a hook, never on a schedule. The
+statusline/SessionStart banner nudge you towards it once 10+ session files in the current
+project have gone unswept — a stat-only check (file sizes vs. a recorded watermark, never
+opening a transcript) that stays cheap even against a huge history. Scope defaults to the
+current project (every Claude profile + Codex); `--all` or `--project <path>` widen or
+retarget it deliberately. Only turns you actually TYPED are read — tool results, injected
+context, expanded command bodies, subagent and headless (`claude -p`/SDK) sessions are all
+excluded before anything reaches the engine. Everything is redacted (the same shapes
+`lib/redact.mjs` masks everywhere else) before it is ever surfaced. A steer qualifies once
+it recurs in ≥2 distinct sessions, or was stated once as an explicit rule ("always…",
+"from now on…", `sempre`/`mai`); an exact restatement of an existing entry (accepted OR
+rejected) is recorded as a sighting, never re-proposed. At most 10 qualifying candidates
+surface per sweep, strongest first — the rest are held for next time. The read
+(`ac principles mine [--json]`) never commits anything: only `ac principles mine
+--advance <sweep-id>`, run after every proposal/sighting call has succeeded, moves the
+watermark — a failed lift is retried on the next sweep, never silently skipped. The
+watermark itself lives in the store's already-gitignored `.local/mine/`: per-machine,
+pointers and byte offsets only, never transcript text. `--rescan` re-reads everything from
+scratch (rarely needed — only when you suspect the watermark drifted).
+
+- `ac principles mine [--all|--project <path>] [--rescan] [--json]` — sweep past sessions for steers (read-only).
+- `ac principles mine --advance <sweep-id>` — mark that sweep's material as processed.
+
 ---
 
 ## The fast lane
