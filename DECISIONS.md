@@ -368,3 +368,10 @@ _2026-09-21_
 
 **Rejected:** a 'parked' phase status or milestone-less phase tier (issue #16); an idea-flavoured debt entry; a priority field (every backlog grows one and every one becomes meaningless — ordering, if ever needed, comes from earned recurrence like debt, not self-report)
 
+## ADR-057 — The personal principle store lives in the user's home (~/.astro/principles/), outside every project, optionally synced through the user's own private git repo — a deliberate exception to ADR-048's 'lib/ never writes outside .astrocode/'
+_2026-09-24 · at b5df0e4_
+
+**Why:** One developer's principles, patterns, preferences and antipatterns must follow them across projects and machines without landing in a teammate's clone; a shared project only gets a principle when it is promoted into its canon on purpose. ac tune and ac install already write outside .astrocode/, so the rule becomes explicit about its exceptions rather than silently broken.
+
+**Rejected:** Storing it in the repo's .astrocode/ (leaks personal preferences to the team); local-only with no sync (container and laptop drift apart); a bare configurable path with no sync logic (concurrent writes clobber).
+
