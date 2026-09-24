@@ -92,7 +92,7 @@ test('an invalid work scope throws and touches nothing', async () => {
 
 // --- id collisions --------------------------------------------------------------------
 
-test('the same statement added twice the same day gets a -2 id, first file untouched', async () => {
+test('the same statement added twice the same day gets a distinct id, first file untouched', async () => {
   const { addPrinciple } = await import('../lib/principles.mjs');
   const dir = mkStoreDir();
   const now = new Date('2026-09-24T08:00:00.000Z');
@@ -101,7 +101,9 @@ test('the same statement added twice the same day gets a -2 id, first file untou
   const firstBytesBefore = readFileSync(firstFile);
   const second = await addPrinciple(dir, { statement: 'Write tests first', kind: 'principle', now });
   assert.notEqual(first.id, second.id);
-  assert.match(second.id, /-2$/);
+  // one random suffix per creation (phase-22 verify, C6/C10): same slug, different id
+  assert.match(first.id, /^2026-09-24-write-tests-first-[0-9a-f]{4}$/);
+  assert.equal(second.id.slice(0, -5), first.id.slice(0, -5));
   assert.equal(mdFiles(dir).length, 2);
   assert.deepEqual(readFileSync(firstFile), firstBytesBefore);
 });

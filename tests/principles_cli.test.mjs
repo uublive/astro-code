@@ -330,14 +330,14 @@ test('C6: ids are stable dated slugs, resolved by unique prefix, never reissued 
   assert.notStrictEqual(idA, idB, 'two distinct ids for the identical statement');
   assert.strictEqual(storeFiles(home).length, 2, 'two distinct files, neither overwritten');
 
-  // the collision suffix (P5) means idB starts with idA (e.g. idA + '-2'); an EXACT id
-  // still wins over the fact that it is also a prefix of idB.
+  // an exact id always resolves to itself.
   const showFull = run(['principles', 'show', idA], dir, home);
   assert.strictEqual(showFull.status, 0, showFull.stderr);
 
-  // a prefix that is NOT itself a full id but matches more than one (idA minus its last
-  // character still starts both idA and idB) must be refused as ambiguous.
-  const ambiguousPrefix = idA.slice(0, -1);
+  // a prefix that matches more than one must be refused as ambiguous: the shared slug,
+  // i.e. either id minus its random '-xxxx' suffix (phase-22 verify, C6/C10).
+  const ambiguousPrefix = idA.slice(0, -5);
+  assert.ok(idB.startsWith(ambiguousPrefix), 'same statement → same slug, different random suffix');
   const ambiguous = run(['principles', 'show', ambiguousPrefix], dir, home);
   assert.notStrictEqual(ambiguous.status, 0, 'an ambiguous prefix must be refused, naming the candidates');
 

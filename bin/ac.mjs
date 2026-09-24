@@ -200,9 +200,12 @@ function fixPrinciplesBooleanFlags(flags, pos) {
 // Phase 22 (P12) — sync reporting shared by every `ac principles` verb: silent on a
 // clean or local-only sync, one line when something arrived, one advisory when the
 // remote could not be reached. Exit code is never affected by any of this.
+// A verb syncs before and after its write; an unreachable remote is reported ONCE.
+let principlesUnreachableReported = false;
 function reportPrinciplesSync(res) {
   if (res.pulled?.length) console.log(`• principles: pulled ${res.pulled.length} change(s)`);
-  if (res.state === 'unreachable') {
+  if (res.state === 'unreachable' && !principlesUnreachableReported) {
+    principlesUnreachableReported = true;
     console.log('⚠ principles remote unreachable — kept locally, will sync on the next command');
   }
   if (res.state === 'diverged') {
@@ -1087,8 +1090,15 @@ async function main() {
       if (sub === 'resolve') {
         checkFlags('principles resolve', flags);
         await principlesSync(dir);
-        const id = pos[1];
-        if (!id) die('usage: ac principles resolve <id> [--take mine|theirs|entry|copy]');
+        if (!pos[1]) die('usage: ac principles resolve <id> [--take mine|theirs|entry|copy]');
+        // a unique prefix works here like on every other verb (phase-22 verify, C6)
+        let id = pos[1];
+        const open = [...new Set(openConflicts(dir).map((c) => c.id))];
+        if (!open.includes(id)) {
+          const hits = open.filter((c) => c.startsWith(id));
+          if (hits.length > 1) die(`ambiguous id "${id}" — matches ${hits.join(', ')}`);
+          if (hits.length === 1) id = hits[0];
+        }
         const take = typeof flags.take === 'string' ? flags.take : 'mine';
         if (!['mine', 'theirs', 'entry', 'copy'].includes(take)) die(`--take must be mine, theirs, entry or copy, got "${take}"`);
         let res;

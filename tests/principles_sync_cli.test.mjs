@@ -396,3 +396,60 @@ test('C1: a $HOME that is a git repo without .git/info, or a linked worktree, ne
   assert.equal(run(M2, ['principles', 'list']).status, 0);
   assert.doesNotMatch(git(['status', '--porcelain'], { cwd: h2 }).stdout, /\.astro/, 'the store is hidden from the enclosing repo');
 });
+
+// ── phase-22 verify, round 2 ─────────────────────────────────────────────────
+
+test('C6/C10: the SAME statement added separately on two offline machines gets two ids — no conflict, both kept', async () => {
+  const { addPrinciple } = await import('../lib/principles.mjs');
+  const bare = mkBareRemote();
+  const A = mkMachine('a10s'); const B = mkMachine('b10s');
+  assert.equal(run(A, ['principles', 'remote', bare]).status, 0);
+  assert.equal(run(B, ['principles', 'remote', bare]).status, 0);
+  const a = await addPrinciple(storeDir(A), { statement: 'Write the test first', kind: 'pattern', why: 'same' });
+  const b = await addPrinciple(storeDir(B), { statement: 'Write the test first', kind: 'pattern', why: 'same' });
+  assert.notEqual(a.id, b.id, 'two creations never share an id');
+  list(A); const onB = list(B); const onA = list(A);
+  assert.equal(conflictLines(onB.stdout).length + conflictLines(onA.stdout).length, 0, 'no conflict');
+  for (const m of [A, B]) {
+    assert.equal(showJSON(m, a.id).statement, 'Write the test first');
+    assert.equal(showJSON(m, b.id).statement, 'Write the test first');
+  }
+});
+
+test('C6: resolve takes a unique id prefix, like every other verb', async () => {
+  const { addPrinciple, amendPrinciple } = await import('../lib/principles.mjs');
+  const bare = mkBareRemote();
+  const A = mkMachine('a6p'); const B = mkMachine('b6p');
+  const x = await addPrinciple(storeDir(A), { statement: 'Prefix resolve target', kind: 'principle' });
+  assert.equal(run(A, ['principles', 'remote', bare]).status, 0);
+  assert.equal(run(B, ['principles', 'remote', bare]).status, 0);
+  await amendPrinciple(storeDir(A), x.id, { reason: 'a', statement: 'P-from-A' });
+  await amendPrinciple(storeDir(B), x.id, { reason: 'b', statement: 'P-from-B' });
+  list(A); list(B);
+  const r = run(B, ['principles', 'resolve', x.id.slice(0, -3)]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(conflictLines(list(B).stdout).length, 0);
+});
+
+test('secrets typed into a statement or why never reach the file or its name', () => {
+  const M = mkMachine('sec');
+  const token = 'ghp_aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5';
+  const r = run(M, ['principles', 'add', `Rotate ${token} now`, '--kind', 'principle', '--why', 'key AKIAIOSFODNN7EXAMPLE leaked']);
+  assert.equal(r.status, 0, r.stderr);
+  const files = readdirSync(storeDir(M)).filter((f) => f.endsWith('.md'));
+  assert.equal(files.length, 1);
+  assert.doesNotMatch(files[0].toLowerCase(), /ghp|ab3de5/, `the id must not carry the token: ${files[0]}`);
+  const text = readFileSync(join(storeDir(M), files[0]), 'utf8');
+  assert.ok(!text.includes(token) && !text.includes('AKIAIOSFODNN7EXAMPLE'), 'no secret stored as typed');
+  assert.match(text, /\[REDACTED\]/);
+});
+
+test('an unreachable remote is reported once per command, not twice', async () => {
+  const { addPrinciple } = await import('../lib/principles.mjs');
+  const M = mkMachine('once');
+  await addPrinciple(storeDir(M), { statement: 'Seed entry', kind: 'principle' });
+  assert.equal(run(M, ['principles', 'remote', join(tmpdir(), 'ac-nowhere-x', 'missing.git')]).status, 0);
+  const r = run(M, ['principles', 'add', 'Offline entry', '--kind', 'principle']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal((r.stdout.match(/remote unreachable/g) || []).length, 1, r.stdout);
+});
