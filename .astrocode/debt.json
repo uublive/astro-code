@@ -175,6 +175,36 @@
       "why": "Piping the hook into a short consumer (node hooks/astro-statusline.mjs < payload | head -3) makes the final process.stdout.write throw an uncaught 'Error: write EPIPE', printing a Node stack trace to stderr and exiting non-zero. Claude Code captures stdout in full so this is not a live-user path, which is why no criterion touches it — but it makes the hook unpleasant to debug by hand, and any future caller that pipes it sees a stack trace instead of a truncated line. A try/catch or an EPIPE listener around the final write would close it.",
       "phase": "21",
       "file": "hooks/astro-statusline.mjs"
+    },
+    {
+      "id": "2026-09-24-a-convention-promoted-and-awaiting-ac",
+      "title": "A convention promoted and awaiting ac canon push gets published by the next decision promote",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-09-24T10:53:09.442Z",
+      "why": "principles promote --as convention prints 'publish it to the team: ac canon push', but a later promote --as decision (via ac decision add, which publishes CONVENTIONS.md since before phase 22) prints '✓ published CONVENTIONS.md' — the hint misleads about when the convention reaches the team",
+      "phase": "22",
+      "file": "bin/ac.mjs"
+    },
+    {
+      "id": "2026-09-24-a-convention-promotion-record-prints",
+      "title": "A convention promotion record prints its kind twice: 'proj (convention convention)'",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-09-24T10:53:09.498Z",
+      "why": "the decision form reads 'decision ADR-003'; the convention form repeats the word instead of naming a target",
+      "phase": "22",
+      "file": "bin/ac.mjs"
+    },
+    {
+      "id": "2026-09-24-accept-statement-edit-records-only-an",
+      "title": "accept --statement / --edit records only an edited history line, never an accepted one",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-09-24T10:53:09.552Z",
+      "why": "the status is correct, but the entry's history never shows when it was accepted; a plain accept does record it",
+      "phase": "22",
+      "file": "lib/principles.mjs"
     }
   ]
 }
