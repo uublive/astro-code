@@ -6,22 +6,31 @@
       "number": 22,
       "name": "Principle store and CLI: personal principles, patterns, preferences and antipatterns with a review lifecycle",
       "slug": "22-principle-store-and-cli-personal-principles-patterns-preferences-and-antipatterns-with-a-review-lifecycle",
-      "status": "verified",
-      "milestone": 9
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-24T22:40:31.410Z"
     },
     {
       "number": 23,
       "name": "Capture at the moments of intent: discuss, decision, accept and milestone close propose principles",
       "slug": "23-capture-at-the-moments-of-intent-discuss-decision-accept-and-milestone-close-propose-principles",
-      "status": "verified",
-      "milestone": 9
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-24T22:40:31.490Z"
     },
     {
       "number": 24,
       "name": "Review workflow: a batch review command that dedupes against what was accepted and rejected",
       "slug": "24-review-workflow-a-batch-review-command-that-dedupes-against-what-was-accepted-and-rejected",
-      "status": "verified",
-      "milestone": 9
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-24T22:40:31.572Z"
     },
     {
       "number": 25,
