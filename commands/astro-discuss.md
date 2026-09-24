@@ -90,6 +90,12 @@ about — and to capture the answers so planning is grounded, not guessed.
 5. **Promote firm choices.** If a decision is architectural (affects more than this
    phase), record it with `ac decision add "<choice>" --why "<why>"` so it joins the
    shared canon.
+5b. **Propose what the answers settled.** Run `ac phase context <N> --author` and proceed
+   only when the output is exactly `human` (never a substring test — the ADR-037 trap:
+   `captured` also matches the agent form). On `human`, apply
+   `` `$(ac path templates)/principle-capture.md` `` in full: `--from-ref` is `phase <N>`,
+   `--excerpt` is the user's answer with its reason. Report exactly one line, or say
+   nothing when nothing was proposed.
 6. Clear the live status (`ac activity clear`) and suggest, **in one line**, `/astro-plan
    <number>` next (reference the phase by its number, e.g. `/astro-plan 1`) — it will
    read CONTEXT.md and plan against it.
