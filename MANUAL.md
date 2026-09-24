@@ -12,6 +12,7 @@ For *why* it is built this way, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 - [Bugs are not phases](#bugs-are-not-phases)
 - [Technical debt](#technical-debt)
 - [Backlog](#backlog)
+- [Principles](#principles)
 - [The fast lane](#the-fast-lane)
 - [Canon](#canon)
 - [Models, thinking and effort](#models-thinking-and-effort)
@@ -288,6 +289,44 @@ offers each item its exits.
 
 ---
 
+## Principles
+
+A personal store of your own patterns, preferences and antipatterns — the notes you keep
+making across every project, kept once instead of re-typed into every `CONTEXT.md`.
+`ac principles add "<statement>" --kind principle|pattern|preference|antipattern` writes
+one Markdown file per entry under `~/.astro/principles/` (`ASTRO_PRINCIPLES_DIR`
+overrides that), never inside the project: ADR-057's explicit exception to "state lives
+under `.astrocode/`", because what is being written travels with YOU, not the repo.
+
+**Accepting is the only way in.** A manual `ac principles add` is accepted directly; a
+machine that later observes something (phase 23) can only `--propose` it — an entry
+starts governing agents once a human accepts it, never on its own. `ac principles reject
+<id> --reason "…"` and `ac principles retire <id> --reason "…"` both need a reason, and
+neither one deletes the entry: a rejection is what stops the same idea from being
+re-proposed later, so `list --all` keeps showing it long after `list --accepted` stops.
+`ac principles amend <id> --reason "…" [--statement … | --edit]` rewords or rescopes an
+accepted entry in place — same id, one history line naming the reason and the prior text.
+
+**Remote and sync.** With no remote configured the store is purely local and every
+command is offline. `ac principles remote <url>` points it at your own private git
+repo (never a team's) and syncs immediately; after that, every command pulls first and
+pushes after a mutation, offline-first — an unreachable remote is only ever an advisory
+line, never a failure, and nothing is force-pushed. Two machines that both changed the
+*same* entry since their last sync produce a genuine conflict: the machine you are on
+keeps its own copy in `<id>.md`, the other machine's copy lands in
+`conflicts/<id>.<sha>.md`, and every command warns until you run
+`ac principles resolve <id> [--take mine|theirs]`. Two machines changing *different*
+entries never conflict — one file per entry makes that true by construction.
+
+**Promote vs. personal.** A principle stays personal until you deliberately promote it:
+`ac principles promote <id>` (accepted entries only) records a shared ADR in the current
+project's canon by default, or `--as convention` appends a bullet to its
+`CONVENTIONS.md` (local only — it prints the `ac canon push` you still have to run
+yourself). Either way the entry itself stays in your home store, still accepted, still
+yours everywhere else — `show <id>` lists every project it has been promoted into.
+
+---
+
 ## The fast lane
 
 `/astro-fast "<a long, unplanned prompt>"` is for a big freehand request that shouldn't need
@@ -507,6 +546,18 @@ ac backlog note <id> ["<text>"] # read/set/clear an item's note (the title stays
 ac backlog link <id> --phase N # fold it into a phase already in flight
 ac backlog promote <id>        # claim a phase number and seed CONTEXT.md from it
 ac backlog archive <id> --kind declined|obsolete --reason "…" # file it WITHOUT doing it
+
+ac principles add "<stmt>" --kind principle|pattern|preference|antipattern  # a personal note in ~/.astro/principles (--propose queues it)
+ac principles list [--proposed|--accepted|--rejected|--all] [--json]  # the personal store (default: accepted)
+ac principles show <id> [--json] # one entry — fields, source, promotions, history
+ac principles accept <id> [--edit | --statement … [--why …]] # proposed → accepted (reword first)
+ac principles reject <id> --reason … # proposed → rejected (kept, never deleted)
+ac principles retire <id> --reason … # accepted → retired
+ac principles supersede <id> --by <id> # accepted → superseded by a newer entry
+ac principles amend <id> --reason … [--statement … | --edit] # reword/rescope, id unchanged
+ac principles promote <id> [--as decision|convention] # accepted → this project's canon (personal copy stays)
+ac principles remote [<url>]   # set (and sync) the store's private git remote, or print it
+ac principles resolve <id> [--take mine|theirs] # clear an open sync conflict on one entry
 
 ac models balanced             # per-role model tier + reasoning depth, in one switch
 ac config set models.executor opus

@@ -379,3 +379,10 @@ _2026-09-24 · at b5df0e4_
 _2026-09-24 · at b5df0e4_
 
 **Why:** The point of Second Nature is a system the user understands and controls. Accepting is the moment a principle starts governing agents, so it must be a human act; a remembered rejection stops the same proposal returning. Adopted from the forge knowledge graph's existing principle for AI suggestions.
+
+## ADR-059 — Principle-store specifics this plan pinned: one-file-per-entry Markdown format with a fixed header key order, conflict markers always read as damage; exact-id-wins resolution with unique-prefix fallback and ambiguity/none errors naming candidates; --edit and flag forms both refuse on unchanged text, matching git's commit-template rule; the store becomes a git repo only after `ac principles remote`, detected by .git presence (never isRepo, to avoid a dotfiles-managed $HOME), a failed fetch stops the sync outright (unreachable is never empty), and a genuine conflict is written to conflicts/<id>.<sha>.md rather than left as markers or silently resolved; a promotion is an appended record on the entry, never a move or a copy
+_2026-09-24 · at 8708356_
+
+**Why:** pins the exact shape lib/principlemd.mjs, lib/principles.mjs and lib/principlesync.mjs implement, so a later change to any of them has a canon line to check against
+
+**Rejected:** YAML front matter (zero-deps rule, and the header shape doesn't need a parser); a JSON index file (one file per entry is what makes different-entry merges conflict-free by construction); orphan-branch CAS sync like the team registry (a personal store has exactly one owner across many machines — nothing to arbitrate); automatic conflict resolution (a human's considered edit must never be silently overwritten)
