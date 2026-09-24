@@ -8,11 +8,11 @@ import { basename, join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
-import { initPlanning, phaseContextStatus } from '../lib/planning.mjs';
+import { initPlanning, phaseContextStatus, contextAuthor } from '../lib/planning.mjs';
 import { profileModels, PROFILE_NAMES } from '../lib/models.mjs';
 import { profileReasoning, REASONING_LEVELS, validateReasoning } from '../lib/reasoning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
-import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, setPhaseEffort, setPhaseNote, setPhaseMilestone, isPhasePlanned } from '../lib/roadmap.mjs';
+import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, rejectPhase, setPhaseEffort, setPhaseNote, setPhaseMilestone, isPhasePlanned } from '../lib/roadmap.mjs';
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims } from '../lib/registry.mjs';
@@ -36,6 +36,8 @@ import {
 } from '../lib/canon.mjs';
 import { inForceText } from '../lib/decisions.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
+import { recordSurprise } from '../lib/surprises.mjs';
+import { milestoneHarvest } from '../lib/harvest.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
 import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME } from '../lib/install.mjs';
 import { applyTune, undoTune, tuneTarget, UNTUNABLE } from '../lib/tune.mjs';
@@ -100,7 +102,12 @@ const ALLOWED_FLAGS = {
   'canon stats': [],
   'registry init': ['force'],
   'phase accept': ['by', 'force', 'agent'],
-  'phase reject': ['reason'],
+  // Phase 23 (P2) — a stand-in agent rejects on the human's behalf; `agent` is the
+  // declared signer, mirroring `phase accept --agent` (ADR-033, now symmetric).
+  'phase reject': ['reason', 'agent'],
+  // Phase 23 (P3) — execute calls this unconditionally; a typo'd flag must not
+  // silently drop the very signal the milestone sweep exists to catch.
+  'phase surprise': ['healed', 'remediation-cycles', 'stopped-reason', 'note'],
   'fix accept': ['by', 'agent'],
   // `drop` is the one debt verb that removes something from the list on a human's
   // say-so, so a typo'd flag must not degrade into "dropped with no reason".
@@ -120,6 +127,10 @@ const ALLOWED_FLAGS = {
   // be ignored here and the call read the note instead of writing it.
   'backlog note': [],
   'milestone complete': ['force'],
+  // Phase 23 (P5) — read-only, but still allowlisted: a typo'd flag on the sweep's
+  // own read must not silently degrade into the human-readable form when `--json`
+  // was intended (or vice versa).
+  'milestone harvest': ['json'],
   // `tune` writes a settings.json that grants permissions, so a typo'd flag must be
   // refused rather than silently applying the tuning (#14).
   'tune': ['user', 'undo'],
@@ -290,9 +301,12 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac milestone check "<name>"         see if a milestone with a similar name exists
   ac milestone complete [--force]     archive the current milestone + retire its claims
                                        (refuses while a phase is not complete; --force overrides)
+  ac milestone harvest [<n>] [--json] the retrospective sweep material for the principle sweep
+                                       (defaults to the current milestone; read-only)
   ac phase add <name> [--milestone N] claim the next phase number + add it (+ dup-name check)
   ac phase check "<name>"             see if a phase with a similar name exists
   ac phase context <phase>            discuss-gate status: missing | stub | ready
+  ac phase context <phase> --author   who captured it: human | agent <name> | none
   ac phase verify <phase>             mark a phase verified (AI gate passed)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase accept <p> --agent <name>  machine-signed sign-off (records accepted_kind=agent)
@@ -328,7 +342,10 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac principles promote <id> [--as decision|convention]  accepted → this project's canon (personal copy stays)
   ac principles remote [<url>]        set (and sync) the store's private git remote, or print it
   ac principles resolve <id> [--take mine|theirs|entry|copy]  clear an open sync conflict (mine = this machine's version)
-  ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
+  ac phase reject <phase> --reason … [--agent name]  UAT failed → rejected + record a blocker
+                                       (--agent: machine-signed rejection, not human UAT)
+  ac phase surprise <phase> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]
+                                       record what an /astro-execute run hit sideways (silent; for the milestone sweep)
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac phase note <phase> ["<text>"]    read/set/clear a durable phase note (survives ROADMAP.md renders)
   ac phase milestone <phase> [<N>]    read/correct which milestone a phase belongs to (never moves the project)
@@ -1419,8 +1436,51 @@ async function main() {
         if (arch.kept) console.log(`  kept ${arch.kept} phase(s) scheduled for a later milestone on the roadmap`);
         if (released.ok && released.source === 'remote') console.log(`  retired ${released.changed} registry claim(s)`);
         console.log('  start the next cycle with `ac milestone new`');
+      } else if (pos[0] === 'harvest') {
+        // Phase 23 (P5) — the retrospective sweep material for `/astro-complete-milestone`'s
+        // principle sweep. Read-only: never mutates roadmap, state, or the principle store.
+        // Defaults to the LIVE roadmap's current milestone; reads the archived snapshot once
+        // that milestone has closed (lib/harvest.mjs's module header explains why the
+        // archive, not the live project, is the source of truth after close).
+        checkFlags('milestone harvest', flags);
+        const nArg = pos[1] !== undefined ? Number(pos[1]) : undefined;
+        if (pos[1] !== undefined && (!Number.isInteger(nArg) || nArg < 1)) {
+          die('usage: ac milestone harvest [<n>] [--json]');
+        }
+        let result;
+        try { result = milestoneHarvest(r, nArg); } catch (e) { die(e.message); }
+        if (flags.json) { json(result); return; }
+
+        console.log(`milestone ${result.milestone} sweep material (${result.source === 'archive' ? 'archived' : 'live'})`);
+
+        const { adrWindow, adrs, contexts, rejections, surprises, skipped } = result;
+        const nothing = adrs.length === 0 && contexts.length === 0 && rejections.length === 0
+          && surprises.length === 0 && !skipped.agentContexts && !skipped.agentRejections;
+        if (nothing) { console.log('• nothing to sweep'); return; }
+
+        if (adrWindow === null) {
+          console.log(`⊡ ADRs not swept — milestone ${result.milestone} recorded no close date`);
+        } else {
+          console.log(`ADRs since ${adrWindow.since ? adrWindow.since.slice(0, 10) : 'the start'}`);
+          for (const a of adrs) console.log(`  ${a.id}  ${a.title}`);
+        }
+        if (contexts.length) {
+          console.log('CONTEXT (human)');
+          for (const c of contexts) console.log(`  ${c.phase}  ${c.file}`);
+        }
+        if (rejections.length) {
+          console.log('rejections (human)');
+          for (const rj of rejections) console.log(`  ${rj.phase}  ${rj.reason}`);
+        }
+        if (surprises.length) {
+          console.log('surprises');
+          for (const s of surprises) console.log(`  ${s.phase}  ${s.signals.join(',')}${s.note ? `  ${s.note}` : ''}`);
+        }
+        if (skipped.agentContexts || skipped.agentRejections) {
+          console.log(`• skipped: ${skipped.agentContexts} agent-captured CONTEXT, ${skipped.agentRejections} agent-signed rejection(s)`);
+        }
       } else {
-        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|check "<name>"|complete>');
+        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|check "<name>"|complete|harvest [<n>]>');
       }
       return;
     }
@@ -1594,7 +1654,21 @@ async function main() {
         // actually get discussed, or does a CONTEXT.md merely exist? Prints
         // missing|stub|ready (exit 0); the command keys its nudge off this
         // instead of mere file presence. See lib/planning.mjs phaseContextStatus.
-        if (!ph) die('usage: ac phase context <phase>');
+        if (!ph) die('usage: ac phase context <phase> [--author]');
+        // Phase 23 (P4) — `--author` answers a narrower question: WHO captured this
+        // discussion, not just whether one exists. `/astro-discuss`'s propose gate
+        // (D6) needs exactly `human`, never a substring test on the marker — the
+        // ADR-037 trap: `captured` also matches the agent form
+        // `<!-- astro-discuss: captured by agent: … -->`. Reuses phaseContextStatus
+        // for missing/stub so "what counts as captured" stays defined once.
+        if (flags.author) {
+          const status = phaseContextStatus(r, ph.slug);
+          if (status !== 'ready') { console.log('none'); return; }
+          const file = join(paths(r).phases, ph.slug, 'CONTEXT.md');
+          const author = contextAuthor(readFileSync(file, 'utf8'));
+          console.log(author ? `agent ${author}` : 'human');
+          return;
+        }
         console.log(phaseContextStatus(r, ph.slug));
       } else if (sub === 'verify') {
         if (!ph) die('usage: ac phase verify <phase>');
@@ -1649,17 +1723,51 @@ async function main() {
           console.log(`✓ backlog ${b.id} absorbed`);
         }
       } else if (sub === 'reject') {
-        if (!ph) die('usage: ac phase reject <phase> --reason "…"');
+        if (!ph) die('usage: ac phase reject <phase> --reason "…" [--agent name]');
         checkFlags('phase reject', flags);
         const reason = typeof flags.reason === 'string' ? flags.reason : '';
-        await setPhaseStatus(r, ph.slug, 'rejected');
-        await updateState(r, (s) => ({ ...s, blockers: [...(s.blockers || []), { phase: ph.slug, reason, at: new Date().toISOString() }] }));
-        console.log(`✗ phase ${ph.number} "${ph.name}" → rejected${reason ? `: ${reason}` : ''}`);
+        // ADR-033, now symmetric on reject (P2, phase 23) — a stand-in agent rejects
+        // on the human's behalf; `kind` is DECLARED via `--agent`, never detected, for
+        // the same reason `phase accept --agent` declares it: only the caller knows
+        // whether a human actually made the judgement. Default stays 'human'.
+        const agentSigner = typeof flags.agent === 'string' ? flags.agent : null;
+        await rejectPhase(r, ph.slug, { reason, agent: agentSigner || undefined });
+        await updateState(r, (s) => ({
+          ...s,
+          blockers: [...(s.blockers || []), {
+            phase: ph.slug, reason, kind: agentSigner ? 'agent' : 'human', at: new Date().toISOString(),
+          }],
+        }));
+        console.log(
+          `✗ phase ${ph.number} "${ph.name}" → rejected${reason ? `: ${reason}` : ''}` +
+            `${agentSigner ? ' (AGENT — machine-signed, not human UAT)' : ''}`,
+        );
         // Q1: a linked item whose phase is REJECTED reverts to open rather than being
         // stranded as `linked` forever — nothing is silently lost either way.
         for (const b of await reopenBacklogFor(r, { kind: 'phase', workRef: ph.slug })) {
           console.log(`• backlog ${b.id} back on the list`);
         }
+      } else if (sub === 'surprise') {
+        // Phase 23 (P3) — /astro-execute calls this UNCONDITIONALLY after every run;
+        // `recordSurprise` (not this verb) decides whether the run adds up to a
+        // signal. Prints nothing on success either way (D3: execute prints nothing
+        // extra about it) — a clean run and a recorded surprise look identical here.
+        if (!ph) die('usage: ac phase surprise <phase> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]');
+        checkFlags('phase surprise', flags);
+        const healedRaw = flags.healed;
+        if (healedRaw !== undefined && (typeof healedRaw !== 'string' || Number.isNaN(Number(healedRaw)))) {
+          die(`--healed must be a number, got "${healedRaw}"`);
+        }
+        const remediationRaw = flags['remediation-cycles'];
+        if (remediationRaw !== undefined && (typeof remediationRaw !== 'string' || Number.isNaN(Number(remediationRaw)))) {
+          die(`--remediation-cycles must be a number, got "${remediationRaw}"`);
+        }
+        await recordSurprise(r, ph.slug, {
+          healed: healedRaw !== undefined ? Number(healedRaw) : undefined,
+          remediationCycles: remediationRaw !== undefined ? Number(remediationRaw) : undefined,
+          stoppedReason: typeof flags['stopped-reason'] === 'string' ? flags['stopped-reason'] : undefined,
+          note: typeof flags.note === 'string' ? flags.note : undefined,
+        });
       } else if (sub === 'effort') {
         // Per-phase effort dial (ADR-022), mirroring `ac models` ergonomics.
         //   ac phase effort <n>               RESOLVE: print the effective level
@@ -1740,7 +1848,7 @@ async function main() {
           console.log('  the project\'s active milestone is unchanged — use `ac milestone new` to move it');
         }
       } else {
-        die('usage: ac phase <add|check|context|verify|accept|reject|effort|note|milestone> …');
+        die('usage: ac phase <add|check|context|verify|accept|reject|surprise|effort|note|milestone> …');
       }
       return;
     }
