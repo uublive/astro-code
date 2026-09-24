@@ -466,23 +466,35 @@ test('C9: source excerpts are redacted of secrets before they are ever written t
   assert.match(entry.source.excerpt || '', /now/);
 });
 
-// ── C15 — proposing never touches an accepted entry ──
+// ── C15 — an exact repeat of an accepted entry records a sighting, never re-queues (phase 24, D2/D6) ──
+//
+// Phase 22/23's contract was "propose always mints a fresh entry, dedupe is later's
+// job". Phase 24 reverses it on purpose (CONTEXT D2, ADR-058): an exact repeat of an
+// already-accepted statement is evidence the principle keeps mattering, not a second
+// vote to queue. Rewritten in the SAME task that changes the behaviour (ADR-020).
 
-test('C15: `add --propose` never touches an already-accepted entry, even with the identical statement', () => {
+test('C15/D6: `add --propose` of an accepted entry\'s exact statement records a sighting and never re-queues it', () => {
   const home = mkHome();
   const dir = mkProject(home);
 
   const acceptedId = addAccepted(home, dir, 'Review every migration before merge', ['--kind', 'principle']);
+  const filesBefore = storeFiles(home);
   const before = readFileSync(entryFile(home, acceptedId), 'utf8');
 
   const propose = run(['principles', 'add', 'Review every migration before merge', '--kind', 'principle', '--propose', '--why', 'Seen more than once.'], dir, home);
   assert.strictEqual(propose.status, 0, propose.stderr);
-  const proposedId = extractId(propose.stdout);
-  assert.notStrictEqual(proposedId, acceptedId, 'a propose must never target an existing accepted entry\'s file');
 
-  assert.strictEqual(readFileSync(entryFile(home, acceptedId), 'utf8'), before, 'the accepted entry must stay byte-identical');
-  assert.strictEqual(showJSON(acceptedId, home, dir).status, 'accepted');
-  assert.strictEqual(showJSON(proposedId, home, dir).status, 'proposed');
+  assert.deepStrictEqual(storeFiles(home), filesBefore, 'no new entry file, the store\'s file count is unchanged');
+  const withoutSightingLines = (text) => text.split('\n').filter((l) => !l.startsWith('sighting: ')).join('\n');
+  assert.strictEqual(withoutSightingLines(readFileSync(entryFile(home, acceptedId), 'utf8')), before, 'the accepted entry is unchanged apart from its sighting lines');
+
+  const list = run(['principles', 'list', '--proposed', '--json'], dir, home);
+  assert.strictEqual(list.status, 0, list.stderr);
+  assert.deepStrictEqual(JSON.parse(list.stdout), [], 'no entry is proposed');
+
+  const shown = showJSON(acceptedId, home, dir);
+  assert.strictEqual(shown.status, 'accepted');
+  assert.strictEqual(shown.sightings.length, 1);
 });
 
 // ── C16 — the CLI never conjures a store on read-only/unrelated commands ──

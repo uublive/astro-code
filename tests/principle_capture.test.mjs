@@ -313,26 +313,32 @@ test('C1/C2/C5: the invocation extracted from the spec runs end to end and is re
   assert.match(entry.source.project, /astro-code/);
 });
 
-test('C15/D6 known gap: re-running the invocation over accepted, rejected and amended entries never touches them, and never mints a new accepted entry', () => {
+test('C15/D6 dedupe: re-running the invocation over accepted, rejected and amended entries changes none of their text, status or history and mints no new entry', () => {
   const rawLine = extractInvocation(specSrc);
   const statement = 'Never write directly under the principles store; the propose path is the only way in';
 
   const home = mkHome();
   const dir = mkProject(home);
 
-  // Pre-seed: accepted, rejected-with-reason, and accepted-then-amended entries, all
-  // sharing the same statement — the known-gap scenario D2's CONTEXT.md accepts for now.
-  const accepted = run(['principles', 'add', statement, '--kind', 'principle'], dir, home);
-  assert.strictEqual(accepted.status, 0, accepted.stderr);
-  const acceptedId = extractId(accepted.stdout);
-
+  // Pre-seed a rejected, an accepted, and an accepted-then-amended entry, in an order
+  // that never triggers phase 24's own propose-time dedupe (D2) while seeding: the
+  // rejected entry is proposed before anything else shares its exact statement, the
+  // accepted entry is a PLAIN add (not `--propose`, so D7 exempts it from dedupe), and
+  // the amend candidate is proposed under different wording, then amended to the exact
+  // final wording the test needs. By the end, the accepted and rejected entries share
+  // the exact statement and the amended one does not (", always") — the scenario D2's
+  // CONTEXT.md names.
   const proposedForRejection = run(['principles', 'add', statement, '--kind', 'principle', '--propose', '--why', 'Seen more than once.'], dir, home);
   assert.strictEqual(proposedForRejection.status, 0, proposedForRejection.stderr);
   const rejectedId = extractId(proposedForRejection.stdout);
   const reject = run(['principles', 'reject', rejectedId, '--reason', 'too broad as stated'], dir, home);
   assert.strictEqual(reject.status, 0, reject.stderr);
 
-  const proposedForAmend = run(['principles', 'add', statement, '--kind', 'principle', '--propose', '--why', 'Seen more than once.'], dir, home);
+  const accepted = run(['principles', 'add', statement, '--kind', 'principle'], dir, home);
+  assert.strictEqual(accepted.status, 0, accepted.stderr);
+  const acceptedId = extractId(accepted.stdout);
+
+  const proposedForAmend = run(['principles', 'add', `${statement}, for now`, '--kind', 'principle', '--propose', '--why', 'Seen more than once.'], dir, home);
   assert.strictEqual(proposedForAmend.status, 0, proposedForAmend.stderr);
   const amendedId = extractId(proposedForAmend.stdout);
   const accept2 = run(['principles', 'accept', amendedId], dir, home);
@@ -360,15 +366,14 @@ test('C15/D6 known gap: re-running the invocation over accepted, rejected and am
   const rerun = run(argv, dir, home);
   assert.strictEqual(rerun.status, 0, `re-running the invocation must exit 0 — stderr:\n${rerun.stderr}`);
 
-  assert.strictEqual(readFileSync(entryFile(acceptedId), 'utf8'), before.accepted, 'the accepted entry must stay byte-identical');
+  // The amended entry's statement carries ", always" and so is not an exact match; the
+  // accepted and rejected entries share the exact original statement, and by
+  // pickExactTarget priority (accepted > rejected) the sighting lands on the accepted one.
+  const withoutSightingLines = (text) => text.split('\n').filter((l) => !l.startsWith('sighting: ')).join('\n');
+  assert.strictEqual(withoutSightingLines(readFileSync(entryFile(acceptedId), 'utf8')), before.accepted, 'the accepted entry is unchanged apart from its sighting lines');
   assert.strictEqual(readFileSync(entryFile(rejectedId), 'utf8'), before.rejected, 'the rejected entry must stay byte-identical');
   assert.strictEqual(readFileSync(entryFile(amendedId), 'utf8'), before.amended, 'the amended entry must stay byte-identical');
 
-  const newId = extractId(rerun.stdout);
-  assert.ok(newId && newId !== acceptedId && newId !== rejectedId && newId !== amendedId, 're-running must mint a fresh entry, never target an existing one');
-  const newEntry = JSON.parse(run(['principles', 'show', newId, '--json'], dir, home).stdout);
-  assert.strictEqual(newEntry.status, 'proposed', 're-running the invocation must never mint a new ACCEPTED entry — only a proposal');
-
   const acceptedFilesAfter = readdirSync(storeDir(home)).filter((f) => f.endsWith('.md'));
-  assert.strictEqual(acceptedFilesAfter.length, acceptedFilesBefore.length + 1, 'exactly one new file — the fresh proposal — must have been added');
+  assert.strictEqual(acceptedFilesAfter.length, acceptedFilesBefore.length, 'no new .md file — the exact repeat is recorded as a sighting, never queued');
 });
