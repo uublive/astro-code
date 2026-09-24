@@ -270,6 +270,115 @@ test('a strict-prefix revision (only one side changed) merges silently — no co
   assert.match(bFile, /reworded on alice only/);
 });
 
+test('C8: sightings recorded on two machines by re-proposing the same entry merge cleanly, no conflict', async () => {
+  const { setRemote, syncPrinciples, openConflicts } = await import('../lib/principlesync.mjs');
+  const { proposePrinciple } = await import('../lib/principles.mjs');
+
+  const bare = mkBareRemote();
+  const a = mkStoreDir('a8');
+  const b = mkStoreDir('b8');
+
+  const created = await withIdentity('alice', () => proposePrinciple(a, {
+    statement: 'Always use pnpm, never npm.',
+    kind: 'pattern',
+    why: 'consistent lockfile across the team',
+    source: { project: 'origin' },
+  }));
+  assert.equal(created.created, true);
+  const id = created.entry.id;
+
+  await withIdentity('alice', () => setRemote(a, bare));
+  await withIdentity('bob', () => setRemote(b, bare));
+  assert.equal(existsSync(join(b, `${id}.md`)), true, "bob's store must hold alice's entry after setRemote");
+
+  // Offline from each other: A re-proposes an exact (normalised-equal) variant from
+  // project px, B re-proposes another from project py — both should be recorded as
+  // sightings on the SAME entry, not new proposals.
+  const sightedA = await withIdentity('alice', () => proposePrinciple(a, {
+    statement: 'always use pnpm, never npm',
+    kind: 'pattern',
+    why: 'consistent lockfile across the team',
+    source: { project: 'px' },
+  }));
+  assert.equal(sightedA.sighted, true);
+  assert.equal(sightedA.created, false);
+  assert.equal(sightedA.matched.id, id);
+
+  const sightedB = await withIdentity('bob', () => proposePrinciple(b, {
+    statement: 'ALWAYS USE PNPM, NEVER NPM',
+    kind: 'pattern',
+    why: 'consistent lockfile across the team',
+    source: { project: 'py' },
+  }));
+  assert.equal(sightedB.sighted, true);
+  assert.equal(sightedB.created, false);
+  assert.equal(sightedB.matched.id, id);
+
+  const syncA1 = await withIdentity('alice', () => syncPrinciples(a));
+  assert.deepEqual(syncA1.conflicts, []);
+  const syncB1 = await withIdentity('bob', () => syncPrinciples(b));
+  assert.deepEqual(syncB1.conflicts, []);
+  const syncA2 = await withIdentity('alice', () => syncPrinciples(a));
+  assert.deepEqual(syncA2.conflicts, []);
+
+  const fileA = readFileSync(join(a, `${id}.md`), 'utf8');
+  const fileB = readFileSync(join(b, `${id}.md`), 'utf8');
+  assert.equal(fileA, fileB, 'the entry must be byte-identical on both machines');
+  assert.match(fileA, /"project":"px"/);
+  assert.match(fileA, /"project":"py"/);
+  assert.doesNotMatch(fileA, /^(<{7}|={7}|>{7})/m);
+
+  assert.equal((await openConflicts(a)).length, 0);
+  assert.equal((await openConflicts(b)).length, 0);
+  assert.equal(existsSync(join(a, 'conflicts')), false);
+  assert.equal(existsSync(join(b, 'conflicts')), false);
+});
+
+test('C8: one machine accepts while the other sights the same entry offline; both converge accepted with the sighting', async () => {
+  const { setRemote, syncPrinciples, openConflicts } = await import('../lib/principlesync.mjs');
+  const { proposePrinciple, acceptPrinciple, recordSighting, loadPrinciples } = await import('../lib/principles.mjs');
+
+  const bare = mkBareRemote();
+  const a = mkStoreDir('a9');
+  const b = mkStoreDir('b9');
+
+  const created = await withIdentity('alice', () => proposePrinciple(a, {
+    statement: 'never mock the database in integration tests',
+    kind: 'pattern',
+    why: 'catches real driver bugs',
+    source: { project: 'origin' },
+  }));
+  const id = created.entry.id;
+
+  await withIdentity('alice', () => setRemote(a, bare));
+  await withIdentity('bob', () => setRemote(b, bare));
+  assert.equal(existsSync(join(b, `${id}.md`)), true);
+
+  await withIdentity('alice', () => acceptPrinciple(a, id));
+  await withIdentity('bob', () => recordSighting(b, id, { source: { project: 'py2', excerpt: 'seen it again here' } }));
+
+  const syncA1 = await withIdentity('alice', () => syncPrinciples(a));
+  assert.deepEqual(syncA1.conflicts, []);
+  const syncB1 = await withIdentity('bob', () => syncPrinciples(b));
+  assert.deepEqual(syncB1.conflicts, []);
+  const syncA2 = await withIdentity('alice', () => syncPrinciples(a));
+  assert.deepEqual(syncA2.conflicts, []);
+
+  const fileA = readFileSync(join(a, `${id}.md`), 'utf8');
+  const fileB = readFileSync(join(b, `${id}.md`), 'utf8');
+  assert.equal(fileA, fileB, 'the entry must be byte-identical on both machines');
+
+  const entryA = loadPrinciples(a).entries.find((e) => e.id === id);
+  const entryB = loadPrinciples(b).entries.find((e) => e.id === id);
+  assert.equal(entryA.status, 'accepted');
+  assert.equal(entryB.status, 'accepted');
+  assert.equal((entryA.sightings || []).length, 1);
+  assert.equal((entryB.sightings || []).length, 1);
+
+  assert.equal((await openConflicts(a)).length, 0);
+  assert.equal((await openConflicts(b)).length, 0);
+});
+
 test('a file dropped in by another helper (not syncPrinciples) is committed by the next sync', async () => {
   const { setRemote, syncPrinciples } = await import('../lib/principlesync.mjs');
 
