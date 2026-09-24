@@ -41,6 +41,13 @@ import { applyTune, undoTune, tuneTarget, UNTUNABLE } from '../lib/tune.mjs';
 import { collectStats } from '../lib/stats.mjs';
 import { writeAgentsMd } from '../lib/agentsmd.mjs';
 import { renderLogo, wantColor, TAGLINE } from '../hooks/_astro-brand.mjs';
+import {
+  principlesDir, loadPrinciples, resolvePrinciple, addPrinciple,
+  acceptPrinciple, rejectPrinciple, retirePrinciple, supersedePrinciple, amendPrinciple,
+} from '../lib/principles.mjs';
+import { indexLine } from '../lib/principlemd.mjs';
+import { editText } from '../lib/editor.mjs';
+import { syncPrinciples, openConflicts } from '../lib/principlesync.mjs';
 
 function parseArgs(args) {
   const flags = {};
@@ -114,6 +121,20 @@ const ALLOWED_FLAGS = {
   // `tune` writes a settings.json that grants permissions, so a typo'd flag must be
   // refused rather than silently applying the tuning (#14).
   'tune': ['user', 'undo'],
+  // Phase 22 (D3/D7, P10) — the personal principle store. Every verb gets an entry now
+  // (including `promote`/`remote`/`resolve`, implemented in t13) so a typo on any of
+  // them is refused from day one, and t13 only has to add code, never a flag list.
+  'principles add': ['kind', 'strength', 'why', 'stack', 'files', 'work', 'propose', 'from-session', 'from-project', 'from-ref', 'excerpt'],
+  'principles list': ['proposed', 'accepted', 'rejected', 'all', 'json'],
+  'principles show': ['json'],
+  'principles accept': ['edit', 'statement', 'why'],
+  'principles reject': ['reason'],
+  'principles retire': ['reason'],
+  'principles supersede': ['by'],
+  'principles amend': ['reason', 'statement', 'why', 'kind', 'strength', 'stack', 'files', 'work', 'edit'],
+  'principles promote': ['as'],
+  'principles remote': [],
+  'principles resolve': ['take'],
 };
 
 function checkFlags(key, flags) {
@@ -143,6 +164,80 @@ function checkMilestoneTarget(r, n) {
 
 const root = () => findRoot() || die('no .astrocode/ found — run `ac init` first');
 const json = (obj) => console.log(JSON.stringify(obj, null, 2));
+
+// Phase 22 (P10) — `parseArgs` keeps only the LAST value of a repeated flag, so
+// `--stack a --stack b` would otherwise lose `a`. `--stack`/`--files`/`--work` are
+// documented as repeatable, so this scans the raw `tail` itself instead — `parseArgs`
+// stays untouched (it is shared by every other verb in this file).
+function flagValues(rawTail, name) {
+  const out = [];
+  for (let i = 0; i < rawTail.length; i++) {
+    if (rawTail[i] === `--${name}`) {
+      const v = rawTail[i + 1];
+      if (v !== undefined && !v.startsWith('--')) out.push(v);
+    }
+  }
+  return out;
+}
+
+// Phase 22 (P10) — none of these principles flags ever take a value, but `parseArgs`
+// still greedily swallows the next token as one whenever it doesn't start with `--`
+// (e.g. `ac principles add --propose "statement"`). Left alone, the statement silently
+// vanishes from the positionals. Detected and repaired once, right where `pos`/`flags`
+// are read for this command, rather than teaching `parseArgs` about individual verbs.
+const PRINCIPLES_BOOLEAN_FLAGS = ['propose', 'edit', 'all', 'proposed', 'accepted', 'rejected', 'json'];
+function fixPrinciplesBooleanFlags(flags, pos) {
+  for (const key of PRINCIPLES_BOOLEAN_FLAGS) {
+    if (typeof flags[key] === 'string') {
+      pos.push(flags[key]);
+      flags[key] = true;
+    }
+  }
+}
+
+// Phase 22 (P12) — sync reporting shared by every `ac principles` verb: silent on a
+// clean or local-only sync, one line when something arrived, one advisory when the
+// remote could not be reached. Exit code is never affected by any of this.
+function reportPrinciplesSync(res) {
+  if (res.pulled?.length) console.log(`• principles: pulled ${res.pulled.length} change(s)`);
+  if (res.state === 'unreachable') {
+    console.log('⚠ principles remote unreachable — kept locally, will sync on the next command');
+  }
+}
+
+// `syncPrinciples` acquires its lock by `mkdirSync`-ing `<dir>/.lock` with no parent
+// creation, so it throws on a store dir that has never been written to yet. Readers
+// must never create that dir (C16), so a verb that runs before anything has ever been
+// written skips the sync outright — nothing to pull from a store that does not exist.
+async function principlesSync(dir) {
+  if (!existsSync(dir)) return { state: 'local', pulled: [], pushed: false, conflicts: [] };
+  const res = await syncPrinciples(dir);
+  reportPrinciplesSync(res);
+  return res;
+}
+
+// Phase 22 (P12) — surfaced on EVERY command while a conflict stays open, on both
+// machines, until `ac principles resolve` (t13) clears it.
+function reportPrinciplesConflicts(dir) {
+  for (const c of openConflicts(dir)) {
+    console.log(
+      `⚠ conflict on ${c.id} — this machine's version kept; the other is in ${c.file} ` +
+        `(ac principles resolve ${c.id} [--take theirs])`,
+    );
+  }
+}
+
+// Phase 22 (P8) — `editText` hands back the whole edited file with `#` lines already
+// stripped; the first non-empty line is the statement, everything after it (trimmed)
+// is the why. Shared by `accept --edit` and `amend --edit`.
+function parseEditedPrinciple(text) {
+  const lines = text.split('\n');
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === '') i++;
+  const statement = (lines[i] || '').trim();
+  const why = lines.slice(i + 1).join('\n').trim();
+  return { statement, why };
+}
 
 // Warn about other developers' claims with the same / similar name.
 function warnNameMatches(matches, me) {
@@ -202,6 +297,18 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac backlog link <id> --phase N      commit the item to a phase already in flight
   ac backlog promote <id>             claim a phase number and start it from this idea
   ac backlog archive <id> --kind declined|obsolete --reason "…"  file the idea WITHOUT doing it
+  ac principles add "<stmt>" --kind K [--strength rule|default] [--why …]  a personal note in
+                                       ~/.astro/principles — accepted directly (--propose queues it)
+                                       [--stack t]… [--files g]… [--work w]… [--propose]
+                                       [--from-session …] [--from-project …] [--from-ref …] [--excerpt …]
+  ac principles list [--proposed|--accepted|--rejected|--all] [--json]  the personal store (default: accepted)
+  ac principles show <id> [--json]    one entry — fields, source, promotions, history
+  ac principles accept <id> [--edit | --statement … [--why …]]  proposed → accepted (reword first)
+  ac principles reject <id> --reason …  proposed → rejected (kept, never deleted)
+  ac principles retire <id> --reason …  accepted → retired
+  ac principles supersede <id> --by <id>  accepted → superseded by a newer entry
+  ac principles amend <id> --reason … [--statement … | --edit] [--why …] [--kind …] [--strength …]
+                                       [--stack …] [--files …] [--work …]  reword/rescope, id unchanged
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac phase note <phase> ["<text>"]    read/set/clear a durable phase note (survives ROADMAP.md renders)
@@ -656,6 +763,228 @@ async function main() {
       }
 
       die(`unknown: ac backlog ${sub} (add | list | show | note | link | promote | archive)`);
+    }
+
+    // The personal principle store (ADR-057, ADR-058; phase 22). Unlike every other
+    // case above, this one writes OUTSIDE .astrocode/ on purpose (D1) — `dir` is the
+    // user's home, resolved once here and threaded through every verb below; only
+    // `promote` (t13) ever needs `root()`. `lib/principles.mjs` has no git in it at
+    // all, so the sync wiring (P12) is entirely this file's job: pull before every
+    // verb, push after a mutation, and the same advisory/conflict lines on every verb
+    // while a remote is unreachable or a conflict is open — none of it changes the
+    // exit code (ADR-055).
+    case 'principles': {
+      const dir = principlesDir();
+      fixPrinciplesBooleanFlags(flags, pos);
+      const sub = pos[0] || 'list';
+
+      if (sub === 'add') {
+        checkFlags('principles add', flags);
+        await principlesSync(dir);
+        const statement = pos.slice(1).join(' ').trim();
+        if (!statement) {
+          die('usage: ac principles add "<statement>" --kind <kind> [--strength rule|default] [--why …] ' +
+            '[--stack t]… [--files g]… [--work w]… [--propose] [--from-session …] [--from-project …] [--from-ref …] [--excerpt …]');
+        }
+        const kind = typeof flags.kind === 'string' ? flags.kind : undefined;
+        const strength = typeof flags.strength === 'string' ? flags.strength : 'default';
+        const why = typeof flags.why === 'string' ? flags.why : '';
+        const stack = flagValues(tail, 'stack');
+        const files = flagValues(tail, 'files');
+        const work = flagValues(tail, 'work');
+        const fromSession = typeof flags['from-session'] === 'string' ? flags['from-session'] : undefined;
+        const fromProject = typeof flags['from-project'] === 'string' ? flags['from-project'] : undefined;
+        const fromRef = typeof flags['from-ref'] === 'string' ? flags['from-ref'] : undefined;
+        const excerpt = typeof flags.excerpt === 'string' ? flags.excerpt : undefined;
+        const source = fromSession || fromProject || fromRef || excerpt
+          ? { session: fromSession, project: fromProject, ref: fromRef, excerpt }
+          : undefined;
+        let entry;
+        try {
+          entry = await addPrinciple(dir, {
+            statement, kind, strength, why, stack, files, work, source,
+            propose: flags.propose === true,
+          });
+        } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} (${entry.status})`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'list') {
+        checkFlags('principles list', flags);
+        await principlesSync(dir);
+        const { entries, damaged } = loadPrinciples(dir);
+        for (const d of damaged) console.error(`⚠ damaged entry ${d.file}: ${d.error}`);
+        const status = flags.all ? null
+          : flags.proposed ? 'proposed'
+          : flags.rejected ? 'rejected'
+          : flags.accepted ? 'accepted'
+          : 'accepted';
+        const shown = status === null ? entries : entries.filter((e) => e.status === status);
+        if (flags.json) { json(shown); return; }
+        if (!shown.length) {
+          console.log('• no principles yet');
+        } else {
+          for (const e of shown) console.log(indexLine(e));
+        }
+        const proposedCount = entries.filter((e) => e.status === 'proposed').length;
+        if (status !== null && status !== 'proposed' && proposedCount) {
+          console.log(`• ${proposedCount} proposed awaiting review — ac principles list --proposed`);
+        }
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'show') {
+        checkFlags('principles show', flags);
+        await principlesSync(dir);
+        let entry;
+        try { entry = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        if (flags.json) { json(entry); return; }
+        const statusLine = entry.reason ? `${entry.status} — ${entry.reason}`
+          : entry.supersededBy ? `${entry.status} — superseded by ${entry.supersededBy}`
+          : entry.status;
+        console.log(`${entry.id}  ${statusLine}`);
+        console.log(`kind: ${entry.kind}/${entry.strength}`);
+        const scopeParts = [];
+        if (entry.scopes.stack.length) scopeParts.push(`stack: ${entry.scopes.stack.join(', ')}`);
+        if (entry.scopes.files.length) scopeParts.push(`files: ${entry.scopes.files.join(', ')}`);
+        if (entry.scopes.work.length) scopeParts.push(`work: ${entry.scopes.work.join(', ')}`);
+        if (scopeParts.length) console.log(scopeParts.join('  '));
+        console.log('');
+        console.log(entry.statement);
+        if (entry.why) { console.log(''); console.log(entry.why); }
+        if (entry.source) {
+          const s = entry.source;
+          const pointers = [s.session && `session ${s.session}`, s.project && `project ${s.project}`, s.ref, s.at].filter(Boolean);
+          console.log('');
+          console.log(`source: ${pointers.join(' · ')}`);
+          if (s.excerpt) console.log(`  "${s.excerpt}"`);
+        }
+        if (entry.promotions.length) {
+          console.log('');
+          console.log('promotions:');
+          for (const p of entry.promotions) console.log(`  ${p.project} (${p.as} ${p.ref}) — ${p.at}`);
+        }
+        if (entry.history.length) {
+          console.log('');
+          console.log('history:');
+          for (const h of entry.history) console.log(`  ${h.at}  ${h.action}${h.reason ? ` — ${h.reason}` : ''}`);
+        }
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'accept') {
+        checkFlags('principles accept', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        let statement, why;
+        if (flags.edit) {
+          const initial = `${target.statement}\n\n${target.why || ''}\n`;
+          let result;
+          try { result = editText(initial, { env: process.env }); } catch (e) { die(e.message); }
+          // git's own commit-template rule: unedited text refuses rather than accepting
+          // the proposal verbatim under the guise of having reworded it.
+          if (!result.changed) die('accept --edit: nothing changed — the proposal was not reworded');
+          ({ statement, why } = parseEditedPrinciple(result.text));
+        } else if (flags.statement !== undefined) {
+          statement = typeof flags.statement === 'string' ? flags.statement : '';
+          why = typeof flags.why === 'string' ? flags.why : undefined;
+        }
+        let entry;
+        try { entry = await acceptPrinciple(dir, target.id, { statement, why }); } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} → accepted`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'reject') {
+        checkFlags('principles reject', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        let entry;
+        try { entry = await rejectPrinciple(dir, target.id, { reason }); } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} → rejected`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'retire') {
+        checkFlags('principles retire', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        let entry;
+        try { entry = await retirePrinciple(dir, target.id, { reason }); } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} → retired`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'supersede') {
+        checkFlags('principles supersede', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const by = typeof flags.by === 'string' ? flags.by : '';
+        let entry;
+        try { entry = await supersedePrinciple(dir, target.id, { by }); } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} → superseded by ${entry.supersededBy}`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'amend') {
+        checkFlags('principles amend', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        let statement, why;
+        if (flags.edit) {
+          const initial = `${target.statement}\n\n${target.why || ''}\n`;
+          let result;
+          try { result = editText(initial, { env: process.env }); } catch (e) { die(e.message); }
+          if (!result.changed) die('amend --edit: nothing changed — nothing was amended');
+          ({ statement, why } = parseEditedPrinciple(result.text));
+        } else {
+          if (typeof flags.statement === 'string') statement = flags.statement;
+          if (typeof flags.why === 'string') why = flags.why;
+        }
+        const kind = typeof flags.kind === 'string' ? flags.kind : undefined;
+        const strength = typeof flags.strength === 'string' ? flags.strength : undefined;
+        const stackVals = flagValues(tail, 'stack');
+        const filesVals = flagValues(tail, 'files');
+        const workVals = flagValues(tail, 'work');
+        let entry;
+        try {
+          entry = await amendPrinciple(dir, target.id, {
+            reason, statement, why, kind, strength,
+            stack: stackVals.length ? stackVals : undefined,
+            files: filesVals.length ? filesVals : undefined,
+            work: workVals.length ? workVals : undefined,
+          });
+        } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} amended`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      // `promote`/`remote`/`resolve` land in t13 — their ALLOWED_FLAGS entries already
+      // exist above so that landing is code-only.
+      die(`unknown: ac principles ${sub} (add | list | show | accept | reject | retire | supersede | amend | promote | remote | resolve)`);
     }
 
     case 'agents-md': {
