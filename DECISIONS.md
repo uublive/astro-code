@@ -375,3 +375,8 @@ _2026-09-24 · at b5df0e4_
 
 **Rejected:** Storing it in the repo's .astrocode/ (leaks personal preferences to the team); local-only with no sync (container and laptop drift apart); a bare configurable path with no sync logic (concurrent writes clobber).
 
+## ADR-058 — Human data is authoritative over machine proposals: the machine only ever proposes principles; a proposal counts once the user accepts it; anything that re-proposes may refresh still-proposed entries but never touches an accepted, rejected or edited one; rejections are kept with their reason
+_2026-09-24 · at b5df0e4_
+
+**Why:** The point of Second Nature is a system the user understands and controls. Accepting is the moment a principle starts governing agents, so it must be a human act; a remembered rejection stops the same proposal returning. Adopted from the forge knowledge graph's existing principle for AI suggestions.
+
