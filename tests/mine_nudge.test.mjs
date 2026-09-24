@@ -35,11 +35,23 @@ function seedUnswept(claudeDir, root, n, { sizeEach = 5000 } = {}) {
   return dir;
 }
 
+// The outer session this test runs inside may itself export CLAUDE_CONFIG_DIR (a real
+// jean-claude profile) — inherited verbatim it would silently override the fake $HOME's
+// .claude dir and read the developer's own real transcripts. Every spawn below strips it
+// (and CODEX_HOME/ASTRO_PRINCIPLES_DIR for the same reason) so only `HOME` decides.
+function cleanEnv(fakeHome, extra = {}) {
+  const env = { ...process.env, HOME: fakeHome, NO_COLOR: '1', ...extra };
+  delete env.CLAUDE_CONFIG_DIR;
+  delete env.CODEX_HOME;
+  delete env.ASTRO_PRINCIPLES_DIR;
+  return env;
+}
+
 function runStatusline(root, fakeHome) {
   const hook = join(FRAMEWORK, 'hooks', 'astro-statusline.mjs');
   return spawnSync(process.execPath, [hook, join(fakeHome, '.claude')], {
     input: JSON.stringify({ workspace: { current_dir: root } }),
-    env: { ...process.env, HOME: fakeHome, NO_COLOR: '1' },
+    env: cleanEnv(fakeHome),
     encoding: 'utf8',
     windowsHide: true,
   });
@@ -49,7 +61,7 @@ function runUpdateBanner(root, fakeHome) {
   const hook = join(FRAMEWORK, 'hooks', 'astro-update.mjs');
   return spawnSync(process.execPath, [hook], {
     input: JSON.stringify({ cwd: root }),
-    env: { ...process.env, HOME: fakeHome, NO_COLOR: '1' },
+    env: cleanEnv(fakeHome),
     encoding: 'utf8',
     windowsHide: true,
   });
