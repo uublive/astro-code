@@ -168,6 +168,27 @@ test('install ships templates/forge-knowledge.md, and registers ONLY real comman
   });
 });
 
+test('install ships templates/principle-capture.md (phase 23 P1), non-empty and not registered as a command/agent', async () => {
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-home-'));
+  await withEnv({ home: fakeHome, configDir: undefined }, async () => {
+    const { installClaude } = await import(`../lib/install.mjs?capture=${encodeURIComponent(fakeHome)}`);
+    installClaude(FRAMEWORK);
+
+    // The single capture spec ships to the home templates tree — every command that
+    // points at it via `$(ac path templates)/principle-capture.md` needs it to actually
+    // be there for an installed user (single source of truth, C3-shaped).
+    const shipped = join(fakeHome, '.astro', 'code', 'templates', 'principle-capture.md');
+    assert.ok(existsSync(shipped), 'principle-capture.md ships under ~/.astro/code/templates');
+    assert.ok(readFileSync(shipped, 'utf8').trim().length > 0, 'shipped principle-capture.md is non-empty');
+
+    const configDir = join(fakeHome, '.claude');
+    const registeredCommands = readdirSync(join(configDir, 'commands')).filter((f) => f.endsWith('.md'));
+    const registeredAgents = readdirSync(join(configDir, 'agents')).filter((f) => f.endsWith('.md'));
+    assert.ok(!registeredCommands.includes('principle-capture.md'), 'principle-capture.md is not a registered command');
+    assert.ok(!registeredAgents.includes('principle-capture.md'), 'principle-capture.md is not a registered agent');
+  });
+});
+
 test('install fans out to the base AND every jean-claude profile', async () => {
   const fakeHome = mkdtempSync(join(tmpdir(), 'ac-home-'));
   const base = join(fakeHome, '.claude');

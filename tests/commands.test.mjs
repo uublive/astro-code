@@ -600,8 +600,11 @@ const VERIFIER_MD = join(ROOT, 'agents', 'astro-verifier.md');
 // alternative ("two or three sentences") to cover astro-debt.md's pre-existing assessment
 // slot, which the phase-19 audit already judged compliant (PLAN.md) but which the plan's
 // literal P4 regex does not match — still a stated numeric bound, just an "X or Y" range.
+// Phase 23 t14 adds "nothing extra" — astro-accept.md's 4b principle-capture slot states
+// the silence rule as "proposes nothing and prints nothing extra" rather than "say
+// nothing"; same silence concept, a different but equally general phrasing of it.
 const BOUND_RE =
-  /\b(?:in|at most|no more than|to)\s+(?:exactly\s+)?(?:one|two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\b(?:one|two|three|\d+)\s+or\s+(?:two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\bone[- ]liner\b|\bone line\b|\bsay nothing\b|\bnothing at all\b|\bno output\b|\bsilence means\b|\bskip (?:this|it) (?:silently|in silence)\b/i;
+  /\b(?:in|at most|no more than|to)\s+(?:exactly\s+)?(?:one|two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\b(?:one|two|three|\d+)\s+or\s+(?:two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\bone[- ]liner\b|\bone line\b|\bsay nothing\b|\bnothing at all\b|\bno output\b|\bsilence means\b|\bnothing extra\b|\bskip (?:this|it) (?:silently|in silence)\b/i;
 
 /**
  * Slice `src` between two literal anchors (the numbered-step / bullet markers already
@@ -695,6 +698,12 @@ const SLOTS = [
   // astro-backlog-promote.md (t9)
   { command: 'astro-backlog-promote.md', slot: '1 still worth a phase', start: '1. **Confirm the idea is still worth a phase', end: '2. **Promote it' },
   { command: 'astro-backlog-promote.md', slot: '3 promotion reported', start: '3. **Say what happened', end: null },
+
+  // phase 23: principle capture at the moments of intent (D2, t14)
+  { command: 'astro-decision.md', slot: '5 principle capture', start: '5. **Propose the principle behind it.', end: 'Use this whenever' },
+  { command: 'astro-discuss.md', slot: '5b principle capture', start: '5b. **Propose what the answers settled.', end: '6. Clear the live status' },
+  { command: 'astro-accept.md', slot: '4b principle capture', start: '4b. **Propose from a human rejection.', end: '5. On accept' },
+  { command: 'astro-complete-milestone.md', slot: '3b sweep', start: '3b. **Sweep the milestone for principles.', end: '4. **Triage stale debt.' },
 ];
 
 const LOOP_COMMAND_SRC = new Map(
@@ -709,6 +718,8 @@ const LOOP_COMMAND_SRC = new Map(
     'astro-phase.md',
     'astro-backlog.md',
     'astro-backlog-promote.md',
+    'astro-decision.md',
+    'astro-complete-milestone.md',
   ].map((name) => [name, cmd(name)]),
 );
 
