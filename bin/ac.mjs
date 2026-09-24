@@ -32,6 +32,7 @@ import { loadConfig, updateConfig } from '../lib/config.mjs';
 import {
   canonText, loadCanon, addDecision, canonPull, canonPush, canonDedupe,
   supersedeDecision, retireDecision, amendDecision, canonCheck, canonStats, canonDrift,
+  appendConvention,
 } from '../lib/canon.mjs';
 import { inForceText } from '../lib/decisions.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
@@ -44,10 +45,11 @@ import { renderLogo, wantColor, TAGLINE } from '../hooks/_astro-brand.mjs';
 import {
   principlesDir, loadPrinciples, resolvePrinciple, addPrinciple,
   acceptPrinciple, rejectPrinciple, retirePrinciple, supersedePrinciple, amendPrinciple,
+  recordPromotion,
 } from '../lib/principles.mjs';
 import { indexLine } from '../lib/principlemd.mjs';
 import { editText } from '../lib/editor.mjs';
-import { syncPrinciples, openConflicts } from '../lib/principlesync.mjs';
+import { syncPrinciples, openConflicts, getRemote, setRemote, resolveConflict } from '../lib/principlesync.mjs';
 
 function parseArgs(args) {
   const flags = {};
@@ -309,6 +311,9 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac principles supersede <id> --by <id>  accepted → superseded by a newer entry
   ac principles amend <id> --reason … [--statement … | --edit] [--why …] [--kind …] [--strength …]
                                        [--stack …] [--files …] [--work …]  reword/rescope, id unchanged
+  ac principles promote <id> [--as decision|convention]  accepted → this project's canon (personal copy stays)
+  ac principles remote [<url>]        set (and sync) the store's private git remote, or print it
+  ac principles resolve <id> [--take mine|theirs]  clear an open sync conflict on one entry
   ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac phase note <phase> ["<text>"]    read/set/clear a durable phase note (survives ROADMAP.md renders)
@@ -982,8 +987,105 @@ async function main() {
         return;
       }
 
-      // `promote`/`remote`/`resolve` land in t13 — their ALLOWED_FLAGS entries already
-      // exist above so that landing is code-only.
+      if (sub === 'promote') {
+        checkFlags('principles promote', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        if (target.status !== 'accepted') {
+          die(`cannot promote principle "${target.id}" — it is ${target.status}, not accepted (only an accepted principle can be promoted)`);
+        }
+        const as = typeof flags.as === 'string' ? flags.as : 'decision';
+        if (as !== 'decision' && as !== 'convention') die(`invalid --as ${JSON.stringify(as)} (decision|convention)`);
+
+        const r = root();
+        const project = loadState(r).project || basename(r);
+        let ref;
+        if (as === 'decision') {
+          // Reuse `ac decision add`'s own refusal/⚠ reporting rather than a thinner copy —
+          // see the `case 'decision'` block above for why each of these matters.
+          const res = await addDecision(r, { title: target.statement, why: target.why || '' });
+          if (res.ok === false && res.refused === 'decision-collision') {
+            const lines = res.collisions.map((c) =>
+              c.kind === 'edited-published'
+                ? `${c.id} was edited locally after publishing — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
+                  `Record a NEW decision that supersedes it instead of editing the published one.`
+                : `${c.id} collides — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
+                  `Nothing was changed; record a new decision that supersedes one of them.`,
+            );
+            die(`refused — ${lines.join(' ')}`);
+          }
+          ref = res.id;
+          const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
+          console.log(`✓ promoted ${target.id} → ${res.id} ${tag}`);
+          if (res.publishedConventions) console.log(`✓ published CONVENTIONS.md to ${res.branch}`);
+          if (res.conventionsRefused) {
+            const c = res.conventionsRefused;
+            console.error(
+              `⚠ did NOT publish ${c.file} — ${c.reason}. ` +
+                `Reconcile first: \`${c.fixes[0]}\` takes the registry's copy (yours is replaced, so keep your edit), ` +
+                `then re-apply it and \`${c.fixes[1]}\` to publish deliberately.`,
+            );
+          }
+          if (res.preserved && res.preserved.length) {
+            console.error(`⚠ carried ${res.preserved.length} local-only decision(s) into the shared log: ${res.preserved.join(', ')}`);
+          }
+          if (res.duplicates && res.duplicates.length) {
+            for (const d of res.duplicates) {
+              console.error(`⚠ duplicate decision "${d.title}": ${d.ids.join(', ')} — run \`ac canon dedupe\` to collapse.`);
+            }
+          }
+        } else {
+          const bullet = `- ${target.statement}` + (target.why ? ` — ${target.why}` : '');
+          await appendConvention(r, bullet);
+          ref = 'convention';
+          console.log(`✓ promoted ${target.id} → CONVENTIONS.md`);
+          console.log('• publish it to the team: ac canon push');
+        }
+
+        try {
+          await recordPromotion(dir, target.id, { project, path: r, as, ref });
+        } catch (e) { die(e.message); }
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'remote') {
+        checkFlags('principles remote', flags);
+        const url = pos[1];
+        if (url) {
+          // `setRemote`'s own lock is `<dir>/.lock` — `mkdirSync` it first so a store that
+          // has never been written to (this machine's very first `principles` command)
+          // does not fail to acquire a lock whose parent directory does not exist yet.
+          mkdirSync(dir, { recursive: true });
+          let res;
+          try { res = await setRemote(dir, url); } catch (e) { die(e.message); }
+          console.log(`✓ principles remote set: ${url}`);
+          reportPrinciplesSync(res);
+          reportPrinciplesConflicts(dir);
+          return;
+        }
+        await principlesSync(dir);
+        const remote = getRemote(dir);
+        console.log(remote || '• local only — no remote');
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'resolve') {
+        checkFlags('principles resolve', flags);
+        await principlesSync(dir);
+        const id = pos[1];
+        if (!id) die('usage: ac principles resolve <id> [--take mine|theirs]');
+        const take = flags.take === 'theirs' ? 'theirs' : 'mine';
+        try { await resolveConflict(dir, id, { take }); } catch (e) { die(e.message); }
+        console.log(`✓ resolved conflict on ${id} (took ${take})`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
       die(`unknown: ac principles ${sub} (add | list | show | accept | reject | retire | supersede | amend | promote | remote | resolve)`);
     }
 
