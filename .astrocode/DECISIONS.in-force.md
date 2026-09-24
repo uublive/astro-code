@@ -379,4 +379,3 @@ _2026-09-24 · at b5df0e4_
 _2026-09-24 · at b5df0e4_
 
 **Why:** The point of Second Nature is a system the user understands and controls. Accepting is the moment a principle starts governing agents, so it must be a human act; a remembered rejection stops the same proposal returning. Adopted from the forge knowledge graph's existing principle for AI suggestions.
-
