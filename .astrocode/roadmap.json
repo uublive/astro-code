@@ -1,5 +1,48 @@
 {
   "version": 1,
-  "milestone": 8,
-  "phases": []
+  "milestone": 9,
+  "phases": [
+    {
+      "number": 22,
+      "name": "Principle store and CLI: personal principles, patterns, preferences and antipatterns with a review lifecycle",
+      "slug": "22-principle-store-and-cli-personal-principles-patterns-preferences-and-antipatterns-with-a-review-lifecycle",
+      "status": "pending",
+      "milestone": 9
+    },
+    {
+      "number": 23,
+      "name": "Capture at the moments of intent: discuss, decision, accept and milestone close propose principles",
+      "slug": "23-capture-at-the-moments-of-intent-discuss-decision-accept-and-milestone-close-propose-principles",
+      "status": "pending",
+      "milestone": 9
+    },
+    {
+      "number": 24,
+      "name": "Review workflow: a batch review command that dedupes against what was accepted and rejected",
+      "slug": "24-review-workflow-a-batch-review-command-that-dedupes-against-what-was-accepted-and-rejected",
+      "status": "pending",
+      "milestone": 9
+    },
+    {
+      "number": 25,
+      "name": "Retrieval into prompts: structural scopes, a compact index with full text on demand, hard rules, ac principles ask",
+      "slug": "25-retrieval-into-prompts-structural-scopes-a-compact-index-with-full-text-on-demand-hard-rules-ac-principles-ask",
+      "status": "pending",
+      "milestone": 9
+    },
+    {
+      "number": 26,
+      "name": "Transcript miner: an on-demand, opt-in sweep of session transcripts for new proposals",
+      "slug": "26-transcript-miner-an-on-demand-opt-in-sweep-of-session-transcripts-for-new-proposals",
+      "status": "pending",
+      "milestone": 9
+    },
+    {
+      "number": 27,
+      "name": "Forge import and handover: bring the forge graph over, then forge reads astro-code",
+      "slug": "27-forge-import-and-handover-bring-the-forge-graph-over-then-forge-reads-astro-code",
+      "status": "pending",
+      "milestone": 9
+    }
+  ]
 }
