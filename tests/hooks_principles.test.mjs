@@ -23,12 +23,12 @@ function seededStore(home) {
   const store = mkdtempSync(join(tmpdir(), 'ac-hooks-store-'));
   const env = { ...process.env, HOME: home, ASTRO_PRINCIPLES_DIR: store };
   for (let i = 0; i < 150; i++) {
-    spawnSync(process.execPath, [AC, 'principles', 'add', `default statement number ${i}`, '--kind', 'convention'], { encoding: 'utf8', env });
+    spawnSync(process.execPath, [AC, 'principles', 'add', `default statement number ${i}`, '--kind', 'pattern'], { encoding: 'utf8', env });
   }
   for (const [n, why] of [['1', 'WHYRULE1'], ['2', 'WHYRULE2'], ['3', 'WHYRULE3']]) {
-    spawnSync(process.execPath, [AC, 'principles', 'add', `rule statement ${n}`, '--kind', 'convention', '--strength', 'rule', '--why', why], { encoding: 'utf8', env });
+    spawnSync(process.execPath, [AC, 'principles', 'add', `rule statement ${n}`, '--kind', 'pattern', '--strength', 'rule', '--why', why], { encoding: 'utf8', env });
   }
-  spawnSync(process.execPath, [AC, 'principles', 'add', 'a default with a special why', '--kind', 'convention', '--why', 'WHYDEFAULT'], { encoding: 'utf8', env });
+  spawnSync(process.execPath, [AC, 'principles', 'add', 'a default with a special why', '--kind', 'pattern', '--why', 'WHYDEFAULT'], { encoding: 'utf8', env });
   return store;
 }
 
