@@ -319,6 +319,16 @@
       "branch": "develop",
       "claimed_at": "2026-09-24T08:05:03.672Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 23,
+      "milestone": 9,
+      "name": "Capture at the moments of intent: discuss, decision, accept and milestone close propose principles",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-09-24T08:05:07.395Z",
+      "status": "active"
     }
   ]
 }
