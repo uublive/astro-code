@@ -718,6 +718,12 @@ const SLOTS = [
   { command: 'astro-review.md', slot: '5 failed verb', start: '5. **Act through', end: '6. **Rejected entries seen again' },
   { command: 'astro-review.md', slot: '6 rejected resurfacing', start: '6. **Rejected entries seen again', end: '7. **Report' },
   { command: 'astro-review.md', slot: '7 summary', start: '7. **Report', end: '## Never' },
+
+  // phase 26: /astro-mine — the on-demand transcript sweep (t4)
+  { command: 'astro-mine.md', slot: '1 run + nothing new', start: '1. **Run the miner.', end: '2. **Record exact repeats' },
+  { command: 'astro-mine.md', slot: '2 sightings', start: '2. **Record exact repeats', end: '3. **Lift the candidates' },
+  { command: 'astro-mine.md', slot: '4 advance', start: '4. **Advance the watermark', end: '5. **Report' },
+  { command: 'astro-mine.md', slot: '5 report', start: '5. **Report', end: '## Never' },
 ];
 
 const LOOP_COMMAND_SRC = new Map(
@@ -735,6 +741,7 @@ const LOOP_COMMAND_SRC = new Map(
     'astro-decision.md',
     'astro-complete-milestone.md',
     'astro-review.md',
+    'astro-mine.md',
   ].map((name) => [name, cmd(name)]),
 );
 
