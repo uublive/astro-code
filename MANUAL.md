@@ -325,6 +325,17 @@ project's canon by default, or `--as convention` appends a bullet to its
 yourself). Either way the entry itself stays in your home store, still accepted, still
 yours everywhere else — `show <id>` lists every project it has been promoted into.
 
+**How proposals arrive.** Four moments propose into your store — never accept anything
+on their own (ADR-058): after `/astro-decision` records an ADR, after `/astro-discuss`
+captures `CONTEXT.md`, on an `/astro-accept` rejection (a plain acceptance proposes
+nothing), and the `/astro-complete-milestone` retrospective sweep over the whole
+milestone's ADRs, CONTEXT files, rejections and the surprises `/astro-execute` records
+along the way. Only moments a human actually answered propose — an agent-captured
+discussion or an agent-signed accept/reject (`--agent`) never does. Each moment proposes
+at most 3, each carrying its own why, and ends with at most one line —
+`ac principles list --proposed` reviews the queue. See
+[`templates/principle-capture.md`](./templates/principle-capture.md) for the full spec.
+
 ---
 
 ## The fast lane
@@ -465,10 +476,11 @@ A kit is developed as a standalone astro-code project and goes through the norma
 ## Forge knowledge graph (optional)
 
 If a FORGEMASTER knowledge-graph MCP server happens to be connected, astro-code
-opportunistically *consumes* it — querying before `/astro-discuss`, `/astro-plan`, and
-`/astro-new-project` decide, and staging a lifted, project-agnostic generator after
-`/astro-decision` records an ADR. With no server connected, every one of those steps is a
-silent no-op — nothing printed, nothing missing.
+opportunistically *reads* it — querying before `/astro-discuss`, `/astro-plan`, and
+`/astro-new-project` decide. astro-code no longer writes to it: every principle a moment
+captures now proposes into your own personal store instead (see "How proposals arrive"
+below). With no server connected, every read is a silent no-op — nothing printed, nothing
+missing.
 
 astro-code still never *hosts* an MCP server; it only optionally reads from someone else's.
 See [`templates/forge-knowledge.md`](./templates/forge-knowledge.md) for the full spec.
@@ -521,6 +533,9 @@ ac status                      # project / milestone / phases
 ac phase add "Foundation"      # claim + add a phase
 ac phase check "<name>"        # is someone already building this?
 ac phase accept <n>            # human gate — requires a prior `verified`
+ac phase reject <n> --reason … [--agent name]  # UAT failed → rejected + a blocker (--agent: machine-signed)
+ac phase surprise <n> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]  # execute records a run surprise
+ac phase context <n> [--author]  # discuss-gate status, or who captured it: human | agent <name> | none
 ac phase effort <n> deep       # per-phase verify→remediate budget (light|standard|deep)
 ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
 ac phase milestone <n> [<N>]   # read/correct a phase's milestone (never moves the project)
@@ -528,6 +543,7 @@ ac milestone new               # claim the next milestone number and start it
 ac milestone new --planned     # declare a later milestone without starting it (--number N: repair)
 ac milestone activate <n>      # move the project into a planned milestone
 ac milestone complete          # archive the current milestone's phases (refuses over unfinished ones; --force)
+ac milestone harvest [<n>] [--json]  # retrospective sweep material for the principle sweep
 
 ac fix add "<what is broken>"  # open a bugfix (dated id, no phase number)
 ac fix list                    # what is open
