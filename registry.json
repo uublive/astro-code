@@ -309,6 +309,16 @@
       "branch": "develop",
       "claimed_at": "2026-09-24T08:04:59.408Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 22,
+      "milestone": 9,
+      "name": "Principle store and CLI: personal principles, patterns, preferences and antipatterns with a review lifecycle",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-09-24T08:05:03.672Z",
+      "status": "active"
     }
   ]
 }
