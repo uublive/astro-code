@@ -339,6 +339,16 @@
       "branch": "develop",
       "claimed_at": "2026-09-24T08:05:10.323Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 25,
+      "milestone": 9,
+      "name": "Retrieval into prompts: structural scopes, a compact index with full text on demand, hard rules, ac principles ask",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-09-24T08:05:13.015Z",
+      "status": "active"
     }
   ]
 }
