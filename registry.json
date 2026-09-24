@@ -349,6 +349,16 @@
       "branch": "develop",
       "claimed_at": "2026-09-24T08:05:13.015Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 26,
+      "milestone": 9,
+      "name": "Transcript miner: an on-demand, opt-in sweep of session transcripts for new proposals",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-09-24T08:05:15.949Z",
+      "status": "active"
     }
   ]
 }
