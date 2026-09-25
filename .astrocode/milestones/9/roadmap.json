@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "milestone": 9,
+  "phases": [
+    {
+      "number": 22,
+      "name": "Principle store and CLI: personal principles, patterns, preferences and antipatterns with a review lifecycle",
+      "slug": "22-principle-store-and-cli-personal-principles-patterns-preferences-and-antipatterns-with-a-review-lifecycle",
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-24T22:40:31.410Z"
+    },
+    {
+      "number": 23,
+      "name": "Capture at the moments of intent: discuss, decision, accept and milestone close propose principles",
+      "slug": "23-capture-at-the-moments-of-intent-discuss-decision-accept-and-milestone-close-propose-principles",
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-24T22:40:31.490Z"
+    },
+    {
+      "number": 24,
+      "name": "Review workflow: a batch review command that dedupes against what was accepted and rejected",
+      "slug": "24-review-workflow-a-batch-review-command-that-dedupes-against-what-was-accepted-and-rejected",
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-24T22:40:31.572Z"
+    },
+    {
+      "number": 25,
+      "name": "Retrieval into prompts: structural scopes, a compact index with full text on demand, hard rules, ac principles ask",
+      "slug": "25-retrieval-into-prompts-structural-scopes-a-compact-index-with-full-text-on-demand-hard-rules-ac-principles-ask",
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-24T22:39:37.996Z"
+    },
+    {
+      "number": 26,
+      "name": "Transcript miner: an on-demand, opt-in sweep of session transcripts for new proposals",
+      "slug": "26-transcript-miner-an-on-demand-opt-in-sweep-of-session-transcripts-for-new-proposals",
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-25T09:49:17.825Z"
+    },
+    {
+      "number": 27,
+      "name": "Forge import and handover: bring the forge graph over, then forge reads astro-code",
+      "slug": "27-forge-import-and-handover-bring-the-forge-graph-over-then-forge-reads-astro-code",
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-25T13:39:29.888Z"
+    }
+  ],
+  "closed_at": "2026-09-25T13:58:07.735Z",
+  "adr_watermark": 65
+}
