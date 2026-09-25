@@ -90,25 +90,40 @@ test('advance refuses an unknown keep id and writes nothing — the run stays ad
   assert.equal(readSteers(store).pending.length, 1);
 });
 
-test('advance bounds pending at PENDING_MAX, dropping the oldest first; a pre-R1 file with seen still reads', async () => {
-  const { writeRun, advance, readSteers, PENDING_MAX, mineDir } = await import('../lib/minestate.mjs?j=1');
+test('advance bounds only kept carry-over at KEPT_MAX, dropping the oldest first; a pre-R1 file with seen still reads', async () => {
+  const { writeRun, advance, readSteers, KEPT_MAX, mineDir } = await import('../lib/minestate.mjs?j=1');
   const { mkdirSync } = await import('node:fs');
   const store = storeDir();
   mkdirSync(mineDir(store), { recursive: true });
   const old = [];
-  for (let i = 0; i < PENDING_MAX; i++) {
-    old.push({ keyHash: `k${i}`, explicit: false, sessions: ['s'], at: `2026-01-01T00:00:${String(i % 60).padStart(2, '0')}.000Z`, pointers: [ptr(`/other/${i}.jsonl`, 's', 0)] });
+  // Pre-R1 entries carry no reason, so they read as `kept`.
+  for (let i = 0; i < KEPT_MAX + 5; i++) {
+    old.push({ keyHash: `k${i}`, explicit: false, sessions: ['s'], at: `2026-01-01T00:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}.000Z`, pointers: [ptr(`/other/${i}.jsonl`, 's', 0)] });
   }
   writeFileSync(join(mineDir(store), 'steers.json'), JSON.stringify({ version: 1, pending: old, seen: { k0: { sessions: ['s'], at: 'x' } } }));
-  assert.equal(readSteers(store).pending.length, PENDING_MAX);
 
   writeRun(store, sampleRun('r10', { held: [{ at: '2026-09-25T00:00:00.000Z', pointers: [ptr('/proj/a.jsonl', 's1', 10)] }] }));
   await advance(store, 'r10');
   const after = JSON.parse(readFileSync(join(mineDir(store), 'steers.json'), 'utf8'));
-  assert.equal(after.pending.length, PENDING_MAX);
-  assert.ok(after.pending.some((p) => p.reason === 'held' && p.pointers[0].file === '/proj/a.jsonl'), 'the newest entry survives');
+  const kept = after.pending.filter((p) => p.reason === 'kept');
+  assert.equal(kept.length, KEPT_MAX, 'kept carry-over is bounded');
+  assert.ok(!kept.some((p) => /^\/other\/[0-4]\.jsonl$/.test(p.pointers[0].file)), 'the five oldest kept entries were dropped');
+  assert.ok(after.pending.some((p) => p.reason === 'held' && p.pointers[0].file === '/proj/a.jsonl'), 'the held entry survives');
   assert.ok(!('seen' in after));
   assert.ok(after.pending.every((p) => !('keyHash' in p) && !('sessions' in p)), 'pre-R1 fields are not carried forward');
+  assert.ok(readSteers(store).pending.length === KEPT_MAX + 1);
+});
+
+test('C7 remediate-r2: held (budget) turns are never evicted, however many and however old', async () => {
+  const { writeRun, advance, readSteers, KEPT_MAX } = await import('../lib/minestate.mjs?h=1');
+  const store = storeDir();
+  const n = KEPT_MAX * 2 + 7;
+  const held = [];
+  for (let i = 0; i < n; i++) held.push({ at: '2020-01-01T00:00:00.000Z', pointers: [ptr('/proj/a.jsonl', 's1', i * 20)] });
+  writeRun(store, sampleRun('rh', { held }));
+  await advance(store, 'rh');
+  const pending = readSteers(store).pending;
+  assert.equal(pending.filter((p) => p.reason === 'held').length, n, 'no held turn is dropped');
 });
 
 test('advance deletes the run record, and a second advance of the same id rejects', async () => {

@@ -172,6 +172,25 @@ test('C7/budget: turns beyond MINE_BATCH are held, counted in remaining, and all
   assert.equal(third.nothingNew, true, 'handled turns never resurface');
 });
 
+test('C7 remediate-r2: 1000 distinct turns are each handed over exactly once across sweeps — none is lost to a pending bound', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  const total = 1000;
+  const lines = [];
+  for (let i = 0; i < total; i++) lines.push(cHuman(`distinct turn ${i}`));
+  writeClaudeSession(sb.claude, root, 's1', lines);
+
+  const counts = new Map();
+  for (let sweepNo = 0; sweepNo < 50; sweepNo++) {
+    const r = await run(sb, root);
+    if (r.nothingNew) break;
+    for (const i of r.items) counts.set(i.text, (counts.get(i.text) || 0) + 1);
+    await advanceSweep({ storeDir: sb.store, id: r.sweep });
+  }
+  assert.equal(counts.size, total, `every turn is handed over (got ${counts.size})`);
+  assert.ok([...counts.values()].every((c) => c === 1), 'no turn is handed over twice');
+});
+
 test('budget: the character budget holds long turns back as well', async () => {
   const sb = sandbox();
   const root = proj(sb);
