@@ -46,8 +46,11 @@
       "number": 26,
       "name": "Transcript miner: an on-demand, opt-in sweep of session transcripts for new proposals",
       "slug": "26-transcript-miner-an-on-demand-opt-in-sweep-of-session-transcripts-for-new-proposals",
-      "status": "pending",
-      "milestone": 9
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-25T09:49:17.825Z"
     },
     {
       "number": 27,
