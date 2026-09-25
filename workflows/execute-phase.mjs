@@ -781,15 +781,22 @@ const runHealOnBranch = (t, preservedBranch) =>
 // coin-flip verdict, and a `false` there aborts the whole phase over a suite that
 // never existed.  It is REQUIRED, not optional: an omitted flag would default-read
 // as "a suite ran", reintroducing exactly the ambiguity it exists to remove.
+//
+// `testsRun` (#79) is the number of tests EXECUTED, skipped/todo excluded. `passed` alone
+// is vacuously true for a suite that collects nothing (`node --test` over a glob that
+// matches no file exits 0 with `tests 0`), so a wave that just lost its test directory
+// passed the gate built to catch it. The gate decides on the count, not the agent's
+// wording, and reads a missing or malformed count as zero — it fails closed.
 const TESTGATE_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
     ranSuite: { type: 'boolean' },
     passed: { type: 'boolean' },
+    testsRun: { type: 'integer' },
     output: { type: 'string' },
   },
-  required: ['ranSuite', 'passed'],
+  required: ['ranSuite', 'passed', 'testsRun'],
 }
 
 // runTestSuite — run the full test suite in `root` via an executor agent.
@@ -811,6 +818,10 @@ const runTestSuite = () =>
       `- No runnable suite exists → ranSuite:false, passed:true. Say so in output. This is ` +
       `NOT a failure; some projects legitimately have no tests yet.\n` +
       `- A suite exists → ranSuite:true, and passed:true only if every test passed.\n` +
+      `- testsRun is the number of tests that actually EXECUTED — skipped and todo tests ` +
+      `excluded — read from the runner's own summary, never estimated. A suite that runs ` +
+      `zero tests (a glob matching no file, an emptied test directory) proves nothing: report ` +
+      `testsRun:0 and the gate treats it as a failure. With no runnable suite, testsRun is 0.\n` +
       `CRITICAL: a suite that EXISTS but fails to load, collect, or compile (an import error, ` +
       `a missing module, a collection error) is ranSuite:true + passed:false — a REAL failure. ` +
       `Do NOT report that as "no suite". The distinction is between "there are no tests here" ` +
@@ -1714,18 +1725,24 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
     // strand `worktree-*` branches and then false-FAIL the verifier's
     // `git rev-list HEAD..worktree-*` check — re-opening the phase-05 UAT gap.
     const noSuite = !!gate && gate.ranSuite === false
-    if (!noSuite && (!gate || !gate.passed)) {
+    // #79 — fail closed: only a positive integer count of executed tests proves anything.
+    const testsRun = gate && Number.isInteger(gate.testsRun) && gate.testsRun > 0 ? gate.testsRun : 0
+    const ranNothing = !noSuite && !!gate && gate.passed && testsRun === 0
+    if (!noSuite && (!gate || !gate.passed || ranNothing)) {
       integrationFailed = {
         wave: w + 1,
         taskId: null,
         branch: null,
-        note:
-          `test suite failed after healing wave ${w + 1}` +
-          (gate?.output ? `: ${gate.output}` : ' (no output returned)') +
-          `. If the suite failed to LOAD/COMPILE (a barrel or importer references a module ` +
-          `this wave deleted), that is a non-compiling wave boundary — a destructive edit was ` +
-          `split from the consumer fixups it forced (ADR-020). Fix the PLAN (fold the deletion ` +
-          `and its barrel/import updates into one task), not the gate.`,
+        note: ranNothing
+          ? `test suite ran no tests after healing wave ${w + 1} (0 tests executed) — a suite that ` +
+            `collects nothing proves nothing. If this wave deleted or moved the tests, or broke the ` +
+            `test glob, restore them; a configured runner must execute at least one test to pass the gate (#79).`
+          : `test suite failed after healing wave ${w + 1}` +
+            (gate?.output ? `: ${gate.output}` : ' (no output returned)') +
+            `. If the suite failed to LOAD/COMPILE (a barrel or importer references a module ` +
+            `this wave deleted), that is a non-compiling wave boundary — a destructive edit was ` +
+            `split from the consumer fixups it forced (ADR-020). Fix the PLAN (fold the deletion ` +
+            `and its barrel/import updates into one task), not the gate.`,
       }
       log(
         `✖ wave ${w + 1} test gate failed after heal — stopping before verify`,
@@ -1738,7 +1755,7 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
             `verifier is the only remaining backstop for this wave.`,
         )
       } else {
-        log(`✓ wave ${w + 1} test gate passed after heal (${healedTaskIds.length} task(s) healed)`)
+        log(`✓ wave ${w + 1} test gate passed after heal (${testsRun} test(s) run, ${healedTaskIds.length} task(s) healed)`)
       }
       // Only now — re-run commits landed AND the suite is green — is a healed
       // task's preserved branch truly superseded. Tearing down earlier would
