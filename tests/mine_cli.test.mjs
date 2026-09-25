@@ -101,6 +101,25 @@ test('C3: neither stdout/stderr nor any file under HOME contains a raw secret', 
   }
 });
 
+test('C3 remediate-r2: env-style secret assignments and a bare JWT never reach text or --json output', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  const values = ['Pr0dPassw0rd9xq', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'ghs0ldTokenValue123456',
+    'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYmMifQ.c2lnbmF0dXJlX3ZhbHVl'];
+  writeClaudeSession(sb.claude, P, 'sess-env', [
+    cHuman(`never commit DB_PASSWORD=${values[0]} AWS_SECRET_ACCESS_KEY=${values[1]} GITHUB_TOKEN=${values[2]} or ${values[3]}`),
+  ]);
+  for (const argv of [['principles', 'mine'], ['principles', 'mine', '--json']]) {
+    const res = run(argv, P, sb);
+    assert.strictEqual(res.status, 0, res.stderr);
+    assert.match(res.stdout, /never commit DB_PASSWORD=\[REDACTED\]/, 'the steer itself is still emitted');
+    for (const v of values) {
+      assert.ok(!res.stdout.includes(v), `${argv.join(' ')} stdout must never contain ${v}`);
+      assert.ok(!res.stderr.includes(v));
+    }
+  }
+});
+
 test('C6: mine → advance → nothingNew → append → new item; --rescan re-emits', () => {
   const sb = fixtureSandbox();
   const P = mkProject(sb);

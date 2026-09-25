@@ -93,3 +93,48 @@ test('redaction is idempotent — masking already-masked text changes nothing fu
   const twice = redactSecrets(once);
   assert.equal(twice, once);
 });
+
+// Phase 26 remediate-r2 (C3): `\b(password|token|…)` never matched an env-style name like
+// `DB_PASSWORD=` because `_` is a word character, so the value leaked verbatim.
+const ENV_SECRETS = {
+  DB_PASSWORD: 'Pr0dPassw0rd9xq',
+  AWS_SECRET_ACCESS_KEY: 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+  GITHUB_TOKEN: 'ghs0ldTokenValue123456',
+  stripe_api_key: 'rk_live_abc123def456',
+  MY_PRIVATE_KEY: 'base64blobvalue==',
+  GCP_CREDENTIALS: '/secure/creds.json',
+  MYSQL_PWD: 'rootpw77',
+};
+
+test('env-style assignments whose NAME carries a secret word keep the name and mask the value', async () => {
+  const { redactSecrets } = await import('../lib/redact.mjs');
+  const line = Object.entries(ENV_SECRETS).map(([k, v]) => `${k}=${v}`).join(' ') + ' then restart';
+  const out = redactSecrets(line);
+  for (const [k, v] of Object.entries(ENV_SECRETS)) {
+    assert.ok(!out.includes(v), `${k}'s value must not survive: ${out}`);
+    assert.ok(out.includes(`${k}=${'[REDACTED]'}`), `${k} keeps its name: ${out}`);
+  }
+  assert.match(out, /then restart$/);
+});
+
+test('an env-style colon assignment and a quoted value are masked whole', async () => {
+  const { redactSecrets } = await import('../lib/redact.mjs');
+  const out = redactSecrets('set SERVICE_TOKEN: "two words" and APP_SECRET=\'x y z\' now');
+  assert.ok(!/two words|x y z/.test(out), out);
+  assert.match(out, /SERVICE_TOKEN: \[REDACTED\] and APP_SECRET=\[REDACTED\] now/);
+});
+
+test('a bare JWT (three base64url segments, first starting eyJ) is masked', async () => {
+  const { redactSecrets } = await import('../lib/redact.mjs');
+  const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
+  const out = redactSecrets(`the session cookie was ${jwt} yesterday`);
+  assert.ok(!out.includes(jwt));
+  assert.ok(!out.includes('dozjgNryP4J3jVmNHl0w5N'), 'no segment survives');
+  assert.equal(out, 'the session cookie was [REDACTED] yesterday');
+});
+
+test('the env-style and JWT rules are idempotent', async () => {
+  const { redactSecrets } = await import('../lib/redact.mjs');
+  const once = redactSecrets('DB_PASSWORD=abc eyJabcdef.eyJghijkl.mnopqr');
+  assert.equal(redactSecrets(once), once);
+});
