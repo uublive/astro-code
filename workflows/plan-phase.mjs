@@ -141,7 +141,10 @@ const findings = await parallel(
         `Return concise, concrete findings (no preamble).` +
         OBEY +
         PRINCIPLES_RESEARCH,
-      { label: `research:${i + 1}`, phase: 'Research', agentType: 'Explore', model: models.researcher, effort: reasoning.researcher },
+      // The built-in `Explore` carries its own default model, so "pass no model" is not enough
+      // for it on a local session — it ran Opus there and failed. `astro-researcher` pins
+      // nothing, so it runs on the session's model.
+      { label: `research:${i + 1}`, phase: 'Research', agentType: onSessionModel ? 'astro-researcher' : 'Explore', model: models.researcher, effort: reasoning.researcher },
     ),
   ),
 )
