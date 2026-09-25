@@ -355,3 +355,50 @@ test('scanSession: a Codex rollout made only of drifted user messages reports th
   assert.equal(result.turns.length, 0);
   assert.equal(result.skipped.unrecognised, 2);
 });
+
+// Phase 26 revision R1, C9 — a `text` block whose `text` is not a string is shape drift on
+// BOTH hosts, and one well-formed block must never hide a malformed sibling.
+test('classifyClaudeLine: a text block whose text is not a string is unrecognised (user and assistant)', async () => {
+  const { classifyClaudeLine } = await import(TRANSCRIPTS);
+  const user = (content) => ({ type: 'user', message: { role: 'user', content } });
+  const asst = (content) => ({ type: 'assistant', message: { role: 'assistant', content } });
+  assert.equal(classifyClaudeLine(user([{ type: 'text', text: 42 }])).kind, 'unrecognised');
+  assert.equal(classifyClaudeLine(user([{ type: 'text' }])).kind, 'unrecognised');
+  assert.equal(classifyClaudeLine(user([{ type: 'text', text: 'ok' }, { type: 'text', text: { a: 1 } }])).kind, 'unrecognised');
+  assert.equal(classifyClaudeLine(asst([{ type: 'text', text: null }])).kind, 'unrecognised');
+  assert.equal(classifyClaudeLine(asst([{ type: 'text', text: 'fine' }, { type: 'text', text: 7 }])).kind, 'unrecognised');
+  assert.equal(classifyClaudeLine(user([{ type: 'text', text: 'ok' }])).kind, 'human');
+  assert.equal(classifyClaudeLine(asst([{ type: 'text', text: 'ok' }, { type: 'tool_use', id: 'x' }])).kind, 'assistant');
+});
+
+test('classifyCodexLine: one malformed input_text/output_text block makes the whole line unrecognised', async () => {
+  const { classifyCodexLine } = await import(TRANSCRIPTS);
+  const msg = (role, content) => ({ type: 'response_item', payload: { type: 'message', role, content } });
+  assert.equal(classifyCodexLine(msg('user', [{ type: 'input_text', text: 'good' }, { type: 'input_text', text: 5 }])).kind, 'unrecognised');
+  assert.equal(classifyCodexLine(msg('user', [{ type: 'input_text', text: 'good' }, { type: 'input_text' }])).kind, 'unrecognised');
+  assert.equal(classifyCodexLine(msg('assistant', [{ type: 'output_text', text: 'ok' }, { type: 'output_text', text: null }])).kind, 'unrecognised');
+  assert.equal(classifyCodexLine(msg('user', [{ type: 'input_text', text: 'a' }, { type: 'input_text', text: 'b' }])).kind, 'human');
+});
+
+test('scanSession: drifted text blocks on both hosts are counted, so the scan differs from a clean one', async () => {
+  const { scanSession } = await import(TRANSCRIPTS);
+  const sb = sandbox();
+  const root = join(sb.home, 'proj');
+  const clean = writeClaudeSession(sb.claude, root, 'clean', [cAssistant('hi'), cHuman('use pnpm')]);
+  const drifted = writeClaudeSession(sb.claude, root, 'drift', [
+    cAssistant('hi'), cHuman('use pnpm'),
+    { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 3 }] } },
+    { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: {} }] } },
+  ]);
+  const a = scanSession({ file: clean, host: 'claude' });
+  const b = scanSession({ file: drifted, host: 'claude' });
+  assert.equal(a.skipped.unrecognised, 0);
+  assert.equal(b.skipped.unrecognised, 2);
+  assert.equal(b.turns.length, 1, 'the valid turn still comes through');
+
+  const bad = { timestamp: new Date().toISOString(), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'ok' }, { type: 'input_text', text: 9 }] } };
+  const cx = writeCodexRollout(sb.codex, { id: 'cxd', cwd: root }, [xUser('use pnpm'), bad]);
+  const c = scanSession({ file: cx, host: 'codex' });
+  assert.equal(c.skipped.unrecognised, 1);
+  assert.equal(c.turns.length, 1);
+});
