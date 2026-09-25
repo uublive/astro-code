@@ -1,43 +1,5 @@
 {
   "version": 1,
   "milestone": 10,
-  "phases": [
-    {
-      "number": 28,
-      "name": "Cross-host parity guard: each host declares what it provides, and a test fails when a command, agent or workflow depends on something a wired host cannot",
-      "slug": "28-cross-host-parity-guard-each-host-declares-what-it-provides-and-a-test-fails-when-a-command-agent-or-workflow-depends-on-something-a-wired-host-cannot",
-      "status": "pending",
-      "milestone": 10
-    },
-    {
-      "number": 29,
-      "name": "Pi host adapter: prompt templates, agents, tool-name map, install, headless runs, verified on a real Pi install",
-      "slug": "29-pi-host-adapter-prompt-templates-agents-tool-name-map-install-headless-runs-verified-on-a-real-pi-install",
-      "status": "pending",
-      "milestone": 10,
-      "note": "Prior research, not in repo: astro-code session 8b9eeb49 (2026-09-05 SDK spike; 2026-09-14 three-host design) and astro-fleet milestones/1 phase 01 notes/spike-pi.md (headless argv, models.json provider, exit codes). Consolidate into a research note here. Real install: Pi 0.86.1 on the Mac; its --thinking now has xhigh, so lib/reasoning.mjs pi map (xhigh->max) is stale."
-    },
-    {
-      "number": 30,
-      "name": "Pi runtime extension: the Workflow surface, structured output and ask-the-user on Pi's SDK, so commands and workflows run unchanged",
-      "slug": "30-pi-runtime-extension-the-workflow-surface-structured-output-and-ask-the-user-on-pi-s-sdk-so-commands-and-workflows-run-unchanged",
-      "status": "pending",
-      "milestone": 10,
-      "note": "Open decision from prior research: SDK extension re-implementing the Workflow surface (createAgentSession, per-session cwd, constrainedSampling for schema; model on examples/extensions/subagent) vs ac-owned orchestration via lib/hosts/runner.mjs + headless pi -p (also covers Codex). Settle in discuss."
-    },
-    {
-      "number": 31,
-      "name": "Per-host model roles: map each role to a provider and model, with local-model limits reported",
-      "slug": "31-per-host-model-roles-map-each-role-to-a-provider-and-model-with-local-model-limits-reported",
-      "status": "pending",
-      "milestone": 10
-    },
-    {
-      "number": 32,
-      "name": "Pi session plumbing: status widget and session hooks, transcript-miner reader, Pi package",
-      "slug": "32-pi-session-plumbing-status-widget-and-session-hooks-transcript-miner-reader-pi-package",
-      "status": "pending",
-      "milestone": 10
-    }
-  ]
+  "phases": []
 }

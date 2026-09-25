@@ -93,35 +93,6 @@ so it works standalone (and open source), after which forge's version is retired
 Phases 22–27: the store and CLI → capture at the moments of intent → the review workflow
 → retrieval into prompts → the transcript miner → forge import and handover.
 
-## Milestone 10 — astro-code on Pi
-
-> **Parked 2026-09-25**, before phase 28 was discussed. A local model already runs under
-> Claude Code, so a Pi host is not needed now. Phases 28–32 stay on the roadmap, undiscussed;
-> resume with `/astro-discuss 28`. The prior Pi research is pointed at from phases 29–30's notes.
-
-astro-code runs in [Pi](https://pi.dev) as a first-class host, including against a
-local model, and **stays** running there: a feature written for one host must not
-silently fail on another.
-
-- **One source, rendered per host.** Commands, agents and workflows are authored once;
-  the Pi adapter renders them (prompt templates, agents, tool-name map) exactly as the
-  Claude and Codex adapters do. Verified against a real Pi install, never against docs
-  alone — the Codex adapter proved the docs wrong once already.
-- **Same surface, not a second dialect.** A Pi extension provides what the command text
-  and workflow scripts already assume — the Workflow surface (`agent`, `parallel`,
-  `phase`, `log`) on Pi's SDK, structured output, an ask-the-user tool — so a command
-  does not need a Pi branch to work in Pi.
-- **A parity guard that fails the build.** Each host declares what it can provide; a test
-  fails when a command, agent or workflow depends on something a wired host cannot. A
-  gap is either closed or declared as a visible, shrinking exception — never discovered
-  in the field. This is what keeps versions from drifting.
-- **Local models are a real configuration.** Roles map to a provider/model per host, so
-  the planner and verifier can stay on a frontier model while executors run locally; the
-  local model's limits (output cap, no reasoning control) are reported, not papered over.
-
-The research this builds on (Pi SDK spike, headless contract, three-host design) was done
-in September 2026 and is consolidated into the first phase's research note.
-
 ## Requirements
 
 <!-- One line per requirement. Use stable IDs (REQ-001) so phases can map to them. -->

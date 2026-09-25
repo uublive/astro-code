@@ -42,6 +42,13 @@
       "note": "Verified against the live model docs: astro-code needs no change to use claude-opus-5-5. Roles resolve to the tiers 'opus'/'sonnet' and the harness picks the model, and modelLimit defaults unknown ids to 1M — which is right for opus-5-5 and fable-5-1. What is stale is cosmetic: ARCHITECTURE.md says the session model is Opus 4.8, and ac statusline preview fakes a claude-opus-4-8 payload. Worth a sweep when something else touches those files.",
       "status": "open",
       "captured_at": "2026-09-23T06:23:38.381Z"
+    },
+    {
+      "id": "2026-09-25-astro-code-on-pi-as-a-first-class-host",
+      "title": "astro-code on Pi as a first-class host, parity guard first",
+      "note": "Dropped milestone 10 (phases 28–32, never discussed) on 2026-09-25: a local model already runs under Claude Code. Planned shape: cross-host parity guard → Pi adapter → Pi runtime extension (Workflow surface, structured output, ask-user) → per-host model roles → Pi status/hooks/miner. Prior research: session 8b9eeb49 (2026-09-05, 2026-09-14) and astro-fleet milestone 1 phase 01 notes/spike-pi.md. Snapshot: .astrocode/milestones/10/.",
+      "status": "open",
+      "captured_at": "2026-09-25T15:13:44.789Z"
     }
   ]
 }
