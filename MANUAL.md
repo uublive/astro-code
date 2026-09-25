@@ -632,6 +632,7 @@ ac phase milestone <n> [<N>]   # read/correct a phase's milestone (never moves t
 ac milestone new               # claim the next milestone number and start it
 ac milestone new --planned     # declare a later milestone without starting it (--number N: repair)
 ac milestone activate <n>      # move the project into a planned milestone
+ac milestone rename <n> "<name>"  # correct a milestone's name (any status; changes the name only)
 ac milestone complete          # archive the current milestone's phases (refuses over unfinished ones; --force)
 ac milestone harvest [<n>] [--json]  # retrospective sweep material for the principle sweep
 

@@ -15,7 +15,7 @@ import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, rejectPhase, setPhaseEffort, setPhaseNote, setPhaseMilestone, isPhasePlanned } from '../lib/roadmap.mjs';
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
-import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims, waitingMilestones } from '../lib/registry.mjs';
+import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims, waitingMilestones, renameMilestone } from '../lib/registry.mjs';
 import { addFix, acceptFix, setFixStatus, findFix, openFixes, loadFixes, FIX_STATUSES } from '../lib/fixes.mjs';
 import {
   addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt,
@@ -128,6 +128,7 @@ const ALLOWED_FLAGS = {
   // #37 — `--planned` declares without activating; `--number` is the guarded repair
   'milestone new': ['name', 'vision', 'planned', 'number'],
   'milestone activate': [],
+  'milestone rename': [],
   // #63 — the text is an argument, not a flag: `--note` (what `backlog add` takes) used to
   // be ignored here and the call read the note instead of writing it.
   'backlog note': [],
@@ -316,6 +317,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac milestone new --planned [--name "…"]  declare a later milestone without starting it
                                        (--number N: one-time repair when phases already reference N)
   ac milestone activate <n>           move the project into a planned milestone
+  ac milestone rename <n> "<name>"    correct a claimed milestone's name (any status; name only)
   ac milestone check "<name>"         see if a milestone with a similar name exists
   ac milestone complete [--force]     archive the current milestone + retire its claims
                                        (refuses while a phase is not complete; --force overrides)
@@ -1718,6 +1720,17 @@ async function main() {
         if (left.length) {
           console.log(`  milestone ${prev} still has ${left.length} unfinished phase(s): ${left.map((ph) => ph.number).join(', ')} — they stay on the roadmap`);
         }
+      } else if (pos[0] === 'rename') {
+        // #78 — a milestone name has no slug or path, so it can be corrected at any status
+        checkFlags('milestone rename', flags);
+        const n = Number(pos[1]);
+        const name = pos.slice(2).join(' ').trim();
+        if (!Number.isInteger(n) || n < 1 || !name) die('usage: ac milestone rename <n> "<name>"');
+        const ren = renameMilestone({ root: r, number: n, name });
+        if (!ren.ok) die(ren.error);
+        if (ren.unchanged) { console.log(`• milestone ${n} is already named "${name}"`); return; }
+        console.log(`✓ milestone ${n} renamed ${ren.previous ? `"${ren.previous}"` : '(unnamed)'} → "${name}" [${ren.branch}]`);
+        warnNameMatches(ren.matches, gitIdentity(r).owner);
       } else if (pos[0] === 'check') {
         const name = pos.slice(1).join(' ').trim();
         if (!name) die('usage: ac milestone check "<name>"');
@@ -1805,7 +1818,7 @@ async function main() {
           console.log(`• skipped: ${skipped.agentContexts} agent-captured CONTEXT, ${skipped.agentRejections} agent-signed rejection(s)`);
         }
       } else {
-        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|check "<name>"|complete|harvest [<n>]>');
+        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|rename <n> "<name>"|check "<name>"|complete|harvest [<n>]>');
       }
       return;
     }
