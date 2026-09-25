@@ -434,3 +434,8 @@ _2026-09-25 · at 2817db4_
 
 **Why:** passed is vacuously true for a suite that collects nothing, so a wave that lost its tests passed the gate built to catch it (#79); a lost test dir and a brand-new project look the same to the gate, and the gate only runs after a heal or overflow, when proof matters most
 
+## ADR-067 — On a local-model session every subagent runs on the session's model with no reasoning effort: ac resolves every role to the inherit tier, and the workflows pass no model — overriding the config, the deep escalation and the integrator floor; detection is ANTHROPIC_BASE_URL off anthropic.com or a non-Claude ANTHROPIC_MODEL, forced either way by ASTRO_LOCAL_MODEL
+_2026-09-25 · at 2cc006f_
+
+**Why:** A local endpoint serves one model and none of the Claude tiers, so every subagent given an explicit tier failed with a model-name error; inheriting the session model is the one choice that always works there. The stored config is never changed, so leaving the local model restores the tiers. Per-role local mapping (e.g. executors on a coder model) is deliberately deferred.
+
