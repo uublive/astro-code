@@ -13,14 +13,16 @@ function storeDir() {
   return mkdtempSync(join(tmpdir(), 'ac-minestate-store-'));
 }
 
+function ptr(file, session, start) {
+  return { file, host: 'claude', session, start, end: start + 10, ctxStart: start, ctxEnd: start };
+}
+
 function sampleRun(id, overrides = {}) {
   return {
     id,
     files: { '/proj/a.jsonl': { offset: 100, ctxOffset: 0, headless: false, host: 'claude', session: 's1' } },
-    emitted: [{ keyHash: 'hk1', sessions: ['s1'] }],
+    items: { t1: { at: '2026-09-25T00:00:00.000Z', pointers: [ptr('/proj/a.jsonl', 's1', 0)] } },
     held: [],
-    below: [],
-    sighted: [],
     ...overrides,
   };
 }
@@ -51,51 +53,62 @@ test('advance moves offsets forward only — a smaller offset never rewinds', as
   assert.equal(anyFile.offset, 500, 'offset must never rewind below a previously recorded value');
 });
 
-test('advance replaces in-scope pending with held and leaves out-of-scope pending untouched', async () => {
+test('advance replaces in-scope pending with held + kept items and leaves out-of-scope pending untouched', async () => {
   const { writeRun, advance, readSteers, writeSteers } = await import('../lib/minestate.mjs?b=1');
   const store = storeDir();
   writeSteers(store, {
-    version: 1,
     pending: [
-      { keyHash: 'in-scope', explicit: false, sessions: ['s0'], pointers: [{ file: '/proj/a.jsonl', host: 'claude', session: 's0', start: 0, end: 10, ctxStart: 0, ctxEnd: 0 }] },
-      { keyHash: 'out-of-scope', explicit: false, sessions: ['s9'], pointers: [{ file: '/other/b.jsonl', host: 'claude', session: 's9', start: 0, end: 10, ctxStart: 0, ctxEnd: 0 }] },
+      { reason: 'kept', at: '2026-09-01T00:00:00.000Z', pointers: [ptr('/proj/a.jsonl', 's0', 0)] },
+      { reason: 'kept', at: '2026-09-01T00:00:00.000Z', pointers: [ptr('/other/b.jsonl', 's9', 0)] },
     ],
-    seen: {},
   });
-  const run = sampleRun('r3', {
+  writeRun(store, sampleRun('r3', {
     files: { '/proj/a.jsonl': { offset: 200, ctxOffset: 0, headless: false, host: 'claude', session: 's1' } },
-    held: [{ keyHash: 'new-held', explicit: false, sessions: ['s1'], pointers: [{ file: '/proj/a.jsonl', host: 'claude', session: 's1', start: 10, end: 20, ctxStart: 0, ctxEnd: 0 }] }],
-  });
-  writeRun(store, run);
-  await advance(store, 'r3');
-  const steers = readSteers(store);
-  const keys = steers.pending.map((p) => p.keyHash);
-  assert.ok(!keys.includes('in-scope'), 'in-scope pending must be replaced');
-  assert.ok(keys.includes('out-of-scope'), 'out-of-scope pending must survive untouched');
-  assert.ok(keys.includes('new-held'), 'held candidates from the run must become pending');
+    items: {
+      t1: { at: '2026-09-25T00:00:00.000Z', pointers: [ptr('/proj/a.jsonl', 's1', 30)] },
+      t2: { at: '2026-09-25T00:00:00.000Z', pointers: [ptr('/proj/a.jsonl', 's1', 40)] },
+    },
+    held: [{ at: '2026-09-25T00:00:00.000Z', pointers: [ptr('/proj/a.jsonl', 's1', 10)] }],
+  }));
+  const res = await advance(store, 'r3', { keep: ['t2'] });
+  assert.equal(res.kept, 1);
+  const starts = readSteers(store).pending.map((p) => `${p.reason}:${p.pointers[0].file}:${p.pointers[0].start}`).sort();
+  assert.deepEqual(starts, ['held:/proj/a.jsonl:10', 'kept:/other/b.jsonl:0', 'kept:/proj/a.jsonl:40']);
 });
 
-test('advance unions seen sessions for emitted/below/sighted keys and caps at SEEN_MAX', async () => {
-  const { writeRun, advance, readSteers, SEEN_MAX } = await import('../lib/minestate.mjs?c=1');
+test('advance refuses an unknown keep id and writes nothing — the run stays advanceable', async () => {
+  const { writeRun, advance, readRun, readFilesState, readSteers } = await import('../lib/minestate.mjs?c=1');
   const store = storeDir();
-  assert.equal(typeof SEEN_MAX, 'number');
   writeRun(store, sampleRun('r4', {
-    emitted: [{ keyHash: 'k1', sessions: ['s1'] }],
-    below: [{ keyHash: 'k2', sessions: ['s2'] }],
-    sighted: [{ keyHash: 'k3', sessions: ['s3'] }],
+    files: { '/proj/a.jsonl': { offset: 99, ctxOffset: 0, headless: false, host: 'claude', session: 's1', slug: 'default' } },
   }));
-  await advance(store, 'r4');
-  const steers = readSteers(store);
-  assert.ok(steers.seen.k1);
-  assert.ok(steers.seen.k2);
-  assert.ok(steers.seen.k3);
-  assert.deepEqual(steers.seen.k1.sessions, ['s1']);
+  await assert.rejects(() => advance(store, 'r4', { keep: ['t1', 'nope'] }), /unknown item id "nope"/);
+  assert.deepEqual(readFilesState(store, 'default').files, {}, 'no offset was committed');
+  assert.deepEqual(readSteers(store).pending, []);
+  assert.ok(readRun(store, 'r4'), 'the run record survives a refused advance');
+  await advance(store, 'r4', { keep: ['t1'] });
+  assert.equal(readSteers(store).pending.length, 1);
+});
 
-  // A second advance for the same key unions sessions rather than replacing them.
-  writeRun(store, sampleRun('r5', { emitted: [{ keyHash: 'k1', sessions: ['s4'] }] }));
-  await advance(store, 'r5');
-  const steers2 = readSteers(store);
-  assert.deepEqual(steers2.seen.k1.sessions.sort(), ['s1', 's4'].sort());
+test('advance bounds pending at PENDING_MAX, dropping the oldest first; a pre-R1 file with seen still reads', async () => {
+  const { writeRun, advance, readSteers, PENDING_MAX, mineDir } = await import('../lib/minestate.mjs?j=1');
+  const { mkdirSync } = await import('node:fs');
+  const store = storeDir();
+  mkdirSync(mineDir(store), { recursive: true });
+  const old = [];
+  for (let i = 0; i < PENDING_MAX; i++) {
+    old.push({ keyHash: `k${i}`, explicit: false, sessions: ['s'], at: `2026-01-01T00:00:${String(i % 60).padStart(2, '0')}.000Z`, pointers: [ptr(`/other/${i}.jsonl`, 's', 0)] });
+  }
+  writeFileSync(join(mineDir(store), 'steers.json'), JSON.stringify({ version: 1, pending: old, seen: { k0: { sessions: ['s'], at: 'x' } } }));
+  assert.equal(readSteers(store).pending.length, PENDING_MAX);
+
+  writeRun(store, sampleRun('r10', { held: [{ at: '2026-09-25T00:00:00.000Z', pointers: [ptr('/proj/a.jsonl', 's1', 10)] }] }));
+  await advance(store, 'r10');
+  const after = JSON.parse(readFileSync(join(mineDir(store), 'steers.json'), 'utf8'));
+  assert.equal(after.pending.length, PENDING_MAX);
+  assert.ok(after.pending.some((p) => p.reason === 'held' && p.pointers[0].file === '/proj/a.jsonl'), 'the newest entry survives');
+  assert.ok(!('seen' in after));
+  assert.ok(after.pending.every((p) => !('keyHash' in p) && !('sessions' in p)), 'pre-R1 fields are not carried forward');
 });
 
 test('advance deletes the run record, and a second advance of the same id rejects', async () => {
@@ -159,12 +172,13 @@ test('C3: a run built from secret-bearing candidate metadata never lets a secret
   const store = storeDir();
   const dangerous = sampleRun('r9', {
     // Only whitelisted fields are ever persisted — a caller accidentally attaching a
-    // text/excerpt field (as it would if it forgot P6's "pointers and hashes, never
-    // text" rule) must never survive into the stored record.
-    emitted: [{ keyHash: 'k1', sessions: ['s1'], text: SECRETS.join(' ') }],
+    // text/excerpt field (as it would if it forgot P6's "pointers, never text" rule)
+    // must never survive into the stored record.
+    items: { t1: { at: '2026-09-25T00:00:00.000Z', text: SECRETS.join(' '), pointers: [{ ...ptr('/proj/a.jsonl', 's1', 0), excerpt: SECRETS.join(' ') }] } },
+    held: [{ text: SECRETS.join(' '), pointers: [ptr('/proj/a.jsonl', 's1', 20)] }],
   });
   writeRun(store, dangerous);
-  await advance(store, 'r9');
+  await advance(store, 'r9', { keep: ['t1'] });
   const { readdirSync: rd } = await import('node:fs');
   const dir = mineDir(store);
   const walk = (d) => rd(d, { withFileTypes: true }).flatMap((e) => (

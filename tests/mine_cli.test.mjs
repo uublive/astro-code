@@ -37,21 +37,24 @@ test('C1: default scope finds this project only; --project targets another; --al
   const sb = fixtureSandbox();
   const P = mkProject(sb);
   const Q = mkdtempSync(join(tmpdir(), 'ac-mine-q-'));
-  writeClaudeSession(sb.claude, P, 'sess-p', [cHuman('always run tests before pushing')]);
-  writeClaudeSession(sb.claude, Q, 'sess-q', [cHuman('always run tests before pushing')]);
+  writeClaudeSession(sb.claude, P, 'sess-p', [cHuman('always-P run tests before pushing')]);
+  writeClaudeSession(sb.claude, Q, 'sess-q', [cHuman('always-Q run tests before pushing')]);
+  const texts = (r) => JSON.parse(r.stdout).items.map((i) => i.text).join('\n');
 
   const def = run(['principles', 'mine', '--json'], P, sb);
   assert.strictEqual(def.status, 0, def.stderr);
-  const defJson = JSON.parse(def.stdout);
-  assert.deepEqual(defJson.scope.mode, 'project');
+  assert.deepEqual(JSON.parse(def.stdout).scope.mode, 'project');
+  assert.match(texts(def), /always-P/);
+  assert.doesNotMatch(texts(def), /always-Q/);
 
   const withProject = run(['principles', 'mine', '--project', Q, '--json'], P, sb);
   assert.strictEqual(withProject.status, 0, withProject.stderr);
-  JSON.parse(withProject.stdout);
+  assert.match(texts(withProject), /always-Q/);
 
   const all = run(['principles', 'mine', '--all', '--json'], P, sb);
   assert.strictEqual(all.status, 0, all.stderr);
-  JSON.parse(all.stdout);
+  assert.match(texts(all), /always-P/);
+  assert.match(texts(all), /always-Q/);
 
   const both = run(['principles', 'mine', '--all', '--project', Q, '--json'], P, sb);
   assert.notStrictEqual(both.status, 0, '--all together with --project must die');
@@ -71,7 +74,7 @@ test('C3: neither stdout/stderr nor any file under HOME contains a raw secret', 
   }
 });
 
-test('C6: mine → advance → nothingNew → append → new candidate; --rescan re-emits', () => {
+test('C6: mine → advance → nothingNew → append → new item; --rescan re-emits', () => {
   const sb = fixtureSandbox();
   const P = mkProject(sb);
   writeClaudeSession(sb.claude, P, 'sess-1', [cHuman('from now on always run the full test suite')]);
@@ -131,7 +134,7 @@ test('C9 remediation: a Codex rollout entirely of unrecognised lines (no readabl
   assert.ok(j.skipped.unrecognised >= 4);
 });
 
-test('ADR-029: an unknown flag dies; --advance of an unknown sweep dies', () => {
+test('ADR-029: an unknown flag dies; --advance of an unknown sweep dies; --keep needs --advance', () => {
   const sb = fixtureSandbox();
   const P = mkProject(sb);
   const bogus = run(['principles', 'mine', '--bogus'], P, sb);
@@ -140,6 +143,47 @@ test('ADR-029: an unknown flag dies; --advance of an unknown sweep dies', () => 
   const badAdvance = run(['principles', 'mine', '--advance', 'nope'], P, sb);
   assert.notStrictEqual(badAdvance.status, 0);
   assert.match(badAdvance.stderr, /unknown or already-advanced sweep/);
+
+  const loneKeep = run(['principles', 'mine', '--keep', 't1'], P, sb);
+  assert.notStrictEqual(loneKeep.status, 0);
+});
+
+test('text output: one line per item plus the summary', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  writeClaudeSession(sb.claude, P, 's1', [cHuman('No.'), cHuman('Nie die Datenbank in Tests mocken.')]);
+  writeClaudeSession(sb.claude, P, 's2', [cHuman('No.')]);
+  const res = run(['principles', 'mine'], P, sb);
+  assert.strictEqual(res.status, 0, res.stderr);
+  const lines = res.stdout.trim().split('\n');
+  assert.match(lines[0], /^• 2 turn\(s\) from 2 session file\(s\) — sweep mine-/);
+  assert.ok(lines.some((l) => /^ {2}t\d+ \[2 sessions\] No\.$/.test(l)), res.stdout);
+  assert.ok(lines.some((l) => /^ {2}t\d+ \[1 session\] Nie die Datenbank/.test(l)), res.stdout);
+});
+
+test('C7: --advance --keep carries the kept turn into the next sweep; an unknown keep id refuses and advances nothing', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  writeClaudeSession(sb.claude, P, 's1', [cHuman('Niente virgole finali.'), cHuman('rename it to parseRow')]);
+  const first = JSON.parse(run(['principles', 'mine', '--json'], P, sb).stdout);
+  const keepId = first.items.find((i) => /virgole/.test(i.text)).id;
+
+  const bad = run(['principles', 'mine', '--advance', first.sweep, '--keep', `${keepId},t404`], P, sb);
+  assert.notStrictEqual(bad.status, 0);
+  assert.match(bad.stderr, /unknown item id "t404"/);
+  const still = JSON.parse(run(['principles', 'mine', '--json'], P, sb).stdout);
+  assert.strictEqual(still.nothingNew, false, 'a refused advance moves no watermark');
+
+  const ok = run(['principles', 'mine', '--advance', first.sweep, '--keep', keepId], P, sb);
+  assert.strictEqual(ok.status, 0, ok.stderr);
+  assert.match(ok.stdout, /1 turn\(s\) kept/);
+
+  writeClaudeSession(sb.claude, P, 's2', [cHuman('Keine nachgestellten Kommas.')]);
+  const second = JSON.parse(run(['principles', 'mine', '--json'], P, sb).stdout);
+  const kept = second.items.find((i) => /virgole/.test(i.text));
+  assert.ok(kept && kept.earlier === true, 'the kept turn comes back marked earlier');
+  assert.ok(second.items.some((i) => /Kommas/.test(i.text) && i.earlier === false));
+  assert.ok(!second.items.some((i) => /parseRow/.test(i.text)), 'an unkept handled turn never comes back');
 });
 
 test('ac help lists `principles mine`', () => {

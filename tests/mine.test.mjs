@@ -1,14 +1,15 @@
-// Phase 26 t7 — RED: the miner engine (P5/P6/P8, D2/D5/D6). Every not-yet-existing
-// symbol reached via a dynamic import inside each async test body (ADR-018).
+// Phase 26 — the miner engine (P5/P6/P8, D2/D4/D6), rewritten for revision R1 (ADR-064):
+// `sweep()` judges no meaning. It hands the agent every human turn (redacted, capped,
+// exact-identical ones collapsed with the union of their sessions), routes exact store
+// matches to sightings, bounds the batch, and carries held/kept turns by pointer only.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { sandbox, writeClaudeSession, cHuman, cAssistant, SECRETS, appendLines } from './fixtures/minefixtures.mjs';
+import { sandbox, writeClaudeSession, writeCodexRollout, cHuman, cAssistant, xUser, SECRETS, appendLines } from './fixtures/minefixtures.mjs';
 import { addPrinciple, proposePrinciple, rejectPrinciple } from '../lib/principles.mjs';
-
-const MINE = '../lib/mine.mjs';
+import { sweep, advanceSweep, MINE_CAP, MINE_BATCH, MINE_BATCH_CHARS } from '../lib/mine.mjs';
 
 function proj(sb, name = 'proj') {
   const root = join(sb.home, name);
@@ -16,138 +17,285 @@ function proj(sb, name = 'proj') {
   return root;
 }
 
-test('cues: a plain correction is a steer, not explicit; "always"/"d\'ora in poi" are explicit; praise is no steer', async () => {
-  const { steerSentences } = await import(MINE);
-  const s1 = steerSentences('no, not that file.');
-  assert.equal(s1.length, 1);
-  assert.equal(s1[0].explicit, false);
+const scopeOf = (root) => ({ mode: 'project', roots: [root] });
+const run = (sb, root, extra = {}) => sweep({ scope: scopeOf(root), storeDir: sb.store, env: sb.env, ...extra });
 
-  const s2 = steerSentences('from now on always run the linter.');
-  assert.equal(s2.length, 1);
-  assert.equal(s2[0].explicit, true);
+function walk(dir) {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => (
+    e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]
+  ));
+}
 
-  const s3 = steerSentences("d'ora in poi usa sempre pnpm.");
-  assert.equal(s3.length, 1);
-  assert.equal(s3[0].explicit, true);
-
-  const s4 = steerSentences('thanks, looks good.');
-  assert.equal(s4.length, 0);
-});
-
-test('C4 keying: casing/politeness collapse to one key; polarity keeps "never" separate from "always"', async () => {
-  const { steerKey } = await import(MINE);
-  const a = steerKey('Always run the linter before committing.');
-  const b = steerKey('please always run the linter before committing!');
-  const c = steerKey('ALWAYS run the linter before committing');
-  const d = steerKey('never run the linter before committing');
-  assert.equal(a.key, b.key);
-  assert.equal(a.key, c.key);
-  assert.notEqual(a.key, d.key);
-  assert.equal(a.keyHash.length, 16);
-});
-
-test('C4 remediation: negation phrased three different ways collapses to one key; a redundant "No," prefix on a short steer no longer splits it', async () => {
-  const { steerKey } = await import(MINE);
-  const s1 = steerKey("No, don't add semicolons at the end of lines in TypeScript files.");
-  const s2 = steerKey("Don't add semicolons at the end of lines in TypeScript files.");
-  const s3 = steerKey('Do not add semicolons at the end of lines in TypeScript files.');
-  assert.equal(s1.key, s2.key);
-  assert.equal(s2.key, s3.key);
-
-  const t1 = steerKey('No, never use tabs for indentation!');
-  const t2 = steerKey('never use tabs for indentation please');
-  assert.equal(t1.key, t2.key);
-});
-
-test('C4 grouping + cap/rank + redaction + store matches via a real sweep', async () => {
+test('C4(a): English, Italian and German turns all reach items[] — no language decides anything', async () => {
   const sb = sandbox();
   const root = proj(sb);
+  writeClaudeSession(sb.claude, root, 's-en', [cAssistant('I mocked the DB.'), cHuman("Don't mock the database in tests.")]);
+  writeClaudeSession(sb.claude, root, 's-it', [cHuman('Non mockare mai il database nei test.')]);
+  writeClaudeSession(sb.claude, root, 's-de', [cHuman('Nie die Datenbank in Tests mocken.')]);
+  writeCodexRollout(sb.codex, { id: 'cx-fr', cwd: root }, [xUser('Ne simule jamais la base de données dans les tests.')]);
 
-  // Three sessions restate the same steer (plus in-session repeats, which must not
-  // inflate recurrence); one explicit rule stated once; one lone non-qualifying steer;
-  // a secret-bearing steer; and pre-seeded accepted/rejected entries the restatements
-  // should land on as sightings, never as fresh candidates (C8/ADR-058).
-  const { entry: accepted } = { entry: await addPrinciple(sb.store, { statement: 'Always use pnpm for lockfiles', kind: 'principle', why: 'w' }) };
-  const proposedForReject = await proposePrinciple(sb.store, { statement: 'Never write semicolons', kind: 'antipattern', why: 'w' });
-  await rejectPrinciple(sb.store, proposedForReject.entry.id, { reason: 'style is fine either way' });
+  const r = await run(sb, root);
+  const texts = r.items.map((i) => i.text);
+  for (const t of ["Don't mock the database in tests.", 'Non mockare mai il database nei test.', 'Nie die Datenbank in Tests mocken.', 'Ne simule jamais la base de données dans les tests.']) {
+    assert.ok(texts.includes(t), `"${t}" must be handed over verbatim`);
+  }
+  assert.equal(r.items.length, 4, 'non-identical turns are never merged by the engine');
+  const en = r.items.find((i) => i.text.startsWith("Don't"));
+  assert.deepEqual(en.sessions, ['s-en']);
+  assert.equal(en.fromSession, 's-en');
+  assert.equal(en.fromRef, 'transcript claude:s-en');
+  assert.equal(en.context, 'I mocked the DB.', 'each item carries the preceding assistant turn');
+  assert.equal(en.earlier, false);
+  const fr = r.items.find((i) => i.text.startsWith('Ne simule'));
+  assert.equal(fr.host, 'codex');
+  assert.equal(fr.fromRef, 'transcript codex:cx-fr');
+  assert.ok(/^t\d+$/.test(en.id));
+});
 
+test('C4(a): turns identical after normalising collapse into ONE item carrying both sessions; near-identical ones do not', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  writeClaudeSession(sb.claude, root, 's1', [cHuman('Nie die Datenbank in Tests mocken.'), cHuman('nie die datenbank in tests mocken')]);
+  writeClaudeSession(sb.claude, root, 's2', [cHuman('NIE die Datenbank in Tests mocken!')]);
+  writeClaudeSession(sb.claude, root, 's3', [cHuman("Don't mock the database in tests"), cHuman('Dont mock the database in tests')]);
+
+  const r = await run(sb, root);
+  const de = r.items.filter((i) => /datenbank/i.test(i.text));
+  assert.equal(de.length, 1);
+  assert.deepEqual(de[0].sessions, ['s1', 's2']);
+  const en = r.items.filter((i) => /mock the database/.test(i.text));
+  assert.equal(en.length, 2, '"Don\'t" vs "Dont" is a judgement for the agent, not an exact collapse');
+});
+
+test('C4(b): no word list decides dropping — "No.", "stop" and praise are all handed over; only blank turns are dropped', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  writeClaudeSession(sb.claude, root, 's1', [cHuman('No.'), cHuman('   '), cHuman('thanks, looks good'), cHuman('stop')]);
+  writeClaudeSession(sb.claude, root, 's2', [cHuman('No.')]);
+  const r = await run(sb, root);
+  const texts = r.items.map((i) => i.text);
+  assert.ok(texts.includes('No.'));
+  assert.ok(texts.includes('stop'));
+  assert.ok(texts.includes('thanks, looks good'));
+  assert.equal(r.items.find((i) => i.text === 'No.').sessions.length, 2);
+  assert.ok(!texts.some((t) => !t.trim()), 'a whitespace-only turn carries nothing to judge');
+  assert.equal(r.items.length, 3);
+});
+
+test('C4(b): lib/ carries no steer-cue, polarity, contrast or explicit-rule word list', () => {
+  const libDir = new URL('../lib/', import.meta.url);
+  const src = readFileSync(new URL('mine.mjs', libDir), 'utf8');
+  for (const name of ['STEER_CUES', 'RULE_CUES', 'POLARITY_GROUPS', 'steerSentences', 'steerKey', 'groupSteers', 'rankGroups', 'contrastSides', 'MINE_FILLER']) {
+    assert.ok(!src.includes(name), `lib/mine.mjs must not carry ${name}`);
+  }
+  for (const f of readdirSync(libDir)) {
+    if (!f.endsWith('.mjs')) continue;
+    const s = readFileSync(new URL(f, libDir), 'utf8');
+    assert.ok(!/STEER_CUES|RULE_CUES|POLARITY_GROUPS/.test(s), `${f} must not carry a steer word list`);
+  }
+});
+
+test('C8: an exact store match becomes a sighting with its status, never an item; secrets never reach the output', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  const accepted = await addPrinciple(sb.store, { statement: 'Always use pnpm for lockfiles', kind: 'principle', why: 'w' });
+  const proposed = await proposePrinciple(sb.store, { statement: 'Never write semicolons', kind: 'antipattern', why: 'w' });
+  await rejectPrinciple(sb.store, proposed.entry.id, { reason: 'style is fine either way' });
+
+  writeClaudeSession(sb.claude, root, 's1', [cHuman('Always use pnpm for lockfiles.')]);
+  writeClaudeSession(sb.claude, root, 's2', [cHuman('always use pnpm for lockfiles')]);
+  writeClaudeSession(sb.claude, root, 's3', [cHuman('Never write semicolons.')]);
+  writeClaudeSession(sb.claude, root, 's4', [cHuman(`from now on always redact secrets like ${SECRETS.join(' ')}`)]);
+
+  const r = await run(sb, root);
+  const pnpm = r.sightings.find((s) => s.id === accepted.id);
+  assert.ok(pnpm, 'an exact restatement of an accepted entry is a sighting');
+  assert.deepEqual(pnpm.sessions, ['s1', 's2']);
+  assert.ok(pnpm.fromRef.startsWith('transcript claude:'));
+  assert.ok(pnpm.excerpt);
+  const semi = r.sightings.find((s) => s.status === 'rejected');
+  assert.ok(semi, 'an exact restatement of a rejected entry is a sighting with its status');
+  assert.equal(semi.reason, 'style is fine either way');
+  assert.ok(!r.items.some((i) => /pnpm|semicolons/.test(i.text)), 'a sighted turn is never also an item');
+
+  const secretItem = r.items.find((i) => /redact secrets/.test(i.text));
+  assert.ok(secretItem, 'the secret-bearing turn is still handed over');
+  const out = JSON.stringify(r);
+  for (const s of SECRETS) assert.ok(!out.includes(s), `output must not contain ${s}`);
+});
+
+test('C7/budget: turns beyond MINE_BATCH are held, counted in remaining, and all come back next sweep — nothing lost', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  const total = MINE_BATCH + 12;
+  const lines = [];
+  for (let i = 0; i < total; i++) lines.push(cHuman(`turn number ${i}`));
+  writeClaudeSession(sb.claude, root, 's1', lines);
+
+  const first = await run(sb, root);
+  assert.equal(first.items.length, MINE_BATCH);
+  assert.equal(first.remaining, 12);
+  await advanceSweep({ storeDir: sb.store, id: first.sweep });
+
+  const second = await run(sb, root);
+  assert.equal(second.nothingNew, false, 'held turns alone make the next sweep worth running');
+  assert.equal(second.items.length, 12);
+  assert.equal(second.remaining, 0);
+  assert.ok(second.items.every((i) => i.earlier === true));
+  const seen = new Set([...first.items, ...second.items].map((i) => i.text));
+  assert.equal(seen.size, total, 'every turn is handed over exactly once across the two sweeps');
+  await advanceSweep({ storeDir: sb.store, id: second.sweep });
+
+  const third = await run(sb, root);
+  assert.equal(third.nothingNew, true, 'handled turns never resurface');
+});
+
+test('budget: the character budget holds long turns back as well', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  const n = Math.ceil(MINE_BATCH_CHARS / 500) + 5;
+  const lines = [];
+  for (let i = 0; i < n; i++) lines.push(cHuman(`${String(i).padStart(4, '0')} ${'w'.repeat(600)}`));
+  writeClaudeSession(sb.claude, root, 's1', lines);
+  const r = await run(sb, root);
+  const chars = r.items.reduce((a, i) => a + i.text.length + i.context.length, 0);
+  assert.ok(chars <= MINE_BATCH_CHARS);
+  assert.ok(r.remaining > 0);
+  assert.equal(r.items.length + r.remaining, n);
+});
+
+test('C4(d)/C7: --keep carries the listed items into the next sweep with earlier:true; unlisted handled items never return', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
   writeClaudeSession(sb.claude, root, 's1', [
-    cAssistant('ok, how should I proceed?'),
-    cHuman('Always run the linter before committing.'),
-    cHuman('Always run the linter before committing.'), // in-session repeat — no inflation
+    cAssistant('I added a trailing comma.'),
+    cHuman('Keine nachgestellten Kommas, bitte.'),
+    cHuman('No.'),
+    cHuman('rename the helper to parseRow'),
   ]);
-  writeClaudeSession(sb.claude, root, 's2', [
-    cHuman('please always run the linter before committing!'),
-  ]);
-  writeClaudeSession(sb.claude, root, 's3', [
-    cHuman('ALWAYS run the linter before committing'),
-  ]);
-  writeClaudeSession(sb.claude, root, 's4', [
-    cHuman('no, not that one file'), // lone, non-explicit — below threshold
-  ]);
-  writeClaudeSession(sb.claude, root, 's5', [
-    cHuman(`from now on always redact secrets like ${SECRETS[0]} and ${SECRETS[1]}`),
-  ]);
-  writeClaudeSession(sb.claude, root, 's6', [
-    cHuman('Always use pnpm for lockfiles.'), // restates the accepted entry
-  ]);
-  writeClaudeSession(sb.claude, root, 's7', [
-    cHuman('Always use pnpm for lockfiles.'),
-  ]);
-  writeClaudeSession(sb.claude, root, 's8', [
-    cHuman('Never write semicolons.'), // restates the rejected entry
-  ]);
-  writeClaudeSession(sb.claude, root, 's9', [
-    cHuman('Never write semicolons.'),
-  ]);
+  const first = await run(sb, root);
+  const keepMe = first.items.find((i) => /Kommas/.test(i.text));
+  await advanceSweep({ storeDir: sb.store, id: first.sweep, keep: [keepMe.id] });
 
-  const { sweep } = await import(MINE);
-  const result = await sweep({ scope: { mode: 'project', roots: [root] }, storeDir: sb.store, env: sb.env });
-
-  assert.equal(result.nothingNew, false);
-  assert.ok(Array.isArray(result.candidates));
-  assert.ok(result.candidates.length <= 10, 'MINE_CAP guards the emitted count');
-
-  const linter = result.candidates.find((c) => /linter/.test(c.text));
-  assert.ok(linter, 'the 3-session steer must qualify as a candidate');
-  assert.equal(linter.recurrence, 3);
-  assert.equal(linter.sessions.length, 3);
-
-  assert.ok(!result.candidates.some((c) => /not that one file/.test(c.text)), 'a lone non-explicit steer must not qualify');
-  assert.ok(result.belowThreshold >= 1);
-
-  const secretCandidate = result.candidates.find((c) => /redact secrets/.test(c.text));
-  assert.ok(secretCandidate);
-  for (const secret of SECRETS) assert.ok(!secretCandidate.text.includes(secret));
-  assert.ok(!JSON.stringify(result).includes(SECRETS[0]));
-
-  const pnpmSighting = result.sightings.find((s) => s.id === accepted.id);
-  assert.ok(pnpmSighting, 'an exact restatement of an accepted entry must be a sighting, never a fresh candidate');
-  assert.ok(!result.candidates.some((c) => /pnpm for lockfiles/.test(c.text)));
-
-  const semicolonSighting = result.sightings.find((s) => s.status === 'rejected');
-  assert.ok(semicolonSighting, 'an exact restatement of a rejected entry must be a sighting with its status');
-  assert.ok(!result.candidates.some((c) => /semicolons/.test(c.text)));
+  writeClaudeSession(sb.claude, root, 's2', [cHuman('Niente virgole finali.')]);
+  const second = await run(sb, root);
+  const kept = second.items.find((i) => /Kommas/.test(i.text));
+  assert.ok(kept, 'the kept turn is re-offered');
+  assert.equal(kept.earlier, true);
+  assert.deepEqual(kept.sessions, ['s1']);
+  assert.equal(kept.context, 'I added a trailing comma.', 'context is re-read from the pointer too');
+  const fresh = second.items.find((i) => /virgole/.test(i.text));
+  assert.ok(fresh, 'the new session’s turn is offered alongside it');
+  assert.equal(fresh.earlier, false);
+  assert.ok(!second.items.some((i) => i.text === 'No.' || /parseRow/.test(i.text)), 'unkept handled turns never come back');
 });
 
-test('C4 remediation via a real sweep: three different phrasings of the same negation across three sessions group into ONE candidate', async () => {
+test('C4(d): a kept turn restated identically in a new session collapses into one earlier item carrying both sessions', async () => {
   const sb = sandbox();
   const root = proj(sb);
-  writeClaudeSession(sb.claude, root, 'r1', [
-    cHuman("No, don't add semicolons at the end of lines in TypeScript files."),
-  ]);
-  writeClaudeSession(sb.claude, root, 'r2', [
-    cHuman("Don't add semicolons at the end of lines in TypeScript files."),
-  ]);
-  writeClaudeSession(sb.claude, root, 'r3', [
-    cHuman('Do not add semicolons at the end of lines in TypeScript files.'),
-  ]);
+  writeClaudeSession(sb.claude, root, 's1', [cHuman('Nie die Datenbank in Tests mocken.')]);
+  const first = await run(sb, root);
+  await advanceSweep({ storeDir: sb.store, id: first.sweep, keep: [first.items[0].id] });
+  writeClaudeSession(sb.claude, root, 's2', [cHuman('Nie die Datenbank in Tests mocken.')]);
+  const second = await run(sb, root);
+  assert.equal(second.items.length, 1);
+  assert.deepEqual(second.items[0].sessions, ['s1', 's2']);
+  assert.equal(second.items[0].earlier, true);
+});
 
-  const { sweep } = await import(MINE);
-  const result = await sweep({ scope: { mode: 'project', roots: [root] }, storeDir: sb.store, env: sb.env });
-  const semicolon = result.candidates.filter((c) => /semicolons/.test(c.text));
-  assert.equal(semicolon.length, 1, 'the three phrasings must group into exactly one candidate');
-  assert.equal(semicolon[0].recurrence, 3);
+test('C7(c): an unknown keep id refuses and advances nothing — the same sweep can still be advanced correctly', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  writeClaudeSession(sb.claude, root, 's1', [cHuman('use tabs, not spaces')]);
+  const first = await run(sb, root);
+  await assert.rejects(() => advanceSweep({ storeDir: sb.store, id: first.sweep, keep: ['t999'] }), /unknown item id/);
+  assert.ok(!existsSync(join(sb.store, '.local', 'mine', 'files')), 'no watermark was written');
+
+  const again = await run(sb, root);
+  assert.equal(again.nothingNew, false, 'the watermark did not move');
+  assert.equal(again.items.length, 1);
+  await advanceSweep({ storeDir: sb.store, id: first.sweep, keep: [first.items[0].id] });
+});
+
+test('C6: kept turns alone are "nothing new"; sweep() never writes the watermark', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  writeClaudeSession(sb.claude, root, 's1', [cHuman('from now on never use var')]);
+  const dry = await run(sb, root);
+  assert.equal(dry.items.length, 1);
+  assert.ok(!existsSync(join(sb.store, '.local', 'mine', 'files')), 'sweep() alone writes no watermark');
+
+  const first = await run(sb, root);
+  await advanceSweep({ storeDir: sb.store, id: first.sweep, keep: [first.items[0].id] });
+  const again = await run(sb, root);
+  assert.equal(again.nothingNew, true);
+  assert.equal(again.sweep, null);
+
+  const rescanned = await run(sb, root, { rescan: true });
+  assert.equal(rescanned.nothingNew, false);
+  assert.equal(rescanned.items.length, 1, 'a rescan collapses the re-read kept turn with its own fresh copy');
+});
+
+test('carry-over: a kept pointer that no longer reads as a human turn is counted in skipped.stalePending', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  const file = writeClaudeSession(sb.claude, root, 's1', [cHuman('a turn to keep')]);
+  const first = await run(sb, root);
+  await advanceSweep({ storeDir: sb.store, id: first.sweep, keep: [first.items[0].id] });
+  writeFileSync(file, `${JSON.stringify({ type: 'summary', summary: 'rewritten' })}\n`.padEnd(400, ' ') + '\n');
+  const second = await run(sb, root, { rescan: true });
+  assert.equal(second.skipped.stalePending, 1);
+});
+
+test('C3: nothing under .local/mine holds turn text or a secret — pointers only', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  const MARK = 'ZXQMARKER';
+  const lines = [];
+  for (let i = 0; i < MINE_BATCH + 3; i++) lines.push(cHuman(`${MARK}${i} ${SECRETS[i % SECRETS.length]}`));
+  writeClaudeSession(sb.claude, root, 's1', lines);
+  const first = await run(sb, root);
+  assert.ok(first.remaining > 0, 'some turns are held (and so persisted as pointers)');
+  // The run record exists before advance; check it too.
+  const check = () => {
+    for (const f of walk(join(sb.store, '.local', 'mine'))) {
+      const text = readFileSync(f, 'utf8');
+      assert.ok(!text.includes(MARK), `${f} must hold no turn text`);
+      for (const s of SECRETS) assert.ok(!text.includes(s), `${f} must hold no secret`);
+    }
+  };
+  check();
+  await advanceSweep({ storeDir: sb.store, id: first.sweep, keep: first.items.slice(0, 3).map((i) => i.id) });
+  check();
+  const steers = JSON.parse(readFileSync(join(sb.store, '.local', 'mine', 'steers.json'), 'utf8'));
+  assert.equal(steers.pending.length, 6, '3 held + 3 kept');
+  for (const p of steers.pending) {
+    assert.deepEqual(Object.keys(p).sort(), ['at', 'pointers', 'reason']);
+    for (const ptr of p.pointers) assert.deepEqual(Object.keys(ptr).sort(), ['ctxEnd', 'ctxStart', 'end', 'file', 'host', 'session', 'start']);
+  }
+  assert.ok(!('seen' in steers), 'the pre-R1 seen map is no longer written');
+});
+
+test('C9: drifted text blocks are counted at sweep level and the result differs from a clean run', async () => {
+  const sbClean = sandbox();
+  const rootClean = proj(sbClean);
+  writeClaudeSession(sbClean.claude, rootClean, 's1', [cHuman('use pnpm')]);
+  const clean = await run(sbClean, rootClean);
+
+  const sb = sandbox();
+  const root = proj(sb);
+  writeClaudeSession(sb.claude, root, 's1', [
+    cHuman('use pnpm'),
+    { type: 'user', message: { role: 'user', content: [{ type: 'text', text: 1 }] } },
+  ]);
+  writeCodexRollout(sb.codex, { id: 'cx', cwd: root }, [
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'ok' }, { type: 'input_text', text: false }] } },
+  ]);
+  const drifted = await run(sb, root);
+  assert.equal(clean.skipped.unrecognised, 0);
+  assert.equal(drifted.skipped.unrecognised, 2);
+  assert.ok(drifted.items.some((i) => i.text === 'use pnpm'));
 });
 
 test('C9 remediation: a Codex rollout with an unrecoverable cwd is scanned (not silently absent) in default project scope', async () => {
@@ -162,51 +310,25 @@ test('C9 remediation: a Codex rollout with an unrecoverable cwd is scanned (not 
     { type: 'future_codex_event', a: 3 },
     { type: 'future_codex_event', a: 4 },
   ]);
-
-  const { sweep } = await import(MINE);
-  const result = await sweep({ scope: { mode: 'project', roots: [root] }, storeDir: sb.store, env: sb.env });
+  const result = await run(sb, root);
   assert.equal(result.nothingNew, false, 'must not read as a clean/empty run');
   assert.equal(result.sessions.scanned, 1);
   assert.equal(result.skipped.unrecognised, 4);
 });
 
-test('C4 across sweeps: a one-off, advanced, then repeated in a new session qualifies via seen', async () => {
+test('C1: a --rescan in one project never re-offers another project’s kept turns', async () => {
   const sb = sandbox();
-  const root = proj(sb);
-  writeClaudeSession(sb.claude, root, 'sA', [cHuman('please stop adding trailing commas')]);
-
-  const { sweep, advanceSweep } = await import(MINE);
-  const first = await sweep({ scope: { mode: 'project', roots: [root] }, storeDir: sb.store, env: sb.env });
-  assert.ok(!first.candidates.some((c) => /trailing commas/.test(c.text)));
-  await advanceSweep({ storeDir: sb.store, id: first.sweep });
-
-  writeClaudeSession(sb.claude, root, 'sB', [cHuman('please stop adding trailing commas')]);
-  const second = await sweep({ scope: { mode: 'project', roots: [root] }, storeDir: sb.store, env: sb.env });
-  assert.ok(second.candidates.some((c) => /trailing commas/.test(c.text)), 'the second sighting must qualify via `seen`');
+  const P = proj(sb, 'p');
+  const Q = proj(sb, 'q');
+  writeClaudeSession(sb.claude, Q, 'sq', [cHuman('only in Q')]);
+  const q = await run(sb, Q);
+  await advanceSweep({ storeDir: sb.store, id: q.sweep, keep: [q.items[0].id] });
+  writeClaudeSession(sb.claude, P, 'sp', [cHuman('only in P')]);
+  const p = await run(sb, P, { rescan: true });
+  assert.deepEqual(p.items.map((i) => i.text), ['only in P']);
 });
 
-test('C6: after sweep + advance, re-sweeping is nothingNew; sweep() alone never writes state', async () => {
-  const sb = sandbox();
-  const root = proj(sb);
-  writeClaudeSession(sb.claude, root, 'sA', [cHuman('from now on never use var, always use const')]);
-
-  const { sweep, advanceSweep } = await import(MINE);
-  const dryRun = await sweep({ scope: { mode: 'project', roots: [root] }, storeDir: sb.store, env: sb.env });
-  assert.ok(dryRun.candidates.length >= 1);
-
-  const { readdirSync, existsSync } = await import('node:fs');
-  const mineDir = join(sb.store, '.local', 'mine');
-  const filesBefore = existsSync(join(mineDir, 'files')) ? readdirSync(join(mineDir, 'files')) : [];
-
-  const first = await sweep({ scope: { mode: 'project', roots: [root] }, storeDir: sb.store, env: sb.env });
-  await advanceSweep({ storeDir: sb.store, id: first.sweep });
-  const again = await sweep({ scope: { mode: 'project', roots: [root] }, storeDir: sb.store, env: sb.env });
-  assert.equal(again.nothingNew, true);
-  assert.equal(again.sweep, null);
-});
-
-test('MINE_CAP mirrors the spec\'s 10-per-sweep row (single source, D6)', async () => {
-  const { MINE_CAP } = await import(MINE);
+test('MINE_CAP mirrors the spec\'s 10-per-sweep row (single source, D6)', () => {
   assert.equal(MINE_CAP, 10);
   const spec = readFileSync(new URL('../templates/principle-capture.md', import.meta.url), 'utf8');
   const m = spec.match(/\*\*(\d+)\*\*\s*\n?\s*per sweep/);
@@ -214,61 +336,11 @@ test('MINE_CAP mirrors the spec\'s 10-per-sweep row (single source, D6)', async 
   assert.equal(Number(m[1]), MINE_CAP);
 });
 
-test('output ceilings: candidate text/excerpt/context are capped', async () => {
+test('output ceilings: item text and context are capped', async () => {
   const sb = sandbox();
   const root = proj(sb);
-  const longText = `From now on always ${'x'.repeat(400)}`;
-  writeClaudeSession(sb.claude, root, 'sA', [
-    cAssistant('y'.repeat(400)),
-    cHuman(longText),
-  ]);
-  const { sweep } = await import(MINE);
-  const result = await sweep({ scope: { mode: 'project', roots: [root] }, storeDir: sb.store, env: sb.env });
-  const c = result.candidates[0];
-  assert.ok(c.text.length <= 300);
-  assert.ok(c.excerpt.length <= 500);
-  assert.ok(c.context.length <= 300);
-});
-
-// Phase 26 verify, C4 — contractions never split a repeat, and a contrast keeps its two
-// sides apart so opposite corrections never merge into one false recurrence.
-test('steerKey: contraction and spelling variants of one instruction share a key', async () => {
-  const { steerKey } = await import(MINE);
-  const k = (s) => steerKey(s).key;
-  for (const group of [
-    ["Don't mock the database in tests", 'Dont mock the database in tests', 'Do not mock the database in tests'],
-    ["You shouldn't push directly to main.", 'You should not push directly to main.', 'You shouldnt push directly to main.'],
-    ['never mock the database in tests', 'in tests, never mock the database', 'No, never mock the database in tests please'],
-  ]) {
-    assert.equal(new Set(group.map(k)).size, 1, `one key expected for: ${group.join(' / ')}`);
-  }
-});
-
-test('steerKey: opposite contrasts get different keys', async () => {
-  const { steerKey } = await import(MINE);
-  const k = (s) => steerKey(s).key;
-  for (const [a, b] of [
-    ['no, use tabs not spaces', 'no, use spaces not tabs'],
-    ['always use tabs, never spaces', 'always use spaces, never tabs'],
-    ['use tabs, not spaces', 'use spaces, not tabs'],
-    ['use pnpm instead of npm', 'use npm instead of pnpm'],
-    ['always run the linter', 'never run the linter'],
-  ]) {
-    assert.notEqual(k(a), k(b), `${a} vs ${b}`);
-  }
-});
-
-test('mine: "Don\'t" in one session and "Dont" in another is one steer recurring twice', async () => {
-  const { groupSteers } = await import(MINE);
-  const groups = groupSteers([
-    { sentence: "Don't mock the database in tests", explicit: false, session: 's0' },
-    { sentence: 'Dont mock the database in tests', explicit: false, session: 's1' },
-    { sentence: 'no, use tabs not spaces', explicit: false, session: 's0' },
-    { sentence: 'no, use spaces not tabs', explicit: false, session: 's1' },
-  ]);
-  const groupOf = (sentence) => groups.find((g) => g.occurrences.some((o) => o.sentence === sentence));
-  assert.equal(groupOf("Don't mock the database in tests").recurrence, 2, 'the mock steer recurs across both sessions');
-  assert.equal(groupOf("Don't mock the database in tests"), groupOf('Dont mock the database in tests'));
-  assert.notEqual(groupOf('no, use tabs not spaces'), groupOf('no, use spaces not tabs'), 'opposite contrasts never merge');
-  assert.equal(groupOf('no, use tabs not spaces').recurrence, 1);
+  writeClaudeSession(sb.claude, root, 's1', [cAssistant('y'.repeat(400)), cHuman(`From now on ${'x'.repeat(700)}`)]);
+  const r = await run(sb, root);
+  assert.ok(r.items[0].text.length <= 500);
+  assert.ok(r.items[0].context.length <= 300);
 });

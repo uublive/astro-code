@@ -165,7 +165,7 @@ const ALLOWED_FLAGS = {
   'principles cite': ['stage', 'by'],
   // Phase 26 (P1) — the transcript sweep. Read-only towards the watermark unless
   // --advance is given; a typo'd flag must not silently degrade into the wrong scope.
-  'principles mine': ['all', 'project', 'rescan', 'json', 'advance'],
+  'principles mine': ['all', 'project', 'rescan', 'json', 'advance', 'keep'],
 };
 
 function checkFlags(key, flags) {
@@ -370,8 +370,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac principles ask "<question>" [--stage s] [--by role] [--json]  keyword-ranked search, says why it matched
   ac principles cite <id>… [--stage s] [--by role]  record that these principles were applied
   ac principles list --usage [--json]  served-never-cited and never-served, from the local usage log
-  ac principles mine [--all|--project <path>] [--rescan] [--json]   sweep past sessions for steers (read-only)
-  ac principles mine --advance <sweep-id>   mark that sweep's material as processed
+  ac principles mine [--all|--project <path>] [--rescan] [--json]   hand over a batch of past human turns (read-only)
+  ac principles mine --advance <sweep-id> [--keep <id,id,...>]   mark that sweep processed, carrying the kept turns forward
   ac phase reject <phase> --reason … [--agent name]  UAT failed → rejected + record a blocker
                                        (--agent: machine-signed rejection, not human UAT)
   ac phase surprise <phase> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]
@@ -1370,13 +1370,17 @@ async function main() {
         checkFlags('principles mine', flags);
         if (flags.all && flags.project) die('ac principles mine: --all and --project are mutually exclusive');
 
+        if (flags.keep !== undefined && flags.advance === undefined) die('ac principles mine: --keep only goes with --advance <sweep-id>');
         if (typeof flags.advance === 'string' || flags.advance === true) {
           const sweepId = typeof flags.advance === 'string' ? flags.advance : pos[1];
-          if (!sweepId) die('usage: ac principles mine --advance <sweep-id>');
+          if (!sweepId) die('usage: ac principles mine --advance <sweep-id> [--keep <id,id,...>]');
+          if (flags.keep === true) die('usage: ac principles mine --advance <sweep-id> --keep <id,id,...>');
+          const keep = typeof flags.keep === 'string' ? flags.keep.split(',').map((k) => k.trim()).filter(Boolean) : [];
+          let res;
           try {
-            await advanceSweep({ storeDir: dir, id: sweepId });
+            res = await advanceSweep({ storeDir: dir, id: sweepId, keep });
           } catch (e) { die(e.message); }
-          console.log(`✓ advanced sweep ${sweepId}`);
+          console.log(`✓ advanced sweep ${sweepId}${res && res.kept ? ` — ${res.kept} turn(s) kept for later sweeps` : ''}`);
           return;
         }
 
@@ -1386,9 +1390,10 @@ async function main() {
         // rather than dying on a read-only sweep (macOS /var vs /private/var, D-P2).
         let real = root;
         try { real = realpathSync(root); } catch { /* keep root */ }
+        const roots = [root, real];
         const scope = flags.all
           ? { mode: 'all', roots: [] }
-          : { mode: 'project', roots: [...new Set([root, real])] };
+          : { mode: 'project', roots: [...new Set(roots)] };
         let result;
         try {
           result = await sweep({ scope, rescan: !!flags.rescan, storeDir: dir });
@@ -1400,13 +1405,15 @@ async function main() {
           console.log(`• nothing new to mine (${result.sessions.scanned} session file(s) checked)`);
           return;
         }
-        console.log(`• ${result.candidates.length} candidate(s) from ${result.sessions.scanned} session file(s) — sweep ${result.sweep}`);
-        result.candidates.forEach((c, i) => {
-          const strength = c.explicit ? 'rule' : `${c.recurrence} sessions`;
-          console.log(`  ${i + 1}. [${strength}] ${c.text}`);
-        });
+        console.log(`• ${result.items.length} turn(s) from ${result.sessions.scanned} session file(s) — sweep ${result.sweep}`);
+        for (const it of result.items) {
+          const oneLine = it.text.replace(/\s+/g, ' ').trim();
+          const shown = oneLine.length > 120 ? `${oneLine.slice(0, 119)}…` : oneLine;
+          const n = it.sessions.length;
+          console.log(`  ${it.id} [${n} session${n === 1 ? '' : 's'}${it.earlier ? ', earlier' : ''}] ${shown}`);
+        }
         if (result.sightings.length) console.log(`• ${result.sightings.length} exact repeat(s) to record as sightings`);
-        if (result.remaining) console.log(`• ${result.remaining} more candidate(s) held for the next sweep`);
+        if (result.remaining) console.log(`• ${result.remaining} more turn(s) held for the next sweep`);
         const skippedTotal = result.skipped.malformed + result.skipped.unrecognised + result.skipped.oversized + result.skipped.stalePending;
         if (skippedTotal > 0) {
           console.log(`⚠ skipped ${skippedTotal} transcript line(s): ${result.skipped.malformed} malformed, ${result.skipped.unrecognised} unrecognised, ${result.skipped.oversized} oversized`);
