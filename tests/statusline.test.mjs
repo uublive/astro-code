@@ -468,6 +468,40 @@ test('the statusline hook composes model + context bar from stdin + transcript',
   assert.match(r.stdout, /⊡ M1 · ‹2 \(P3\)/, 'the project identity segment still there');
 });
 
+// The window Claude Code itself uses — `context_window` in the stdin blob — beats our
+// model table. The table only knows Claude ids, so a local model (Qwen via LiteLLM, a
+// 131,072 window) read as a 1M window: ~100k tokens showed "10%" while Claude Code was
+// already auto-compacting. Claude Code's own figure is what compaction runs on.
+function runWithContextWindow(contextWindow, model = { id: 'Qwen3.8-27B-FP8', display_name: 'Qwen3.8-27B-FP8' }) {
+  const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-sl-cw-'));
+  const tp = join(fakeHome, 'transcript.jsonl');
+  writeFileSync(tp, JSON.stringify({ message: { usage: { input_tokens: 10_000, cache_read_input_tokens: 90_000 } } }));
+  const blob = { workspace: { current_dir: root }, model, transcript_path: tp };
+  if (contextWindow !== undefined) blob.context_window = contextWindow;
+  return spawnSync(process.execPath, [join(FRAMEWORK, 'hooks', 'astro-statusline.mjs'), join(fakeHome, '.claude')], {
+    input: JSON.stringify(blob),
+    env: { ...process.env, HOME: fakeHome, NO_COLOR: '1' },
+    encoding: 'utf8',
+  });
+}
+
+test('the context gauge uses the window Claude Code reports, not the model table (a local model)', () => {
+  const r = runWithContextWindow({ context_window_size: 131_072, total_input_tokens: 100_000, used_percentage: 76 });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /ctx [█░]{5} 76%/, `a 131,072 window at 100k tokens is 76%, not 10%:\n${r.stdout}`);
+});
+
+test("Claude Code's window is used even when it reports no token count yet — the transcript fills in", () => {
+  const r = runWithContextWindow({ context_window_size: 131_072, total_input_tokens: 0, used_percentage: null });
+  assert.match(r.stdout, /ctx [█░]{5} 76%/, `the transcript's 100k over the reported window:\n${r.stdout}`);
+});
+
+test('with no context_window in the blob (older Claude Code) the model table still decides', () => {
+  const r = runWithContextWindow(undefined, { id: 'claude-opus-4-8', display_name: 'Opus 4.8' });
+  assert.match(r.stdout, /ctx [█░]{5} 10%/, 'Opus 4.8 → 1M from the table');
+});
+
 // --- rate-limit quota: end-to-end through the real hook ----------------------
 
 // A fresh project + isolated HOME per call, so nothing leaks between cases.
