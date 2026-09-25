@@ -33,7 +33,7 @@ Preference).
 | `statement` | yes | string, non-empty after whitespace collapses | the principle text itself |
 | `why` | no | string | the rationale, if forge has one |
 | `status` | yes | string, one of `approved`, `pending`, `rejected`, `superseded` | forge's human decision — see the mapping table below |
-| `confidence` | no | string, one of `low`, `normal` | a low-confidence node never lands `accepted`, however `status` reads |
+| `confidence` | no | string, one of `low`, `normal` | informational only — carried into the imported entry's history verbatim; it never changes the status a node lands on, which is driven by `status` alone (see the mapping table below) |
 | `created` | no | string (ISO-8601) | when forge first captured it; defaults to `exported_at` |
 | `reason` | only with `status: rejected` | string, non-empty | forge's own rejection reason; a rejected node with none still imports (a fixed reason is used) |
 | `superseded_by` | only with `status: superseded` | string (a slug, never itself) | the node that replaced it; may point to a slug elsewhere in this same file |
@@ -53,7 +53,7 @@ Linked evidence for one node — the words that led forge to capture it.
 
 | forge `status` | imported `status` | notes |
 | --- | --- | --- |
-| `approved` | `accepted` | unless `confidence: low` is also unapproved in forge's own queue — forge's `approved` always means a human said yes |
+| `approved` | `accepted` | regardless of `confidence` — forge's `approved` always means a human said yes, so a low-confidence node can still land `accepted` |
 | `pending` | `proposed` | reviewable via `ac principles list --proposed` / `/astro-review`, exactly like any other proposal |
 | `rejected` | `rejected` | `reason` carried verbatim when forge gave one, else a fixed non-empty reason |
 | `superseded`, target resolves (in this file or already known) | `superseded` | `superseded-by` points at the resolved entry |
