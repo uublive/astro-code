@@ -186,3 +186,24 @@ test('passphrases, _PASS names, quoted -p, curl -u, sshpass, curly quotes and @ 
   assert.equal(redactSecrets('BYPASS_CACHE=1 and COMPASS_DIR=/x'), 'BYPASS_CACHE=1 and COMPASS_DIR=/x', 'PASS inside a word is not a secret name');
   assert.equal(redactSecrets(redactSecrets('DB_PASS=abc')), redactSecrets('DB_PASS=abc'), 'idempotent');
 });
+
+// Phase 26 verify (C3, fifth round): quoted/curly values on every CLI rule, glued and
+// quoted curl -u, a URL with an empty user, docker login -p, GitLab tokens.
+test('quoted and curly values on CLI flags, curl -u variants, redis://:pw@, docker login -p and glpat- are masked', async () => {
+  const { redactSecrets } = await import('../lib/redact.mjs');
+  const cases = [
+    ["sshpass -p 'my sshpw tailSecret' ssh h", ['sshpw', 'tailSecret']],
+    ['run it --password “curly flag tailZ” now', ['curly', 'tailZ']],
+    ["curl -u 'admin:pw tailY' https://x", ['tailY']],
+    ['curl -uadmin:GluedPw99 https://x', ['GluedPw99']],
+    ['cache at redis://:R3disSecretPw@cache:6379', ['R3disSecretPw']],
+    ['docker login -p Dk3rPass registry.example.com', ['Dk3rPass']],
+    ['token glpat-AbCdEfGhIjKlMnOpQrSt leaked', ['glpat-AbCdEf']],
+  ];
+  for (const [input, secrets] of cases) {
+    const out = redactSecrets(input);
+    for (const s of secrets) assert.ok(!out.includes(s), `leaked "${s}" in: ${out}`);
+  }
+  assert.ok(redactSecrets('cache at redis://:R3disSecretPw@cache:6379').includes('cache:6379'), 'host stays readable');
+  assert.ok(redactSecrets('curl -uadmin:GluedPw99 https://x').includes('admin'), 'user stays readable');
+});
