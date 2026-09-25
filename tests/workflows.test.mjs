@@ -2667,7 +2667,7 @@ async function runWorkflow(args, { discoverTasks, batchCommitted, integ, gate, a
     // an exact fingerprint rather than a by-elimination one. The looser `passed` check
     // stays as a backstop and must remain AFTER the verifier's `criteriaFound`, whose
     // VERIFY_SCHEMA also carries `passed`.
-    if ('ranSuite' in props || 'passed' in props) return gate || { ranSuite: true, passed: true }
+    if ('ranSuite' in props || 'passed' in props) return gate || { ranSuite: true, passed: true, testsRun: 12 }
     // No schema: runOnBranch / runHealOnBranch's per-task executor prompt.
     return { summary: 'done' }
   }
@@ -3200,6 +3200,72 @@ test('ADR-028: a suite that EXISTS and fails still stops the phase', async () =>
   )
 })
 
+// ── #79: a suite that runs ZERO tests proves nothing ──────────────────────────────────
+//
+// `node --test` over a glob that matches nothing exits 0 with `tests 0`, so an agent
+// asked only "did every test pass?" answers yes — vacuously. A wave that just lost its
+// test directory then passed the gate built to catch it. The gate now decides on a
+// required count of tests EXECUTED (skipped/todo excluded), and fails closed: a missing
+// or malformed count is read as zero, never as success. A project with no runner at all
+// keeps ADR-028's unproven path — that is a different claim from "the runner ran nothing".
+
+test('#79: TESTGATE_SCHEMA requires an integer testsRun', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const schemaMatch = wfSrc.match(/const TESTGATE_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+  assert.strictEqual(schema.properties?.testsRun?.type, 'integer', 'testsRun must be an integer')
+  assert.ok(schema.required.includes('testsRun'), 'testsRun must be REQUIRED — an omitted count is the #79 hole')
+})
+
+test('#79: the gate prompt defines testsRun as executed tests and says zero is not a pass', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const startIdx = wfSrc.indexOf('const runTestSuite')
+  const end = wfSrc.indexOf('\n\n', startIdx)
+  const window = wfSrc.slice(startIdx, end)
+  assert.match(window, /testsRun/, 'the prompt must ask for testsRun')
+  assert.match(window, /skipped/i, 'the prompt must exclude skipped/todo tests from the count')
+  assert.match(window, /(zero|0) tests?/i, 'the prompt must say a suite that runs zero tests is not a pass')
+})
+
+for (const [label, gate] of [
+  ['testsRun:0', { ranSuite: true, passed: true, testsRun: 0 }],
+  ['a missing testsRun', { ranSuite: true, passed: true }],
+  ['a null testsRun', { ranSuite: true, passed: true, testsRun: null }],
+  ['a string testsRun', { ranSuite: true, passed: true, testsRun: '12' }],
+  ['a negative testsRun', { ranSuite: true, passed: true, testsRun: -1 }],
+]) {
+  test(`#79: a suite that ran with ${label} stops the phase — zero executed tests prove nothing`, async () => {
+    const { result, logs } = await runWorkflow(HEAL_ARGS, {
+      discoverTasks: wideTasks(3),
+      integ: HEAL_INTEG,
+      gate,
+    })
+    assert.ok(result.integrationFailed, `passed:true with ${label} must not read as a green gate`)
+    assert.match(result.integrationFailed.note, /ran no tests|0 tests/i, 'the note must say the suite executed nothing')
+    assert.ok(logs.some((l) => l.includes('test gate failed after heal')), 'the stop must be logged')
+  })
+}
+
+test('#79: a suite that executed tests and passed still passes the gate', async () => {
+  const { result, logs } = await runWorkflow(HEAL_ARGS, {
+    discoverTasks: wideTasks(3),
+    integ: HEAL_INTEG,
+    gate: { ranSuite: true, passed: true, testsRun: 1 },
+  })
+  assert.strictEqual(result.integrationFailed, null)
+  assert.ok(logs.some((l) => l.includes('test gate passed after heal')))
+})
+
+test('#79: a project with no runner keeps the ADR-028 unproven path whatever testsRun says', async () => {
+  const { result, logs } = await runWorkflow(HEAL_ARGS, {
+    discoverTasks: wideTasks(3),
+    integ: HEAL_INTEG,
+    gate: { ranSuite: false, passed: true, testsRun: 0 },
+  })
+  assert.strictEqual(result.integrationFailed, null, 'no runner at all is not a failure (ADR-028)')
+  assert.ok(logs.some((l) => l.includes('test gate SKIPPED')))
+})
+
 // ── ADR-031: the implementer sees the acceptance bar; re-verify keeps full coverage ──
 //
 // Measured on a real project: half of all execute runs failed first-pass verification and
@@ -3721,7 +3787,7 @@ test('#25: heal-teardown leftovers carry their reason; an unreported branch is s
   const { result } = await runWorkflow(HEAL_ARGS, {
     discoverTasks: wideTasks(3),
     integ: HEAL_INTEG,
-    gate: { ranSuite: true, passed: true },
+    gate: { ranSuite: true, passed: true, testsRun: 12 },
     teardown: { removed: [], leftover: [{ branch: 'worktree-t2', worktree: null, reason: '`git branch -D` denied' }] },
   })
   const t2 = (result.leftovers || []).find((l) => l.branch === 'worktree-t2')
@@ -3731,7 +3797,7 @@ test('#25: heal-teardown leftovers carry their reason; an unreported branch is s
   const silent = await runWorkflow(HEAL_ARGS, {
     discoverTasks: wideTasks(3),
     integ: HEAL_INTEG,
-    gate: { ranSuite: true, passed: true },
+    gate: { ranSuite: true, passed: true, testsRun: 12 },
     teardown: { removed: [] },
   })
   const s2 = (silent.result.leftovers || []).find((l) => l.branch === 'worktree-t2')
@@ -3742,7 +3808,7 @@ test('#25: a clean teardown leaves nothing in result.leftovers', async () => {
   const { result } = await runWorkflow(HEAL_ARGS, {
     discoverTasks: wideTasks(3),
     integ: HEAL_INTEG,
-    gate: { ranSuite: true, passed: true },
+    gate: { ranSuite: true, passed: true, testsRun: 12 },
     teardown: { removed: ['worktree-t2'] },
   })
   assert.deepStrictEqual(result.leftovers, [])
@@ -3810,7 +3876,7 @@ test('#21: a reported branch routed to heal as stale is accounted for, and heals
         staleBranches: [{ branch: 'worktree-wf-21', taskId: 't2' }],
         position: { toplevel: '/tmp/p', branch: 'main' },
       },
-      gate: { ranSuite: true, passed: true },
+      gate: { ranSuite: true, passed: true, testsRun: 12 },
     },
   )
   assert.ok(calls.some((c) => c.opts && c.opts.label && labelId(c.opts.label) === 'heal:t2'), 'a stale branch still goes to the heal ladder')
@@ -3879,7 +3945,7 @@ test('#22: a moved-base branch is integrated and forces the test gate — no hea
           { branch: 'worktree-9', taskId: 't7', movedFiles: ['.astrocode/phases/10-next/PLAN.md'] },
         ],
       },
-      gate: { ranSuite: true, passed: true },
+      gate: { ranSuite: true, passed: true, testsRun: 12 },
     },
   )
   assert.strictEqual(result.integrationFailed, null)

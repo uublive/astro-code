@@ -130,3 +130,88 @@ test('#37: the --number repair refuses anything but that exact case', async () =
   assert.match(ac(['milestone', 'new', '--number', '4'], dir).stderr, /--number is only for `ac milestone new --planned`/);
   assert.match(ac(['milestone', 'new', '--plannd'], dir).stderr, /unknown flag/);
 });
+
+// #76 — a milestone claimed ACTIVE but not the project's current one (every claim made
+// before v0.28.0, and every `ac claim milestone` today) got none of #37's guidance: status
+// listed only `planned`, the close hint always said `milestone new`, and so did the note.
+function waitingActiveFixture() {
+  const dir = fixture();
+  assert.equal(ac(['claim', 'milestone'], dir).status, 0); // claims 2 as active; the project stays on 1
+  assert.equal(msClaim(dir, 2).status, 'active');
+  assert.equal(ac(['phase', 'add', 'later work', '--milestone', '2'], dir).status, 0);
+  assert.equal(ac(['phase', 'add', 'now work'], dir).status, 0);
+  assert.equal(ac(['phase', 'verify', '2'], dir).status, 0);
+  assert.equal(ac(['phase', 'accept', '2', '--agent', 'f'], dir).status, 0);
+  return dir;
+}
+
+test('#76: closing a milestone points at an active-claimed milestone that is waiting, not only at `new`', () => {
+  const dir = waitingActiveFixture();
+  const close = ac(['milestone', 'complete'], dir);
+  assert.equal(close.status, 0, close.stderr);
+  assert.match(close.stdout, /milestone 2 is waiting — start it with `ac milestone activate 2`/);
+});
+
+test('#76: status lists an active-claimed, non-current milestone like a planned one', () => {
+  const dir = waitingActiveFixture();
+  assert.equal(ac(['milestone', 'complete'], dir).status, 0);
+  assert.match(ac(['status'], dir).stdout, /Planned: {3}milestone 2 — phases 1 {2}\(`ac milestone activate 2`\)/);
+});
+
+test('#76: `milestone new` notes an active-claimed milestone that is waiting', () => {
+  const dir = waitingActiveFixture();
+  assert.equal(ac(['milestone', 'complete'], dir).status, 0);
+  const r = ac(['milestone', 'new', '--name', 'next'], dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /note: milestone 2 is waiting — `ac milestone activate 2`/);
+  assert.doesNotMatch(r.stdout, /note: milestone 3/, 'the milestone just started is not waiting');
+});
+
+test('#76: with nothing waiting, the close hint still says `milestone new`, and the current milestone is never listed', () => {
+  const dir = fixture();
+  assert.equal(ac(['phase', 'add', 'only'], dir).status, 0);
+  assert.equal(ac(['phase', 'verify', '1'], dir).status, 0);
+  assert.equal(ac(['phase', 'accept', '1', '--agent', 'f'], dir).status, 0);
+  assert.doesNotMatch(ac(['status'], dir).stdout, /Planned: {3}milestone 1/, 'the current milestone is not waiting');
+  const close = ac(['milestone', 'complete'], dir);
+  assert.match(close.stdout, /start the next cycle with `ac milestone new`/);
+  assert.doesNotMatch(close.stdout, /is waiting/);
+});
+
+// #78 — a milestone name has no slug and no path (unlike a phase's), so correcting it is
+// cheap and safe; before this the only route was hand-editing registry.json.
+test('#78: `milestone rename` changes only the name, for a planned and for a closed milestone', () => {
+  const dir = fixture();
+  assert.equal(ac(['milestone', 'new', '--planned', '--name', 'Later work'], dir).status, 0);
+  const before = readRegistry(dir).registry.claims.map((c) => ({ ...c }));
+  const r = ac(['milestone', 'rename', '2', 'Head: better name'], dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /✓ milestone 2 renamed "Later work" → "Head: better name"/);
+  const after = readRegistry(dir).registry.claims;
+  assert.equal(msClaim(dir, 2).name, 'Head: better name');
+  assert.equal(msClaim(dir, 2).status, 'planned', 'status untouched');
+  assert.deepEqual(after.map(({ name, ...rest }) => rest), before.map(({ name, ...rest }) => rest), 'nothing but the name changes');
+  assert.match(ac(['status'], dir).stdout, /Planned: {3}milestone 2 "Head: better name"/);
+
+  // a closed milestone can be renamed too — the naming-convention case in the report
+  assert.equal(ac(['phase', 'add', 'x'], dir).status, 0);
+  assert.equal(ac(['phase', 'verify', '1'], dir).status, 0);
+  assert.equal(ac(['phase', 'accept', '1', '--agent', 'f'], dir).status, 0);
+  assert.equal(ac(['milestone', 'complete'], dir).status, 0);
+  assert.equal(msClaim(dir, 1).status, 'complete');
+  assert.equal(ac(['milestone', 'rename', '1', 'Head: first'], dir).status, 0);
+  assert.equal(msClaim(dir, 1).name, 'Head: first');
+});
+
+test('#78: rename refuses an unclaimed number, an empty name and unknown flags; the same name is a no-op', () => {
+  const dir = fixture();
+  assert.equal(ac(['milestone', 'new', '--planned', '--name', 'Later'], dir).status, 0);
+  const snap = JSON.stringify(readRegistry(dir).registry);
+  const unclaimed = ac(['milestone', 'rename', '9', 'X'], dir);
+  assert.notEqual(unclaimed.status, 0);
+  assert.match(unclaimed.stderr, /milestone 9 is not claimed/);
+  assert.notEqual(ac(['milestone', 'rename', '2'], dir).status, 0, 'a name is required');
+  assert.match(ac(['milestone', 'rename', '2', 'Y', '--force'], dir).stderr, /unknown flag/);
+  assert.match(ac(['milestone', 'rename', '2', 'Later'], dir).stdout, /already named "Later"/);
+  assert.equal(JSON.stringify(readRegistry(dir).registry), snap, 'none of these wrote to the registry');
+});

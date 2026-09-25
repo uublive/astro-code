@@ -15,7 +15,7 @@ import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, rejectPhase, setPhaseEffort, setPhaseNote, setPhaseMilestone, isPhasePlanned } from '../lib/roadmap.mjs';
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
-import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims } from '../lib/registry.mjs';
+import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims, waitingMilestones, renameMilestone } from '../lib/registry.mjs';
 import { addFix, acceptFix, setFixStatus, findFix, openFixes, loadFixes, FIX_STATUSES } from '../lib/fixes.mjs';
 import {
   addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt,
@@ -128,6 +128,7 @@ const ALLOWED_FLAGS = {
   // #37 — `--planned` declares without activating; `--number` is the guarded repair
   'milestone new': ['name', 'vision', 'planned', 'number'],
   'milestone activate': [],
+  'milestone rename': [],
   // #63 — the text is an argument, not a flag: `--note` (what `backlog add` takes) used to
   // be ignored here and the call read the note instead of writing it.
   'backlog note': [],
@@ -316,6 +317,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac milestone new --planned [--name "…"]  declare a later milestone without starting it
                                        (--number N: one-time repair when phases already reference N)
   ac milestone activate <n>           move the project into a planned milestone
+  ac milestone rename <n> "<name>"    correct a claimed milestone's name (any status; name only)
   ac milestone check "<name>"         see if a milestone with a similar name exists
   ac milestone complete [--force]     archive the current milestone + retire its claims
                                        (refuses while a phase is not complete; --force overrides)
@@ -1166,7 +1168,7 @@ async function main() {
           }
           ref = res.id;
           const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
-          console.log(`✓ promoted ${target.id} → ${res.id} ${tag}`);
+          console.log(`✓ promoted ${target.id} → ${res.id} ${tag}${res.existing ? ' · already recorded, nothing added' : ''}`);
           if (res.publishedConventions) console.log(`✓ published CONVENTIONS.md to ${res.branch}`);
           if (res.conventionsRefused) {
             const c = res.conventionsRefused;
@@ -1555,7 +1557,7 @@ async function main() {
       // that reached that state before the check existed)
       if (reg.available && reg.registry.claims.length) {
         const ms = milestoneClaims(reg.registry);
-        for (const c of [...ms.values()].filter((x) => x.status === 'planned').sort((a, b) => a.number - b.number)) {
+        for (const c of waitingMilestones(reg.registry, st?.active_milestone ?? rm.milestone)) {
           const ph = rm.phases.filter((p) => p.milestone === c.number).map((p) => p.number);
           console.log(`Planned:   milestone ${c.number}${c.name ? ` "${c.name}"` : ''}${ph.length ? ` — phases ${ph.join(', ')}` : ' — nothing assigned yet'}  (\`ac milestone activate ${c.number}\`)`);
         }
@@ -1696,8 +1698,10 @@ async function main() {
         await updateState(r, (s) => ({ ...s, active_milestone: res.number, status: 'planning' }));
         await setMilestone(r, res.number);
         console.log(`✓ milestone ${res.number}${name ? ` "${name}"` : ''} [${res.source}] — ${res.message ?? ''}`);
-        for (const c of milestoneClaims(readRegistry(r).registry).values()) {
-          if (c.status === 'planned') console.log(`  note: milestone ${c.number}${c.name ? ` "${c.name}"` : ''} is planned — \`ac milestone activate ${c.number}\` starts a planned milestone instead`);
+        for (const c of waitingMilestones(readRegistry(r).registry, res.number)) {
+          console.log(c.status === 'planned'
+            ? `  note: milestone ${c.number}${c.name ? ` "${c.name}"` : ''} is planned — \`ac milestone activate ${c.number}\` starts a planned milestone instead`
+            : `  note: milestone ${c.number}${c.name ? ` "${c.name}"` : ''} is waiting — \`ac milestone activate ${c.number}\` starts it instead`);
         }
         warnNameMatches(res.matches, gitIdentity(r).owner);
       } else if (pos[0] === 'activate') {
@@ -1716,6 +1720,17 @@ async function main() {
         if (left.length) {
           console.log(`  milestone ${prev} still has ${left.length} unfinished phase(s): ${left.map((ph) => ph.number).join(', ')} — they stay on the roadmap`);
         }
+      } else if (pos[0] === 'rename') {
+        // #78 — a milestone name has no slug or path, so it can be corrected at any status
+        checkFlags('milestone rename', flags);
+        const n = Number(pos[1]);
+        const name = pos.slice(2).join(' ').trim();
+        if (!Number.isInteger(n) || n < 1 || !name) die('usage: ac milestone rename <n> "<name>"');
+        const ren = renameMilestone({ root: r, number: n, name });
+        if (!ren.ok) die(ren.error);
+        if (ren.unchanged) { console.log(`• milestone ${n} is already named "${name}"`); return; }
+        console.log(`✓ milestone ${n} renamed ${ren.previous ? `"${ren.previous}"` : '(unnamed)'} → "${name}" [${ren.branch}]`);
+        warnNameMatches(ren.matches, gitIdentity(r).owner);
       } else if (pos[0] === 'check') {
         const name = pos.slice(1).join(' ').trim();
         if (!name) die('usage: ac milestone check "<name>"');
@@ -1752,7 +1767,13 @@ async function main() {
         console.log(`✓ milestone ${arch.milestone} complete — archived ${arch.archived} phase(s) → ${arch.archiveDir}`);
         if (arch.kept) console.log(`  kept ${arch.kept} phase(s) scheduled for a later milestone on the roadmap`);
         if (released.ok && released.source === 'remote') console.log(`  retired ${released.changed} registry claim(s)`);
-        console.log('  start the next cycle with `ac milestone new`');
+        // #76 — a milestone already claimed and waiting is the next cycle; claiming another
+        // with `milestone new` would skip it
+        const waiting = released.ok && released.source === 'remote' ? waitingMilestones(readRegistry(r).registry, arch.milestone) : [];
+        for (const c of waiting) {
+          console.log(`  milestone ${c.number}${c.name ? ` "${c.name}"` : ''} is waiting — start it with \`ac milestone activate ${c.number}\``);
+        }
+        console.log(waiting.length ? '  or claim a new one with `ac milestone new`' : '  start the next cycle with `ac milestone new`');
       } else if (pos[0] === 'harvest') {
         // Phase 23 (P5) — the retrospective sweep material for `/astro-complete-milestone`'s
         // principle sweep. Read-only: never mutates roadmap, state, or the principle store.
@@ -1797,7 +1818,7 @@ async function main() {
           console.log(`• skipped: ${skipped.agentContexts} agent-captured CONTEXT, ${skipped.agentRejections} agent-signed rejection(s)`);
         }
       } else {
-        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|check "<name>"|complete|harvest [<n>]>');
+        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|rename <n> "<name>"|check "<name>"|complete|harvest [<n>]>');
       }
       return;
     }
@@ -2436,6 +2457,12 @@ async function main() {
           die(`refused — ${lines.join(' ')}`);
         }
         const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
+        // #77 — the identical decision is already in force: nothing is added, and the
+        // existing id is what a retry (or a caller citing the decision) needs.
+        if (res.existing) {
+          console.log(`• already recorded as ${res.id} — ${res.title} ${tag} · in force, nothing added`);
+          return;
+        }
         console.log(`✓ ${res.id} — ${res.title} (${res.date}) ${tag}`);
         if (res.publishedConventions) console.log(`✓ published CONVENTIONS.md to ${res.branch}`);
         // ADR-053 (D3) — the implicit publish REFUSED because it would have overwritten a
