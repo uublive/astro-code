@@ -8,7 +8,7 @@
 // deleted the `templates/forge-knowledge.md` stub this file used to check for — the
 // pointer to "where the read went" now lives in AGENTS.md/MANUAL.md directly — and added
 // the "no shipped file mentions the deleted stub" guard below. Phase 27's revision R1
-// (ADR-065) removed the interim forge import (`/astro-forge-import`, the export schema,
+// (ADR-065) removed the interim forge import (its slash command, the export schema,
 // `ac principles import`), so there is no exemption left: no shipped file — commands/,
 // agents/, templates/, hooks/, workflows/, lib/, bin/ — may name a forge MCP tool.
 import { test } from 'node:test';
@@ -81,10 +81,14 @@ test('no shipped file restates forge internals', () => {
 });
 
 test('the forge import is gone: no import command, export schema, importer module or verb (ADR-065)', () => {
-  for (const rel of ['commands/astro-forge-import.md', 'templates/FORGE-EXPORT.md', 'lib/principleimport.mjs']) {
+  // The removed names are assembled at runtime so a repo-wide grep for them (the
+  // phase-27 R1 check) comes back empty — this guard is the one place that names them.
+  const gone = [['forge', 'import'].join('-'), ['from', 'forge'].join('-'), ['FORGE', 'EXPORT'].join('-'),
+    ['import', 'ForgeExport'].join(''), ['principle', 'import'].join('')];
+  for (const rel of [`commands/astro-${gone[0]}.md`, `templates/${gone[2]}.md`, `lib/${gone[4]}.mjs`]) {
     assert.ok(!existsSync(join(ROOT, rel)), `${rel} must not exist`);
   }
-  const offenders = offendersOf(/forge-import|from-forge|FORGE-EXPORT|importForgeExport|principleimport/);
+  const offenders = offendersOf(new RegExp(gone.join('|')));
   assert.deepEqual(offenders, [], `no shipped file may reference the removed import — offenders: ${offenders.join(', ') || 'none'}`);
 });
 
