@@ -133,6 +133,13 @@ the ` — `. With zero proposals but M > 0, the line reads
 proposals and zero sightings), say nothing, as before. Review the queue with
 `ac principles list --proposed`, or `/astro-review`.
 
+The transcript sweep alone folds the miner's skipped total K (the sum of its `skipped`
+counts) into that same single line as `, K transcript line(s) skipped` before the ` — `,
+only when K is above zero — never a separate line. With zero proposals and zero
+sightings but K > 0, the line reads `K transcript line(s) skipped — ac principles mine`
+(its text output breaks K down), so a sweep that could not read its material never looks
+like a clean one.
+
 The transcript sweep alone may add at most one `N more turns — run again` line, N being
 the miner's `remaining`, only when it is above zero; silent on it otherwise.
 

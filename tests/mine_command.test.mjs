@@ -110,3 +110,21 @@ test('astro-mine.md has the required frontmatter', () => {
   assert.ok(/allowed-tools:\s*Bash,\s*Read/.test(SRC), 'must allow only Bash, Read');
   assert.ok(/argument-hint:/.test(SRC), 'must have an argument-hint');
 });
+
+// C12 remediate-r2: the skipped-lines notice used to be a THIRD report line the spec never
+// defined. ADR-060: the spec owns it, folded into its single line.
+test('astro-mine.md adds no report line of its own for skipped transcript lines', () => {
+  assert.ok(!/⚠ skipped/.test(SRC), 'no separate "⚠ skipped …" line in the command');
+  assert.ok(!/skipped N transcript line/i.test(SRC), 'the skipped notice is the spec\'s, not the command\'s');
+  const lineSlots = (SRC.slice(0, NEVER_IDX).match(/at most one\b/gi) || []).length;
+  assert.equal(lineSlots, 1, 'exactly one extra-line bound: the "N more turns — run again" line');
+});
+
+test('the capture spec §7 folds the skipped count into its single line, never a separate one', () => {
+  const spec = readFileSync(join(ROOT, 'templates', 'principle-capture.md'), 'utf8');
+  const s7 = spec.slice(spec.indexOf('## 7. Reporting'), spec.indexOf('## 8.')).replace(/\s+/g, ' ');
+  assert.ok(s7.includes('`, K transcript line(s) skipped`'), '§7 names the folded clause');
+  assert.ok(/before the ` — `/.test(s7.slice(s7.indexOf('K transcript line(s) skipped'))), 'the clause goes before the dash');
+  assert.ok(/never a separate line/i.test(s7), '§7 forbids a separate skipped line');
+  assert.ok(/K transcript line\(s\) skipped — ac principles mine`/.test(s7), '§7 states the line when only skips are reported');
+});

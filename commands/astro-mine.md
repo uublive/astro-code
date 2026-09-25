@@ -16,9 +16,8 @@ made by the capture spec's transcript-sweep rules.
 
 1. **Run the miner.** Run `ac principles mine --json`, passing through only the flags the
    user actually gave: `--all`, `--project <path>`, `--rescan`. If the result's
-   `nothingNew` is true, say `nothing new to mine` in one line and stop. When
-   `skipped` totals more than 0, add at most one line
-   `⚠ skipped N transcript line(s)`.
+   `nothingNew` is true, say `nothing new to mine` in one line and stop. Note the
+   `skipped` counts for step 5; say nothing about them here.
 
 2. **Record exact repeats.** For each entry in `sightings[]`, run
    `ac principles sight <id> --from-session "<fromSession>" --from-ref "<fromRef>" --excerpt "<excerpt>"`.
@@ -38,11 +37,11 @@ made by the capture spec's transcript-sweep rules.
    the next sweep retries the same material. Say nothing here either way; step 5
    reports.
 
-5. **Report.** The spec's one line (its reporting section, with the "seen again"
-   extension), plus at most one `N more turns — run again` line when `remaining > 0`,
+5. **Report.** The spec's one line (its reporting section, with the "seen again" and
+   "skipped" extensions), plus at most one `N more turns — run again` line when `remaining > 0`,
    silent on it otherwise. A failure is the spec's single line
-   `⚠ principle capture failed: <first error>`. Zero proposals and zero sightings → say
-   nothing.
+   `⚠ principle capture failed: <first error>`. Nothing proposed, sighted or skipped →
+   say nothing.
 
 ## Never
 
