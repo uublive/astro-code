@@ -56,8 +56,11 @@
       "number": 27,
       "name": "Forge import and handover: bring the forge graph over, then forge reads astro-code",
       "slug": "27-forge-import-and-handover-bring-the-forge-graph-over-then-forge-reads-astro-code",
-      "status": "verified",
-      "milestone": 9
+      "status": "complete",
+      "milestone": 9,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-09-25T13:39:29.888Z"
     }
   ]
 }
