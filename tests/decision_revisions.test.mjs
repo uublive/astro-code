@@ -205,6 +205,49 @@ test('#75: the same entry repeated verbatim is still a repeated id', () => {
   assert.equal(canonDrift({ localDecisions: `${one}\n\n${one}\n`, registryDecisions: `${one}\n\n${one}\n` }).ok, true);
 });
 
+// #77 — the duplicate check ran over the log BEFORE the new entry was appended, so the
+// add that created a duplicate was silent and the warning fired one unrelated add later.
+test('#77: re-adding a decision already in force adds nothing and names the existing id', () => {
+  const bare = bareRemote();
+  const a = dev(bare, 'alice', { init: true });
+  assert.equal(ac(['decision', 'add', 'Rule A', '--why', 'same body'], a).status, 0);
+  assert.equal(ac(['decision', 'add', 'Rule B', '--why', 'other'], a).status, 0);
+  const before = { local: local(a), registry: registry(a) };
+  const again = ac(['decision', 'add', 'Rule A', '--why', 'same body'], a);
+  assert.equal(again.status, 0, 'a retried add is not an error');
+  assert.match(again.stdout, /already recorded as ADR-001 — Rule A/);
+  assert.doesNotMatch(again.stdout, /ADR-003/, 'no new id is issued');
+  assert.equal(local(a), before.local, 'the local log is untouched');
+  assert.equal(registry(a), before.registry, 'the registry is untouched');
+  const next = ac(['decision', 'add', 'Rule Z', '--why', 'newest'], a);
+  assert.match(next.stdout, /ADR-003 — Rule Z/);
+  assert.doesNotMatch(next.stderr, /duplicate decision/, 'and no late warning follows');
+});
+
+test('#77: a retired twin does not block — re-adopting its text is a new decision', () => {
+  const bare = bareRemote();
+  const a = dev(bare, 'alice', { init: true });
+  assert.equal(ac(['decision', 'add', 'Rule A', '--why', 'same body'], a).status, 0);
+  assert.equal(ac(['decision', 'retire', 'ADR-001', '--reason', 'paused'], a).status, 0);
+  const readd = ac(['decision', 'add', 'Rule A', '--why', 'same body'], a);
+  assert.equal(readd.status, 0);
+  assert.match(readd.stdout, /✓ ADR-002 — Rule A/, 'the re-adoption is recorded under a new id');
+  assert.doesNotMatch(readd.stderr, /duplicate decision/, 'a retired entry and its re-adoption are not duplicates');
+});
+
+test('#77: without a registry, re-adding a decision in force adds nothing', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-rev-solo-'));
+  git(['init', '--quiet', '-b', 'main'], { cwd: dir });
+  git(['config', 'user.email', 'solo@example.com'], { cwd: dir });
+  git(['config', 'user.name', 'solo'], { cwd: dir });
+  git(['commit', '--quiet', '--allow-empty', '-m', 'init'], { cwd: dir });
+  assert.equal(ac(['init', '--name', 'Solo'], dir).status, 0);
+  assert.match(ac(['decision', 'add', 'Rule A', '--why', 'w'], dir).stdout, /ADR-001 — Rule A.*\[local\]/);
+  const before = local(dir);
+  assert.match(ac(['decision', 'add', 'Rule A', '--why', 'w'], dir).stdout, /already recorded as ADR-001/);
+  assert.equal(local(dir), before);
+});
+
 test('#35: CONVENTIONS.md is one byte-compared file, ignoring only the final newline', () => {
   const bare = bareRemote();
   const a = dev(bare, 'alice', { init: true });
