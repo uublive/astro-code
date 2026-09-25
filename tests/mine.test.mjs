@@ -86,11 +86,28 @@ test('C4 remediate-r2: the collapse keeps symbols and punctuation — opposite i
 
 // C4 (third verify): the store-sighting path used phase 24's normaliser, which stripped
 // every symbol — so a steer was sighted against its own OPPOSITE, even a rejected entry.
-test('C4: normaliseStatement keeps operator symbols, still folds sentence punctuation', async () => {
-  const { normaliseStatement, sameStatement } = await import('../lib/principlematch.mjs');
-  assert.notEqual(normaliseStatement('Always use === not =='), normaliseStatement('always use == not ==='));
-  assert.notEqual(normaliseStatement('Prefer C over C++'), normaliseStatement('Prefer C++ over C'));
-  assert.ok(sameStatement('Use pnpm, always!', 'use pnpm — always'), 'phase-24 C1 punctuation/dash folding still holds');
+test('C4: exact equality keeps symbols inside a word, still folds case/punctuation/whitespace/dashes', async () => {
+  const { sameStatement } = await import('../lib/principlematch.mjs');
+  for (const [a, b] of [
+    ['Always use === not ==', 'always use == not ==='],
+    ['Prefer C over C++', 'Prefer C++ over C'],
+    ['In Go, use := not = for new variables.', 'In Go, use = not := for new variables.'],
+    ['Prefer $(cmd) over `cmd`', 'Prefer `cmd` over $(cmd)'],
+    ['Use / not \\ as the path separator.', 'Use \\ not / as the path separator.'],
+    ["Use ' not \" for JS strings.", "Use \" not ' for JS strings."],
+    ['Prefer --i over i-- in loops.', 'Prefer i-- over --i in loops.'],
+    ['Use a?.b not a.b for optional access.', 'Use a.b not a?.b for optional access.'],
+  ]) {
+    assert.ok(!sameStatement(a, b), `opposites must differ: ${a} | ${b}`);
+  }
+  for (const [a, b] of [
+    ['Use pnpm, always!', 'use pnpm — always'],
+    ['Never mock the database.', 'never   mock the DATABASE'],
+    ['"Keep functions small"', 'keep functions small…'],
+    ['Use pnpm -- always', 'Use pnpm – always'],
+  ]) {
+    assert.ok(sameStatement(a, b), `phase-24 C1 folding must still hold: ${a} | ${b}`);
+  }
 });
 
 test('C4: a steer that states the OPPOSITE of a rejected entry reaches the agent, not a sighting', async () => {
