@@ -408,6 +408,16 @@
       "branch": "develop",
       "claimed_at": "2026-09-25T14:17:26.224Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 31,
+      "milestone": 10,
+      "name": "Per-host model roles: map each role to a provider and model, with local-model limits reported",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-09-25T14:17:29.168Z",
+      "status": "active"
     }
   ]
 }
