@@ -186,6 +186,18 @@ test('renderBanner is plain multi-line with the Astrolize logo + next action', (
   assert.doesNotMatch(banner, /\x1b\[/, 'banner carries no ANSI (rides in a systemMessage)');
 });
 
+// Claude Code trims leading blank lines from a SessionStart systemMessage AND prints the
+// message's first line on the same row as "SessionStart:resume says:". One U+2800 (renders
+// blank, is not whitespace) only filled that row, so the mark still sat directly under it.
+// Two do it: the first rides the "says:" row, the second is the visible blank line.
+test('the banner opens with a visible blank row between "says:" and the mark', () => {
+  const root = project({ roadmap: ROADMAP });
+  const [first, second, third] = renderBanner(readContext(root, NOW)).split('\n');
+  assert.equal(first, '\u2800', 'the first line rides the "SessionStart says:" row');
+  assert.equal(second, '\u2800', 'the second line is the visible blank row');
+  assert.match(third, /PZ/, "the mark's top row starts after the blank row");
+});
+
 test('ac activity sets {text, at} and clear nulls it', () => {
   const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
   const ac = (args) => spawnSync(process.execPath, [join(FRAMEWORK, 'bin', 'ac.mjs'), ...args],
