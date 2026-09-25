@@ -1,0 +1,1 @@
+{"at":"2026-09-25T10:37:51.512Z","phase":"27-forge-import-and-handover-bring-the-forge-graph-over-then-forge-reads-astro-code","signals":["remediation","no-progress"],"note":"import deduped forge nodes against each other within one file: same-statement nodes with different slugs collapsed, losing approvals/kinds and producing a self-superseding entry"}

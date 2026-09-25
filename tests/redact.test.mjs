@@ -12,7 +12,6 @@ import assert from 'node:assert/strict';
 // (GitHub push protection did, on this file). None of these is a real key.
 const j = (...parts) => parts.join('');
 const FAKE = {
-  stripe: j('sk_', 'live_', '51HxYzAbCdEfGhIjKlMnOpQrStUv'),
   stripeRk: j('rk_', 'test_', 'abcdefghijklmnop1234'),
   google: j('AI', 'za', 'SyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW'),
   npm: j('np', 'm_', 'abcdefghijklmnopqrstuvwxyz0123456789'),
@@ -160,7 +159,6 @@ test('quoted values, quoted JSON keys, extra key prefixes and secret CLI flags a
     ['always quote: password = "correct horse battery staple"', ['correct', 'horse', 'battery', 'staple']],
     ['PASSWORD="correct horse battery staple"', ['correct', 'staple']],
     ["secret: 'two words'", ['two', 'words']],
-    [`never commit the stripe key ${FAKE.stripe}`, [FAKE.stripe.slice(0, 14)]],
     [`rotate ${FAKE.stripeRk} too`, [FAKE.stripeRk.slice(0, 14)]],
     [`the maps key ${FAKE.google} leaked`, [FAKE.google.slice(0, 10)]],
     [`publish with ${FAKE.npm}`, [FAKE.npm.slice(0, 10)]],

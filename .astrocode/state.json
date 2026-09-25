@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 9,
-  "active_phase": null,
+  "active_phase": "27-forge-import-and-handover-bring-the-forge-graph-over-then-forge-reads-astro-code",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-09-25T09:49:17.831Z",
+  "updated_at": "2026-09-25T10:37:51.377Z",
   "activity": null
 }
