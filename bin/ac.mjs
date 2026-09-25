@@ -48,6 +48,7 @@ import {
   principlesDir, loadPrinciples, resolvePrinciple, addPrinciple, proposePrinciple,
   acceptPrinciple, rejectPrinciple, retirePrinciple, supersedePrinciple, amendPrinciple,
   recordPromotion, recordSighting, matchPrinciple, reopenPrinciple, mergePrinciple,
+  importForgeExport,
 } from '../lib/principles.mjs';
 import { indexLine } from '../lib/principlemd.mjs';
 import { buildReviewQueue } from '../lib/principlematch.mjs';
@@ -143,8 +144,8 @@ const ALLOWED_FLAGS = {
   // (including `promote`/`remote`/`resolve`, implemented in t13) so a typo on any of
   // them is refused from day one, and t13 only has to add code, never a flag list.
   'principles add': ['kind', 'strength', 'why', 'stack', 'files', 'work', 'propose', 'from-session', 'from-project', 'from-ref', 'excerpt'],
-  'principles list': ['proposed', 'accepted', 'rejected', 'all', 'json', 'usage'],
-  'principles show': ['json'],
+  'principles list': ['proposed', 'accepted', 'rejected', 'all', 'json', 'usage', 'no-sync'],
+  'principles show': ['json', 'no-sync'],
   'principles accept': ['edit', 'statement', 'why'],
   'principles reject': ['reason'],
   'principles retire': ['reason'],
@@ -166,6 +167,8 @@ const ALLOWED_FLAGS = {
   // Phase 26 (P1) — the transcript sweep. Read-only towards the watermark unless
   // --advance is given; a typo'd flag must not silently degrade into the wrong scope.
   'principles mine': ['all', 'project', 'rescan', 'json', 'advance', 'keep'],
+  // Phase 27 (P6) — the forge export importer.
+  'principles import': ['from-forge', 'json'],
 };
 
 function checkFlags(key, flags) {
@@ -216,7 +219,7 @@ function flagValues(rawTail, name) {
 // (e.g. `ac principles add --propose "statement"`). Left alone, the statement silently
 // vanishes from the positionals. Detected and repaired once, right where `pos`/`flags`
 // are read for this command, rather than teaching `parseArgs` about individual verbs.
-const PRINCIPLES_BOOLEAN_FLAGS = ['propose', 'edit', 'all', 'proposed', 'accepted', 'rejected', 'json', 'rules-only', 'usage', 'rescan'];
+const PRINCIPLES_BOOLEAN_FLAGS = ['propose', 'edit', 'all', 'proposed', 'accepted', 'rejected', 'json', 'rules-only', 'usage', 'rescan', 'no-sync'];
 function fixPrinciplesBooleanFlags(flags, pos) {
   for (const key of PRINCIPLES_BOOLEAN_FLAGS) {
     if (typeof flags[key] === 'string') {
@@ -372,6 +375,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac principles list --usage [--json]  served-never-cited and never-served, from the local usage log
   ac principles mine [--all|--project <path>] [--rescan] [--json]   hand over a batch of past human turns (read-only)
   ac principles mine --advance <sweep-id> [--keep <id,id,...>]   mark that sweep processed, carrying the kept turns forward
+  ac principles import --from-forge <file> [--json]  bring a forge export in — creates/sights/leaves unchanged, never overrides a human decision
+  ac principles list|show … --no-sync   read-only: skip the git sync entirely (no lock, no write) — for a read-only consumer
   ac phase reject <phase> --reason … [--agent name]  UAT failed → rejected + record a blocker
                                        (--agent: machine-signed rejection, not human UAT)
   ac phase surprise <phase> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]
@@ -915,7 +920,11 @@ async function main() {
 
       if (sub === 'list') {
         checkFlags('principles list', flags);
-        await principlesSync(dir);
+        // Phase 27 (P6, C9) — `--no-sync` is the read-only-consumer path: no lock dir,
+        // no git, no write of ANY kind, so a store `chmod -R a-w`'d (or one this process
+        // has no write access to at all, e.g. a forge server reading another user's
+        // store) can still be listed. Every other behaviour is unchanged.
+        if (!flags['no-sync']) await principlesSync(dir);
         const { entries, damaged } = loadPrinciples(dir);
         for (const d of damaged) console.error(`⚠ damaged entry ${d.file}: ${d.error}`);
         const status = flags.all ? null
@@ -973,7 +982,7 @@ async function main() {
 
       if (sub === 'show') {
         checkFlags('principles show', flags);
-        await principlesSync(dir);
+        if (!flags['no-sync']) await principlesSync(dir);
         let resolved;
         try { resolved = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
         const sightings = resolved.sightings ?? [];
@@ -1438,7 +1447,38 @@ async function main() {
         return;
       }
 
-      die(`unknown: ac principles ${sub} (add | list | show | accept | reject | retire | supersede | amend | promote | remote | resolve | match | sight | reopen | merge | brief | ask | cite | mine)`);
+      if (sub === 'import') {
+        checkFlags('principles import', flags);
+        const fromForge = typeof flags['from-forge'] === 'string' ? flags['from-forge'] : undefined;
+        if (!fromForge) die('usage: ac principles import --from-forge <file> [--json]');
+        let text;
+        try {
+          text = readFileSync(fromForge, 'utf8');
+        } catch (e) {
+          if (e?.code === 'ENOENT') die(`ac principles import: no such file: ${fromForge}`);
+          if (e?.code === 'EISDIR') die(`ac principles import: is a directory, not a file: ${fromForge}`);
+          die(`ac principles import: cannot read ${fromForge}: ${e?.message || e}`);
+        }
+        await principlesSync(dir);
+        let result;
+        try {
+          result = await importForgeExport(dir, text);
+        } catch (e) { die(e.message); }
+        if (flags.json) { json(result); return; }
+        const { counts } = result;
+        console.log(
+          `✓ imported from forge — ${counts.created} new (${counts.accepted} accepted, ${counts.proposed} proposed, ` +
+          `${counts.rejected} rejected, ${counts.supersededRetired} superseded/retired), ${counts.matched} matched existing, ${counts.unchanged} unchanged`,
+        );
+        if (counts.proposed > 0) {
+          console.log(`• ${counts.proposed} proposed awaiting review — /astro-review`);
+        }
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      die(`unknown: ac principles ${sub} (add | list | show | accept | reject | retire | supersede | amend | promote | remote | resolve | match | sight | reopen | merge | brief | ask | cite | mine | import)`);
     }
 
     case 'agents-md': {
