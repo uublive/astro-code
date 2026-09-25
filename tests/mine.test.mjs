@@ -86,27 +86,43 @@ test('C4 remediate-r2: the collapse keeps symbols and punctuation — opposite i
 
 // C4 (third verify): the store-sighting path used phase 24's normaliser, which stripped
 // every symbol — so a steer was sighted against its own OPPOSITE, even a rejected entry.
-test('C4: exact equality keeps symbols inside a word, still folds case/punctuation/whitespace/dashes', async () => {
-  const { sameStatement } = await import('../lib/principlematch.mjs');
-  for (const [a, b] of [
+test('C4: a turn is sighted only when it IS the stored statement; symbol-level opposites reach the agent', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  const pairs = [
     ['Always use === not ==', 'always use == not ==='],
-    ['Prefer C over C++', 'Prefer C++ over C'],
     ['In Go, use := not = for new variables.', 'In Go, use = not := for new variables.'],
     ['Prefer $(cmd) over `cmd`', 'Prefer `cmd` over $(cmd)'],
-    ['Use / not \\ as the path separator.', 'Use \\ not / as the path separator.'],
-    ["Use ' not \" for JS strings.", "Use \" not ' for JS strings."],
     ['Prefer --i over i-- in loops.', 'Prefer i-- over --i in loops.'],
-    ['Use a?.b not a.b for optional access.', 'Use a.b not a?.b for optional access.'],
-  ]) {
-    assert.ok(!sameStatement(a, b), `opposites must differ: ${a} | ${b}`);
+    ['Use ?. for property access', 'use . for property access'],
+    ['Prefer "x" over \'x\' for strings', 'Prefer \'x\' over "x" for strings'],
+    ['Separate CSV fields with ,', 'Separate CSV fields with ;'],
+    ['Use — not - in prose', 'Use - not — in prose'],
+    ['Wrap ids in (parens) not [brackets]', 'Wrap ids in [parens] not (brackets)'],
+  ];
+  for (const [rejected] of pairs) {
+    const e = await proposePrinciple(sb.store, { statement: rejected, kind: 'preference', why: 'w' });
+    await rejectPrinciple(sb.store, e.entry.id, { reason: 'no' });
   }
+  const accepted = await addPrinciple(sb.store, { statement: 'Keep functions small', kind: 'principle' });
+  writeClaudeSession(sb.claude, root, 'o1', [...pairs.map(([, opp]) => cHuman(opp)), cHuman('keep   FUNCTIONS small')]);
+  const r = await run(sb, root);
+  const texts = r.items.map((i) => i.text);
+  for (const [, opp] of pairs) assert.ok(texts.includes(opp), `the opposite must reach the agent: ${opp}`);
+  assert.deepEqual(r.sightings.map((s) => s.id), [accepted.id], 'only the case/whitespace-identical turn is sighted');
+});
+
+test('C8: phase-24 equality still folds attached dashes and punctuation (no duplicate proposals)', async () => {
+  const { sameStatement } = await import('../lib/principlematch.mjs');
   for (const [a, b] of [
+    ['Use pnpm - never npm', 'Use pnpm—never npm'],
+    ['Use pnpm – never npm', 'Use pnpm–never npm'],
+    ['simple -- always', 'simple--always'],
+    ['pnpm, never', 'pnpm,never'],
+    ['tests. Then', 'tests.Then'],
     ['Use pnpm, always!', 'use pnpm — always'],
-    ['Never mock the database.', 'never   mock the DATABASE'],
-    ['"Keep functions small"', 'keep functions small…'],
-    ['Use pnpm -- always', 'Use pnpm – always'],
   ]) {
-    assert.ok(sameStatement(a, b), `phase-24 C1 folding must still hold: ${a} | ${b}`);
+    assert.ok(sameStatement(a, b), `must be one statement: ${a} | ${b}`);
   }
 });
 
