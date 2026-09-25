@@ -40,11 +40,23 @@ human accepts. This is the **human gate** after `/astro-verify` (the AI gate).
    detect which happened — when the operator accepts, their assistant runs this same
    command — so the record is only honest if the signer declares it. Recording a machine
    sign-off as human does not just mislabel a field; it makes the two-gate guarantee
-   unauditable, which is the whole reason the second gate exists.
+   unauditable, which is the whole reason the second gate exists. The same rule extends
+   to rejection: a stand-in agent MUST run
+   `ac phase reject <slug> --reason "<what's wrong>" --agent "<your name>"`. The
+   `--reason` is always the human's own words from step 3, quoted, not paraphrased —
+   never the verifier's evidence.
    - **Something fails** → `ac phase reject <slug> --reason "<what's wrong>"` (records a
      blocker, marks it **rejected**). Summarize the gap in **at most three lines**: what
      failed, what it blocks, and the next command — matching the `--reason` that was
      just recorded.
+4b. **Propose from a human rejection.** Only on the rejection path just above, and only
+    when it was recorded WITHOUT `--agent` (a stand-in agent's rejection is not a human
+    judgement — propose nothing from it). Follow
+    `$(ac path templates)/principle-capture.md` in full: `--from-ref "phase <N>"`,
+    excerpt = that `--reason`, verbatim, quoted, never paraphrased. Report the capture
+    itself in **one line** per that template's own reporting rule (§7); say nothing when
+    it proposes nothing. This step never runs on the accept path — a plain acceptance
+    never reaches it, so nothing here is printed then either.
 5. On accept, close with an optional **one-line** context nudge: the phase is
    **complete** and all state is saved to `.astrocode/`, so running `/clear` before the
    next phase keeps the context lean and loses nothing (each command re-grounds from

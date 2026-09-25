@@ -1,7 +1,7 @@
 ---
 description: Execute a phase wave-by-wave on the working branch — sequential, or parallel worktrees+integrator, then verify
 argument-hint: <phase number or slug>
-allowed-tools: Bash, Read, Write, Workflow, ToolSearch, mcp__forge__forge_capture_knowledge
+allowed-tools: Bash, Read, Write, Workflow
 ---
 
 Execute phase `$ARGUMENTS`.
@@ -238,27 +238,18 @@ Execute phase `$ARGUMENTS`.
      workflow log — `/workflows`), **never the evidence itself**, then stop; leave the
      phase unverified.
    - **The assembled summary is one shape, not five separate walls of text**: **verdict
-     first**, then each fold-in (4c's sweep, 4d's debt count, 4e's fixtures line, the
-     capture line below) at exactly the one line or silence it already promises above,
-     then the next command — nothing else. This is a shape rule, not a length gate: five
-     individually-terse fold-ins printed one after another still read as noise if nothing
-     orders them.
-   - **Opportunistic capture — after the verdict above is already reported, never
-     before, and never changes or gates it.** Capture only on a surprise that changed
-     the approach, gated on signals the workflow's returned object **already carries**
-     (no workflow change): `healed` non-empty (a heal exposed a structural trap),
-     `remediationCycles > 0` (a verify FAIL revealed a wrong assumption), or
-     `stoppedReason` `'no-progress'` / `'max-cycles'` (an approach abandoned mid-phase).
-     A run that simply **went to plan — none of these fired — captures nothing**; no
-     output, no line. When one did fire, lift the generator the same way
-     `/astro-decision` does: strip every project noun, filename, number and proper name;
-     if nothing project-agnostic survives, **capture nothing and say so in one line**
-     rather than force a generalization. Otherwise call
-     `mcp__forge__forge_capture_knowledge` and print ONE line summarizing what was
-     staged to the human-approval queue — no confirmation prompt, and a failed capture
-     never fails this command. See `` `$(ac path templates)/forge-knowledge.md` `` for
-     the full detection/degradation rules and capture contract (tools absent → skip
-     silently, no output).
+     first**, then each fold-in (4c's sweep, 4d's debt count, 4e's fixtures line) at
+     exactly the one line or silence it already promises above, then the next command —
+     nothing else. This is a shape rule, not a length gate: five individually-terse
+     fold-ins printed one after another still read as noise if nothing orders them.
+   - **Record surprises for the milestone sweep — after the verdict above is already
+     reported, never before, and never changes or gates it.** Unconditionally run
+     `ac phase surprise <N> --healed <healed.length> --remediation-cycles
+     <remediationCycles> --stopped-reason <stoppedReason> --note "<one line: what
+     surprised — the heal's trap, the wrong assumption, the abandoned approach>"` —
+     the verb itself decides whether any signal fired; propose nothing, print nothing
+     (say nothing about it either way). This is milestone-sweep material only, not a
+     principle proposal — that happens later, in a batch, when the milestone closes.
 
 Execution + the in-workflow verifier produce a **verified** phase at best — never
 **complete**. Only human UAT (`/astro-accept`) closes a phase.

@@ -13,7 +13,7 @@
 // no milestone/phase to report, it writes nothing and exits 0. Cheap, non-blocking,
 // never errors out the compaction.
 import { readFileSync } from 'node:fs';
-import { findAstroRoot, readContext, renderResumeNote } from './_astro-ctx.mjs';
+import { findAstroRoot, readContext, renderResumeNote, principlesBrief, hookDirOf } from './_astro-ctx.mjs';
 
 // Claude pipes a PreCompact context blob on stdin; we need its cwd.
 let cwd = process.cwd();
@@ -26,7 +26,12 @@ try {
   const root = findAstroRoot(cwd);
   if (root) {
     const note = renderResumeNote(readContext(root, Math.floor(Date.now() / 1000)));
-    if (note) process.stdout.write(JSON.stringify({ systemMessage: note }));
+    // (P10, D1) — the same principles section the SessionStart hook injects: a
+    // summarized transcript can blur which hard rules/index were in force, so it
+    // rides into the compacted summary alongside the position note.
+    const brief = principlesBrief(root, hookDirOf(import.meta.url), { stage: 'session', by: 'session' });
+    const parts = [note, brief].filter(Boolean);
+    if (parts.length) process.stdout.write(JSON.stringify({ systemMessage: parts.join('\n\n') }));
   }
 } catch { /* best-effort — never block compaction */ }
 

@@ -12,12 +12,13 @@ For *why* it is built this way, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 - [Bugs are not phases](#bugs-are-not-phases)
 - [Technical debt](#technical-debt)
 - [Backlog](#backlog)
+- [Principles](#principles)
 - [The fast lane](#the-fast-lane)
 - [Canon](#canon)
 - [Models, thinking and effort](#models-thinking-and-effort)
 - [GitFlow branching (opt-in)](#gitflow-branching-opt-in)
 - [Astro kits](#astro-kits)
-- [Forge knowledge graph (optional)](#forge-knowledge-graph-optional)
+- [External knowledge graph (retired)](#external-knowledge-graph-retired)
 - [Command reference](#command-reference)
 - [Layout and development](#layout-and-development)
 
@@ -288,6 +289,145 @@ offers each item its exits.
 
 ---
 
+## Principles
+
+A personal store of your own patterns, preferences and antipatterns — the notes you keep
+making across every project, kept once instead of re-typed into every `CONTEXT.md`.
+`ac principles add "<statement>" --kind principle|pattern|preference|antipattern` writes
+one Markdown file per entry under `~/.astro/principles/` (`ASTRO_PRINCIPLES_DIR`
+overrides that), never inside the project: ADR-057's explicit exception to "state lives
+under `.astrocode/`", because what is being written travels with YOU, not the repo.
+
+**Accepting is the only way in.** A manual `ac principles add` is accepted directly; a
+machine that later observes something (phase 23) can only `--propose` it — an entry
+starts governing agents once a human accepts it, never on its own. `ac principles reject
+<id> --reason "…"` and `ac principles retire <id> --reason "…"` both need a reason, and
+neither one deletes the entry: a rejection is what stops the same idea from being
+re-proposed later, so `list --all` keeps showing it long after `list --accepted` stops.
+`ac principles amend <id> --reason "…" [--statement … | --edit]` rewords or rescopes an
+accepted entry in place — same id, one history line naming the reason and the prior text.
+
+**Remote and sync.** With no remote configured the store is purely local and every
+command is offline. `ac principles remote <url>` points it at your own private git
+repo (never a team's) and syncs immediately; after that, every command pulls first and
+pushes after a mutation, offline-first — an unreachable remote is only ever an advisory
+line, never a failure, and nothing is force-pushed. Two machines that both changed the
+*same* entry since their last sync produce a genuine conflict: the machine you are on
+keeps its own copy in `<id>.md`, the other machine's copy lands in
+`conflicts/<id>.<sha>.md`, and every command warns until you run
+`ac principles resolve <id> [--take mine|theirs]`. Two machines changing *different*
+entries never conflict — one file per entry makes that true by construction.
+
+**Promote vs. personal.** A principle stays personal until you deliberately promote it:
+`ac principles promote <id>` (accepted entries only) records a shared ADR in the current
+project's canon by default, or `--as convention` appends a bullet to its
+`CONVENTIONS.md` (local only — it prints the `ac canon push` you still have to run
+yourself). Either way the entry itself stays in your home store, still accepted, still
+yours everywhere else — `show <id>` lists every project it has been promoted into.
+
+**How proposals arrive.** Four moments propose into your store — never accept anything
+on their own (ADR-058): after `/astro-decision` records an ADR, after `/astro-discuss`
+captures `CONTEXT.md`, on an `/astro-accept` rejection (a plain acceptance proposes
+nothing), and the `/astro-complete-milestone` retrospective sweep over the whole
+milestone's ADRs, CONTEXT files, rejections and the surprises `/astro-execute` records
+along the way. Only moments a human actually answered propose — an agent-captured
+discussion or an agent-signed accept/reject (`--agent`) never does. Each moment proposes
+at most 3, each carrying its own why, and ends with at most one line —
+`ac principles list --proposed` reviews the queue. See
+[`templates/principle-capture.md`](./templates/principle-capture.md) for the full spec.
+
+**Review and dedupe.** An EXACT repeat of any existing statement — normalised for case,
+punctuation and whitespace, never a similarity score — never mints a second entry,
+regardless of the existing entry's status: it records a *sighting* on it instead ("seen
+again N"), so an already-accepted principle just accumulates evidence and an
+already-rejected one stays rejected without re-entering the queue. An OVERLAP
+candidate (a statement that shares real content words with an existing one, short of
+being the exact same wording) is only ever *surfaced* — `ac principles match
+"<statement>"` names it and the words that matched — never acted on: the capturing
+agent, or you, decides whether it's the same principle (`ac principles sight <id>`
+instead of proposing) or a genuinely different one. `/astro-principles-review` walks the proposed
+queue in batches — accept, edit-then-accept, reject (reason required) or skip each
+item, and offers `ac principles merge <dup> --into <id>` for a near-duplicate group
+instead of rejecting one of them for "no". `ac principles reopen <id> --reason "…"` is
+the only way back from rejected. Sightings recorded on two machines merge across a sync
+with no conflict — they're append-only evidence, never a decision to arbitrate.
+
+- `ac principles match "<statement>" [--json]` — exact/overlap candidates, explainable, never acted on.
+- `ac principles sight <id> [--from-project …] [--excerpt …]` — record an explicit sighting.
+- `ac principles reopen <id> --reason "…"` — rejected → proposed, the only way back.
+- `ac principles merge <dup> --into <id>` — fold a duplicate's evidence into the survivor; the duplicate stays citable as `merged`.
+
+**Retrieval — a structural shortlist, not a search engine.** `ac principles brief [--stage
+s] [--work w,…] [--files a,b] [--rules-only] [--by role] [--json]` prints the per-task
+shortlist: every `strength: rule` entry in full, plus a compact index (id, kind/strength,
+first-sentence statement, ≤ 25 lines) of *in-scope* accepted defaults — a default is in
+scope when EVERY non-empty scope dimension (stack/work/files) matches something in the
+task's context (stack ∩ project tags, work ∩ requested work, a requested file matching a
+glob); an unscoped dimension on either side is a wildcard, but no `--files` at all means a
+file-scoped entry stays silent — a glob is a narrow claim nothing confirms it against.
+Stack is detected from manifests at the project root (`package.json` deps, `go.mod`,
+`Cargo.toml`, …), overridable with `ac config set stack '["rust"]'`; the tags used are
+always printed, so a wrong detection is visible, never silent. Nothing served ⇒ empty
+stdout (hooks key their silence on that) and one line on stderr. `ac principles ask
+"<question>"` ranks by keyword — statement, why and scope tags, weighted — and says WHY
+each result matched (no embeddings, ever). `ac principles cite <id>… --stage s --by role`
+records what you actually applied; `ac principles list --usage` surfaces served-often-
+never-cited ("ignored") and never-served ("unused") entries from that log, which lives at
+`~/.astro/principles/.local/usage.jsonl` — per-machine, unsynced, ids only. A shortlist
+that shares words with your project's `CONVENTIONS.md`/`DECISIONS.md` prints `⚠ canon may
+override: ADR-nnn` — a candidate only; canon always wins and nothing is resolved for you.
+Every astro agent (executor, researcher, planner) runs `brief` for its own stage and
+`cite`s what it applies; the verifier only ever sees hard rules, non-blocking (a violation
+is filed as debt, never a failed criterion). The Claude Code session gets the same
+shortlist injected automatically at start/compact; on any other host, the managed
+`AGENTS.md` block tells the agent to run `ac principles brief` itself.
+
+**Transcript sweep — on demand, opt-in.** `/astro-principles-mine` (or `ac principles mine`) sweeps
+past session transcripts for steers you kept giving — corrections, preferences, explicit
+rules — and turns what recurs into proposed principles, exactly like every other capture
+moment. It runs ONLY when you ask for it: never from a hook, never on a schedule. The
+statusline/SessionStart banner nudge you towards it once 10+ session files in the current
+project have gone unswept — a stat-only check (file sizes vs. a recorded watermark, never
+opening a transcript) that stays cheap even against a huge history. Scope defaults to the
+current project (every Claude profile + Codex); `--all` or `--project <path>` widen or
+retarget it deliberately. Only turns you actually TYPED are read — tool results, injected
+context, expanded command bodies, subagent and headless (`claude -p`/SDK) sessions are all
+excluded before anything reaches the engine. Everything is redacted (the same shapes
+`lib/redact.mjs` masks everywhere else) before it is ever surfaced. The engine judges no
+meaning (ADR-064): it hands the agent a bounded batch of those turns (turns identical
+after normalising collapse into one, carrying all their sessions), and the agent does
+the rest in any language — grouping turns that say the same thing, keeping opposite
+instructions apart, ignoring content-free replies like "No.". A group qualifies once it
+recurs in ≥2 distinct sessions, or was stated once as an explicit rule; an exact
+restatement of an existing entry (accepted OR rejected) is recorded as a sighting, never
+re-proposed. At most 10 proposals per sweep, strongest first. Turns beyond one batch are
+held for next time, and the agent names the turns worth carrying forward (one-offs that
+may recur, qualifying groups beyond the cap) with `--keep` — they come back in the next
+sweep marked `earlier`. The read (`ac principles mine [--json]`) never commits anything:
+only `ac principles mine --advance <sweep-id>`, run after every proposal/sighting call has
+succeeded, moves the watermark — a failed lift is retried on the next sweep, never
+silently skipped. The watermark and carried turns live in the store's already-gitignored
+`.local/mine/`: per-machine, pointers and byte offsets only, never transcript text.
+`--rescan` re-reads everything from scratch (rarely needed — only when you suspect the
+watermark drifted).
+
+- `ac principles mine [--all|--project <path>] [--rescan] [--json]` — hand over a batch of past human turns (read-only).
+- `ac principles mine --advance <sweep-id> [--keep <id,id,...>]` — mark that sweep processed, carrying the kept turns forward.
+
+**Letting another tool read this store.** The store holds only what astro-code itself
+captures — there is no import from another knowledge graph (ADR-065). Any other tool — a
+forge server included — can follow
+[`templates/PRINCIPLES-CONTRACT.md`](./templates/PRINCIPLES-CONTRACT.md) (v1) to read this
+store back, read-only: the on-disk entry format and the `ac principles list|show …
+--json --no-sync` output, both version-pinned and guarded by tests so a format change is
+never silent. `--no-sync` on `list`/`show` skips the git sync entirely (no lock, no write
+of any kind), which is what makes following the contract safe against a store the reader
+does not own or cannot write to.
+
+- `ac principles list|show … --no-sync` — read-only, for a foreign consumer following the contract.
+
+---
+
 ## The fast lane
 
 `/astro-fast "<a long, unplanned prompt>"` is for a big freehand request that shouldn't need
@@ -423,16 +563,17 @@ A kit is developed as a standalone astro-code project and goes through the norma
 
 ---
 
-## Forge knowledge graph (optional)
+## External knowledge graph (retired)
 
-If a FORGEMASTER knowledge-graph MCP server happens to be connected, astro-code
-opportunistically *consumes* it — querying before `/astro-discuss`, `/astro-plan`, and
-`/astro-new-project` decide, and staging a lifted, project-agnostic generator after
-`/astro-decision` records an ADR. With no server connected, every one of those steps is a
-silent no-op — nothing printed, nothing missing.
+astro-code used to make one opportunistic read against an external knowledge-graph MCP
+server before `/astro-discuss`, `/astro-plan`, and `/astro-new-project`. Phase 25 replaced
+every one of those calls with `ac principles ask` / `ac principles brief` — a personal
+store, local and always available, with no connect/degrade dance to document. No astro-code
+command or agent reads (or hosts) an external knowledge-graph server any more; retrieval
+now runs entirely through `ac principles` (see [Principles](#principles)).
 
-astro-code still never *hosts* an MCP server; it only optionally reads from someone else's.
-See [`templates/forge-knowledge.md`](./templates/forge-knowledge.md) for the full spec.
+Nothing from the forge graph is brought over: the personal store starts from what
+astro-code itself captures (ADR-065). A forge server reads the store back read-only through [`templates/PRINCIPLES-CONTRACT.md`](./templates/PRINCIPLES-CONTRACT.md).
 
 ---
 
@@ -482,6 +623,9 @@ ac status                      # project / milestone / phases
 ac phase add "Foundation"      # claim + add a phase
 ac phase check "<name>"        # is someone already building this?
 ac phase accept <n>            # human gate — requires a prior `verified`
+ac phase reject <n> --reason … [--agent name]  # UAT failed → rejected + a blocker (--agent: machine-signed)
+ac phase surprise <n> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]  # execute records a run surprise
+ac phase context <n> [--author]  # discuss-gate status, or who captured it: human | agent <name> | none
 ac phase effort <n> deep       # per-phase verify→remediate budget (light|standard|deep)
 ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
 ac phase milestone <n> [<N>]   # read/correct a phase's milestone (never moves the project)
@@ -489,6 +633,7 @@ ac milestone new               # claim the next milestone number and start it
 ac milestone new --planned     # declare a later milestone without starting it (--number N: repair)
 ac milestone activate <n>      # move the project into a planned milestone
 ac milestone complete          # archive the current milestone's phases (refuses over unfinished ones; --force)
+ac milestone harvest [<n>] [--json]  # retrospective sweep material for the principle sweep
 
 ac fix add "<what is broken>"  # open a bugfix (dated id, no phase number)
 ac fix list                    # what is open
@@ -507,6 +652,19 @@ ac backlog note <id> ["<text>"] # read/set/clear an item's note (the title stays
 ac backlog link <id> --phase N # fold it into a phase already in flight
 ac backlog promote <id>        # claim a phase number and seed CONTEXT.md from it
 ac backlog archive <id> --kind declined|obsolete --reason "…" # file it WITHOUT doing it
+
+ac principles add "<stmt>" --kind principle|pattern|preference|antipattern  # a personal note in ~/.astro/principles (--propose queues it)
+ac principles list [--proposed|--accepted|--rejected|--all] [--json]  # the personal store (default: accepted)
+ac principles show <id> [--json] # one entry — fields, source, promotions, history
+ac principles accept <id> [--edit | --statement … [--why …]] # proposed → accepted (reword first)
+ac principles reject <id> --reason … # proposed → rejected (kept, never deleted)
+ac principles retire <id> --reason … # accepted → retired
+ac principles supersede <id> --by <id> # accepted → superseded by a newer entry
+ac principles amend <id> --reason … [--statement … | --edit] # reword/rescope, id unchanged
+ac principles promote <id> [--as decision|convention] # accepted → this project's canon (personal copy stays)
+ac principles remote [<url>]   # set (and sync) the store's private git remote, or print it
+ac principles resolve <id> [--take mine|theirs] # clear an open sync conflict on one entry
+ac principles list|show … --no-sync # read-only: skip the git sync entirely — for a foreign, read-only consumer
 
 ac models balanced             # per-role model tier + reasoning depth, in one switch
 ac config set models.executor opus

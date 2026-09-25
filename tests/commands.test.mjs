@@ -600,6 +600,16 @@ const VERIFIER_MD = join(ROOT, 'agents', 'astro-verifier.md');
 // alternative ("two or three sentences") to cover astro-debt.md's pre-existing assessment
 // slot, which the phase-19 audit already judged compliant (PLAN.md) but which the plan's
 // literal P4 regex does not match — still a stated numeric bound, just an "X or Y" range.
+//
+// Phase 23 remediation (C5): a `\bnothing extra\b` alternative was added here to make
+// astro-accept.md's 4b principle-capture slot pass WITHOUT the slot actually stating its
+// own bound — the slot's only matching phrase ("A plain acceptance proposes nothing and
+// prints nothing extra") described a DIFFERENT case (the accept path, which never even
+// reaches 4b) rather than the capture step's own reporting bound. Widening the regex to
+// catch that unrelated phrase is exactly the gaming this guard exists to prevent (C2:
+// only deleting/weakening the BOUND, never widening the matcher, may turn a slot green).
+// The fix belongs in the doc: 4b now states its own "one line" bound directly, so the
+// alternative is removed rather than kept as a foothold for the next copyedit to lean on.
 const BOUND_RE =
   /\b(?:in|at most|no more than|to)\s+(?:exactly\s+)?(?:one|two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\b(?:one|two|three|\d+)\s+or\s+(?:two|three|\d+)\s+(?:short\s+)?(?:line|lines|sentence|sentences)\b|\bone[- ]liner\b|\bone line\b|\bsay nothing\b|\bnothing at all\b|\bno output\b|\bsilence means\b|\bskip (?:this|it) (?:silently|in silence)\b/i;
 
@@ -630,14 +640,14 @@ const SLOTS = [
   // astro-discuss.md
   { command: 'astro-discuss.md', slot: '1b debt fold-in: items when present', start: '1b. **Check the debt register', end: 'Say nothing at all when there is no relevant debt' },
   { command: 'astro-discuss.md', slot: '1b debt fold-in: silence when absent', start: 'Say nothing at all when there is no relevant debt', end: '2. **Map the gray areas.' },
-  { command: 'astro-discuss.md', slot: '2 brain-settled fork', start: 'the forge brain already settled a fork', end: '3. **Discuss in rounds' },
+  { command: 'astro-discuss.md', slot: '2 principle-settled fork', start: 'a personal principle already settled a fork', end: '3. **Discuss in rounds' },
   { command: 'astro-discuss.md', slot: '4 capture report', start: '4. **Capture.', end: '5. **Promote firm choices.' },
   { command: 'astro-discuss.md', slot: '6 hand-off', start: '6. Clear the live status', end: 'Keep it conversational' },
   { command: 'astro-discuss.md', slot: 'closing trivial-phase skip', start: 'Keep it conversational', end: null },
 
   // astro-plan.md
-  { command: 'astro-plan.md', slot: '2 discuss-gate canon refusal relay', start: '2. **Discuss gate', end: 'opportunistically, run ONE scoped' },
-  { command: 'astro-plan.md', slot: '2 forge result relay', start: 'opportunistically, run ONE scoped', end: '3. Mark the live status' },
+  { command: 'astro-plan.md', slot: '2 discuss-gate canon refusal relay', start: '2. **Discuss gate', end: 'run ONE `ac principles ask' },
+  { command: 'astro-plan.md', slot: '2 principles result relay', start: 'run ONE `ac principles ask', end: '3. Mark the live status' },
   { command: 'astro-plan.md', slot: '3 workflow launched (background)', start: 'It runs in the background — say so', end: '3b. **Commit the plan artifacts' },
   { command: 'astro-plan.md', slot: '3b commit of plan artifacts', start: '3b. **Commit the plan artifacts', end: '4. Clear the live status' },
   { command: 'astro-plan.md', slot: '4 plan summary', start: '4. Clear the live status', end: 'Only fan out when the phase is worth parallel research' },
@@ -650,13 +660,12 @@ const SLOTS = [
   { command: 'astro-execute.md', slot: '4d debt findings', start: '4d. **File the verifier', end: '4e. **Check fixture currency' },
   { command: 'astro-execute.md', slot: '4e fixtures check', start: '4e. **Check fixture currency', end: '5. Clear the live status' },
   { command: 'astro-execute.md', slot: '5 verdict lead line + PASS/FAIL branches', start: '5. Clear the live status', end: '**The assembled summary' },
-  { command: 'astro-execute.md', slot: '5 assembled summary shape', start: '**The assembled summary', end: '**Opportunistic capture' },
-  { command: 'astro-execute.md', slot: '5 opportunistic capture', start: '**Opportunistic capture', end: 'Execution + the in-workflow verifier produce' },
+  { command: 'astro-execute.md', slot: '5 assembled summary shape', start: '**The assembled summary', end: '**Record surprises for the milestone sweep' },
+  { command: 'astro-execute.md', slot: '5 surprise note', start: '**Record surprises for the milestone sweep', end: 'Execution + the in-workflow verifier produce' },
 
   // astro-verify.md
   { command: 'astro-verify.md', slot: '3 PASS/FAIL verdict', start: '3. Clear the live status first', end: '3b. **On PASS only' },
-  { command: 'astro-verify.md', slot: '3b debt findings', start: '3b. **On PASS only', end: '4. **Opportunistic capture' },
-  { command: 'astro-verify.md', slot: '4 opportunistic capture', start: '4. **Opportunistic capture', end: 'Verification is the machine gate' },
+  { command: 'astro-verify.md', slot: '3b debt findings', start: '3b. **On PASS only', end: 'Verification is the machine gate' },
 
   // astro-accept.md
   { command: 'astro-accept.md', slot: '1 not-verified stop', start: '1. Resolve the phase slug. Confirm its status', end: '2. Read' },
@@ -696,6 +705,25 @@ const SLOTS = [
   // astro-backlog-promote.md (t9)
   { command: 'astro-backlog-promote.md', slot: '1 still worth a phase', start: '1. **Confirm the idea is still worth a phase', end: '2. **Promote it' },
   { command: 'astro-backlog-promote.md', slot: '3 promotion reported', start: '3. **Say what happened', end: null },
+
+  // phase 23: principle capture at the moments of intent (D2, t14)
+  { command: 'astro-decision.md', slot: '5 principle capture', start: '5. **Propose the principle behind it.', end: 'Use this whenever' },
+  { command: 'astro-discuss.md', slot: '5b principle capture', start: '5b. **Propose what the answers settled.', end: '6. Clear the live status' },
+  { command: 'astro-accept.md', slot: '4b principle capture', start: '4b. **Propose from a human rejection.', end: '5. On accept' },
+  { command: 'astro-complete-milestone.md', slot: '3b sweep', start: '3b. **Sweep the milestone for principles.', end: '4. **Triage stale debt.' },
+
+  // phase 24: /astro-principles-review — batch review of proposed principles (t14)
+  { command: 'astro-principles-review.md', slot: '1 empty queue', start: '1. **Read the queue.', end: '2. **Group and batch' },
+  { command: 'astro-principles-review.md', slot: '3 item presentation', start: '3. **Present each batch', end: '4. **Ask' },
+  { command: 'astro-principles-review.md', slot: '5 failed verb', start: '5. **Act through', end: '6. **Rejected entries seen again' },
+  { command: 'astro-principles-review.md', slot: '6 rejected resurfacing', start: '6. **Rejected entries seen again', end: '7. **Report' },
+  { command: 'astro-principles-review.md', slot: '7 summary', start: '7. **Report', end: '## Never' },
+
+  // phase 26: /astro-principles-mine — the on-demand transcript sweep (t4)
+  { command: 'astro-principles-mine.md', slot: '1 run + nothing new', start: '1. **Run the miner.', end: '2. **Record exact repeats' },
+  { command: 'astro-principles-mine.md', slot: '2 sightings', start: '2. **Record exact repeats', end: '3. **Group, qualify and lift' },
+  { command: 'astro-principles-mine.md', slot: '4 advance', start: '4. **Advance the watermark', end: '5. **Report' },
+  { command: 'astro-principles-mine.md', slot: '5 report', start: '5. **Report', end: '## Never' },
 ];
 
 const LOOP_COMMAND_SRC = new Map(
@@ -710,6 +738,10 @@ const LOOP_COMMAND_SRC = new Map(
     'astro-phase.md',
     'astro-backlog.md',
     'astro-backlog-promote.md',
+    'astro-decision.md',
+    'astro-complete-milestone.md',
+    'astro-principles-review.md',
+    'astro-principles-mine.md',
   ].map((name) => [name, cmd(name)]),
 );
 
@@ -850,6 +882,67 @@ test('the /astro-discuss backlog fold-in is anchored to round one, after the deb
 // The slot guard cannot see this: it checks that each slot STATES a bound, not which mode
 // the command lands in. So assert the dispatch directly, the same way phase 20's C9 fix
 // had to assert ordering the bound guard could not see.
+// ── phase 24 t14: /astro-principles-review's verb contract (D2/D4/D5/D6, P7) ──────────────────
+//
+// The prose IS the contract here — /astro-principles-review acts only through `ac principles`
+// verbs (D4: "no readline/interactive mode in `ac`"), so a reword that drops one of
+// these names or loosens a guard silently reopens the destructive path each verb was
+// added to prevent (auto-reopening a rejection, rejecting with no reason, merging on
+// similarity alone). This guard pins the load-bearing tokens, not full sentences.
+
+test('astro-principles-review.md names all four review choices, requires a reason for reject, offers merge --into, reads the proposed queue as JSON, and gates reopen behind an explicit choice', () => {
+  const src = LOOP_COMMAND_SRC.get('astro-principles-review.md');
+  assert.ok(src, 'astro-principles-review.md must be a registered loop command source');
+
+  for (const choice of ['accept', 'edit-then-accept', 'reject', 'skip']) {
+    assert.ok(src.includes(choice), `astro-principles-review.md must name the "${choice}" review choice`);
+  }
+
+  assert.match(
+    src,
+    /reject.{0,60}\*\*required\*\*\s+reason|\*\*required\*\*\s+reason.{0,60}reject|reject without a reason/i,
+    'astro-principles-review.md must require a reason for reject — found no such requirement near "reject"',
+  );
+
+  assert.ok(
+    src.includes('ac principles merge') && src.includes('--into'),
+    'astro-principles-review.md must offer `ac principles merge <dup> --into <id>` for duplicates',
+  );
+
+  assert.ok(
+    src.includes('ac principles list --proposed --json'),
+    'astro-principles-review.md must read the queue via `ac principles list --proposed --json`',
+  );
+
+  assert.match(
+    src,
+    /reopen.{0,80}explicit choice|explicit choice.{0,80}reopen/is,
+    'astro-principles-review.md must gate `ac principles reopen` behind an explicit user choice, never an automatic reopen',
+  );
+
+  // Every mention of the real store path must read as a prohibition, not an
+  // instruction — the same negation-lookback pattern used for the ADR-008 fallback
+  // tier guard above.
+  const phrase = '~/.astro/principles';
+  let searchFrom = 0;
+  let found = false;
+  while (true) {
+    const idx = src.indexOf(phrase, searchFrom);
+    if (idx === -1) break;
+    found = true;
+    const lookBack = src.slice(Math.max(0, idx - 30), idx).toLowerCase();
+    const negated = /\bnever\b|\bnot\b/.test(lookBack);
+    assert.ok(
+      negated,
+      `astro-principles-review.md mentions "${phrase}" without a preceding negation (never/not) — every ` +
+        `mention must forbid writing there directly, never instruct it. Context:\n\n` +
+        src.slice(Math.max(0, idx - 40), idx + phrase.length + 40),
+    );
+    searchFrom = idx + phrase.length;
+  }
+  assert.ok(found, 'astro-principles-review.md must mention `~/.astro/principles` at least once, to forbid writing under it directly');
+});
+
 test('/astro-backlog lists and stops when given no argument; triage is opt-in', () => {
   const src = LOOP_COMMAND_SRC.get('astro-backlog.md');
 

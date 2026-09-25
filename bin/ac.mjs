@@ -8,11 +8,11 @@ import { basename, join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
-import { initPlanning, phaseContextStatus } from '../lib/planning.mjs';
+import { initPlanning, phaseContextStatus, contextAuthor } from '../lib/planning.mjs';
 import { profileModels, PROFILE_NAMES } from '../lib/models.mjs';
 import { profileReasoning, REASONING_LEVELS, validateReasoning } from '../lib/reasoning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
-import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, setPhaseEffort, setPhaseNote, setPhaseMilestone, isPhasePlanned } from '../lib/roadmap.mjs';
+import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, rejectPhase, setPhaseEffort, setPhaseNote, setPhaseMilestone, isPhasePlanned } from '../lib/roadmap.mjs';
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims } from '../lib/registry.mjs';
@@ -32,15 +32,31 @@ import { loadConfig, updateConfig } from '../lib/config.mjs';
 import {
   canonText, loadCanon, addDecision, canonPull, canonPush, canonDedupe,
   supersedeDecision, retireDecision, amendDecision, canonCheck, canonStats, canonDrift,
+  appendConvention,
 } from '../lib/canon.mjs';
 import { inForceText } from '../lib/decisions.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
+import { recordSurprise } from '../lib/surprises.mjs';
+import { milestoneHarvest } from '../lib/harvest.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
 import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME } from '../lib/install.mjs';
 import { applyTune, undoTune, tuneTarget, UNTUNABLE } from '../lib/tune.mjs';
 import { collectStats } from '../lib/stats.mjs';
 import { writeAgentsMd } from '../lib/agentsmd.mjs';
 import { renderLogo, wantColor, TAGLINE } from '../hooks/_astro-brand.mjs';
+import {
+  principlesDir, loadPrinciples, resolvePrinciple, addPrinciple, proposePrinciple,
+  acceptPrinciple, rejectPrinciple, retirePrinciple, supersedePrinciple, amendPrinciple,
+  recordPromotion, recordSighting, matchPrinciple, reopenPrinciple, mergePrinciple,
+} from '../lib/principles.mjs';
+import { indexLine } from '../lib/principlemd.mjs';
+import { buildReviewQueue } from '../lib/principlematch.mjs';
+import { editText } from '../lib/editor.mjs';
+import { syncPrinciples, openConflicts, getRemote, setRemote, resolveConflict } from '../lib/principlesync.mjs';
+import { STAGE_WORK } from '../lib/principlebrief.mjs';
+import { shortlist, askStore, cite, usageReview, clashesFor, projectContext } from '../lib/retrieval.mjs';
+import { sweep, advanceSweep } from '../lib/mine.mjs';
+import { findAstroRoot } from '../hooks/_astro-ctx.mjs';
 
 function parseArgs(args) {
   const flags = {};
@@ -91,7 +107,12 @@ const ALLOWED_FLAGS = {
   'canon stats': [],
   'registry init': ['force'],
   'phase accept': ['by', 'force', 'agent'],
-  'phase reject': ['reason'],
+  // Phase 23 (P2) — a stand-in agent rejects on the human's behalf; `agent` is the
+  // declared signer, mirroring `phase accept --agent` (ADR-033, now symmetric).
+  'phase reject': ['reason', 'agent'],
+  // Phase 23 (P3) — execute calls this unconditionally; a typo'd flag must not
+  // silently drop the very signal the milestone sweep exists to catch.
+  'phase surprise': ['healed', 'remediation-cycles', 'stopped-reason', 'note'],
   'fix accept': ['by', 'agent'],
   // `drop` is the one debt verb that removes something from the list on a human's
   // say-so, so a typo'd flag must not degrade into "dropped with no reason".
@@ -111,9 +132,40 @@ const ALLOWED_FLAGS = {
   // be ignored here and the call read the note instead of writing it.
   'backlog note': [],
   'milestone complete': ['force'],
+  // Phase 23 (P5) — read-only, but still allowlisted: a typo'd flag on the sweep's
+  // own read must not silently degrade into the human-readable form when `--json`
+  // was intended (or vice versa).
+  'milestone harvest': ['json'],
   // `tune` writes a settings.json that grants permissions, so a typo'd flag must be
   // refused rather than silently applying the tuning (#14).
   'tune': ['user', 'undo'],
+  // Phase 22 (D3/D7, P10) — the personal principle store. Every verb gets an entry now
+  // (including `promote`/`remote`/`resolve`, implemented in t13) so a typo on any of
+  // them is refused from day one, and t13 only has to add code, never a flag list.
+  'principles add': ['kind', 'strength', 'why', 'stack', 'files', 'work', 'propose', 'from-session', 'from-project', 'from-ref', 'excerpt'],
+  'principles list': ['proposed', 'accepted', 'rejected', 'all', 'json', 'usage', 'no-sync'],
+  'principles show': ['json', 'no-sync'],
+  'principles accept': ['edit', 'statement', 'why'],
+  'principles reject': ['reason'],
+  'principles retire': ['reason'],
+  'principles supersede': ['by'],
+  'principles amend': ['reason', 'statement', 'why', 'kind', 'strength', 'stack', 'files', 'work', 'edit'],
+  'principles promote': ['as'],
+  'principles remote': [],
+  'principles resolve': ['take'],
+  // Phase 24 (P6) — the review workflow.
+  'principles match': ['json'],
+  'principles sight': ['from-session', 'from-project', 'from-ref', 'excerpt'],
+  'principles reopen': ['reason'],
+  'principles merge': ['into'],
+  // Phase 25 (P1) — retrieval never runs `principlesSync` (hot path of every agent
+  // task and session start), so its flags are read-only knobs only.
+  'principles brief': ['stage', 'work', 'files', 'rules-only', 'by', 'json'],
+  'principles ask': ['stage', 'by', 'json'],
+  'principles cite': ['stage', 'by'],
+  // Phase 26 (P1) — the transcript sweep. Read-only towards the watermark unless
+  // --advance is given; a typo'd flag must not silently degrade into the wrong scope.
+  'principles mine': ['all', 'project', 'rescan', 'json', 'advance', 'keep'],
 };
 
 function checkFlags(key, flags) {
@@ -143,6 +195,94 @@ function checkMilestoneTarget(r, n) {
 
 const root = () => findRoot() || die('no .astrocode/ found — run `ac init` first');
 const json = (obj) => console.log(JSON.stringify(obj, null, 2));
+
+// Phase 22 (P10) — `parseArgs` keeps only the LAST value of a repeated flag, so
+// `--stack a --stack b` would otherwise lose `a`. `--stack`/`--files`/`--work` are
+// documented as repeatable, so this scans the raw `tail` itself instead — `parseArgs`
+// stays untouched (it is shared by every other verb in this file).
+function flagValues(rawTail, name) {
+  const out = [];
+  for (let i = 0; i < rawTail.length; i++) {
+    if (rawTail[i] === `--${name}`) {
+      const v = rawTail[i + 1];
+      if (v !== undefined && !v.startsWith('--')) out.push(v);
+    }
+  }
+  return out;
+}
+
+// Phase 22 (P10) — none of these principles flags ever take a value, but `parseArgs`
+// still greedily swallows the next token as one whenever it doesn't start with `--`
+// (e.g. `ac principles add --propose "statement"`). Left alone, the statement silently
+// vanishes from the positionals. Detected and repaired once, right where `pos`/`flags`
+// are read for this command, rather than teaching `parseArgs` about individual verbs.
+const PRINCIPLES_BOOLEAN_FLAGS = ['propose', 'edit', 'all', 'proposed', 'accepted', 'rejected', 'json', 'rules-only', 'usage', 'rescan', 'no-sync'];
+function fixPrinciplesBooleanFlags(flags, pos) {
+  for (const key of PRINCIPLES_BOOLEAN_FLAGS) {
+    if (typeof flags[key] === 'string') {
+      pos.push(flags[key]);
+      flags[key] = true;
+    }
+  }
+}
+
+// Phase 22 (P12) — sync reporting shared by every `ac principles` verb: silent on a
+// clean or local-only sync, one line when something arrived, one advisory when the
+// remote could not be reached. Exit code is never affected by any of this.
+// A verb syncs before and after its write; an unreachable remote is reported ONCE.
+let principlesUnreachableReported = false;
+function reportPrinciplesSync(res) {
+  if (res.pulled?.length) console.log(`• principles: pulled ${res.pulled.length} change(s)`);
+  if (res.state === 'unreachable' && !principlesUnreachableReported) {
+    principlesUnreachableReported = true;
+    console.log('⚠ principles remote unreachable — kept locally, will sync on the next command');
+  }
+  if (res.state === 'diverged') {
+    console.log(
+      '⚠ principles store could not merge with the remote — local history diverged in a shape ' +
+        'this machine could not reconcile automatically; nothing was pushed (git status in ' +
+        'the store directory to resolve by hand)',
+    );
+  }
+}
+
+// `syncPrinciples` acquires its lock by `mkdirSync`-ing `<dir>/.lock` with no parent
+// creation, so it throws on a store dir that has never been written to yet. Readers
+// must never create that dir (C16), so a verb that runs before anything has ever been
+// written skips the sync outright — nothing to pull from a store that does not exist.
+async function principlesSync(dir) {
+  if (!existsSync(dir)) return { state: 'local', pulled: [], pushed: false, conflicts: [] };
+  const res = await syncPrinciples(dir);
+  reportPrinciplesSync(res);
+  return res;
+}
+
+// Phase 22 (P12) — surfaced on EVERY command while a conflict stays open, on both
+// machines, until `ac principles resolve` (t13) clears it.
+function reportPrinciplesConflicts(dir) {
+  for (const c of openConflicts(dir)) {
+    const where =
+      c.mine === 'entry' ? `this machine's version is in the entry; the other is in ${c.file}`
+        : c.mine === 'copy' ? `the entry holds the OTHER machine's version; this machine's is in ${c.file}`
+          : `two versions, neither made on this machine: the entry and ${c.file}`;
+    const how = c.mine === 'unknown'
+      ? `ac principles resolve ${c.id} --take entry|copy`
+      : `ac principles resolve ${c.id} keeps yours, --take theirs keeps the other`;
+    console.log(`⚠ conflict on ${c.id} — ${where} (${how})`);
+  }
+}
+
+// Phase 22 (P8) — `editText` hands back the whole edited file with `#` lines already
+// stripped; the first non-empty line is the statement, everything after it (trimmed)
+// is the why. Shared by `accept --edit` and `amend --edit`.
+function parseEditedPrinciple(text) {
+  const lines = text.split('\n');
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === '') i++;
+  const statement = (lines[i] || '').trim();
+  const why = lines.slice(i + 1).join('\n').trim();
+  return { statement, why };
+}
 
 // Warn about other developers' claims with the same / similar name.
 function warnNameMatches(matches, me) {
@@ -179,9 +319,12 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac milestone check "<name>"         see if a milestone with a similar name exists
   ac milestone complete [--force]     archive the current milestone + retire its claims
                                        (refuses while a phase is not complete; --force overrides)
+  ac milestone harvest [<n>] [--json] the retrospective sweep material for the principle sweep
+                                       (defaults to the current milestone; read-only)
   ac phase add <name> [--milestone N] claim the next phase number + add it (+ dup-name check)
   ac phase check "<name>"             see if a phase with a similar name exists
   ac phase context <phase>            discuss-gate status: missing | stub | ready
+  ac phase context <phase> --author   who captured it: human | agent <name> | none
   ac phase verify <phase>             mark a phase verified (AI gate passed)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase accept <p> --agent <name>  machine-signed sign-off (records accepted_kind=agent)
@@ -202,7 +345,38 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac backlog link <id> --phase N      commit the item to a phase already in flight
   ac backlog promote <id>             claim a phase number and start it from this idea
   ac backlog archive <id> --kind declined|obsolete --reason "…"  file the idea WITHOUT doing it
-  ac phase reject <phase> --reason …  UAT failed → rejected + record a blocker
+  ac principles add "<stmt>" --kind K [--strength rule|default] [--why …]  a personal note in
+                                       ~/.astro/principles — accepted directly (--propose queues it)
+                                       [--stack t]… [--files g]… [--work w]… [--propose]
+                                       [--from-session …] [--from-project …] [--from-ref …] [--excerpt …]
+  ac principles list [--proposed|--accepted|--rejected|--all] [--json]  the personal store (default: accepted)
+  ac principles show <id> [--json]    one entry — fields, source, promotions, history
+  ac principles accept <id> [--edit | --statement … [--why …]]  proposed → accepted (reword first)
+  ac principles reject <id> --reason …  proposed → rejected (kept, never deleted)
+  ac principles retire <id> --reason …  accepted → retired
+  ac principles supersede <id> --by <id>  accepted → superseded by a newer entry
+  ac principles amend <id> --reason … [--statement … | --edit] [--why …] [--kind …] [--strength …]
+                                       [--stack …] [--files …] [--work …]  reword/rescope, id unchanged
+  ac principles promote <id> [--as decision|convention]  accepted → this project's canon (personal copy stays)
+  ac principles remote [<url>]        set (and sync) the store's private git remote, or print it
+  ac principles resolve <id> [--take mine|theirs|entry|copy]  clear an open sync conflict (mine = this machine's version)
+  ac principles match "<stmt>" [--json]  surface exact/overlap candidates against the store — never acts on them
+  ac principles sight <id> [--from-session …] [--from-project …] [--from-ref …] [--excerpt …]  record an explicit sighting
+  ac principles reopen <id> --reason …  rejected → proposed, the only way back
+  ac principles merge <dup> --into <id>  fold a duplicate's evidence into the survivor, dup stays citable as merged
+  ac principles brief [--stage s] [--work w,…] [--files a,b] [--rules-only] [--by role] [--json]
+                                       the per-task shortlist: hard rules in full + a compact
+                                       in-scope index, never syncs (empty stdout when nothing served)
+  ac principles ask "<question>" [--stage s] [--by role] [--json]  keyword-ranked search, says why it matched
+  ac principles cite <id>… [--stage s] [--by role]  record that these principles were applied
+  ac principles list --usage [--json]  served-never-cited and never-served, from the local usage log
+  ac principles mine [--all|--project <path>] [--rescan] [--json]   hand over a batch of past human turns (read-only)
+  ac principles mine --advance <sweep-id> [--keep <id,id,...>]   mark that sweep processed, carrying the kept turns forward
+  ac principles list|show … --no-sync   read-only: skip the git sync entirely (no lock, no write) — for a read-only consumer
+  ac phase reject <phase> --reason … [--agent name]  UAT failed → rejected + record a blocker
+                                       (--agent: machine-signed rejection, not human UAT)
+  ac phase surprise <phase> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]
+                                       record what an /astro-execute run hit sideways (silent; for the milestone sweep)
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac phase note <phase> ["<text>"]    read/set/clear a durable phase note (survives ROADMAP.md renders)
   ac phase milestone <phase> [<N>]    read/correct which milestone a phase belongs to (never moves the project)
@@ -215,6 +389,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac flow hotfix finish               merge hotfix into main+develop, tag v<N>.<k>, push
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
+                                       (stack override: ac config set stack '["rust"]' — replaces detection)
   ac models [max|balanced|fast] [--preview]  apply a per-role model preset (speed switch)
   ac preflight                        warn if HEAD diverged from upstream (silent when in sync)
   ac fixtures check [--phase N]       advisory: warn if this phase's stamped commits changed
@@ -658,6 +833,619 @@ async function main() {
       die(`unknown: ac backlog ${sub} (add | list | show | note | link | promote | archive)`);
     }
 
+    // The personal principle store (ADR-057, ADR-058; phase 22). Unlike every other
+    // case above, this one writes OUTSIDE .astrocode/ on purpose (D1) — `dir` is the
+    // user's home, resolved once here and threaded through every verb below; only
+    // `promote` (t13) ever needs `root()`. `lib/principles.mjs` has no git in it at
+    // all, so the sync wiring (P12) is entirely this file's job: pull before every
+    // verb, push after a mutation, and the same advisory/conflict lines on every verb
+    // while a remote is unreachable or a conflict is open — none of it changes the
+    // exit code (ADR-055).
+    case 'principles': {
+      const dir = principlesDir();
+      fixPrinciplesBooleanFlags(flags, pos);
+      const sub = pos[0] || 'list';
+
+      if (sub === 'add') {
+        checkFlags('principles add', flags);
+        await principlesSync(dir);
+        const statement = pos.slice(1).join(' ').trim();
+        if (!statement) {
+          die('usage: ac principles add "<statement>" --kind <kind> [--strength rule|default] [--why …] ' +
+            '[--stack t]… [--files g]… [--work w]… [--propose] [--from-session …] [--from-project …] [--from-ref …] [--excerpt …]');
+        }
+        const kind = typeof flags.kind === 'string' ? flags.kind : undefined;
+        const strength = typeof flags.strength === 'string' ? flags.strength : 'default';
+        const why = typeof flags.why === 'string' ? flags.why : '';
+        const stack = flagValues(tail, 'stack');
+        const files = flagValues(tail, 'files');
+        const work = flagValues(tail, 'work');
+        const fromSession = typeof flags['from-session'] === 'string' ? flags['from-session'] : undefined;
+        const fromProject = typeof flags['from-project'] === 'string' ? flags['from-project'] : undefined;
+        const fromRef = typeof flags['from-ref'] === 'string' ? flags['from-ref'] : undefined;
+        const excerpt = typeof flags.excerpt === 'string' ? flags.excerpt : undefined;
+        const source = fromSession || fromProject || fromRef || excerpt
+          ? { session: fromSession, project: fromProject, ref: fromRef, excerpt }
+          : undefined;
+        // `--propose` calls `proposePrinciple` directly (not `addPrinciple`) so an exact
+        // repeat (D2) can be reported as what it actually did — a sighting, never a
+        // second entry queued — instead of the generic "(status)" line a plain add uses.
+        if (flags.propose === true) {
+          let result;
+          try {
+            result = await proposePrinciple(dir, { statement, kind, strength, why, stack, files, work, source });
+          } catch (e) { die(e.message); }
+          if (result.sighted) {
+            const { id, status } = result.matched;
+            const reason = result.entry.reason;
+            console.log(`• seen again: ${id} (${status}${reason ? `: ${reason}` : ''}) — sighting recorded (${(result.entry.sightings || []).length} total), not re-queued`);
+          } else {
+            console.log(`✓ principle ${result.entry.id} (${result.entry.status})`);
+          }
+          await principlesSync(dir);
+          reportPrinciplesConflicts(dir);
+          return;
+        }
+        let entry;
+        try {
+          entry = await addPrinciple(dir, { statement, kind, strength, why, stack, files, work, source });
+        } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} (${entry.status})`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'list' && flags.usage) {
+        // (D4/P8) — the review surface: served-often-never-cited and never-served.
+        // Never syncs, like brief/ask/cite (P1) — it reads the local, per-machine log.
+        checkFlags('principles list', flags);
+        const review = usageReview({ dir });
+        if (flags.json) { json(review); return; }
+        if (review.ignored.length) {
+          console.log('served, never cited:');
+          for (const r of review.ignored) console.log(`  ${r.id}  served ${r.served}× · last ${r.lastServed}`);
+        }
+        if (review.unused.length) {
+          console.log('never served:');
+          for (const r of review.unused) console.log(`  ${r.id}`);
+        }
+        if (!review.ignored.length && !review.unused.length) console.log('• nothing to review');
+        return;
+      }
+
+      if (sub === 'list') {
+        checkFlags('principles list', flags);
+        // Phase 27 (P6, C9) — `--no-sync` is the read-only-consumer path: no lock dir,
+        // no git, no write of ANY kind, so a store `chmod -R a-w`'d (or one this process
+        // has no write access to at all, e.g. a forge server reading another user's
+        // store) can still be listed. Every other behaviour is unchanged.
+        if (!flags['no-sync']) await principlesSync(dir);
+        const { entries, damaged } = loadPrinciples(dir);
+        for (const d of damaged) console.error(`⚠ damaged entry ${d.file}: ${d.error}`);
+        const status = flags.all ? null
+          : flags.proposed ? 'proposed'
+          : flags.rejected ? 'rejected'
+          : flags.accepted ? 'accepted'
+          : 'accepted';
+        // Every entry carries `sightings` (default []) and `sightingCount` (P6). The
+        // proposed queue additionally carries `matches`/`groupWith` — the per-item data
+        // a review needs (C11) — via `buildReviewQueue`, which already filters to
+        // proposed-only. Accepted entries also carry `canonClash` (D5, P6) — a
+        // candidate against the project's canon, never resolved automatically.
+        const pctx = projectContext(process.cwd());
+        const withClash = clashesFor(entries.filter((e) => e.status === 'accepted'), pctx);
+        const clashById = new Map(withClash.map((e) => [e.id, e.clash]));
+        const enriched = entries.map((e) => {
+          const sightings = e.sightings ?? [];
+          const canonClash = clashById.get(e.id) || [];
+          return { ...e, sightings, sightingCount: sightings.length, canonClash };
+        });
+        const shown = status === 'proposed'
+          ? buildReviewQueue(entries)
+          : status === null ? enriched : enriched.filter((e) => e.status === status);
+        if (flags.json) { json(shown); return; }
+        if (!shown.length) {
+          console.log('• no principles yet');
+        } else {
+          for (const e of shown) {
+            console.log(indexLine(e));
+            if (e.canonClash && e.canonClash.length) {
+              console.log(`  ↳ canon may override: ${e.canonClash.map((c) => c.ref).join(', ')}`);
+            }
+            if (status !== 'proposed') continue;
+            const parts = [];
+            if (e.sightingCount) parts.push(`seen again ${e.sightingCount}`);
+            const rejectedMatch = e.matches.find((m) => m.status === 'rejected');
+            if (rejectedMatch) parts.push(`rejected match ${rejectedMatch.id} ("${rejectedMatch.reason}")`);
+            const overlaps = e.matches.filter((m) => m.match === 'overlap');
+            if (overlaps.length) {
+              const ids = overlaps.map((o) => o.id).join(', ');
+              const tokens = [...new Set(overlaps.flatMap((o) => o.shared))].join(', ');
+              parts.push(`overlaps ${ids} on ${tokens}`);
+            }
+            if (e.groupWith.length) parts.push(`group: ${e.groupWith.join(', ')}`);
+            if (parts.length) console.log(`  ↳ ${parts.join(' · ')}`);
+          }
+        }
+        const proposedCount = entries.filter((e) => e.status === 'proposed').length;
+        if (status !== null && status !== 'proposed' && proposedCount) {
+          console.log(`• ${proposedCount} proposed awaiting review — ac principles list --proposed`);
+        }
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'show') {
+        checkFlags('principles show', flags);
+        if (!flags['no-sync']) await principlesSync(dir);
+        let resolved;
+        try { resolved = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const sightings = resolved.sightings ?? [];
+        const entry = { ...resolved, sightings, sightingCount: sightings.length };
+        if (flags.json) { json(entry); return; }
+        const statusLine = entry.reason ? `${entry.status} — ${entry.reason}`
+          : entry.supersededBy ? `${entry.status} — superseded by ${entry.supersededBy}`
+          : entry.mergedInto ? `${entry.status} — into ${entry.mergedInto}`
+          : entry.status;
+        console.log(`${entry.id}  ${statusLine}`);
+        console.log(`kind: ${entry.kind}/${entry.strength}`);
+        const scopeParts = [];
+        if (entry.scopes.stack.length) scopeParts.push(`stack: ${entry.scopes.stack.join(', ')}`);
+        if (entry.scopes.files.length) scopeParts.push(`files: ${entry.scopes.files.join(', ')}`);
+        if (entry.scopes.work.length) scopeParts.push(`work: ${entry.scopes.work.join(', ')}`);
+        if (scopeParts.length) console.log(scopeParts.join('  '));
+        console.log('');
+        console.log(entry.statement);
+        if (entry.why) { console.log(''); console.log(entry.why); }
+        if (entry.source) {
+          const s = entry.source;
+          const pointers = [s.session && `session ${s.session}`, s.project && `project ${s.project}`, s.ref, s.at].filter(Boolean);
+          console.log('');
+          console.log(`source: ${pointers.join(' · ')}`);
+          if (s.excerpt) console.log(`  "${s.excerpt}"`);
+        }
+        if (entry.promotions.length) {
+          console.log('');
+          console.log('promotions:');
+          for (const p of entry.promotions) console.log(`  ${p.project} (${p.as} ${p.ref}) — ${p.at}`);
+        }
+        if (entry.history.length) {
+          console.log('');
+          console.log('history:');
+          for (const h of entry.history) console.log(`  ${h.at}  ${h.action}${h.reason ? ` — ${h.reason}` : ''}`);
+        }
+        if (entry.sightings.length) {
+          console.log('');
+          console.log(`sightings (${entry.sightings.length}):`);
+          for (const s of entry.sightings) {
+            const pointers = [
+              s.session && `session ${s.session}`, s.project && `project ${s.project}`, s.ref, s.at,
+              s.mergedFrom && `from ${s.mergedFrom}`,
+            ].filter(Boolean);
+            console.log(`  ${pointers.join(' · ')}`);
+            if (s.excerpt) console.log(`    "${s.excerpt}"`);
+          }
+        }
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'accept') {
+        checkFlags('principles accept', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        let statement, why;
+        if (flags.edit) {
+          const initial = `${target.statement}\n\n${target.why || ''}\n`;
+          let result;
+          try { result = editText(initial, { env: process.env }); } catch (e) { die(e.message); }
+          // git's own commit-template rule: unedited text refuses rather than accepting
+          // the proposal verbatim under the guise of having reworded it.
+          if (!result.changed) die('accept --edit: nothing changed — the proposal was not reworded');
+          ({ statement, why } = parseEditedPrinciple(result.text));
+        } else if (flags.statement !== undefined) {
+          statement = typeof flags.statement === 'string' ? flags.statement : '';
+          why = typeof flags.why === 'string' ? flags.why : undefined;
+        }
+        let entry;
+        try { entry = await acceptPrinciple(dir, target.id, { statement, why }); } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} → accepted`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'reject') {
+        checkFlags('principles reject', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        let entry;
+        try { entry = await rejectPrinciple(dir, target.id, { reason }); } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} → rejected`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'retire') {
+        checkFlags('principles retire', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        let entry;
+        try { entry = await retirePrinciple(dir, target.id, { reason }); } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} → retired`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'supersede') {
+        checkFlags('principles supersede', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const by = typeof flags.by === 'string' ? flags.by : '';
+        let entry;
+        try { entry = await supersedePrinciple(dir, target.id, { by }); } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} → superseded by ${entry.supersededBy}`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'amend') {
+        checkFlags('principles amend', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        let statement, why;
+        if (flags.edit) {
+          const initial = `${target.statement}\n\n${target.why || ''}\n`;
+          let result;
+          try { result = editText(initial, { env: process.env }); } catch (e) { die(e.message); }
+          if (!result.changed) die('amend --edit: nothing changed — nothing was amended');
+          ({ statement, why } = parseEditedPrinciple(result.text));
+        } else {
+          if (typeof flags.statement === 'string') statement = flags.statement;
+          if (typeof flags.why === 'string') why = flags.why;
+        }
+        const kind = typeof flags.kind === 'string' ? flags.kind : undefined;
+        const strength = typeof flags.strength === 'string' ? flags.strength : undefined;
+        const stackVals = flagValues(tail, 'stack');
+        const filesVals = flagValues(tail, 'files');
+        const workVals = flagValues(tail, 'work');
+        let entry;
+        try {
+          entry = await amendPrinciple(dir, target.id, {
+            reason, statement, why, kind, strength,
+            stack: stackVals.length ? stackVals : undefined,
+            files: filesVals.length ? filesVals : undefined,
+            work: workVals.length ? workVals : undefined,
+          });
+        } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} amended`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'promote') {
+        checkFlags('principles promote', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        if (target.status !== 'accepted') {
+          die(`cannot promote principle "${target.id}" — it is ${target.status}, not accepted (only an accepted principle can be promoted)`);
+        }
+        const as = typeof flags.as === 'string' ? flags.as : 'decision';
+        if (as !== 'decision' && as !== 'convention') die(`invalid --as ${JSON.stringify(as)} (decision|convention)`);
+
+        const r = root();
+        const project = loadState(r).project || basename(r);
+        let ref;
+        if (as === 'decision') {
+          // Reuse `ac decision add`'s own refusal/⚠ reporting rather than a thinner copy —
+          // see the `case 'decision'` block above for why each of these matters.
+          const res = await addDecision(r, { title: target.statement, why: target.why || '' });
+          if (res.ok === false && res.refused === 'decision-collision') {
+            const lines = res.collisions.map((c) =>
+              c.kind === 'edited-published'
+                ? `${c.id} was edited locally after publishing — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
+                  `Record a NEW decision that supersedes it instead of editing the published one.`
+                : `${c.id} collides — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
+                  `Nothing was changed; record a new decision that supersedes one of them.`,
+            );
+            die(`refused — ${lines.join(' ')}`);
+          }
+          ref = res.id;
+          const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
+          console.log(`✓ promoted ${target.id} → ${res.id} ${tag}`);
+          if (res.publishedConventions) console.log(`✓ published CONVENTIONS.md to ${res.branch}`);
+          if (res.conventionsRefused) {
+            const c = res.conventionsRefused;
+            console.error(
+              `⚠ did NOT publish ${c.file} — ${c.reason}. ` +
+                `Reconcile first: \`${c.fixes[0]}\` takes the registry's copy (yours is replaced, so keep your edit), ` +
+                `then re-apply it and \`${c.fixes[1]}\` to publish deliberately.`,
+            );
+          }
+          if (res.preserved && res.preserved.length) {
+            console.error(`⚠ carried ${res.preserved.length} local-only decision(s) into the shared log: ${res.preserved.join(', ')}`);
+          }
+          if (res.duplicates && res.duplicates.length) {
+            for (const d of res.duplicates) {
+              console.error(`⚠ duplicate decision "${d.title}": ${d.ids.join(', ')} — run \`ac canon dedupe\` to collapse.`);
+            }
+          }
+        } else {
+          const bullet = `- ${target.statement}` + (target.why ? ` — ${target.why}` : '');
+          await appendConvention(r, bullet);
+          ref = 'convention';
+          console.log(`✓ promoted ${target.id} → CONVENTIONS.md`);
+          console.log('• publish it to the team: ac canon push');
+        }
+
+        try {
+          await recordPromotion(dir, target.id, { project, path: r, as, ref });
+        } catch (e) { die(e.message); }
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'remote') {
+        checkFlags('principles remote', flags);
+        const url = pos[1];
+        if (url) {
+          // `setRemote`'s own lock is `<dir>/.lock` — `mkdirSync` it first so a store that
+          // has never been written to (this machine's very first `principles` command)
+          // does not fail to acquire a lock whose parent directory does not exist yet.
+          mkdirSync(dir, { recursive: true });
+          let res;
+          try { res = await setRemote(dir, url); } catch (e) { die(e.message); }
+          console.log(`✓ principles remote set: ${url}`);
+          reportPrinciplesSync(res);
+          reportPrinciplesConflicts(dir);
+          return;
+        }
+        await principlesSync(dir);
+        const remote = getRemote(dir);
+        console.log(remote || '• local only — no remote');
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'resolve') {
+        checkFlags('principles resolve', flags);
+        await principlesSync(dir);
+        if (!pos[1]) die('usage: ac principles resolve <id> [--take mine|theirs|entry|copy]');
+        // a unique prefix works here like on every other verb (phase-22 verify, C6)
+        let id = pos[1];
+        const open = [...new Set(openConflicts(dir).map((c) => c.id))];
+        if (!open.includes(id)) {
+          const hits = open.filter((c) => c.startsWith(id));
+          if (hits.length > 1) die(`ambiguous id "${id}" — matches ${hits.join(', ')}`);
+          if (hits.length === 1) id = hits[0];
+        }
+        const take = typeof flags.take === 'string' ? flags.take : 'mine';
+        if (!['mine', 'theirs', 'entry', 'copy'].includes(take)) die(`--take must be mine, theirs, entry or copy, got "${take}"`);
+        let res;
+        try { res = await resolveConflict(dir, id, { take }); } catch (e) { die(e.message); }
+        console.log(`✓ resolved conflict on ${id} (kept the ${res && res.kept === 'copy' ? 'conflict copy' : 'entry'}${take === 'mine' || take === 'theirs' ? ` — ${take}` : ''})`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'match') {
+        checkFlags('principles match', flags);
+        await principlesSync(dir);
+        const statement = pos.slice(1).join(' ').trim();
+        if (!statement) die('usage: ac principles match "<statement>" [--json]');
+        const result = matchPrinciple(dir, statement);
+        if (flags.json) { json(result); return; }
+        if (!result.exact.length && !result.overlap.length) {
+          console.log('• no candidates');
+        } else {
+          for (const m of result.exact) {
+            console.log(`exact    ${m.id}  ${m.status}${m.reason ? ` — ${m.reason}` : ''}`);
+          }
+          for (const m of result.overlap) {
+            console.log(`overlap  ${m.id}  ${m.status}${m.reason ? ` — ${m.reason}` : ''}  matched on: ${m.shared.join(', ')}`);
+          }
+        }
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'sight') {
+        checkFlags('principles sight', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const fromSession = typeof flags['from-session'] === 'string' ? flags['from-session'] : undefined;
+        const fromProject = typeof flags['from-project'] === 'string' ? flags['from-project'] : undefined;
+        const fromRef = typeof flags['from-ref'] === 'string' ? flags['from-ref'] : undefined;
+        const excerpt = typeof flags.excerpt === 'string' ? flags.excerpt : undefined;
+        const source = fromSession || fromProject || fromRef || excerpt
+          ? { session: fromSession, project: fromProject, ref: fromRef, excerpt }
+          : undefined;
+        let result;
+        try { result = await recordSighting(dir, target.id, { source }); } catch (e) { die(e.message); }
+        console.log(`✓ sighting recorded on ${result.entry.id} (${result.entry.status}) — ${(result.entry.sightings || []).length} total`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'reopen') {
+        checkFlags('principles reopen', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const reason = typeof flags.reason === 'string' ? flags.reason : '';
+        let entry;
+        try { entry = await reopenPrinciple(dir, target.id, { reason }); } catch (e) { die(e.message); }
+        console.log(`✓ principle ${entry.id} → proposed (reopened)`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'merge') {
+        checkFlags('principles merge', flags);
+        await principlesSync(dir);
+        let target;
+        try { target = resolvePrinciple(dir, pos[1]); } catch (e) { die(e.message); }
+        const into = typeof flags.into === 'string' ? flags.into : '';
+        let result;
+        try { result = await mergePrinciple(dir, target.id, { into }); } catch (e) { die(e.message); }
+        console.log(`✓ merged ${result.merged.id} into ${result.survivor.id} — kept ${result.survivor.id}, folded ${result.merged.id}'s evidence in as sightings`);
+        await principlesSync(dir);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      // (P1/D1) — brief/ask/cite never call `principlesSync`: they sit on the hot path
+      // of every agent task and every session start, and a hook must never wait on a
+      // `git fetch`. Open sync conflicts are still surfaced, but on STDERR, so a
+      // shortlist on stdout stays clean for hooks and agents to consume directly.
+      if (sub === 'brief') {
+        checkFlags('principles brief', flags);
+        const stage = typeof flags.stage === 'string' ? flags.stage : 'session';
+        if (!Object.prototype.hasOwnProperty.call(STAGE_WORK, stage)) {
+          die(`unknown --stage "${stage}" — valid stages: ${Object.keys(STAGE_WORK).join(', ')}`);
+        }
+        const work = flagValues(tail, 'work');
+        // Split on comma, semicolon OR whitespace — the workflow scripts' claimedFiles()
+        // (lib/waves.mjs/execute-phase.mjs) hands agents a task's files the same way, and
+        // a `--files "a b"` from that instruction must scope exactly like `--files a,b`.
+        const filesRaw = flagValues(tail, 'files').flatMap((f) => f.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean));
+        const files = filesRaw.map((f) => (f.startsWith('./') ? f.slice(2) : f));
+        const by = typeof flags.by === 'string' ? flags.by : 'cli';
+        const result = await shortlist({
+          dir, cwd: process.cwd(), stage, work: work.length ? work : undefined, files,
+          rulesOnly: flags['rules-only'] === true, by,
+        });
+        if (flags.json) { json(result.json); return; }
+        if (result.text) console.log(result.text);
+        else console.error(`• no principles in scope — stack: ${(result.ctx.stack || []).join(', ') || '(none)'}`);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'ask') {
+        checkFlags('principles ask', flags);
+        const question = pos.slice(1).join(' ').trim();
+        if (!question) die('usage: ac principles ask "<question>" [--stage s] [--by role] [--json]');
+        const stage = typeof flags.stage === 'string' ? flags.stage : 'ask';
+        if (!Object.prototype.hasOwnProperty.call(STAGE_WORK, stage)) {
+          die(`unknown --stage "${stage}" — valid stages: ${Object.keys(STAGE_WORK).join(', ')}`);
+        }
+        const by = typeof flags.by === 'string' ? flags.by : 'cli';
+        const { results, text } = await askStore({ dir, cwd: process.cwd(), question, stage, by });
+        if (flags.json) { json(results); return; }
+        console.log(text);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'cite') {
+        checkFlags('principles cite', flags);
+        const refs = pos.slice(1);
+        if (!refs.length) die('usage: ac principles cite <id>… [--stage s] [--by role]');
+        const stage = typeof flags.stage === 'string' ? flags.stage : 'cli';
+        const by = typeof flags.by === 'string' ? flags.by : 'cli';
+        const { resolved, unresolved } = await cite({ dir, cwd: process.cwd(), refs, stage, by });
+        for (const ref of unresolved) console.error(`⚠ could not resolve principle "${ref}"`);
+        if (!resolved.length) die('no principle reference resolved — nothing was cited');
+        console.log(`✓ cited ${resolved.length} principle(s)`);
+        reportPrinciplesConflicts(dir);
+        return;
+      }
+
+      if (sub === 'mine') {
+        checkFlags('principles mine', flags);
+        if (flags.all && flags.project) die('ac principles mine: --all and --project are mutually exclusive');
+
+        if (flags.keep !== undefined && flags.advance === undefined) die('ac principles mine: --keep only goes with --advance <sweep-id>');
+        if (typeof flags.advance === 'string' || flags.advance === true) {
+          const sweepId = typeof flags.advance === 'string' ? flags.advance : pos[1];
+          if (!sweepId) die('usage: ac principles mine --advance <sweep-id> [--keep <id,id,...>]');
+          if (flags.keep === true) die('usage: ac principles mine --advance <sweep-id> --keep <id,id,...>');
+          const keep = typeof flags.keep === 'string' ? flags.keep.split(',').map((k) => k.trim()).filter(Boolean) : [];
+          let res;
+          try {
+            res = await advanceSweep({ storeDir: dir, id: sweepId, keep });
+          } catch (e) { die(e.message); }
+          console.log(`✓ advanced sweep ${sweepId}${res && res.kept ? ` — ${res.kept} turn(s) kept for later sweeps` : ''}`);
+          return;
+        }
+
+        await principlesSync(dir);
+        // Claude names a project's transcript dir after the path the session was STARTED
+        // in, which may be the unresolved one: `process.cwd()` is already resolved
+        // (macOS /var → /private/var), so a project reached through a symlink never
+        // matched its own transcripts (C13). `$PWD` keeps the path as the shell spelled it —
+        // used only when it really is this same directory, never trusted blindly.
+        const bases = [];
+        if (flags.project) {
+          bases.push(resolve(String(flags.project)));
+        } else {
+          bases.push(process.cwd());
+          const pwd = process.env.PWD;
+          if (pwd && pwd !== process.cwd()) {
+            try { if (realpathSync(pwd) === realpathSync(process.cwd())) bases.push(pwd); } catch { /* not this dir */ }
+          }
+        }
+        const roots = [];
+        for (const base of bases) {
+          const root = flags.project ? base : (findAstroRoot(base) || base);
+          roots.push(root);
+          // realpathSync throws on a non-existent path — fall back to the given root
+          // rather than dying on a read-only sweep (macOS /var vs /private/var, D-P2).
+          try { roots.push(realpathSync(root)); } catch { /* keep root */ }
+        }
+        const scope = flags.all
+          ? { mode: 'all', roots: [] }
+          : { mode: 'project', roots: [...new Set(roots)] };
+        let result;
+        try {
+          result = await sweep({ scope, rescan: !!flags.rescan, storeDir: dir });
+        } catch (e) { die(e.message); }
+
+        if (flags.json) { json(result); return; }
+
+        if (result.nothingNew) {
+          console.log(`• nothing new to mine (${result.sessions.scanned} session file(s) checked)`);
+          return;
+        }
+        console.log(`• ${result.items.length} turn(s) from ${result.sessions.scanned} session file(s) — sweep ${result.sweep}`);
+        for (const it of result.items) {
+          const oneLine = it.text.replace(/\s+/g, ' ').trim();
+          const shown = oneLine.length > 120 ? `${oneLine.slice(0, 119)}…` : oneLine;
+          const n = it.sessions.length;
+          console.log(`  ${it.id} [${n} session${n === 1 ? '' : 's'}${it.earlier ? ', earlier' : ''}] ${shown}`);
+        }
+        if (result.sightings.length) console.log(`• ${result.sightings.length} exact repeat(s) to record as sightings`);
+        if (result.remaining) console.log(`• ${result.remaining} more turn(s) held for the next sweep`);
+        const skippedTotal = result.skipped.malformed + result.skipped.unrecognised + result.skipped.oversized + result.skipped.stalePending;
+        if (skippedTotal > 0) {
+          console.log(`⚠ skipped ${skippedTotal} transcript line(s): ${result.skipped.malformed} malformed, ${result.skipped.unrecognised} unrecognised, ${result.skipped.oversized} oversized`);
+        }
+        return;
+      }
+
+      die(`unknown: ac principles ${sub} (add | list | show | accept | reject | retire | supersede | amend | promote | remote | resolve | match | sight | reopen | merge | brief | ask | cite | mine)`);
+    }
+
     case 'agents-md': {
       const root = findRoot() || process.cwd();
       const written = writeAgentsMd(root);
@@ -965,8 +1753,51 @@ async function main() {
         if (arch.kept) console.log(`  kept ${arch.kept} phase(s) scheduled for a later milestone on the roadmap`);
         if (released.ok && released.source === 'remote') console.log(`  retired ${released.changed} registry claim(s)`);
         console.log('  start the next cycle with `ac milestone new`');
+      } else if (pos[0] === 'harvest') {
+        // Phase 23 (P5) — the retrospective sweep material for `/astro-complete-milestone`'s
+        // principle sweep. Read-only: never mutates roadmap, state, or the principle store.
+        // Defaults to the LIVE roadmap's current milestone; reads the archived snapshot once
+        // that milestone has closed (lib/harvest.mjs's module header explains why the
+        // archive, not the live project, is the source of truth after close).
+        checkFlags('milestone harvest', flags);
+        const nArg = pos[1] !== undefined ? Number(pos[1]) : undefined;
+        if (pos[1] !== undefined && (!Number.isInteger(nArg) || nArg < 1)) {
+          die('usage: ac milestone harvest [<n>] [--json]');
+        }
+        let result;
+        try { result = await milestoneHarvest(r, nArg); } catch (e) { die(e.message); }
+        if (flags.json) { json(result); return; }
+
+        console.log(`milestone ${result.milestone} sweep material (${result.source === 'archive' ? 'archived' : 'live'})`);
+
+        const { adrWindow, adrs, contexts, rejections, surprises, skipped } = result;
+        const nothing = adrs.length === 0 && contexts.length === 0 && rejections.length === 0
+          && surprises.length === 0 && !skipped.agentContexts && !skipped.agentRejections;
+        if (nothing) { console.log('• nothing to sweep'); return; }
+
+        if (adrWindow === null) {
+          console.log(`⊡ ADRs not swept — milestone ${result.milestone} recorded no close date`);
+        } else {
+          console.log(`ADRs since ${adrWindow.since ? adrWindow.since.slice(0, 10) : 'the start'}`);
+          for (const a of adrs) console.log(`  ${a.id}  ${a.title}`);
+        }
+        if (contexts.length) {
+          console.log('CONTEXT (human)');
+          for (const c of contexts) console.log(`  ${c.phase}  ${c.file}`);
+        }
+        if (rejections.length) {
+          console.log('rejections (human)');
+          for (const rj of rejections) console.log(`  ${rj.phase}  ${rj.reason}`);
+        }
+        if (surprises.length) {
+          console.log('surprises');
+          for (const s of surprises) console.log(`  ${s.phase}  ${s.signals.join(',')}${s.note ? `  ${s.note}` : ''}`);
+        }
+        if (skipped.agentContexts || skipped.agentRejections) {
+          console.log(`• skipped: ${skipped.agentContexts} agent-captured CONTEXT, ${skipped.agentRejections} agent-signed rejection(s)`);
+        }
       } else {
-        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|check "<name>"|complete>');
+        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|check "<name>"|complete|harvest [<n>]>');
       }
       return;
     }
@@ -1140,7 +1971,25 @@ async function main() {
         // actually get discussed, or does a CONTEXT.md merely exist? Prints
         // missing|stub|ready (exit 0); the command keys its nudge off this
         // instead of mere file presence. See lib/planning.mjs phaseContextStatus.
-        if (!ph) die('usage: ac phase context <phase>');
+        if (!ph) die('usage: ac phase context <phase> [--author]');
+        // Phase 23 (P4) — `--author` answers a narrower question: WHO captured this
+        // discussion, not just whether one exists. `/astro-discuss`'s propose gate
+        // (D6) needs exactly `human`, never a substring test on the marker — the
+        // ADR-037 trap: `captured` also matches the agent form
+        // `<!-- astro-discuss: captured by agent: … -->`. Reuses phaseContextStatus
+        // for missing/stub so "what counts as captured" stays defined once.
+        if (flags.author) {
+          const status = phaseContextStatus(r, ph.slug);
+          if (status !== 'ready') { console.log('none'); return; }
+          const file = join(paths(r).phases, ph.slug, 'CONTEXT.md');
+          // `contextAuthor` returns `null` for the plain human marker and a (possibly
+          // empty) string for the agent form — an empty string still DECLARES agent
+          // provenance (`<!-- astro-discuss: captured by agent:  -->`, no name given),
+          // so a truthy check on the name wrongly reported that capture as 'human'.
+          const author = contextAuthor(readFileSync(file, 'utf8'));
+          console.log(author !== null ? `agent${author ? ` ${author}` : ''}` : 'human');
+          return;
+        }
         console.log(phaseContextStatus(r, ph.slug));
       } else if (sub === 'verify') {
         if (!ph) die('usage: ac phase verify <phase>');
@@ -1195,17 +2044,58 @@ async function main() {
           console.log(`✓ backlog ${b.id} absorbed`);
         }
       } else if (sub === 'reject') {
-        if (!ph) die('usage: ac phase reject <phase> --reason "…"');
+        if (!ph) die('usage: ac phase reject <phase> --reason "…" [--agent name]');
         checkFlags('phase reject', flags);
         const reason = typeof flags.reason === 'string' ? flags.reason : '';
-        await setPhaseStatus(r, ph.slug, 'rejected');
-        await updateState(r, (s) => ({ ...s, blockers: [...(s.blockers || []), { phase: ph.slug, reason, at: new Date().toISOString() }] }));
-        console.log(`✗ phase ${ph.number} "${ph.name}" → rejected${reason ? `: ${reason}` : ''}`);
+        // ADR-033, now symmetric on reject (P2, phase 23) — a stand-in agent rejects
+        // on the human's behalf; `kind` is DECLARED via `--agent`, never detected, for
+        // the same reason `phase accept --agent` declares it: only the caller knows
+        // whether a human actually made the judgement. Default stays 'human'.
+        //
+        // `--agent` present at all — bare (parseArgs gives `true`) or with an empty
+        // name (`--agent ""`) — still DECLARES agent provenance; only its ABSENCE
+        // (the key never passed) means human. A truthy-string check on the name
+        // collapsed both declared-but-unnamed forms back into 'human', letting a
+        // stand-in agent's rejection masquerade as genuine human UAT.
+        const isAgentSigner = flags.agent !== undefined;
+        const agentSigner = typeof flags.agent === 'string' ? flags.agent : '';
+        await rejectPhase(r, ph.slug, { reason, agent: isAgentSigner ? agentSigner : undefined });
+        await updateState(r, (s) => ({
+          ...s,
+          blockers: [...(s.blockers || []), {
+            phase: ph.slug, reason, kind: isAgentSigner ? 'agent' : 'human', at: new Date().toISOString(),
+          }],
+        }));
+        console.log(
+          `✗ phase ${ph.number} "${ph.name}" → rejected${reason ? `: ${reason}` : ''}` +
+            `${isAgentSigner ? ' (AGENT — machine-signed, not human UAT)' : ''}`,
+        );
         // Q1: a linked item whose phase is REJECTED reverts to open rather than being
         // stranded as `linked` forever — nothing is silently lost either way.
         for (const b of await reopenBacklogFor(r, { kind: 'phase', workRef: ph.slug })) {
           console.log(`• backlog ${b.id} back on the list`);
         }
+      } else if (sub === 'surprise') {
+        // Phase 23 (P3) — /astro-execute calls this UNCONDITIONALLY after every run;
+        // `recordSurprise` (not this verb) decides whether the run adds up to a
+        // signal. Prints nothing on success either way (D3: execute prints nothing
+        // extra about it) — a clean run and a recorded surprise look identical here.
+        if (!ph) die('usage: ac phase surprise <phase> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]');
+        checkFlags('phase surprise', flags);
+        const healedRaw = flags.healed;
+        if (healedRaw !== undefined && (typeof healedRaw !== 'string' || Number.isNaN(Number(healedRaw)))) {
+          die(`--healed must be a number, got "${healedRaw}"`);
+        }
+        const remediationRaw = flags['remediation-cycles'];
+        if (remediationRaw !== undefined && (typeof remediationRaw !== 'string' || Number.isNaN(Number(remediationRaw)))) {
+          die(`--remediation-cycles must be a number, got "${remediationRaw}"`);
+        }
+        await recordSurprise(r, ph.slug, {
+          healed: healedRaw !== undefined ? Number(healedRaw) : undefined,
+          remediationCycles: remediationRaw !== undefined ? Number(remediationRaw) : undefined,
+          stoppedReason: typeof flags['stopped-reason'] === 'string' ? flags['stopped-reason'] : undefined,
+          note: typeof flags.note === 'string' ? flags.note : undefined,
+        });
       } else if (sub === 'effort') {
         // Per-phase effort dial (ADR-022), mirroring `ac models` ergonomics.
         //   ac phase effort <n>               RESOLVE: print the effective level
@@ -1286,7 +2176,7 @@ async function main() {
           console.log('  the project\'s active milestone is unchanged — use `ac milestone new` to move it');
         }
       } else {
-        die('usage: ac phase <add|check|context|verify|accept|reject|effort|note|milestone> …');
+        die('usage: ac phase <add|check|context|verify|accept|reject|surprise|effort|note|milestone> …');
       }
       return;
     }

@@ -28,7 +28,12 @@
 - State / data flow: the `ac` CLI owns all state as plain files under `.astrocode/`
   (`state.json`, `config.json`, `roadmap.json`). **Never hand-edit that JSON in code
   paths** — go through the lock-guarded `update*` helpers in `lib/`. `ROADMAP.md` is
-  *generated* (`ac roadmap render`), never a source of truth.
+  *generated* (`ac roadmap render`), never a source of truth. **ADR-057 exception:** the
+  personal principle store (`~/.astro/principles/`, one Markdown file per entry) lives
+  outside `.astrocode/` on purpose — it travels with the developer, not the repo — and is
+  written only through `lib/principles.mjs`/`lib/principlesync.mjs`. Its cross-machine
+  safety is a plain git merge + non-force push (one human owner, many machines), never
+  `transact()`, which exists for many-writer team state.
 - Async / concurrency: same-machine parallelism is guarded by `withLock` (atomic
   `mkdir` mutex, 10s stale reclaim). Cross-machine/cross-developer safety comes ONLY
   from the orphan-branch git compare-and-swap in `lib/shared.mjs` `transact()` — a

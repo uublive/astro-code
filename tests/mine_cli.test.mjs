@@ -1,0 +1,241 @@
+// Phase 26 t8 — RED: CLI tests for `ac principles mine` (P1/P8, ADR-029). Subprocess-only,
+// against a real isolated HOME (git init + `ac init`), exactly like tests/principles_cli.
+// `mine` doesn't exist on bin/ac.mjs yet (t14), so every invocation below currently dies
+// with a non-zero exit — this file loads fine and fails RED until t14 lands (ADR-018).
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, existsSync, readdirSync, realpathSync, symlinkSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+
+import { git } from '../lib/git.mjs';
+import { sandbox as fixtureSandbox, addProfile, writeClaudeSession, writeCodexRollout, cHuman, cAssistant, cToolResult, cMeta, GARBAGE_LINES, SECRETS, xUser, appendLines } from './fixtures/minefixtures.mjs';
+
+const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
+const AC = join(FRAMEWORK, 'bin', 'ac.mjs');
+
+// `realpathSync` so the path the fixtures slug is the one the CLI resolves to: on macOS
+// `tmpdir()` is `/var/…`, a symlink to `/private/var/…`, and a fixture written under the
+// unresolved slug never matched (C13). The symlinked case is tested on purpose below.
+function mkProject(sb) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ac-mine-proj-')));
+  git(['init', '--quiet'], { cwd: dir });
+  git(['config', 'user.email', 'dev@example.com'], { cwd: dir });
+  git(['config', 'user.name', 'dev'], { cwd: dir });
+  const init = spawnSync(process.execPath, [AC, 'init'], { cwd: dir, encoding: 'utf8', env: sb.env, windowsHide: true });
+  assert.strictEqual(init.status, 0, init.stderr);
+  return dir;
+}
+
+function run(argv, cwd, sb, extraEnv = {}) {
+  return spawnSync(process.execPath, [AC, ...argv], {
+    cwd, encoding: 'utf8', env: { ...sb.env, PWD: cwd, GIT_AUTHOR_NAME: 'dev', GIT_AUTHOR_EMAIL: 'dev@example.com', GIT_COMMITTER_NAME: 'dev', GIT_COMMITTER_EMAIL: 'dev@example.com', ...extraEnv },
+    windowsHide: true,
+  });
+}
+
+test('C1: default scope finds this project only; --project targets another; --all finds both', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  const Q = realpathSync(mkdtempSync(join(tmpdir(), 'ac-mine-q-')));
+  writeClaudeSession(sb.claude, P, 'sess-p', [cHuman('always-P run tests before pushing')]);
+  writeClaudeSession(sb.claude, Q, 'sess-q', [cHuman('always-Q run tests before pushing')]);
+  const texts = (r) => JSON.parse(r.stdout).items.map((i) => i.text).join('\n');
+
+  const def = run(['principles', 'mine', '--json'], P, sb);
+  assert.strictEqual(def.status, 0, def.stderr);
+  assert.deepEqual(JSON.parse(def.stdout).scope.mode, 'project');
+  assert.match(texts(def), /always-P/);
+  assert.doesNotMatch(texts(def), /always-Q/);
+
+  const withProject = run(['principles', 'mine', '--project', Q, '--json'], P, sb);
+  assert.strictEqual(withProject.status, 0, withProject.stderr);
+  assert.match(texts(withProject), /always-Q/);
+
+  const all = run(['principles', 'mine', '--all', '--json'], P, sb);
+  assert.strictEqual(all.status, 0, all.stderr);
+  assert.match(texts(all), /always-P/);
+  assert.match(texts(all), /always-Q/);
+
+  const both = run(['principles', 'mine', '--all', '--project', Q, '--json'], P, sb);
+  assert.notStrictEqual(both.status, 0, '--all together with --project must die');
+});
+
+test('C13: a project reached through a symlink matches transcripts slugged by the unresolved path ($PWD)', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  const linkParent = mkdtempSync(join(tmpdir(), 'ac-mine-link-'));
+  const L = join(linkParent, 'proj-link');
+  symlinkSync(P, L);
+  try {
+    writeClaudeSession(sb.claude, L, 'sess-link', [cHuman('typed while cd-ed into the symlink')]);
+    const res = run(['principles', 'mine', '--json'], L, sb, { PWD: L });
+    assert.strictEqual(res.status, 0, res.stderr);
+    const items = JSON.parse(res.stdout).items;
+    assert.ok(items.some((i) => /symlink/.test(i.text)), 'the unresolved-path slug must be in scope');
+
+    // A $PWD that is NOT this directory is never trusted.
+    const other = mkdtempSync(join(tmpdir(), 'ac-mine-other-'));
+    writeClaudeSession(sb.claude, other, 'sess-other', [cHuman('from an unrelated dir')]);
+    const res2 = run(['principles', 'mine', '--json', '--rescan'], P, sb, { PWD: other });
+    assert.ok(!JSON.parse(res2.stdout).items.some((i) => /unrelated/.test(i.text)));
+    rmSync(other, { recursive: true, force: true });
+  } finally {
+    rmSync(linkParent, { recursive: true, force: true });
+  }
+});
+
+test('C3: neither stdout/stderr nor any file under HOME contains a raw secret', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  writeClaudeSession(sb.claude, P, 'sess-s', [
+    cHuman(`from now on always redact secrets like ${SECRETS[0]} ${SECRETS[1]} ${SECRETS[2]} ${SECRETS[3]} ${SECRETS[4]}`),
+  ]);
+  const res = run(['principles', 'mine', '--json'], P, sb);
+  assert.strictEqual(res.status, 0, res.stderr);
+  for (const s of SECRETS) {
+    assert.ok(!res.stdout.includes(s), `stdout must never contain ${s}`);
+    assert.ok(!res.stderr.includes(s));
+  }
+});
+
+test('C3 remediate-r2: env-style secret assignments and a bare JWT never reach text or --json output', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  const values = ['Pr0dPassw0rd9xq', 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY', 'ghs0ldTokenValue123456',
+    'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhYmMifQ.c2lnbmF0dXJlX3ZhbHVl'];
+  writeClaudeSession(sb.claude, P, 'sess-env', [
+    cHuman(`never commit DB_PASSWORD=${values[0]} AWS_SECRET_ACCESS_KEY=${values[1]} GITHUB_TOKEN=${values[2]} or ${values[3]}`),
+  ]);
+  for (const argv of [['principles', 'mine'], ['principles', 'mine', '--json']]) {
+    const res = run(argv, P, sb);
+    assert.strictEqual(res.status, 0, res.stderr);
+    assert.match(res.stdout, /never commit DB_PASSWORD=\[REDACTED\]/, 'the steer itself is still emitted');
+    for (const v of values) {
+      assert.ok(!res.stdout.includes(v), `${argv.join(' ')} stdout must never contain ${v}`);
+      assert.ok(!res.stderr.includes(v));
+    }
+  }
+});
+
+test('C6: mine → advance → nothingNew → append → new item; --rescan re-emits', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  writeClaudeSession(sb.claude, P, 'sess-1', [cHuman('from now on always run the full test suite')]);
+
+  const first = run(['principles', 'mine', '--json'], P, sb);
+  assert.strictEqual(first.status, 0, first.stderr);
+  const firstJson = JSON.parse(first.stdout);
+  assert.ok(firstJson.sweep);
+
+  const advanced = run(['principles', 'mine', '--advance', firstJson.sweep], P, sb);
+  assert.strictEqual(advanced.status, 0, advanced.stderr);
+
+  const again = run(['principles', 'mine', '--json'], P, sb);
+  assert.strictEqual(again.status, 0, again.stderr);
+  const againJson = JSON.parse(again.stdout);
+  assert.strictEqual(againJson.nothingNew, true);
+
+  const rescanned = run(['principles', 'mine', '--rescan', '--json'], P, sb);
+  const rescannedJson = JSON.parse(rescanned.stdout);
+  assert.strictEqual(rescannedJson.nothingNew, false, '--rescan must re-emit already-processed material');
+
+  const storeStatus = git(['status', '--porcelain'], { cwd: sb.store });
+  assert.strictEqual(storeStatus.stdout.trim(), '', 'nothing under .local should show up in the store\'s git status');
+});
+
+test('C9: garbage lines never crash the sweep; skipped is reported', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  writeClaudeSession(sb.claude, P, 'sess-g', [...GARBAGE_LINES, cHuman('from now on always run the full test suite')]);
+
+  const res = run(['principles', 'mine', '--json'], P, sb);
+  assert.strictEqual(res.status, 0, res.stderr);
+  const j = JSON.parse(res.stdout);
+  assert.ok(j.skipped.malformed + j.skipped.unrecognised >= 1);
+
+  const text = run(['principles', 'mine'], P, sb);
+  assert.match(text.stdout, /⚠ skipped/);
+});
+
+test('C9 remediation: a Codex rollout entirely of unrecognised lines (no readable session_meta) is reported, not read as "nothing new"', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  const dir = join(sb.codex, 'sessions', '2026', '09', '24');
+  const file = join(dir, 'rollout-no-meta.jsonl');
+  appendLines(file, [
+    { type: 'future_codex_event', a: 1 },
+    { type: 'future_codex_event', a: 2 },
+    { type: 'future_codex_event', a: 3 },
+    { type: 'future_codex_event', a: 4 },
+  ]);
+
+  const res = run(['principles', 'mine', '--json'], P, sb);
+  assert.strictEqual(res.status, 0, res.stderr);
+  const j = JSON.parse(res.stdout);
+  assert.strictEqual(j.nothingNew, false, 'an unrecognised-only Codex rollout must not read as a clean/empty run');
+  assert.ok(j.sessions.scanned >= 1);
+  assert.ok(j.skipped.unrecognised >= 4);
+});
+
+test('ADR-029: an unknown flag dies; --advance of an unknown sweep dies; --keep needs --advance', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  const bogus = run(['principles', 'mine', '--bogus'], P, sb);
+  assert.notStrictEqual(bogus.status, 0);
+
+  const badAdvance = run(['principles', 'mine', '--advance', 'nope'], P, sb);
+  assert.notStrictEqual(badAdvance.status, 0);
+  assert.match(badAdvance.stderr, /unknown or already-advanced sweep/);
+
+  const loneKeep = run(['principles', 'mine', '--keep', 't1'], P, sb);
+  assert.notStrictEqual(loneKeep.status, 0);
+});
+
+test('text output: one line per item plus the summary', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  writeClaudeSession(sb.claude, P, 's1', [cHuman('No.'), cHuman('Nie die Datenbank in Tests mocken.')]);
+  writeClaudeSession(sb.claude, P, 's2', [cHuman('No.')]);
+  const res = run(['principles', 'mine'], P, sb);
+  assert.strictEqual(res.status, 0, res.stderr);
+  const lines = res.stdout.trim().split('\n');
+  assert.match(lines[0], /^• 2 turn\(s\) from 2 session file\(s\) — sweep mine-/);
+  assert.ok(lines.some((l) => /^ {2}t\d+ \[2 sessions\] No\.$/.test(l)), res.stdout);
+  assert.ok(lines.some((l) => /^ {2}t\d+ \[1 session\] Nie die Datenbank/.test(l)), res.stdout);
+});
+
+test('C7: --advance --keep carries the kept turn into the next sweep; an unknown keep id refuses and advances nothing', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  writeClaudeSession(sb.claude, P, 's1', [cHuman('Niente virgole finali.'), cHuman('rename it to parseRow')]);
+  const first = JSON.parse(run(['principles', 'mine', '--json'], P, sb).stdout);
+  const keepId = first.items.find((i) => /virgole/.test(i.text)).id;
+
+  const bad = run(['principles', 'mine', '--advance', first.sweep, '--keep', `${keepId},t404`], P, sb);
+  assert.notStrictEqual(bad.status, 0);
+  assert.match(bad.stderr, /unknown item id "t404"/);
+  const still = JSON.parse(run(['principles', 'mine', '--json'], P, sb).stdout);
+  assert.strictEqual(still.nothingNew, false, 'a refused advance moves no watermark');
+
+  const ok = run(['principles', 'mine', '--advance', first.sweep, '--keep', keepId], P, sb);
+  assert.strictEqual(ok.status, 0, ok.stderr);
+  assert.match(ok.stdout, /1 turn\(s\) kept/);
+
+  writeClaudeSession(sb.claude, P, 's2', [cHuman('Keine nachgestellten Kommas.')]);
+  const second = JSON.parse(run(['principles', 'mine', '--json'], P, sb).stdout);
+  const kept = second.items.find((i) => /virgole/.test(i.text));
+  assert.ok(kept && kept.earlier === true, 'the kept turn comes back marked earlier');
+  assert.ok(second.items.some((i) => /Kommas/.test(i.text) && i.earlier === false));
+  assert.ok(!second.items.some((i) => /parseRow/.test(i.text)), 'an unkept handled turn never comes back');
+});
+
+test('ac help lists `principles mine`', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  const res = run(['help'], P, sb);
+  assert.strictEqual(res.status, 0, res.stderr);
+  assert.match(res.stdout, /principles mine/);
+});

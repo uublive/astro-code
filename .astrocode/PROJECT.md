@@ -60,6 +60,64 @@ keep the anti-false-PASS gate intact):
 Developed on the `feature/lean-execution` branch so the whole line can be dropped if it
 doesn't pan out.
 
+## Milestone 9 — Second Nature
+
+astro-code learns how *you* build, and asks before it believes anything. A system you
+understand and control is worth more than a smarter one you don't: so the tool should
+align itself to the way its user works, rather than the user bending to the tool.
+
+Today a project has **canon** (CONVENTIONS.md + DECISIONS.md, shared by the team). What
+it lacks is the **personal** layer: the principles, patterns, preferences and
+antipatterns one developer carries across every project. FORGEMASTER keeps that in a
+knowledge graph mined from session transcripts; this milestone brings it into astro-code
+so it works standalone (and open source), after which forge's version is retired.
+
+- **A personal store, outside the repo** (`~/.astro/`), so one developer's preferences
+  never land in a teammate's clone. Each entry: kind, statement, *why*, scopes (stack,
+  file patterns, kind of work), evidence (the conversation it came from), strength (hard
+  rule or preference), and a lifecycle — proposed → accepted / rejected *with a reason* /
+  retired / superseded. A principle that should bind the whole team is *promoted* into
+  that project's canon on purpose. Project canon wins over personal preference, and a
+  conflict is flagged, never silently resolved.
+- **The machine proposes, the human decides.** Proposals come first from the moments
+  that already carry intent — `/astro-discuss`, `/astro-decision`, `/astro-accept`,
+  milestone close — then from an opt-in, on-demand transcript sweep. Nothing is accepted
+  without the user; a rejection is remembered so it is not proposed again.
+- **Retrieval without a black box.** Agents get a structural shortlist (scopes vs the
+  task's stack, files and stage) as a compact index — one line per principle, full text
+  on demand, the few hard rules always in full — and do the semantic matching themselves.
+  `ac principles ask` ranks by keyword and says why each result matched. Usage is logged,
+  so unused or ignored principles surface for review. No embeddings until real usage
+  shows the index has outgrown a prompt.
+
+Phases 22–27: the store and CLI → capture at the moments of intent → the review workflow
+→ retrieval into prompts → the transcript miner → forge import and handover.
+
+## Milestone 10 — astro-code on Pi
+
+astro-code runs in [Pi](https://pi.dev) as a first-class host, including against a
+local model, and **stays** running there: a feature written for one host must not
+silently fail on another.
+
+- **One source, rendered per host.** Commands, agents and workflows are authored once;
+  the Pi adapter renders them (prompt templates, agents, tool-name map) exactly as the
+  Claude and Codex adapters do. Verified against a real Pi install, never against docs
+  alone — the Codex adapter proved the docs wrong once already.
+- **Same surface, not a second dialect.** A Pi extension provides what the command text
+  and workflow scripts already assume — the Workflow surface (`agent`, `parallel`,
+  `phase`, `log`) on Pi's SDK, structured output, an ask-the-user tool — so a command
+  does not need a Pi branch to work in Pi.
+- **A parity guard that fails the build.** Each host declares what it can provide; a test
+  fails when a command, agent or workflow depends on something a wired host cannot. A
+  gap is either closed or declared as a visible, shrinking exception — never discovered
+  in the field. This is what keeps versions from drifting.
+- **Local models are a real configuration.** Roles map to a provider/model per host, so
+  the planner and verifier can stay on a frontier model while executors run locally; the
+  local model's limits (output cap, no reasoning control) are reported, not papered over.
+
+The research this builds on (Pi SDK spike, headless contract, three-host design) was done
+in September 2026 and is consolidated into the first phase's research note.
+
 ## Requirements
 
 <!-- One line per requirement. Use stable IDs (REQ-001) so phases can map to them. -->

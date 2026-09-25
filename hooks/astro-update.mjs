@@ -14,7 +14,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
-import { findAstroRoot, readContext, renderBanner } from './_astro-ctx.mjs';
+import { findAstroRoot, readContext, renderBanner, principlesBrief, hookDirOf } from './_astro-ctx.mjs';
 
 const HOME = join(homedir(), '.astro', 'code');
 const cacheFile = join(HOME, 'update-check.json');
@@ -52,7 +52,17 @@ if (cache && cache.update_available) {
   lines.push(`astro-code update available: ${n} commit${n === 1 ? '' : 's'} behind${ver} — run /astro-update`);
 }
 
-if (lines.length) process.stdout.write(JSON.stringify({ systemMessage: lines.join('\n\n') }));
+// (4) the principles shortlist (P10, D1): hard rules + a compact index, delivered as
+// model context via `hookSpecificOutput.additionalContext`, on EVERY source
+// including clear/compact — the (1) banner-skip rule above is visual only, this is
+// model context and would otherwise silently vanish from a compacted session.
+const output = {};
+if (lines.length) output.systemMessage = lines.join('\n\n');
+if (projRoot) {
+  const brief = principlesBrief(projRoot, hookDirOf(import.meta.url), { stage: 'session', by: 'session' });
+  if (brief) output.hookSpecificOutput = { hookEventName: 'SessionStart', additionalContext: brief };
+}
+if (Object.keys(output).length) process.stdout.write(JSON.stringify(output));
 
 // (2) refresh in the background when missing/stale
 const now = Math.floor(Date.now() / 1000);

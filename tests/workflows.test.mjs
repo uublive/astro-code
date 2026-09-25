@@ -2496,11 +2496,13 @@ test('t3 (phase 13): batchPrompt appends OBEY like every other executor prompt',
   assert.ok(endIdx !== -1 && endIdx > startIdx, 'runBatchOnBranch comment not found after batchPrompt')
 
   const body = wfSrc.slice(startIdx, endIdx).trimEnd()
-  // ADR-031 appends BAR after OBEY on the three IMPLEMENTER prompts. The contract this
-  // guards is "batchPrompt carries the canon like its siblings", not the literal tail.
+  // ADR-031 appends BAR after OBEY on the three IMPLEMENTER prompts; phase 25 (P10)
+  // appends the principles block after that. The contract this guards is "batchPrompt
+  // carries the canon (and the principles shortlist) like its siblings", not the
+  // literal tail.
   assert.ok(
-    /OBEY(\s*\+\s*BAR)?(\s*\+\s*NO_BROAD_STASH)?$/.test(body),
-    'batchPrompt must append OBEY (optionally followed by BAR / NO_BROAD_STASH) at the end — same contract as execPrompt/healPrompt/remediatePrompt',
+    /OBEY(\s*\+\s*BAR)?(\s*\+\s*principlesFor\([^)]*\))?(\s*\+\s*CITE)?(\s*\+\s*NO_BROAD_STASH)?$/.test(body),
+    'batchPrompt must append OBEY (optionally followed by BAR / principlesFor / CITE / NO_BROAD_STASH) at the end — same contract as execPrompt/healPrompt/remediatePrompt',
   )
 })
 

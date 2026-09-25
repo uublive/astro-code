@@ -4,8 +4,11 @@
 // Hooks are copied STANDALONE into ~/.astro/code/hooks (lib/ is never copied
 // there), so this file must NOT import from ../lib — it re-implements the tiny
 // bits it needs. Pure functions only; the hooks own all the I/O of stdin/stdout.
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, parse } from 'node:path';
+import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { renderLogo } from './_astro-brand.mjs';
 
 // A live activity verb older than this is treated as stale and ignored, so a
@@ -41,6 +44,102 @@ export function findAstroRoot(startDir) {
     if (up === dir) return null;
     dir = up;
   }
+}
+
+// --- transcript / watermark path helpers (P7, phase 26) ----------------------
+//
+// This file (not `lib/`) owns these because hooks are copied STANDALONE into
+// `~/.astro/code/hooks` — a hook can never `import from '../lib'`, so a path helper the
+// statusline needs for the "N unswept sessions" nudge has to live here, and `lib/`
+// imports it back (ADR-046's one-copy direction: hooks never import lib, lib may import
+// hooks). Two things below are MIRRORS of a `lib/hosts/claude.mjs` shape rather than
+// imports of it, for the same reason — each is guarded by a parity test against the real
+// one so the two can never quietly drift apart:
+//   - `claudeConfigDirs` mirrors `[...configTargets().keys()]`
+//   - `principlesStoreDir` mirrors `lib/principles.mjs`'s `principlesDir`
+//
+// `unsweptSessions` is stat-only (D8): it never opens a transcript, only
+// `readdirSync`/`statSync`, so the statusline hook — which runs on every prompt — stays
+// cheap even against a multi-GB transcript directory. It is also never cached: a cache
+// would go stale the instant a sweep runs (C11 d), and `statSync` is cheap enough that
+// caching buys nothing.
+
+/** The ONE slug rule (#38): every non-alphanumeric character folds to `-`. `lib/stats.mjs`
+ *  imports this rather than keeping its own copy. */
+export function transcriptSlug(root) {
+  return String(root).replace(/[^a-zA-Z0-9]/g, '-');
+}
+
+/** Mirror of `lib/principles.mjs`'s `principlesDir` — same env, same default. */
+export function principlesStoreDir(env = process.env) {
+  return env.ASTRO_PRINCIPLES_DIR || join(env.HOME || homedir(), '.astro', 'principles');
+}
+
+/** Mirror of `lib/hosts/claude.mjs`'s `[...configTargets().keys()]`. */
+export function claudeConfigDirs(env = process.env) {
+  const def = join(env.HOME || homedir(), '.claude');
+  let base = def;
+  try {
+    const meta = JSON.parse(readFileSync(join(def, '.jean-claude', 'meta.json'), 'utf8'));
+    if (meta.claudeConfigPath) base = meta.claudeConfigPath;
+  } catch { /* no jean-claude */ }
+  if (base === def && env.CLAUDE_CONFIG_DIR) base = env.CLAUDE_CONFIG_DIR;
+  const dirs = [base];
+  try {
+    const reg = JSON.parse(readFileSync(join(base, '.jean-claude', 'profiles.json'), 'utf8'));
+    for (const p of Object.values(reg.profiles || {})) {
+      if (p.configDir && !dirs.includes(p.configDir)) dirs.push(p.configDir);
+    }
+  } catch { /* no profiles registry */ }
+  if (env.CLAUDE_CONFIG_DIR && !dirs.includes(env.CLAUDE_CONFIG_DIR)) dirs.push(env.CLAUDE_CONFIG_DIR);
+  return dirs;
+}
+
+/** `<store>/.local/mine/files/<slug>.json` — the ONE path both the engine and this
+ *  stat-only nudge read (P6). */
+export function mineFilesPath(storeDir, slug) {
+  return join(storeDir, '.local', 'mine', 'files', `${slug}.json`);
+}
+
+// The threshold past which the statusline/banner bother mentioning /astro-principles-mine at all —
+// below it the segment would be permanent wallpaper (mirrors the debt-pressure comment
+// a few sections down: a signal that is always on is not a signal).
+export const MINE_NUDGE_SESSIONS = 10;
+
+/**
+ * How many top-level `*.jsonl` session files under `root`'s Claude project dirs (every
+ * config dir) have bytes past their recorded watermark offset (absent offset = 0).
+ * `readdirSync` + `statSync` only — never opens a transcript (D8). Codex is
+ * deliberately not counted here: its rollouts are date-sharded, so attributing one to a
+ * project means reading its first line, which is exactly the parse-in-the-hot-path cost
+ * this function exists to avoid.
+ */
+export function unsweptSessions(root, env = process.env) {
+  const slug = transcriptSlug(root);
+  const storeDir = principlesStoreDir(env);
+  const filesPath = mineFilesPath(storeDir, slug);
+  let recorded = {};
+  try {
+    recorded = JSON.parse(readFileSync(filesPath, 'utf8'))?.files || {};
+  } catch { /* absent or corrupt reads as "nothing swept" */ }
+
+  let count = 0;
+  for (const configDir of claudeConfigDirs(env)) {
+    const dir = join(configDir, 'projects', slug);
+    let dirents;
+    try {
+      dirents = readdirSync(dir, { withFileTypes: true });
+    } catch { continue; }
+    for (const d of dirents) {
+      if (!d.isFile() || !d.name.endsWith('.jsonl')) continue;
+      const file = join(dir, d.name);
+      let size;
+      try { size = statSync(file).size; } catch { continue; }
+      const offset = recorded[file]?.offset || 0;
+      if (size > offset) count++;
+    }
+  }
+  return count;
 }
 
 // --- debt pressure -----------------------------------------------------------
@@ -212,6 +311,9 @@ export function readContext(root, nowSeconds) {
     // Debt pressure, for the statusline. One small file read; the band is what
     // decides whether the segment renders at all (see renderSegmentParts).
     debt: debtPressure(readJson(join(root, '.astrocode', 'debt.json')), nowSeconds * 1000),
+    // Phase 26 (P7, D8): stat-only, never cached (see unsweptSessions's header) — cheap
+    // enough to read on every prompt even against a huge transcript directory.
+    mine: { unswept: unsweptSessions(root) },
   };
 }
 
@@ -353,6 +455,12 @@ export function renderSegmentParts(ctx, { lookahead = 2 } = {}) {
   // other segment here is either a word or a symbol with an obvious referent (⎇, $).
   if (ctx.debt && ctx.debt.band !== 'healthy') {
     state.push(paint(`debt ${ctx.debt.pressure}`, ctx.debt.band === 'pay-now' ? ANSI.red : ANSI.yellow));
+  }
+  // Same "only past the threshold" logic as debt above: below MINE_NUDGE_SESSIONS this
+  // would just be wallpaper on every project with any transcript history at all, and it
+  // would punish the very act of having worked — the segment appearing IS the signal.
+  if (ctx.mine && ctx.mine.unswept >= MINE_NUDGE_SESSIONS) {
+    state.push(paint(`${ctx.mine.unswept} unswept → /astro-principles-mine`, ANSI.yellow));
   }
   return { identity: identity.join(' · '), state: state.join(' · ') };
 }
@@ -750,14 +858,27 @@ export function renderBanner(ctx) {
   if (!ctx || (ctx.milestone == null && !ctx.phase)) return '';
   const ctxLine = [];
   if (ctx.milestone != null) ctxLine.push(`M${ctx.milestone}`);
-  if (ctx.phase) ctxLine.push(`P${ctx.phase.number} ${phaseLabel(ctx.phase)}`);
+  if (ctx.phase) ctxLine.push(`P${ctx.phase.number} ${clip(phaseLabel(ctx.phase), BANNER_LABEL_MAX)}`);
   if (ctx.activity) ctxLine.push(ctx.activity);
   else if (ctx.phase) ctxLine.push(ctx.phase.status);
   if (ctx.total) ctxLine.push(`${ctx.done}/${ctx.total} phases`);
   const lines = [];
   if (ctxLine.length) lines.push(ctxLine.join(' · '));
   lines.push('next: ' + nextAction(ctx));
-  return renderLogo({ lines, color: false });
+  if (ctx.mine && ctx.mine.unswept >= MINE_NUDGE_SESSIONS) {
+    lines.push(`${ctx.mine.unswept} unswept sessions here — /astro-principles-mine proposes principles from them`);
+  }
+  // Claude Code trims leading blank lines from a systemMessage, which seats the art's top
+  // row right on the "SessionStart says:" line. U+2800 (braille blank) renders empty but
+  // is not whitespace, so it survives the trim and keeps a row of air above the mark.
+  return BANNER_AIR + renderLogo({ lines, color: false });
+}
+
+// A long phase name wraps the text column under the art and breaks the mark.
+const BANNER_LABEL_MAX = 25;
+const BANNER_AIR = '\u2800';
+function clip(s, max) {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
 // --- terminal width & narrow-screen layout -----------------------------------
@@ -836,4 +957,63 @@ function fitRow(segments, width, sep = STATUS_SEP) {
     if (visibleWidth(candidate) <= width) row = candidate;
   }
   return row;
+}
+
+// ── Principles delivery (phase 25, P10, D1) ─────────────────────────────────────
+//
+// Hooks are copied STANDALONE (module header) so this never imports `lib/retrieval.mjs`
+// — it shells out to `ac` exactly the way a teammate would, resolving the entry in
+// order: the clone this hook was copied FROM (`<hookDir>/../bin/ac.mjs`), then the
+// installed clone recorded at `~/.astro/code/source`, then whatever `ac` is on PATH.
+// Any failure — not found, non-zero exit, empty stdout, a timeout — yields no
+// section and no error text: a broken principles read must never break a session
+// start or a compaction.
+
+/** The `ac` entry point to spawn from a standalone hook (P10). */
+export function resolveAcEntry(hookDir) {
+  const local = join(hookDir, '..', 'bin', 'ac.mjs');
+  if (existsSync(local)) return local;
+  const sourceFile = join(homedir(), '.astro', 'code', 'source');
+  const source = readFileSync(sourceFile, 'utf8').trim();
+  if (source) {
+    const installed = join(source, 'bin', 'ac.mjs');
+    if (existsSync(installed)) return installed;
+  }
+  return 'ac';
+}
+
+function safeResolveAcEntry(hookDir) {
+  try { return resolveAcEntry(hookDir); } catch { return 'ac'; }
+}
+
+/**
+ * `ac principles brief --stage <stage> --by <by>`'s stdout, or `''` on any failure
+ * (P10) — never inside an astro project (`root` absent) either.
+ *
+ * @param {string} root
+ * @param {string} hookDir directory of the calling hook file (`import.meta.url`)
+ * @param {{ stage?: string, by?: string }} [opts]
+ * @returns {string}
+ */
+export function principlesBrief(root, hookDir, { stage = 'session', by = 'session' } = {}) {
+  if (!root) return '';
+  const entry = safeResolveAcEntry(hookDir);
+  const args = entry.endsWith('.mjs')
+    ? [entry, 'principles', 'brief', '--stage', stage, '--by', by]
+    : ['principles', 'brief', '--stage', stage, '--by', by];
+  const cmd = entry.endsWith('.mjs') ? process.execPath : entry;
+  try {
+    const r = spawnSync(cmd, args, {
+      cwd: root, encoding: 'utf8', timeout: 5000, windowsHide: true,
+    });
+    if (r.status !== 0 || r.error) return '';
+    return (r.stdout || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+/** `import.meta.url` -> the directory to pass as `hookDir` above. */
+export function hookDirOf(metaUrl) {
+  return dirname(fileURLToPath(metaUrl));
 }
