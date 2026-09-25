@@ -160,7 +160,10 @@ test('C4: accepted/edited/rejected/amended entries survive a re-import with diff
 
   const changedNodes = fixtureNodes().map((n) => {
     if (n.slug === 'wip-branches') return { ...n, status: 'rejected', reason: 'forge changed its mind', statement: 'Keep WIP on a branch (forge edit)' };
-    if (n.slug === 'no-force-push') return { ...n, status: 'approved', statement: 'Never force-push shared branches (forge edit)' };
+    if (n.slug === 'no-force-push') {
+      const { reason: _drop, ...rest } = n;
+      return { ...rest, status: 'approved', statement: 'Never force-push shared branches (forge edit)' };
+    }
     if (n.slug === 'commit-lockfiles') return { ...n, status: 'rejected', reason: 'forge rejected it later', statement: 'Commit the lockfile with every dependency change (forge edit)' };
     return n;
   });
