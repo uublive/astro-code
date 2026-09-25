@@ -161,7 +161,7 @@ _Revised R1: "strongest" is judged by the agent; what `ac` guarantees is that no
   apply. The command defers to that row rather than restating the cap/rules inline, never
   instructs the agent to open raw transcript files (only the miner's output), and its reporting
   slot is bounded to the spec's one line (`proposed N principle(s) — …`) plus at most one
-  "N more candidates — run again" line, silent on the extra line when nothing remains.
+  "N more turns — run again" line (revised R1: driven by the miner's `remaining`), silent on the extra line when nothing remains.
 - **Fails if:** the cap or rules are duplicated/contradicted in the command (drift bait,
   ADR-060); the agent is told to read transcripts directly; or the report slot has no bound.
 
