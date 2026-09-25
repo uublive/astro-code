@@ -138,3 +138,28 @@ test('the env-style and JWT rules are idempotent', async () => {
   const once = redactSecrets('DB_PASSWORD=abc eyJabcdef.eyJghijkl.mnopqr');
   assert.equal(redactSecrets(once), once);
 });
+
+// Phase 26 verify (C3, third round): close variants of the listed shapes that leaked
+// through `ac principles mine`. Each secret value must be gone entirely — no tail left.
+test('quoted values, quoted JSON keys, extra key prefixes and secret CLI flags are masked whole', async () => {
+  const { redactSecrets } = await import('../lib/redact.mjs');
+  const cases = [
+    ['always keep config like {"password": "JsonPassw0rdQ9"} out of git', ['JsonPassw0rdQ9']],
+    ['always quote: password = "correct horse battery staple"', ['correct', 'horse', 'battery', 'staple']],
+    ['PASSWORD="correct horse battery staple"', ['correct', 'staple']],
+    ["secret: 'two words'", ['two', 'words']],
+    ['rotate rk_test_abcdefghijklmnop1234 too', ['rk_test_abcdef']],
+    ['the maps key AIzaSyA1b2C3d4E5f6G7h8I9j0KlMnOpQrStUvW leaked', ['AIzaSyA1b2']],
+    ['publish with npm_abcdefghijklmnopqrstuvwxyz0123456789', ['npm_abcdef']],
+    ['always pass --password CliFlagPassZ77 to the tool', ['CliFlagPassZ77']],
+    ['or --token=TokFlagValue99 instead', ['TokFlagValue99']],
+    ['connect with mysql -u root -pMySqlPw123 prod', ['MySqlPw123']],
+  ];
+  for (const [input, secrets] of cases) {
+    const out = redactSecrets(input);
+    for (const s of secrets) assert.ok(!out.includes(s), `leaked "${s}" in: ${out}`);
+    assert.ok(out.includes('[REDACTED]'), `nothing masked in: ${out}`);
+  }
+  // Readable commands stay readable: `-p` is only a secret for the MySQL family.
+  assert.equal(redactSecrets('mkdir -p build && ssh -p 22 host'), 'mkdir -p build && ssh -p 22 host');
+});
