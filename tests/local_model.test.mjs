@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -174,4 +174,38 @@ test('the command texts that name a tier carry the local-model exception', () =>
   assert.match(fast, /returns `inherit`[\s\S]{0,200}pass that map through \*\*unchanged\*\*/, '/astro-fast must not default the executor to opus on a local model');
   const exec = readFileSync(join(ROOT, 'commands', 'astro-execute.md'), 'utf8');
   assert.match(exec, /returns `inherit` \(a local-model session\)[\s\S]{0,120}no model at all/, "/astro-execute's fallback tier must not escalate to opus on a local model");
+});
+
+// A built-in Claude Code agent type (e.g. `Explore`) carries its OWN default model: passing
+// no model made it run Opus, not the session's model, so on Qwen all three researchers
+// failed while the criteria author (one of ours, no model pinned) ran fine. On a local
+// session every agent must be one of astro-code's own, which pin nothing.
+const OWN_AGENTS = new Set(readdirSync(join(ROOT, 'agents')).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)));
+
+test('plan-phase on a local model uses only astro-code agents — no built-in type with its own model', async () => {
+  const calls = [];
+  const agent = async (prompt, opts = {}) => { calls.push(opts); return { criteria: [{ id: 'C1', text: 'x' }], written: true, summary: 'ok' }; };
+  try {
+    await loadWorkflow('plan-phase.mjs')(() => {}, agent, async (t) => Promise.all(t.map((f) => f())), () => {},
+      { root: '/tmp/p', phase: '01-x', models: INHERIT, reasoning: {} });
+  } catch { /* thin stubs */ }
+  const research = calls.filter((o) => String(o.label || '').startsWith('research:'));
+  assert.equal(research.length, 3, 'the three researchers ran');
+  for (const o of calls) assert.ok(OWN_AGENTS.has(o.agentType), `${o.label || o.phase}: ${o.agentType} is not an astro-code agent`);
+});
+
+test('plan-phase off a local model keeps its researchers as they were', async () => {
+  const calls = [];
+  const agent = async (prompt, opts = {}) => { calls.push(opts); return { criteria: [{ id: 'C1', text: 'x' }], written: true, summary: 'ok' }; };
+  try {
+    await loadWorkflow('plan-phase.mjs')(() => {}, agent, async (t) => Promise.all(t.map((f) => f())), () => {},
+      { root: '/tmp/p', phase: '01-x', models: { researcher: 'sonnet' }, reasoning: {} });
+  } catch { /* thin stubs */ }
+  const research = calls.filter((o) => String(o.label || '').startsWith('research:'));
+  assert.ok(research.length && research.every((o) => o.agentType === 'Explore' && o.model === 'sonnet'));
+});
+
+test('execute-phase uses only astro-code agents (none of its agents is a built-in type)', () => {
+  const src = readFileSync(join(ROOT, 'workflows', 'execute-phase.mjs'), 'utf8');
+  for (const [, t] of src.matchAll(/agentType: *'([^']+)'/g)) assert.ok(OWN_AGENTS.has(t), `execute-phase uses ${t}`);
 });
