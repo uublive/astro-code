@@ -95,6 +95,10 @@ Phases 22–27: the store and CLI → capture at the moments of intent → the r
 
 ## Milestone 10 — astro-code on Pi
 
+> **Parked 2026-09-25**, before phase 28 was discussed. A local model already runs under
+> Claude Code, so a Pi host is not needed now. Phases 28–32 stay on the roadmap, undiscussed;
+> resume with `/astro-discuss 28`. The prior Pi research is pointed at from phases 29–30's notes.
+
 astro-code runs in [Pi](https://pi.dev) as a first-class host, including against a
 local model, and **stays** running there: a feature written for one host must not
 silently fail on another.
