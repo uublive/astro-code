@@ -14,6 +14,7 @@ import { git } from '../lib/git.mjs';
 import { paths } from '../lib/paths.mjs';
 import { transact } from '../lib/shared.mjs';
 import { normalizeDecision, decisionStatus, inForceText } from '../lib/decisions.mjs';
+import { canonDrift } from '../lib/canon.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const AC = join(ROOT, 'bin', 'ac.mjs');
@@ -177,6 +178,31 @@ test('#35: `ac canon check` reports per decision, byte-exact, and names the kind
   assert.match(r.stderr, /ADR-009: missing from the registry/);
   assert.doesNotMatch(r.stderr, /ADR-002/, 'untouched decisions are not named');
   assert.match(ac(['status'], a).stdout, /canon differs from the registry: 2 decision\(s\)/);
+});
+
+// #75 — canonDrift read each side through the first-wins parseDecisions, so a second
+// entry under an id the registry already has was never compared: a mirror holding two
+// ADR-001s passed the one gate that answers "is my mirror the registry's copy?".
+test('#75: `ac canon check` fails when the local DECISIONS.md repeats an id the registry has once', () => {
+  const bare = bareRemote();
+  const a = dev(bare, 'alice', { init: true });
+  assert.equal(ac(['decision', 'add', 'Use tabs', '--why', 'house style'], a).status, 0);
+  assert.equal(ac(['decision', 'add', 'Untouched'], a).status, 0);
+  writeFileSync(paths(a).decisions, local(a) + '\n## ADR-001 — Something else entirely\n_2026-09-23_\n\n**Why:** other\n');
+  const r = ac(['canon', 'check'], a);
+  assert.notEqual(r.status, 0, 'a repeated id is drift, not a match');
+  assert.match(r.stderr, /ADR-001: repeated id locally \(2 entries, the registry has 1\)/);
+  assert.doesNotMatch(r.stderr, /ADR-002/, 'untouched decisions are not named');
+  assert.match(ac(['status'], a).stdout, /canon differs from the registry: 1 decision\(s\)/);
+});
+
+test('#75: the same entry repeated verbatim is still a repeated id', () => {
+  const one = '## ADR-001 — A\n_2026-09-01_\n\n**Why:** w';
+  const d = canonDrift({ localDecisions: `${one}\n\n${one}\n`, registryDecisions: `${one}\n` });
+  assert.equal(d.ok, false);
+  assert.deepEqual(d.drift, [{ id: 'ADR-001', kind: 'repeated id locally (2 entries, the registry has 1)' }]);
+  // a copy that repeats exactly what the registry repeats IS the registry's copy
+  assert.equal(canonDrift({ localDecisions: `${one}\n\n${one}\n`, registryDecisions: `${one}\n\n${one}\n` }).ok, true);
 });
 
 test('#35: CONVENTIONS.md is one byte-compared file, ignoring only the final newline', () => {
