@@ -163,3 +163,26 @@ test('quoted values, quoted JSON keys, extra key prefixes and secret CLI flags a
   // Readable commands stay readable: `-p` is only a secret for the MySQL family.
   assert.equal(redactSecrets('mkdir -p build && ssh -p 22 host'), 'mkdir -p build && ssh -p 22 host');
 });
+
+// Phase 26 verify (C3, fourth round): the remaining variants.
+test('passphrases, _PASS names, quoted -p, curl -u, sshpass, curly quotes and @ in a URL password are masked', async () => {
+  const { redactSecrets } = await import('../lib/redact.mjs');
+  const cases = [
+    ['Always sign with passphrase="gpgPassPhr4se" today', ['gpgPassPhr4se']],
+    ['export GPG_PASSPHRASE=gpgEnvPhr4se', ['gpgEnvPhr4se']],
+    ['DB_PASS=dbPassV4lue and PASS_WORD_X=pw2Value', ['dbPassV4lue']],
+    ['mysql -u root -p"quotedMy Sql" prod', ['quotedMy', 'Sql"']],
+    ['curl -u admin:curlPw9876 https://x', ['curlPw9876']],
+    ['curl --user admin:curlPw2 https://x', ['curlPw2']],
+    ['sshpass -p SshPassZ9 ssh host', ['SshPassZ9']],
+    ['password: “correct horse”', ['correct', 'horse']],
+    ['postgres://user:p@ss@db.example.com/app', ['p@ss', 'ss@db']],
+  ];
+  for (const [input, secrets] of cases) {
+    const out = redactSecrets(input);
+    for (const s of secrets) assert.ok(!out.includes(s), `leaked "${s}" in: ${out}`);
+  }
+  assert.ok(redactSecrets('postgres://user:p@ss@db.example.com/app').includes('db.example.com/app'), 'the host stays readable');
+  assert.equal(redactSecrets('BYPASS_CACHE=1 and COMPASS_DIR=/x'), 'BYPASS_CACHE=1 and COMPASS_DIR=/x', 'PASS inside a word is not a secret name');
+  assert.equal(redactSecrets(redactSecrets('DB_PASS=abc')), redactSecrets('DB_PASS=abc'), 'idempotent');
+});
