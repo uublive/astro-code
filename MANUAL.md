@@ -393,20 +393,26 @@ current project (every Claude profile + Codex); `--all` or `--project <path>` wi
 retarget it deliberately. Only turns you actually TYPED are read — tool results, injected
 context, expanded command bodies, subagent and headless (`claude -p`/SDK) sessions are all
 excluded before anything reaches the engine. Everything is redacted (the same shapes
-`lib/redact.mjs` masks everywhere else) before it is ever surfaced. A steer qualifies once
-it recurs in ≥2 distinct sessions, or was stated once as an explicit rule ("always…",
-"from now on…", `sempre`/`mai`); an exact restatement of an existing entry (accepted OR
-rejected) is recorded as a sighting, never re-proposed. At most 10 qualifying candidates
-surface per sweep, strongest first — the rest are held for next time. The read
-(`ac principles mine [--json]`) never commits anything: only `ac principles mine
---advance <sweep-id>`, run after every proposal/sighting call has succeeded, moves the
-watermark — a failed lift is retried on the next sweep, never silently skipped. The
-watermark itself lives in the store's already-gitignored `.local/mine/`: per-machine,
-pointers and byte offsets only, never transcript text. `--rescan` re-reads everything from
-scratch (rarely needed — only when you suspect the watermark drifted).
+`lib/redact.mjs` masks everywhere else) before it is ever surfaced. The engine judges no
+meaning (ADR-064): it hands the agent a bounded batch of those turns (turns identical
+after normalising collapse into one, carrying all their sessions), and the agent does
+the rest in any language — grouping turns that say the same thing, keeping opposite
+instructions apart, ignoring content-free replies like "No.". A group qualifies once it
+recurs in ≥2 distinct sessions, or was stated once as an explicit rule; an exact
+restatement of an existing entry (accepted OR rejected) is recorded as a sighting, never
+re-proposed. At most 10 proposals per sweep, strongest first. Turns beyond one batch are
+held for next time, and the agent names the turns worth carrying forward (one-offs that
+may recur, qualifying groups beyond the cap) with `--keep` — they come back in the next
+sweep marked `earlier`. The read (`ac principles mine [--json]`) never commits anything:
+only `ac principles mine --advance <sweep-id>`, run after every proposal/sighting call has
+succeeded, moves the watermark — a failed lift is retried on the next sweep, never
+silently skipped. The watermark and carried turns live in the store's already-gitignored
+`.local/mine/`: per-machine, pointers and byte offsets only, never transcript text.
+`--rescan` re-reads everything from scratch (rarely needed — only when you suspect the
+watermark drifted).
 
-- `ac principles mine [--all|--project <path>] [--rescan] [--json]` — sweep past sessions for steers (read-only).
-- `ac principles mine --advance <sweep-id>` — mark that sweep's material as processed.
+- `ac principles mine [--all|--project <path>] [--rescan] [--json]` — hand over a batch of past human turns (read-only).
+- `ac principles mine --advance <sweep-id> [--keep <id,id,...>]` — mark that sweep processed, carrying the kept turns forward.
 
 ---
 

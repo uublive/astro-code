@@ -721,7 +721,7 @@ const SLOTS = [
 
   // phase 26: /astro-mine — the on-demand transcript sweep (t4)
   { command: 'astro-mine.md', slot: '1 run + nothing new', start: '1. **Run the miner.', end: '2. **Record exact repeats' },
-  { command: 'astro-mine.md', slot: '2 sightings', start: '2. **Record exact repeats', end: '3. **Lift the candidates' },
+  { command: 'astro-mine.md', slot: '2 sightings', start: '2. **Record exact repeats', end: '3. **Group, qualify and lift' },
   { command: 'astro-mine.md', slot: '4 advance', start: '4. **Advance the watermark', end: '5. **Report' },
   { command: 'astro-mine.md', slot: '5 report', start: '5. **Report', end: '## Never' },
 ];

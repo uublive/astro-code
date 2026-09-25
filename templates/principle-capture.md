@@ -23,7 +23,9 @@ judgement proposes nothing:
 - **Transcript sweep (`/astro-mine`)** — material comes only from
   `ac principles mine --json`, which emits only turns the human typed: the engine
   excludes tool results, injected context, command bodies, subagent and headless
-  sessions.
+  sessions. The engine judges no meaning (ADR-064): it hands over every such turn as an
+  item, and which of them are steers, how they group and whether they qualify is judged
+  by you, per §9, before any propose call.
 
 ## 2. Lift the generator
 
@@ -40,8 +42,9 @@ At most **3** proposals per moment. Each must lift (§2) AND carry a non-empty `
 Fewer is better. Nothing qualifies → propose nothing.
 
 One exception, stated once: the transcript sweep (`/astro-mine`) takes at most **10**
-per sweep, strongest first (recurrence, then explicit rule), for this moment only. The
-engine emits no more than that and holds the rest.
+per sweep, strongest first (distinct-session recurrence, then explicit rule), for
+this moment only. The engine does not rank or cap: you pick the strongest qualifying
+groups (§9) and carry the qualifying groups beyond the cap forward with `--keep`.
 
 ## 4. Kind
 
@@ -88,15 +91,16 @@ Evidence table:
 | `/astro-discuss` | `"phase <N>"` | the user's answer with its reason |
 | `/astro-accept` rejection | `"phase <N>"` | the reject reason verbatim |
 | Milestone sweep | `"milestone <n>"` | the user's words from one recurring source |
-| Transcript sweep | the candidate's `fromRef` (`"transcript <host>:<session>"`) | the candidate's `excerpt` |
+| Transcript sweep | the item's `fromRef` (`"transcript <host>:<session>"`) | the item's `text` |
 
 `<project>` is the `Project:` line of `ac status`.
 
-`--from-session` is omitted in every moment except the transcript sweep, whose candidates
-carry the transcript's session id:
+`--from-session` is omitted in every moment except the transcript sweep, whose items
+carry the transcript's session id (use the `fromSession`, `fromRef` and `text` of one
+item of the group being proposed):
 
 ```sh
-ac principles add "<lifted statement>" --kind <principle|pattern|preference|antipattern> --why "<why>" --propose --from-session "<fromSession>" --from-ref "<fromRef>" --excerpt "<excerpt>"
+ac principles add "<lifted statement>" --kind <principle|pattern|preference|antipattern> --why "<why>" --propose --from-session "<fromSession>" --from-ref "<fromRef>" --excerpt "<text>"
 ```
 
 Elsewhere no session id reaches a command, so do not probe for one.
@@ -129,8 +133,8 @@ the ` — `. With zero proposals but M > 0, the line reads
 proposals and zero sightings), say nothing, as before. Review the queue with
 `ac principles list --proposed`, or `/astro-review`.
 
-The transcript sweep alone may add at most one `N more candidates — run again` line,
-only when the miner held candidates back.
+The transcript sweep alone may add at most one `N more turns — run again` line, N being
+the miner's `remaining`, only when it is above zero; silent on it otherwise.
 
 ## 8. Milestone sweep recurrence rule (D2.4)
 
@@ -139,10 +143,34 @@ human rejections, surprises). A theme qualifies only when it recurs in **≥2 ph
 single surprise, rejection or answer proposes nothing here; the per-moment captures
 already had their shot at one-offs. Rank by phase count, take at most 3 (§3 still applies).
 
-## 9. Transcript sweep threshold (D5)
+## 9. Transcript sweep: grouping, threshold, carry-forward (D5, ADR-064)
 
-A steer qualifies when it recurs in **≥2 distinct sessions** or was stated once as an
-**explicit rule**. The engine applies this; exact repeats are recorded as sightings.
+The miner hands over `items[]` — human turns, each with its `sessions`, `context` (the
+assistant turn before it) and `earlier` (true when carried over from a previous sweep) —
+and judges nothing. Only turns identical after normalising are already collapsed; exact
+restatements of a stored entry arrive separately as `sightings[]`. Every judgement below
+is yours, in whatever language the turns are in:
+
+1. **Group** items that state the same instruction, across phrasings AND languages —
+   "Don't mock the database in tests", "Non mockare mai il database nei test" and "Nie
+   die Datenbank in Tests mocken" are one group.
+2. **Keep opposite instructions apart** — "use tabs, not spaces" and "prefer spaces over
+   tabs" are two groups, never one.
+3. **Ignore content-free replies** — "No.", "stop", "ok", a bare "why?" state no
+   instruction, however often they recur.
+4. **Judge explicit rules** — a turn that lays down a standing rule ("from now on…",
+   "always…", "never again…", in any language) rather than correcting one moment.
+5. **Count DISTINCT sessions per group** — the union of its items' `sessions`, `earlier`
+   items included; repeats inside one session count once.
+6. **Qualify** a group at **≥2 distinct sessions** or **one explicit rule**. A lone
+   one-off correction does not qualify.
+7. **Propose** at most the §3 cap, strongest first: more distinct sessions first, then
+   explicit rules. Each proposal lifts (§2) and is deduped (§5) like any other moment.
+8. **Carry forward** — on `ac principles mine --advance <sweep> --keep <id,id,...>`, list
+   the ids of below-threshold steers that may recur in a later session, and of every item
+   in a qualifying group beyond the cap. Never `--keep` an item you proposed, one you
+   recorded as a sighting, or one you judged not to be a steer — kept items come back in
+   every later sweep until you stop keeping them.
 
 ## 10. Dedupe
 

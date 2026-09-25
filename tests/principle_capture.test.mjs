@@ -106,10 +106,10 @@ test('templates/principle-capture.md still states the at-most-3 guard', () => {
   );
 });
 
-test('templates/principle-capture.md names "N more candidates — run again" in §7', () => {
+test('templates/principle-capture.md names "N more turns — run again" in §7', () => {
   assert.ok(
-    specSrc.includes('N more candidates — run again'),
-    'the spec must name the transcript-sweep "N more candidates — run again" line',
+    specSrc.includes('N more turns — run again'),
+    'the spec must name the transcript-sweep "N more turns — run again" line',
   );
 });
 
