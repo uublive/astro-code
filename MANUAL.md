@@ -345,7 +345,7 @@ candidate (a statement that shares real content words with an existing one, shor
 being the exact same wording) is only ever *surfaced* — `ac principles match
 "<statement>"` names it and the words that matched — never acted on: the capturing
 agent, or you, decides whether it's the same principle (`ac principles sight <id>`
-instead of proposing) or a genuinely different one. `/astro-review` walks the proposed
+instead of proposing) or a genuinely different one. `/astro-principles-review` walks the proposed
 queue in batches — accept, edit-then-accept, reject (reason required) or skip each
 item, and offers `ac principles merge <dup> --into <id>` for a near-duplicate group
 instead of rejecting one of them for "no". `ac principles reopen <id> --reason "…"` is
@@ -382,7 +382,7 @@ is filed as debt, never a failed criterion). The Claude Code session gets the sa
 shortlist injected automatically at start/compact; on any other host, the managed
 `AGENTS.md` block tells the agent to run `ac principles brief` itself.
 
-**Transcript sweep — on demand, opt-in.** `/astro-mine` (or `ac principles mine`) sweeps
+**Transcript sweep — on demand, opt-in.** `/astro-principles-mine` (or `ac principles mine`) sweeps
 past session transcripts for steers you kept giving — corrections, preferences, explicit
 rules — and turns what recurs into proposed principles, exactly like every other capture
 moment. It runs ONLY when you ask for it: never from a hook, never on a schedule. The

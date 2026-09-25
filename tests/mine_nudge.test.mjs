@@ -73,7 +73,7 @@ test('C11 a: 9 unswept sessions → no hint on the statusline', () => {
   seedUnswept(join(fakeHome, '.claude'), root, 9);
   const r = runStatusline(root, fakeHome);
   assert.equal(r.status, 0);
-  assert.ok(!r.stdout.includes('/astro-mine'), 'below MINE_NUDGE_SESSIONS must show no hint');
+  assert.ok(!r.stdout.includes('/astro-principles-mine'), 'below MINE_NUDGE_SESSIONS must show no hint');
 });
 
 test('C11 b: 12 unswept sessions → exactly one statusline segment and one banner line', () => {
@@ -83,13 +83,13 @@ test('C11 b: 12 unswept sessions → exactly one statusline segment and one bann
 
   const sl = runStatusline(root, fakeHome);
   assert.equal(sl.status, 0, sl.stderr);
-  const matches = sl.stdout.match(/12 unswept → \/astro-mine/g) || [];
+  const matches = sl.stdout.match(/12 unswept → \/astro-principles-mine/g) || [];
   assert.equal(matches.length, 1, `expected exactly one segment, got: ${sl.stdout}`);
 
   const banner = runUpdateBanner(root, fakeHome);
   assert.equal(banner.status, 0, banner.stderr);
   const out = JSON.parse(banner.stdout || '{}');
-  const lines = (out.systemMessage || '').split('\n').filter((l) => l.includes('/astro-mine'));
+  const lines = (out.systemMessage || '').split('\n').filter((l) => l.includes('/astro-principles-mine'));
   assert.equal(lines.length, 1, `expected exactly one banner line, got: ${out.systemMessage}`);
 });
 
@@ -100,7 +100,7 @@ test('C11 c: 12 unswept sessions for another project only → no hint here', () 
   seedUnswept(join(fakeHome, '.claude'), other, 12);
   const r = runStatusline(root, fakeHome);
   assert.equal(r.status, 0);
-  assert.ok(!r.stdout.includes('/astro-mine'));
+  assert.ok(!r.stdout.includes('/astro-principles-mine'));
 });
 
 test('C11 d: a watermark covering all sessions → no hint', () => {
@@ -117,7 +117,7 @@ test('C11 d: a watermark covering all sessions → no hint', () => {
 
   const r = runStatusline(root, fakeHome);
   assert.equal(r.status, 0, r.stderr);
-  assert.ok(!r.stdout.includes('/astro-mine'), 'a watermark covering every session must silence the hint');
+  assert.ok(!r.stdout.includes('/astro-principles-mine'), 'a watermark covering every session must silence the hint');
 });
 
 test('Cheapness: 12 sparse ~600MB files → the statusline still finishes quickly and shows the hint', () => {
@@ -135,7 +135,7 @@ test('Cheapness: 12 sparse ~600MB files → the statusline still finishes quickl
   const r = runStatusline(root, fakeHome);
   const elapsed = Date.now() - start;
   assert.equal(r.status, 0, r.stderr);
-  assert.ok(r.stdout.includes('/astro-mine'));
+  assert.ok(r.stdout.includes('/astro-principles-mine'));
   assert.ok(elapsed < 3000, `statusline took ${elapsed}ms — unsweptSessions must stay stat-only`);
 });
 

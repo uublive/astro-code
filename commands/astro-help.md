@@ -39,8 +39,9 @@ devs never collide.
 **Capture without planning:**
 - `/astro-backlog` — list what's parked · `/astro-backlog "<idea>"` — file one, no phase spent · `/astro-backlog review` — triage each one (promote/link/archive)
 - `/astro-backlog-promote <id>` — turn a captured idea into a real phase, seeding its captured note into `CONTEXT.md`
-- `/astro-review` — walk the proposed personal principles in batches (accept / edit / reject / skip, merge duplicates)
-- `/astro-mine` — sweep this project's past sessions for principles you kept stating (on demand, never automatic)
+- `/astro-principles [proposed|rejected|all|<id>|<question>]` — list and browse your personal principles (accepted by default)
+- `/astro-principles-review` — walk the proposed personal principles in batches (accept / edit / reject / skip, merge duplicates)
+- `/astro-principles-mine` — sweep this project's past sessions for principles you kept stating (on demand, never automatic)
 
 **Set up & navigate:**
 - `/astro-new-project` — scaffold a new project · `/astro-adopt` — adopt an existing codebase; both give an app-shaped project a one-command container contract (`docker compose up` → healthy, seeded app) and leave `RUN-CONTRACT.md` behind

@@ -101,7 +101,7 @@ export function mineFilesPath(storeDir, slug) {
   return join(storeDir, '.local', 'mine', 'files', `${slug}.json`);
 }
 
-// The threshold past which the statusline/banner bother mentioning /astro-mine at all —
+// The threshold past which the statusline/banner bother mentioning /astro-principles-mine at all —
 // below it the segment would be permanent wallpaper (mirrors the debt-pressure comment
 // a few sections down: a signal that is always on is not a signal).
 export const MINE_NUDGE_SESSIONS = 10;
@@ -460,7 +460,7 @@ export function renderSegmentParts(ctx, { lookahead = 2 } = {}) {
   // would just be wallpaper on every project with any transcript history at all, and it
   // would punish the very act of having worked — the segment appearing IS the signal.
   if (ctx.mine && ctx.mine.unswept >= MINE_NUDGE_SESSIONS) {
-    state.push(paint(`${ctx.mine.unswept} unswept → /astro-mine`, ANSI.yellow));
+    state.push(paint(`${ctx.mine.unswept} unswept → /astro-principles-mine`, ANSI.yellow));
   }
   return { identity: identity.join(' · '), state: state.join(' · ') };
 }
@@ -866,7 +866,7 @@ export function renderBanner(ctx) {
   if (ctxLine.length) lines.push(ctxLine.join(' · '));
   lines.push('next: ' + nextAction(ctx));
   if (ctx.mine && ctx.mine.unswept >= MINE_NUDGE_SESSIONS) {
-    lines.push(`${ctx.mine.unswept} unswept sessions here — /astro-mine proposes principles from them`);
+    lines.push(`${ctx.mine.unswept} unswept sessions here — /astro-principles-mine proposes principles from them`);
   }
   // Claude Code trims leading blank lines from a systemMessage, which seats the art's top
   // row right on the "SessionStart says:" line. U+2800 (braille blank) renders empty but

@@ -712,18 +712,18 @@ const SLOTS = [
   { command: 'astro-accept.md', slot: '4b principle capture', start: '4b. **Propose from a human rejection.', end: '5. On accept' },
   { command: 'astro-complete-milestone.md', slot: '3b sweep', start: '3b. **Sweep the milestone for principles.', end: '4. **Triage stale debt.' },
 
-  // phase 24: /astro-review — batch review of proposed principles (t14)
-  { command: 'astro-review.md', slot: '1 empty queue', start: '1. **Read the queue.', end: '2. **Group and batch' },
-  { command: 'astro-review.md', slot: '3 item presentation', start: '3. **Present each batch', end: '4. **Ask' },
-  { command: 'astro-review.md', slot: '5 failed verb', start: '5. **Act through', end: '6. **Rejected entries seen again' },
-  { command: 'astro-review.md', slot: '6 rejected resurfacing', start: '6. **Rejected entries seen again', end: '7. **Report' },
-  { command: 'astro-review.md', slot: '7 summary', start: '7. **Report', end: '## Never' },
+  // phase 24: /astro-principles-review — batch review of proposed principles (t14)
+  { command: 'astro-principles-review.md', slot: '1 empty queue', start: '1. **Read the queue.', end: '2. **Group and batch' },
+  { command: 'astro-principles-review.md', slot: '3 item presentation', start: '3. **Present each batch', end: '4. **Ask' },
+  { command: 'astro-principles-review.md', slot: '5 failed verb', start: '5. **Act through', end: '6. **Rejected entries seen again' },
+  { command: 'astro-principles-review.md', slot: '6 rejected resurfacing', start: '6. **Rejected entries seen again', end: '7. **Report' },
+  { command: 'astro-principles-review.md', slot: '7 summary', start: '7. **Report', end: '## Never' },
 
-  // phase 26: /astro-mine — the on-demand transcript sweep (t4)
-  { command: 'astro-mine.md', slot: '1 run + nothing new', start: '1. **Run the miner.', end: '2. **Record exact repeats' },
-  { command: 'astro-mine.md', slot: '2 sightings', start: '2. **Record exact repeats', end: '3. **Group, qualify and lift' },
-  { command: 'astro-mine.md', slot: '4 advance', start: '4. **Advance the watermark', end: '5. **Report' },
-  { command: 'astro-mine.md', slot: '5 report', start: '5. **Report', end: '## Never' },
+  // phase 26: /astro-principles-mine — the on-demand transcript sweep (t4)
+  { command: 'astro-principles-mine.md', slot: '1 run + nothing new', start: '1. **Run the miner.', end: '2. **Record exact repeats' },
+  { command: 'astro-principles-mine.md', slot: '2 sightings', start: '2. **Record exact repeats', end: '3. **Group, qualify and lift' },
+  { command: 'astro-principles-mine.md', slot: '4 advance', start: '4. **Advance the watermark', end: '5. **Report' },
+  { command: 'astro-principles-mine.md', slot: '5 report', start: '5. **Report', end: '## Never' },
 ];
 
 const LOOP_COMMAND_SRC = new Map(
@@ -740,8 +740,8 @@ const LOOP_COMMAND_SRC = new Map(
     'astro-backlog-promote.md',
     'astro-decision.md',
     'astro-complete-milestone.md',
-    'astro-review.md',
-    'astro-mine.md',
+    'astro-principles-review.md',
+    'astro-principles-mine.md',
   ].map((name) => [name, cmd(name)]),
 );
 
@@ -882,42 +882,42 @@ test('the /astro-discuss backlog fold-in is anchored to round one, after the deb
 // The slot guard cannot see this: it checks that each slot STATES a bound, not which mode
 // the command lands in. So assert the dispatch directly, the same way phase 20's C9 fix
 // had to assert ordering the bound guard could not see.
-// ── phase 24 t14: /astro-review's verb contract (D2/D4/D5/D6, P7) ──────────────────
+// ── phase 24 t14: /astro-principles-review's verb contract (D2/D4/D5/D6, P7) ──────────────────
 //
-// The prose IS the contract here — /astro-review acts only through `ac principles`
+// The prose IS the contract here — /astro-principles-review acts only through `ac principles`
 // verbs (D4: "no readline/interactive mode in `ac`"), so a reword that drops one of
 // these names or loosens a guard silently reopens the destructive path each verb was
 // added to prevent (auto-reopening a rejection, rejecting with no reason, merging on
 // similarity alone). This guard pins the load-bearing tokens, not full sentences.
 
-test('astro-review.md names all four review choices, requires a reason for reject, offers merge --into, reads the proposed queue as JSON, and gates reopen behind an explicit choice', () => {
-  const src = LOOP_COMMAND_SRC.get('astro-review.md');
-  assert.ok(src, 'astro-review.md must be a registered loop command source');
+test('astro-principles-review.md names all four review choices, requires a reason for reject, offers merge --into, reads the proposed queue as JSON, and gates reopen behind an explicit choice', () => {
+  const src = LOOP_COMMAND_SRC.get('astro-principles-review.md');
+  assert.ok(src, 'astro-principles-review.md must be a registered loop command source');
 
   for (const choice of ['accept', 'edit-then-accept', 'reject', 'skip']) {
-    assert.ok(src.includes(choice), `astro-review.md must name the "${choice}" review choice`);
+    assert.ok(src.includes(choice), `astro-principles-review.md must name the "${choice}" review choice`);
   }
 
   assert.match(
     src,
     /reject.{0,60}\*\*required\*\*\s+reason|\*\*required\*\*\s+reason.{0,60}reject|reject without a reason/i,
-    'astro-review.md must require a reason for reject — found no such requirement near "reject"',
+    'astro-principles-review.md must require a reason for reject — found no such requirement near "reject"',
   );
 
   assert.ok(
     src.includes('ac principles merge') && src.includes('--into'),
-    'astro-review.md must offer `ac principles merge <dup> --into <id>` for duplicates',
+    'astro-principles-review.md must offer `ac principles merge <dup> --into <id>` for duplicates',
   );
 
   assert.ok(
     src.includes('ac principles list --proposed --json'),
-    'astro-review.md must read the queue via `ac principles list --proposed --json`',
+    'astro-principles-review.md must read the queue via `ac principles list --proposed --json`',
   );
 
   assert.match(
     src,
     /reopen.{0,80}explicit choice|explicit choice.{0,80}reopen/is,
-    'astro-review.md must gate `ac principles reopen` behind an explicit user choice, never an automatic reopen',
+    'astro-principles-review.md must gate `ac principles reopen` behind an explicit user choice, never an automatic reopen',
   );
 
   // Every mention of the real store path must read as a prohibition, not an
@@ -934,13 +934,13 @@ test('astro-review.md names all four review choices, requires a reason for rejec
     const negated = /\bnever\b|\bnot\b/.test(lookBack);
     assert.ok(
       negated,
-      `astro-review.md mentions "${phrase}" without a preceding negation (never/not) — every ` +
+      `astro-principles-review.md mentions "${phrase}" without a preceding negation (never/not) — every ` +
         `mention must forbid writing there directly, never instruct it. Context:\n\n` +
         src.slice(Math.max(0, idx - 40), idx + phrase.length + 40),
     );
     searchFrom = idx + phrase.length;
   }
-  assert.ok(found, 'astro-review.md must mention `~/.astro/principles` at least once, to forbid writing under it directly');
+  assert.ok(found, 'astro-principles-review.md must mention `~/.astro/principles` at least once, to forbid writing under it directly');
 });
 
 test('/astro-backlog lists and stops when given no argument; triage is opt-in', () => {

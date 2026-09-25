@@ -175,7 +175,7 @@ test('classifyClaudeLine: task-notification origin is excluded (injected)', asyn
 
 test('classifyClaudeLine: a slash command\'s human text is exactly its command-args', async () => {
   const { classifyClaudeLine } = await import(TRANSCRIPTS);
-  const r = classifyClaudeLine(cCommand('astro-mine', 'from now on never use X4'));
+  const r = classifyClaudeLine(cCommand('astro-principles-mine', 'from now on never use X4'));
   assert.equal(r.kind, 'human');
   assert.equal(r.text, 'from now on never use X4');
 });

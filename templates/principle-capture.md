@@ -20,7 +20,7 @@ judgement proposes nothing:
 - **Milestone sweep** — the session is attended by the user, and the material comes only
   from `ac milestone harvest`, which already excludes agent-captured CONTEXT and
   agent-signed rejections.
-- **Transcript sweep (`/astro-mine`)** — material comes only from
+- **Transcript sweep (`/astro-principles-mine`)** — material comes only from
   `ac principles mine --json`, which emits only turns the human typed: the engine
   excludes tool results, injected context, command bodies, subagent and headless
   sessions. The engine judges no meaning (ADR-064): it hands over every such turn as an
@@ -41,7 +41,7 @@ ladder, so it is never lifted, and it stays recorded either way, in
 At most **3** proposals per moment. Each must lift (§2) AND carry a non-empty `--why`.
 Fewer is better. Nothing qualifies → propose nothing.
 
-One exception, stated once: the transcript sweep (`/astro-mine`) takes at most **10**
+One exception, stated once: the transcript sweep (`/astro-principles-mine`) takes at most **10**
 per sweep, strongest first (distinct-session recurrence, then explicit rule), for
 this moment only. The engine does not rank or cap: you pick the strongest qualifying
 groups (§9) and carry the qualifying groups beyond the cap forward with `--keep`.
@@ -131,7 +131,7 @@ sighted via §5's `sight` alternative), the same single line gains `, M seen aga
 the ` — `. With zero proposals but M > 0, the line reads
 `M principle(s) seen again — ac principles list --proposed`. With nothing at all (zero
 proposals and zero sightings), say nothing, as before. Review the queue with
-`ac principles list --proposed`, or `/astro-review`.
+`ac principles list --proposed`, or `/astro-principles-review`.
 
 The transcript sweep alone folds the miner's skipped total K (the sum of its `skipped`
 counts) into that same single line as `, K transcript line(s) skipped` before the ` — `,

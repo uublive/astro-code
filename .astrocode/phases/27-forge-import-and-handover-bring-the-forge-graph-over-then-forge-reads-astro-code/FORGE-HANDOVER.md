@@ -42,7 +42,7 @@ exactly like any other consumer.
 
 **What:** retire forge's principle-capture path — the miner that watches for new
 principles and the approval queue it stages them into — now that astro-code's own capture
-(phases 23/26) and review (`/astro-review`) cover the same ground natively. Forge should
+(phases 23/26) and review (`/astro-principles-review`) cover the same ground natively. Forge should
 stop writing NEW principle graph nodes entirely once this lands; existing nodes stay in
 place until task 3.
 
