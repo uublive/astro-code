@@ -868,15 +868,16 @@ export function renderBanner(ctx) {
   if (ctx.mine && ctx.mine.unswept >= MINE_NUDGE_SESSIONS) {
     lines.push(`${ctx.mine.unswept} unswept sessions here — /astro-principles-mine proposes principles from them`);
   }
-  // Claude Code trims leading blank lines from a systemMessage, which seats the art's top
-  // row right on the "SessionStart says:" line. U+2800 (braille blank) renders empty but
-  // is not whitespace, so it survives the trim and keeps a row of air above the mark.
+  // Claude Code trims leading blank lines from a systemMessage, and prints its FIRST line on
+  // the same row as "SessionStart:resume says:". U+2800 (braille blank) renders empty but is
+  // not whitespace, so it survives the trim: the first one fills the "says:" row, the second
+  // is the visible blank line above the mark. (renderLogo opens with its own newline.)
   return BANNER_AIR + renderLogo({ lines, color: false });
 }
 
 // A long phase name wraps the text column under the art and breaks the mark.
 const BANNER_LABEL_MAX = 25;
-const BANNER_AIR = '\u2800';
+const BANNER_AIR = '\u2800\n\u2800';
 function clip(s, max) {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
