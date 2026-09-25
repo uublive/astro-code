@@ -421,3 +421,10 @@ _2026-09-25 · at 57e2d04_
 **Why:** Two verify rounds showed that any word-list grouping breaks on the next phrasing (don't/dont, X not Y vs prefer X over Y) and on any language outside the list; the reasoning agent already in the loop handles meaning in any language, and ac stays deterministic, zero-dep and testable on what it still owns
 
 **Rejected:** More contrast/contraction patterns (never converges); a bilingual cue list (breaks on the third language); embeddings or an LLM call inside ac (REQ-001, no hosted dependency)
+
+## ADR-065 — astro-code does not import the forge knowledge graph: the personal principle store starts clean, from what astro-code itself captures. Forge only READS the store, through the versioned read contract, and switches its own graph off on its side.
+_2026-09-25 · at 52c817b_
+
+**Why:** The user does not want the old forge data carried over; an importer, its export schema and an interim MCP export command would be kept alive only to move data nobody wants, and every one of them is forge coupling astro-code otherwise no longer has
+
+**Rejected:** The phase-27 importer as built (forge export schema v1, ac principles import --from-forge, /astro-forge-import): working, but it serves data the user chose to leave behind

@@ -17,6 +17,7 @@ Preference with no reason, a superseded node (with its superseded-by where the s
 a low-confidence unapproved node, and nodes carrying 1–3 linked signals each.
 
 ### C1 — An export written purely from the documented schema imports offline, and every forge human decision lands as the matching status and kind
+_Withdrawn R1 (user decision 2026-09-25, CONTEXT "Revision R1"): the forge import was removed from scope — astro-code starts clean. Not graded._
 - **Observe:** with no forge server, MCP or nanograph reachable, run the documented forge-import
   invocation on the fixture, then list the store as JSON (`ac principles list --json` or the verb
   the read contract names). Expect exit 0 and one entry per forge node with: approved → `accepted`;
@@ -31,6 +32,7 @@ a low-confidence unapproved node, and nodes carrying 1–3 linked signals each.
   collapse or mismatch; the import needs a network, MCP or forge process to run.
 
 ### C2 — Every imported entry says where it came from and carries its forge signals as evidence, with empty scopes
+_Withdrawn R1 (user decision 2026-09-25, CONTEXT "Revision R1"): the forge import was removed from scope — astro-code starts clean. Not graded._
 - **Observe:** for each imported entry, inspect it via the store's show/JSON output or its on-disk
   file: it records the forge slug as its source, its history contains an import event, each
   linked signal from the fixture appears as evidence (source excerpt and/or sightings) on THAT
@@ -43,6 +45,7 @@ a low-confidence unapproved node, and nodes carrying 1–3 linked signals each.
   the importer writes scopes onto entries unreviewed.
 
 ### C3 — Re-running the import is idempotent: known nodes gain sightings, new nodes are added, nothing is duplicated
+_Withdrawn R1 (user decision 2026-09-25, CONTEXT "Revision R1"): the forge import was removed from scope — astro-code starts clean. Not graded._
 - **Observe:** import the fixture, snapshot the list JSON, import the identical file again: the
   entry count and each entry's status/statement are unchanged and no second copy of any slug
   exists. Then add one new node and one new signal on an existing still-proposed node to the
@@ -52,6 +55,7 @@ a low-confidence unapproved node, and nodes carrying 1–3 linked signals each.
   text or signals changed, a new node is missed, or a re-run errors out on already-imported data.
 
 ### C4 — A re-import never overwrites what the human decided in astro-code
+_Withdrawn R1 (user decision 2026-09-25, CONTEXT "Revision R1"): the forge import was removed from scope — astro-code starts clean. Not graded._
 - **Observe:** after the first import, in astro-code: edit the text of one proposed entry, accept
   another proposed entry, reject a third with a reason, and hand-edit an imported `accepted`
   entry's statement. Record those four entries (on-disk content or show JSON). Change the
@@ -64,6 +68,7 @@ a low-confidence unapproved node, and nodes carrying 1–3 linked signals each.
   or accepted from forge's side (ADR-058).
 
 ### C5 — Importing dedupes against principles that were captured natively, not only against earlier imports
+_Withdrawn R1 (user decision 2026-09-25, CONTEXT "Revision R1"): the forge import was removed from scope — astro-code starts clean. Not graded._
 - **Observe:** in a fresh temp HOME, create a principle through astro-code's native capture path
   whose statement matches a fixture node (same wording, trivially re-punctuated/re-cased as the
   phase-24 matcher treats as the same). Import the fixture. The native entry gains a sighting/
@@ -72,6 +77,7 @@ a low-confidence unapproved node, and nodes carrying 1–3 linked signals each.
   entry's status/text instead of adding evidence.
 
 ### C6 — A malformed export is refused loudly and writes nothing
+_Withdrawn R1 (user decision 2026-09-25, CONTEXT "Revision R1"): the forge import was removed from scope — astro-code starts clean. Not graded._
 - **Observe:** snapshot the temp store (file digests), then run the import on (a) a file that is
   not valid JSON/JSONL and (b) a syntactically valid file whose records violate the documented
   schema (e.g. an unknown node type, a node missing its slug). Each exits non-zero with a message
@@ -81,6 +87,7 @@ a low-confidence unapproved node, and nodes carrying 1–3 linked signals each.
   imports schema-violating nodes under a guessed kind/status.
 
 ### C7 — Imported still-pending forge proposals are what /astro-review presents for review, and only those need a decision
+_Withdrawn R1 (user decision 2026-09-25, CONTEXT "Revision R1"): the forge import was removed from scope — astro-code starts clean. Not graded._
 - **Observe:** after importing the fixture into a temp HOME, drive the listing step that
   `commands/astro-review.md` itself prescribes (the `ac` verb it runs) against that HOME. The
   forge-pending and low-confidence nodes appear as reviewable proposals; the forge-approved,
@@ -127,6 +134,7 @@ a low-confidence unapproved node, and nodes carrying 1–3 linked signals each.
   verified import, or the phase edits astro-forge / auto-posts the list externally.
 
 ### C11 — astro-code no longer depends on forge anywhere except the explicit import path, and the interim export only feeds the importer
+_Revised R1: there is no import path any more, so the exception is gone — astro-code has no forge dependency at all (no `/astro-forge-import`, no export schema, no importer)._
 - **Observe:** install astro-code into a scratch target with its own installer (or inspect the
   shipped `commands/`, `agents/`, `templates/`, `hooks/`, `workflows/`, `lib/`, `bin/`): no
   capture, retrieval, verify or review step instructs an agent to call a forge MCP tool or read a

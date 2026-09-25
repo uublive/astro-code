@@ -87,3 +87,17 @@ contacts); embeddings; auto-assigning scopes.
   posting anywhere external).
 - Interplay with phases 24–26 landing first: build on their merged state (matcher, sightings,
   review command).
+
+## Revision R1 — no import: astro-code starts clean (user decision, 2026-09-25)
+
+The user does not want forge's old data: "astro forge import we can remove it completely,
+i dont care about old data". Supersedes D1–D4 and the import half of D7:
+- REMOVED: the forge export schema (`templates/FORGE-EXPORT.md`), the importer
+  (`ac principles import --from-forge`, its lib modules and tests), and `/astro-forge-import`.
+  Nothing from the forge graph is brought over; the personal store starts from what
+  astro-code itself captures (phases 23 and 26).
+- KEPT: D5 (forge reads the store on disk, read-only, through a versioned read contract;
+  `--no-sync` on list/show), D6 (this phase never edits astro-forge; the forge-side task list
+  is filed — now without the export task), and removing astro-code's last forge references.
+- Done now means: the read contract is documented, tested and read-only-safe; the forge-side
+  task list exists; astro-code has no forge dependency at all.
