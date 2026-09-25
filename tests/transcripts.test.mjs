@@ -327,3 +327,31 @@ test('classifyCodexLine: a legacy first line without type is unrecognised', asyn
   const { classifyCodexLine } = await import(TRANSCRIPTS);
   assert.equal(classifyCodexLine({ timestamp: new Date().toISOString(), payload: {} }).kind, 'unrecognised');
 });
+
+// Phase 26 verify, C9 — Codex shape drift is COUNTED, never read as an empty human turn.
+// A user message whose content is a bare string, whose blocks are typed `text`, or which
+// has no content at all used to classify as `{ kind: 'human', text: '' }`: the sweep then
+// reported zero candidates and zero skips, indistinguishable from a clean session.
+test('classifyCodexLine: a user or assistant message of an unknown content shape is unrecognised', async () => {
+  const { classifyCodexLine } = await import(TRANSCRIPTS);
+  const msg = (role, content) => ({ type: 'response_item', payload: { type: 'message', role, ...(content === undefined ? {} : { content }) } });
+  assert.equal(classifyCodexLine(msg('user', 'From now on always run the linter.')).kind, 'unrecognised');
+  assert.equal(classifyCodexLine(msg('user', [{ type: 'text', text: 'always run the linter' }])).kind, 'unrecognised');
+  assert.equal(classifyCodexLine(msg('user', undefined)).kind, 'unrecognised');
+  assert.equal(classifyCodexLine(msg('assistant', [{ type: 'text', text: 'ok' }])).kind, 'unrecognised');
+  assert.equal(classifyCodexLine(msg('user', [{ type: 'input_text', text: 'hi' }])).kind, 'human');
+  assert.equal(classifyCodexLine(msg('assistant', [{ type: 'output_text', text: 'ok' }])).kind, 'assistant');
+});
+
+test('scanSession: a Codex rollout made only of drifted user messages reports them as unrecognised', async () => {
+  const { scanSession } = await import(TRANSCRIPTS);
+  const sb = sandbox();
+  const drift = (content) => ({ timestamp: new Date().toISOString(), type: 'response_item', payload: { type: 'message', role: 'user', content } });
+  const file = writeCodexRollout(sb.codex, { id: 'drift1', cwd: join(sb.home, 'proj') }, [
+    drift('From now on always run the linter.'),
+    drift([{ type: 'text', text: 'never skip the tests' }]),
+  ]);
+  const result = scanSession({ file, host: 'codex' });
+  assert.equal(result.turns.length, 0);
+  assert.equal(result.skipped.unrecognised, 2);
+});

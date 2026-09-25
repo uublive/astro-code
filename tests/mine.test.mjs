@@ -229,3 +229,46 @@ test('output ceilings: candidate text/excerpt/context are capped', async () => {
   assert.ok(c.excerpt.length <= 500);
   assert.ok(c.context.length <= 300);
 });
+
+// Phase 26 verify, C4 — contractions never split a repeat, and a contrast keeps its two
+// sides apart so opposite corrections never merge into one false recurrence.
+test('steerKey: contraction and spelling variants of one instruction share a key', async () => {
+  const { steerKey } = await import(MINE);
+  const k = (s) => steerKey(s).key;
+  for (const group of [
+    ["Don't mock the database in tests", 'Dont mock the database in tests', 'Do not mock the database in tests'],
+    ["You shouldn't push directly to main.", 'You should not push directly to main.', 'You shouldnt push directly to main.'],
+    ['never mock the database in tests', 'in tests, never mock the database', 'No, never mock the database in tests please'],
+  ]) {
+    assert.equal(new Set(group.map(k)).size, 1, `one key expected for: ${group.join(' / ')}`);
+  }
+});
+
+test('steerKey: opposite contrasts get different keys', async () => {
+  const { steerKey } = await import(MINE);
+  const k = (s) => steerKey(s).key;
+  for (const [a, b] of [
+    ['no, use tabs not spaces', 'no, use spaces not tabs'],
+    ['always use tabs, never spaces', 'always use spaces, never tabs'],
+    ['use tabs, not spaces', 'use spaces, not tabs'],
+    ['use pnpm instead of npm', 'use npm instead of pnpm'],
+    ['always run the linter', 'never run the linter'],
+  ]) {
+    assert.notEqual(k(a), k(b), `${a} vs ${b}`);
+  }
+});
+
+test('mine: "Don\'t" in one session and "Dont" in another is one steer recurring twice', async () => {
+  const { groupSteers } = await import(MINE);
+  const groups = groupSteers([
+    { sentence: "Don't mock the database in tests", explicit: false, session: 's0' },
+    { sentence: 'Dont mock the database in tests', explicit: false, session: 's1' },
+    { sentence: 'no, use tabs not spaces', explicit: false, session: 's0' },
+    { sentence: 'no, use spaces not tabs', explicit: false, session: 's1' },
+  ]);
+  const groupOf = (sentence) => groups.find((g) => g.occurrences.some((o) => o.sentence === sentence));
+  assert.equal(groupOf("Don't mock the database in tests").recurrence, 2, 'the mock steer recurs across both sessions');
+  assert.equal(groupOf("Don't mock the database in tests"), groupOf('Dont mock the database in tests'));
+  assert.notEqual(groupOf('no, use tabs not spaces'), groupOf('no, use spaces not tabs'), 'opposite contrasts never merge');
+  assert.equal(groupOf('no, use tabs not spaces').recurrence, 1);
+});
