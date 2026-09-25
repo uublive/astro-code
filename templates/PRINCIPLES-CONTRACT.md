@@ -54,6 +54,10 @@ The status set is `proposed`, `accepted`, `rejected`, `retired`, `superseded`, `
 (`merged` is terminal — a merged entry's evidence lives on its survivor, named by
 `merged-into`).
 
+Scope values: `stack` and `work` are ONE line each holding a comma-and-space separated list,
+lowercased (`stack: node, deno`, `work: code, docs`); `files` repeats, one glob per line
+(`files: lib/**`). A missing scope line means that scope is empty (applies everywhere).
+
 `source`, each `promotion`, each `history` and each `sighting` line is one JSON object:
 
 - **`source`** — `{ at, ref?, session?, project?, excerpt? }`. `at` (ISO-8601) is always
@@ -122,8 +126,10 @@ sightingCount: number
 ```
 <!-- /contract:json-keys -->
 
-`reason`, `supersededBy`, `mergedInto` and `source` are present only when the on-disk
-header carries them (section 1's invariants). **`status === "accepted"` is what governs**
+`scopes` is `{ stack: string[], files: string[], work: string[] }` (each possibly empty).
+`reason` (string), `supersededBy` (string), `mergedInto` (string) and `source` (object) are
+present if and only if the on-disk header carries `reason`, `superseded-by`, `merged-into`
+and `source` respectively (section 1's invariants) — never under any other name. **`status === "accepted"` is what governs**
 — an entry a consumer surfaces as "in force" must be filtered to that status; `proposed`,
 `rejected`, `retired`, `superseded` and `merged` entries are visible in this JSON for
 context but never treated as governing.

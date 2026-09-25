@@ -71,6 +71,13 @@ function seedStore(home, store) {
   ok(['principles', 'add', 'An old contract example', '--kind', 'principle']);
   ok(['principles', 'add', 'A new contract example', '--kind', 'principle']);
   ok(['principles', 'supersede', idOf('An old contract example'), '--by', idOf('A new contract example')]);
+  ok(['principles', 'add', 'A retired contract example', '--kind', 'principle']);
+  ok(['principles', 'retire', idOf('A retired contract example'), '--reason', 'no longer true']);
+  ok(['principles', 'add', 'A merge survivor example', '--kind', 'pattern', '--why', 'w', '--propose']);
+  ok(['principles', 'add', 'A merged duplicate example', '--kind', 'pattern', '--why', 'w', '--propose']);
+  ok(['principles', 'merge', idOf('A merged duplicate example'), '--into', idOf('A merge survivor example')]);
+  ok(['principles', 'add', 'A scoped contract example', '--kind', 'principle',
+    '--stack', 'Node', '--stack', 'deno', '--work', 'code', '--work', 'docs', '--files', 'lib/**', '--files', 'tests/**']);
 }
 
 function listing(dir) {
@@ -185,4 +192,41 @@ test('every documented --no-sync command runs read-only against a chmod a-w stor
     chmodRecursive(store, 0o755);
     assert.equal(digestDir(store), before, 'the store must be byte-identical after every --no-sync read');
   }
+});
+
+// C8 (phase 27 verify): the OPTIONAL keys are part of the contract too — renaming `reason`
+// or `supersededBy` left the suite green. Each is present exactly when the on-disk header
+// carries its key, under exactly the documented name, in both list and show; and scope
+// values are written as the contract says.
+test('optional json keys appear exactly when the header carries them, under their documented names', async () => {
+  const home = mkHome(); const store = mkStore();
+  seedStore(home, store);
+  const OPTIONAL = [['reason', 'reason', 'string'], ['superseded-by', 'supersededBy', 'string'],
+    ['merged-into', 'mergedInto', 'string'], ['source', 'source', 'object']];
+  const headerOf = (id) => readFileSync(join(store, `${id}.md`), 'utf8').split('\n---')[0];
+  const listR = run(['principles', 'list', '--all', '--json', '--no-sync'], home, store);
+  assert.equal(listR.status, 0, listR.stderr);
+  const entries = JSON.parse(listR.stdout);
+  const statuses = new Set(entries.map((e) => e.status));
+  for (const st of ['accepted', 'proposed', 'rejected', 'retired', 'superseded', 'merged']) {
+    assert.ok(statuses.has(st), `the seeded store covers status ${st}`);
+  }
+  for (const e of entries) {
+    const shown = JSON.parse(run(['principles', 'show', e.id, '--json', '--no-sync'], home, store).stdout);
+    const header = headerOf(e.id);
+    for (const [hkey, jkey, type] of OPTIONAL) {
+      const onDisk = new RegExp(`^${hkey}:`, 'm').test(header);
+      for (const [where, obj] of [['list', e], ['show', shown]]) {
+        assert.equal(Object.prototype.hasOwnProperty.call(obj, jkey), onDisk, `${where} ${e.id} (${e.status}): "${jkey}" present iff header has "${hkey}:"`);
+        if (onDisk) assert.equal(typeof obj[jkey], type, `${where} ${e.id}: ${jkey} is ${type}`);
+      }
+    }
+  }
+  const scoped = entries.find((e) => e.statement === 'A scoped contract example');
+  assert.deepEqual(scoped.scopes, { stack: ['node', 'deno'], files: ['lib/**', 'tests/**'], work: ['code', 'docs'] });
+  const h = headerOf(scoped.id);
+  assert.match(h, /^stack: node, deno$/m);
+  assert.match(h, /^work: code, docs$/m);
+  assert.match(h, /^files: lib\/\*\*$/m);
+  assert.match(h, /^files: tests\/\*\*$/m);
 });
