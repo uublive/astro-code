@@ -1166,7 +1166,7 @@ async function main() {
           }
           ref = res.id;
           const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
-          console.log(`✓ promoted ${target.id} → ${res.id} ${tag}`);
+          console.log(`✓ promoted ${target.id} → ${res.id} ${tag}${res.existing ? ' · already recorded, nothing added' : ''}`);
           if (res.publishedConventions) console.log(`✓ published CONVENTIONS.md to ${res.branch}`);
           if (res.conventionsRefused) {
             const c = res.conventionsRefused;
@@ -2436,6 +2436,12 @@ async function main() {
           die(`refused — ${lines.join(' ')}`);
         }
         const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
+        // #77 — the identical decision is already in force: nothing is added, and the
+        // existing id is what a retry (or a caller citing the decision) needs.
+        if (res.existing) {
+          console.log(`• already recorded as ${res.id} — ${res.title} ${tag} · in force, nothing added`);
+          return;
+        }
         console.log(`✓ ${res.id} — ${res.title} (${res.date}) ${tag}`);
         if (res.publishedConventions) console.log(`✓ published CONVENTIONS.md to ${res.branch}`);
         // ADR-053 (D3) — the implicit publish REFUSED because it would have overwritten a
