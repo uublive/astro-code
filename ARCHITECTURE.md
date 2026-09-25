@@ -1,7 +1,7 @@
 # astro-code — Architecture
 
 astro-code is a lean, multi-developer planning and execution system for coding
-agents, host-agnostic across Claude Code and Codex CLI. Planning state lives in
+agents, host-agnostic across Claude Code and Codex CLI — on Claude or on a local model. Planning state lives in
 plain files in your repo — milestones, phases, a roadmap — and every phase is
 carried through a discuss → plan → execute → verify → accept loop.
 
@@ -194,20 +194,29 @@ not assumed.
 
 ## Which models?
 
-Workflow agents inherit the **session model** by default (currently Opus 4.8). For
-cost/speed, `.astrocode/config.json` → `models` assigns a tier per role:
+`.astrocode/config.json` gives each of the six roles two independent dials: a **model
+tier** (`models.<role>`) and a **reasoning depth** (`reasoning.<role>`, low → max). Both
+move cost, so `ac models max|balanced|fast` sets the pair in one switch. The defaults
+(`balanced`):
 
-| Role       | Default  | Model id (4.x)              | Why |
-|------------|----------|-----------------------------|-----|
-| planner    | opus     | `claude-opus-4-8`           | plan quality compounds across the phase |
-| researcher | sonnet   | `claude-sonnet-4-6`         | broad parallel reading, good enough |
-| executor   | sonnet   | `claude-sonnet-4-6`         | most tasks; bump to opus for hard phases |
-| verifier   | opus     | `claude-opus-4-8`           | a false PASS is the costliest error |
-| discover   | sonnet   | `claude-sonnet-4-6`         | mechanical task/dependency parsing |
-| integrator | haiku    | `claude-haiku-4-5`          | mechanical wave-fold: stamp-mapped cherry-picks; anything unclean is preserved and healed at executor tier (ADR-027) |
+| Role       | Tier   | Why |
+|------------|--------|-----|
+| planner    | opus   | plan quality compounds across the phase |
+| researcher | sonnet | broad parallel reading, good enough |
+| executor   | sonnet | most tasks; `deep` effort escalates it to opus for one phase |
+| verifier   | opus   | a false PASS is the costliest error |
+| discover   | sonnet | mechanical task/dependency parsing |
+| integrator | sonnet | mechanical wave-fold: stamp-mapped cherry-picks; anything unclean is preserved and healed at executor tier |
 
-Tiers use the short names `opus | sonnet | haiku` (what the agent tooling accepts);
-omit a role to inherit the session model. Set `ac config set models.executor opus`
-for a max-quality run, or push everything to `haiku`/`sonnet` for a cheap draft.
-`integrator` is the one exception: it hard-defaults to haiku even when unset, rather
-than inheriting the session model (ADR-027).
+Tiers are the short names `opus | sonnet` — what the agent tooling accepts, resolved by the
+host to its current model. **haiku is excluded from every role** (ADR-035): its cherry-pick
+judgement was sound but its discipline was not — it ran a bare `git stash -u` in the shared
+tree and destroyed a completed plan. Speed comes from opus → sonnet, never from haiku. The
+integrator floors to sonnet even when unset. An unset role inherits the session model.
+
+**Local models (ADR-067).** A Claude Code session pointed at a local endpoint (e.g. Qwen
+behind `ANTHROPIC_BASE_URL`) serves one model and none of the Claude tiers. `ac` detects it
+from the session env it inherits and resolves every role to the `inherit` tier with no
+reasoning effort; the workflows then pass no model at all — overriding the config, `deep`'s
+escalation and the integrator floor — so every agent runs on the session's model. The stored
+config is never changed. `ASTRO_LOCAL_MODEL=1|0` forces the detection either way.

@@ -58,6 +58,7 @@ devs never collide.
 - one-off without persisting: `/astro-plan <n> --fast` or `/astro-execute <n> --fast`
 - `/astro-config` — pick tiers interactively
 - resilience for long runs: launch with `claude --fallback-model sonnet`
+- on a **local model** (Claude Code pointed at e.g. Qwen) every agent runs on the session's model automatically — `ac status` shows it; `ASTRO_LOCAL_MODEL=1|0` forces it
 
 **The engine (CLI)** — run `ac help` for the full list. Common:
 `ac status` · `ac models [profile]` · `ac registry show` · `ac flow` (opt-in GitFlow) · `ac stats` (token usage)

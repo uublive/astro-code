@@ -122,6 +122,12 @@ gate itself when the last wave lands.
 Watch live progress with **`/workflows`**. It degrades gracefully to inline subagents when
 the Workflow tool isn't available.
 
+A wave that had to heal a conflict, or overflowed its declared files, must prove itself
+before the next wave builds on it: the **test gate** runs the full suite and needs a count of
+tests actually *executed* (skipped/todo excluded). A suite that runs zero tests — an emptied
+test directory, a glob that matches nothing — stops the phase, as does a missing count
+(ADR-066). A project with no test runner at all proceeds, flagged unproven (ADR-028).
+
 ### Context hygiene (`/clear`-safe by design)
 
 Because all state lives in `.astrocode/` files plus the registry — and because heavy work
@@ -184,7 +190,10 @@ Correct a wrong assignment with `ac phase milestone <n> <N>`, which
 moves the phase's registry claim too (it refuses, changing nothing, if the registry is
 unreachable). `ac status` flags any phase whose roadmap and registry milestones differ.
 Closing a milestone archives only its own phases — ones scheduled for a later milestone
-stay on the roadmap.
+stay on the roadmap. A milestone claimed ahead as `active` (every claim before v0.28.0, and
+`ac claim milestone`) counts as waiting just like a planned one: `ac status` lists it and the
+close hint points at `ac milestone activate <n>`. A milestone's name derives no path, so
+`ac milestone rename <n> "<name>"` corrects it at any status, closed included.
 
 ---
 
@@ -452,6 +461,8 @@ across parallel work is enforced rather than hoped for.
 
 `ac decision add` appends to the shared log (ADR ids never collide across devs, and each
 entry records the commit it was made at); `ac canon pull` refreshes your local mirror.
+Re-adding a decision that is already in force records nothing and prints the existing id, so
+a retried add can never land a duplicate.
 
 **A decision leaves the log without being deleted.** `ac decision supersede <id> --by <id>`
 and `ac decision retire <id> --reason "…"` stamp it with a status; the full entry stays in
@@ -467,7 +478,8 @@ plus `supersede`.
 
 **Keep the mirror honest.** The committed `DECISIONS.md` is what ties canon to your code —
 `git show <tag>:.astrocode/DECISIONS.md` is the canon in force at that tag. `ac canon check`
-exits non-zero, per decision, when it differs from the registry (put it in CI or a hook);
+exits non-zero, per decision, when it differs from the registry — a changed body, a missing
+entry, or an id repeated in one copy but not the other (put it in CI or a hook);
 `ac status` flags it in one line. Never hand-edit a published entry: amend it.
 
 > Read `CONVENTIONS.md` and `DECISIONS.in-force.md` before proposing an approach. Conventions are

@@ -16,7 +16,8 @@ Planning and execution for coding agents. It runs a
 plain files in your repo — so an agent can't wander off, and nothing is ever marked done
 without a human saying so.
 
-Works with **Claude Code** and **Codex CLI** from one install. Requires **Node ≥ 22**.
+Works with **Claude Code** and **Codex CLI** from one install, on Claude or on a **local
+model** (every agent then runs on the session's model). Requires **Node ≥ 22**.
 
 📘 **[Open the visual guide →](https://claude.ai/code/artifact/80291435-e40c-4029-a933-8fbdf2d69539)**
 The fastest way in if you've never seen astro-code. For the full reference, read
