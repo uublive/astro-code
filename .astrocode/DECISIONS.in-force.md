@@ -414,3 +414,10 @@ _2026-09-24 · at 7ba528e_
 **Why:** so a re-plan of this area starts from what was actually decided, not from re-deriving it
 
 **Rejected:** auto-advancing on read (a failed lift would then never get retried); storing excerpts in the watermark (secrets/PII would then live outside the redacted store); a new ~/.astro/mine/ home-dir exception (the store's own .local/ already exists and is already gitignored); reusing lib/stats.mjs's whole-file jsonLines reader (a multi-GB transcript would risk the heap); prefix-matching Claude's lossy project slug (it would silently read another project's sessions); a similarity score for grouping steers (ADR-053 already settled that trap once); a cached unswept-session count (it would go stale the instant a sweep ran); a fifth host-adapter contract point for transcript discovery (kept local to lib/transcripts.mjs until a third host needs it)
+
+## ADR-064 — The transcript miner judges no meaning: ac principles mine is mechanical (human turns, redaction, exact-normalised collapse, exact-store sightings, pointer-only carry-over, a per-sweep batch budget) and the /astro-mine agent does all semantic work — grouping restatements across phrasings and languages, keeping opposite instructions apart, ignoring content-free replies, judging explicit rules, counting distinct sessions, qualifying (≥2 sessions or one explicit rule), the cap of 10, and naming which turns to carry forward
+_2026-09-25 · at 57e2d04_
+
+**Why:** Two verify rounds showed that any word-list grouping breaks on the next phrasing (don't/dont, X not Y vs prefer X over Y) and on any language outside the list; the reasoning agent already in the loop handles meaning in any language, and ac stays deterministic, zero-dep and testable on what it still owns
+
+**Rejected:** More contrast/contraction patterns (never converges); a bilingual cue list (breaks on the third language); embeddings or an LLM call inside ac (REQ-001, no hosted dependency)

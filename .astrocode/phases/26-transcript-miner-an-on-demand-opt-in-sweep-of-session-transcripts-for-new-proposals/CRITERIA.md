@@ -56,17 +56,25 @@
   transcripts themselves finds nothing).
 - **Fails if:** any secret substring appears in either output mode or in a file the miner wrote.
 
-### C4 — Repeats are grouped across sessions and the threshold holds: ≥2 distinct sessions or one explicit rule qualifies; a lone one-off correction does not
-- **Observe:** Fixtures in `$P`: the same steer phrased near-identically in 3 different sessions
-  (and twice more inside one of those sessions); an explicit rule stated once ("from now on
-  always …"); a one-off, non-rule correction appearing in a single session ("no, not that
-  file"). Run the miner → the repeated steer appears as ONE candidate whose recurrence is
-  3 distinct sessions (the in-session repeats do not inflate it to 5) and references those
-  sessions; the explicit rule qualifies; the one-off correction is either absent from the
-  proposal candidates or explicitly marked below threshold, and is never ranked above a
-  qualifying one.
-- **Fails if:** the repeat appears as three separate candidates; recurrence counts lines rather
-  than distinct sessions; or a single one-off correction is offered as proposal-qualifying.
+### C4 — Recurrence and the threshold are judged by meaning, in any language: ≥2 distinct sessions or one explicit rule qualifies; a lone one-off or a content-free reply does not; opposite instructions never merge
+_Revised R1 (user decision 2026-09-25, CONTEXT "Revision R1"): grouping moved from word lists in `ac` to the sweep's agent._
+- **Observe:** (a) Fixtures in `$P`: the same steer restated in 3 different sessions in
+  different words AND languages (e.g. English, Italian, German), twice more inside one of
+  them; an explicit rule stated once; a one-off correction; two opposite one-off corrections
+  in two sessions ("use tabs, not spaces" / "prefer spaces over tabs"); bare "No." replies in
+  two sessions. `ac principles mine --json` hands the agent EVERY one of those human turns,
+  each with its session id (only byte-identical-after-normalising turns collapse, carrying
+  all their sessions) — none is dropped or merged by a language-specific word list.
+  (b) `lib/` contains no steer-cue, polarity, contrast or explicit-rule word list deciding
+  grouping, qualification or dropping (grep). (c) The capture spec's transcript-sweep rules
+  and `/astro-mine` instruct the agent to group by meaning across languages, count DISTINCT
+  sessions, keep opposite instructions apart, ignore content-free replies, qualify at ≥2
+  sessions or one explicit rule, and carry below-threshold turns forward with `--keep`.
+  (d) A turn kept in sweep 1 and restated in a new session in sweep 2 is handed to the agent
+  again in sweep 2 alongside the new one.
+- **Fails if:** `ac` drops or merges non-identical turns on word patterns; a non-English or
+  non-Italian steer never reaches the agent; the instructions omit any of the rules in (c);
+  or a kept turn is not re-offered in the next sweep.
 
 ### C5 — The miner streams: multi-hundred-MB transcripts are swept without loading them into memory
 - **Observe:** Generate a `$P` Claude session of ≥300 MB (mostly assistant/tool-result lines,
@@ -90,16 +98,16 @@
   commit and push it to other machines.
 
 ### C7 — A sweep proposes at most 10, strongest first, and the rest are not lost: the next run surfaces them
-- **Observe:** Seed `$P` with 13 distinct qualifying steers of differing strength (some recurring
-  in 2–4 sessions, some single explicit rules). Drive one sweep exactly as the new slash command
-  prescribes for its mechanical steps (its miner invocation, then the capture spec's prescribed
-  `ac principles add … --propose` per lifted candidate, using the candidate text verbatim as the
-  lift, then whatever watermark-advancing step it prescribes). Observe: ≤10 proposals are
-  created, they are the highest-recurrence ones (then explicit rules), and the run reports the
-  remaining count. Drive a second sweep the same way → the 3 remaining steers surface and are
-  proposable; the 10 already proposed do not resurface as new candidates.
-- **Fails if:** more than 10 proposals come out of one sweep; weaker candidates are chosen over
-  stronger ones; or the unprocessed 3 are marked swept and never surface again.
+_Revised R1: "strongest" is judged by the agent; what `ac` guarantees is that nothing handed over or held back is lost._
+- **Observe:** (a) The spec/command cap proposals at 10 per sweep, strongest first
+  (distinct-session recurrence, then explicit rules), and tell the agent to `--keep` the
+  qualifying groups beyond the cap. (b) Drive the mechanical steps: run the miner over more
+  turns than one batch holds → it reports how many were held back; `--advance <sweep> --keep
+  <ids>` then a second sweep → the held-back turns AND the kept ones are handed over again,
+  and turns neither kept nor held (e.g. already proposed) are not. (c) `--advance` with an
+  unknown item id refuses and advances nothing.
+- **Fails if:** the cap or ordering rule is missing; held-back or kept turns never surface
+  again; or already-handled turns resurface as new.
 
 ### C8 — Mined proposals pass through dedupe and the human gate: a match becomes a sighting, a rejected entry is never re-queued, nothing is ever auto-accepted, and each proposal names its source session
 - **Observe:** In the sandbox store, pre-create (via `ac principles …` verbs) one accepted

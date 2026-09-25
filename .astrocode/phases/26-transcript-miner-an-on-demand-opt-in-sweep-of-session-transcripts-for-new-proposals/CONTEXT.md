@@ -84,3 +84,29 @@ OUT: forge graph import (27); any automatic/background mining; embeddings/LLM sc
   size ceiling on excerpts handed to the agent.
 - How headless sessions are detected in each host's JSONL (entrypoint / userType fields).
 - Nudge threshold and where the count is cached.
+
+## Revision R1 — meaning is judged by the agent, not by word lists (user decision, 2026-09-25)
+
+Supersedes the word-list parts of D3/D5/D6 after two verify rounds showed that any
+pattern-based grouping breaks on the next phrasing or the next language ("don't/dont",
+"X not Y" vs "prefer X over Y", Italian or German steers). The user's call: the reasoning
+agent does every judgement about MEANING; `ac` stays deterministic and zero-dep.
+
+- **`ac principles mine` (mechanical only):** find in-scope sessions, keep only turns the
+  human typed (D2, unchanged), redact, drop nothing on language grounds. NO steer-cue word
+  list, NO polarity/contrast parsing, NO "explicit rule" word list, NO grouping beyond
+  exact-normalised text (identical turns collapse, with the union of their sessions).
+  Exact store matches still become sightings (deterministic, ADR-058).
+- **Carry-over by pointer:** turns the agent says to keep (one-offs that may recur later,
+  qualifying groups beyond the cap of 10) are carried to later sweeps as pointers only (no
+  text on disk, C3) and re-offered alongside new turns, so recurrence ACROSS sweeps is still
+  judged — by the agent. Bounded (oldest dropped first).
+- **Budget:** one sweep hands the agent a bounded batch of turns (count/char budget); the
+  overflow is carried like a kept turn, never lost.
+- **`/astro-mine` agent (meaning, any language):** groups turns that state the same
+  instruction; keeps opposite instructions apart; ignores content-free replies ("No.",
+  "stop"); judges explicit rules; counts DISTINCT sessions per group; qualifies at ≥2
+  sessions or one explicit rule; proposes at most 10 strongest; tells `ac` which turns to
+  carry forward (`--advance <sweep> --keep <item ids>`).
+- Unchanged: D1 scope, D2 human-only, D4 watermark, D7 hosts, D8 trigger/nudge, the spec
+  as single source (ADR-060), dedupe + human gate (ADR-058).
