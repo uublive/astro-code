@@ -15,7 +15,7 @@ import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, rejectPhase, setPhaseEffort, setPhaseNote, setPhaseMilestone, isPhasePlanned } from '../lib/roadmap.mjs';
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
-import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims } from '../lib/registry.mjs';
+import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims, waitingMilestones } from '../lib/registry.mjs';
 import { addFix, acceptFix, setFixStatus, findFix, openFixes, loadFixes, FIX_STATUSES } from '../lib/fixes.mjs';
 import {
   addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt,
@@ -1555,7 +1555,7 @@ async function main() {
       // that reached that state before the check existed)
       if (reg.available && reg.registry.claims.length) {
         const ms = milestoneClaims(reg.registry);
-        for (const c of [...ms.values()].filter((x) => x.status === 'planned').sort((a, b) => a.number - b.number)) {
+        for (const c of waitingMilestones(reg.registry, st?.active_milestone ?? rm.milestone)) {
           const ph = rm.phases.filter((p) => p.milestone === c.number).map((p) => p.number);
           console.log(`Planned:   milestone ${c.number}${c.name ? ` "${c.name}"` : ''}${ph.length ? ` — phases ${ph.join(', ')}` : ' — nothing assigned yet'}  (\`ac milestone activate ${c.number}\`)`);
         }
@@ -1696,8 +1696,10 @@ async function main() {
         await updateState(r, (s) => ({ ...s, active_milestone: res.number, status: 'planning' }));
         await setMilestone(r, res.number);
         console.log(`✓ milestone ${res.number}${name ? ` "${name}"` : ''} [${res.source}] — ${res.message ?? ''}`);
-        for (const c of milestoneClaims(readRegistry(r).registry).values()) {
-          if (c.status === 'planned') console.log(`  note: milestone ${c.number}${c.name ? ` "${c.name}"` : ''} is planned — \`ac milestone activate ${c.number}\` starts a planned milestone instead`);
+        for (const c of waitingMilestones(readRegistry(r).registry, res.number)) {
+          console.log(c.status === 'planned'
+            ? `  note: milestone ${c.number}${c.name ? ` "${c.name}"` : ''} is planned — \`ac milestone activate ${c.number}\` starts a planned milestone instead`
+            : `  note: milestone ${c.number}${c.name ? ` "${c.name}"` : ''} is waiting — \`ac milestone activate ${c.number}\` starts it instead`);
         }
         warnNameMatches(res.matches, gitIdentity(r).owner);
       } else if (pos[0] === 'activate') {
@@ -1752,7 +1754,13 @@ async function main() {
         console.log(`✓ milestone ${arch.milestone} complete — archived ${arch.archived} phase(s) → ${arch.archiveDir}`);
         if (arch.kept) console.log(`  kept ${arch.kept} phase(s) scheduled for a later milestone on the roadmap`);
         if (released.ok && released.source === 'remote') console.log(`  retired ${released.changed} registry claim(s)`);
-        console.log('  start the next cycle with `ac milestone new`');
+        // #76 — a milestone already claimed and waiting is the next cycle; claiming another
+        // with `milestone new` would skip it
+        const waiting = released.ok && released.source === 'remote' ? waitingMilestones(readRegistry(r).registry, arch.milestone) : [];
+        for (const c of waiting) {
+          console.log(`  milestone ${c.number}${c.name ? ` "${c.name}"` : ''} is waiting — start it with \`ac milestone activate ${c.number}\``);
+        }
+        console.log(waiting.length ? '  or claim a new one with `ac milestone new`' : '  start the next cycle with `ac milestone new`');
       } else if (pos[0] === 'harvest') {
         // Phase 23 (P5) — the retrospective sweep material for `/astro-complete-milestone`'s
         // principle sweep. Read-only: never mutates roadmap, state, or the principle store.

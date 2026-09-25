@@ -130,3 +130,50 @@ test('#37: the --number repair refuses anything but that exact case', async () =
   assert.match(ac(['milestone', 'new', '--number', '4'], dir).stderr, /--number is only for `ac milestone new --planned`/);
   assert.match(ac(['milestone', 'new', '--plannd'], dir).stderr, /unknown flag/);
 });
+
+// #76 — a milestone claimed ACTIVE but not the project's current one (every claim made
+// before v0.28.0, and every `ac claim milestone` today) got none of #37's guidance: status
+// listed only `planned`, the close hint always said `milestone new`, and so did the note.
+function waitingActiveFixture() {
+  const dir = fixture();
+  assert.equal(ac(['claim', 'milestone'], dir).status, 0); // claims 2 as active; the project stays on 1
+  assert.equal(msClaim(dir, 2).status, 'active');
+  assert.equal(ac(['phase', 'add', 'later work', '--milestone', '2'], dir).status, 0);
+  assert.equal(ac(['phase', 'add', 'now work'], dir).status, 0);
+  assert.equal(ac(['phase', 'verify', '2'], dir).status, 0);
+  assert.equal(ac(['phase', 'accept', '2', '--agent', 'f'], dir).status, 0);
+  return dir;
+}
+
+test('#76: closing a milestone points at an active-claimed milestone that is waiting, not only at `new`', () => {
+  const dir = waitingActiveFixture();
+  const close = ac(['milestone', 'complete'], dir);
+  assert.equal(close.status, 0, close.stderr);
+  assert.match(close.stdout, /milestone 2 is waiting — start it with `ac milestone activate 2`/);
+});
+
+test('#76: status lists an active-claimed, non-current milestone like a planned one', () => {
+  const dir = waitingActiveFixture();
+  assert.equal(ac(['milestone', 'complete'], dir).status, 0);
+  assert.match(ac(['status'], dir).stdout, /Planned: {3}milestone 2 — phases 1 {2}\(`ac milestone activate 2`\)/);
+});
+
+test('#76: `milestone new` notes an active-claimed milestone that is waiting', () => {
+  const dir = waitingActiveFixture();
+  assert.equal(ac(['milestone', 'complete'], dir).status, 0);
+  const r = ac(['milestone', 'new', '--name', 'next'], dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /note: milestone 2 is waiting — `ac milestone activate 2`/);
+  assert.doesNotMatch(r.stdout, /note: milestone 3/, 'the milestone just started is not waiting');
+});
+
+test('#76: with nothing waiting, the close hint still says `milestone new`, and the current milestone is never listed', () => {
+  const dir = fixture();
+  assert.equal(ac(['phase', 'add', 'only'], dir).status, 0);
+  assert.equal(ac(['phase', 'verify', '1'], dir).status, 0);
+  assert.equal(ac(['phase', 'accept', '1', '--agent', 'f'], dir).status, 0);
+  assert.doesNotMatch(ac(['status'], dir).stdout, /Planned: {3}milestone 1/, 'the current milestone is not waiting');
+  const close = ac(['milestone', 'complete'], dir);
+  assert.match(close.stdout, /start the next cycle with `ac milestone new`/);
+  assert.doesNotMatch(close.stdout, /is waiting/);
+});
