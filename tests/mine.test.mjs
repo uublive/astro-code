@@ -84,9 +84,25 @@ test('C4 remediate-r2: the collapse keeps symbols and punctuation — opposite i
   }
 });
 
-test('C4 remediate-r2: phase 24\'s normaliseStatement is untouched — it still strips symbols for store dedupe', async () => {
-  const { normaliseStatement } = await import('../lib/principlematch.mjs');
-  assert.equal(normaliseStatement('Always use === not =='), 'always use not');
+// C4 (third verify): the store-sighting path used phase 24's normaliser, which stripped
+// every symbol — so a steer was sighted against its own OPPOSITE, even a rejected entry.
+test('C4: normaliseStatement keeps operator symbols, still folds sentence punctuation', async () => {
+  const { normaliseStatement, sameStatement } = await import('../lib/principlematch.mjs');
+  assert.notEqual(normaliseStatement('Always use === not =='), normaliseStatement('always use == not ==='));
+  assert.notEqual(normaliseStatement('Prefer C over C++'), normaliseStatement('Prefer C++ over C'));
+  assert.ok(sameStatement('Use pnpm, always!', 'use pnpm — always'), 'phase-24 C1 punctuation/dash folding still holds');
+});
+
+test('C4: a steer that states the OPPOSITE of a rejected entry reaches the agent, not a sighting', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  const e = await proposePrinciple(sb.store, { statement: 'Prefer C over C++', kind: 'preference', why: 'simplicity' });
+  await rejectPrinciple(sb.store, e.entry.id, { reason: 'I actually want C++' });
+  writeClaudeSession(sb.claude, root, 'n1', [cHuman('Prefer C++ over C')]);
+  writeClaudeSession(sb.claude, root, 'n2', [cHuman('prefer c++ over c!')]);
+  const r = await run(sb, root);
+  assert.deepEqual(r.sightings, [], 'the opposite of a rejected entry is never recorded as a sighting of it');
+  assert.ok(r.items.some((i) => /c\+\+ over c/i.test(i.text)), 'the real steer reaches the agent');
 });
 
 test('C4(b): no word list decides dropping — "No.", "stop" and praise are all handed over; only blank turns are dropped', async () => {
