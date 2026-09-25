@@ -9,7 +9,19 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
 import { initPlanning, phaseContextStatus, contextAuthor } from '../lib/planning.mjs';
-import { profileModels, PROFILE_NAMES } from '../lib/models.mjs';
+import { profileModels, PROFILE_NAMES, localModelSession, sessionModels } from '../lib/models.mjs';
+
+// A local-model session (lib/models.mjs) cannot serve the configured tiers: every role runs
+// on the session's model with no reasoning effort. Applied where the commands READ models
+// and reasoning; the stored config is never changed, so leaving the local model restores it.
+function effectiveConfig(cfg) {
+  const s = localModelSession();
+  return s.local ? { ...cfg, models: sessionModels(), reasoning: {} } : cfg;
+}
+function noteLocalModel() {
+  const s = localModelSession();
+  if (s.local) console.error(`• local model (${s.why}) — every agent runs on the session's model, no reasoning effort`);
+}
 import { profileReasoning, REASONING_LEVELS, validateReasoning } from '../lib/reasoning.mjs';
 import { loadState, updateState } from '../lib/state.mjs';
 import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhaseStatus, rejectPhase, setPhaseEffort, setPhaseNote, setPhaseMilestone, isPhasePlanned } from '../lib/roadmap.mjs';
@@ -1552,6 +1564,10 @@ async function main() {
         : reg.registry.claims.length ? `${registryBranch(r)} @ origin (team-coordinated)`
         : 'origin present, not initialized — run `ac registry init`';
       console.log(`Registry:  ${regState}`);
+      {
+        const lm = localModelSession();
+        if (lm.local) console.log(`Models:    session model on every role — local model (${lm.why})`);
+      }
       // #37 — planned milestones and what is already scheduled into them; and any phase that
       // references a milestone the registry never claimed (#32's add case, for projects
       // that reached that state before the check existed)
@@ -2275,10 +2291,12 @@ async function main() {
         });
         json({ unset: key });
       } else if (pos[0] === 'get') {
-        const cfg = loadConfig(r);
+        const cfg = effectiveConfig(loadConfig(r));
+        if (!pos[1] || /^(models|reasoning)\b/.test(pos[1])) noteLocalModel();
         json(pos[1] ? (getPath(cfg, pos[1]) ?? null) : cfg);
       } else {
-        json(loadConfig(r));
+        noteLocalModel();
+        json(effectiveConfig(loadConfig(r)));
       }
       return;
     }
@@ -2299,7 +2317,8 @@ async function main() {
       const r = root();
       const name = pos[0];
       if (!name) {
-        const c = loadConfig(r);
+        const c = effectiveConfig(loadConfig(r));
+        noteLocalModel();
         json({ models: c.models || {}, reasoning: c.reasoning || {} });
         return;
       }
@@ -2312,11 +2331,13 @@ async function main() {
         die(`${e.message} (usage: ac models [${PROFILE_NAMES.join('|')}] [--preview])`);
       }
       if (flags.preview) {
-        json({ models: preset, reasoning: reasoningPreset });
+        noteLocalModel();
+        json(localModelSession().local ? { models: sessionModels(), reasoning: {} } : { models: preset, reasoning: reasoningPreset });
         return;
       }
       const next = await updateConfig(r, (c) => ({ ...c, models: preset, reasoning: reasoningPreset }));
       console.log(`✓ models + reasoning → ${name} profile`);
+      if (localModelSession().local) console.log(`• stored, but this session is on a local model (${localModelSession().why}) — agents keep running on the session's model`);
       json({ models: next.models, reasoning: next.reasoning });
       return;
     }

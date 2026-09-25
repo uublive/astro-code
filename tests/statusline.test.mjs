@@ -186,6 +186,18 @@ test('renderBanner is plain multi-line with the Astrolize logo + next action', (
   assert.doesNotMatch(banner, /\x1b\[/, 'banner carries no ANSI (rides in a systemMessage)');
 });
 
+// Claude Code trims leading blank lines from a SessionStart systemMessage AND prints the
+// message's first line on the same row as "SessionStart:resume says:". One U+2800 (renders
+// blank, is not whitespace) only filled that row, so the mark still sat directly under it.
+// Two do it: the first rides the "says:" row, the second is the visible blank line.
+test('the banner opens with a visible blank row between "says:" and the mark', () => {
+  const root = project({ roadmap: ROADMAP });
+  const [first, second, third] = renderBanner(readContext(root, NOW)).split('\n');
+  assert.equal(first, '\u2800', 'the first line rides the "SessionStart says:" row');
+  assert.equal(second, '\u2800', 'the second line is the visible blank row');
+  assert.match(third, /PZ/, "the mark's top row starts after the blank row");
+});
+
 test('ac activity sets {text, at} and clear nulls it', () => {
   const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
   const ac = (args) => spawnSync(process.execPath, [join(FRAMEWORK, 'bin', 'ac.mjs'), ...args],
@@ -466,6 +478,40 @@ test('the statusline hook composes model + context bar from stdin + transcript',
   assert.match(r.stdout, /Opus 4\.8/, 'model');
   assert.match(r.stdout, /ctx [█░]{5} 10%/, 'context gauge (Opus 4.8 → 1M window)');
   assert.match(r.stdout, /⊡ M1 · ‹2 \(P3\)/, 'the project identity segment still there');
+});
+
+// The window Claude Code itself uses — `context_window` in the stdin blob — beats our
+// model table. The table only knows Claude ids, so a local model (Qwen via LiteLLM, a
+// 131,072 window) read as a 1M window: ~100k tokens showed "10%" while Claude Code was
+// already auto-compacting. Claude Code's own figure is what compaction runs on.
+function runWithContextWindow(contextWindow, model = { id: 'Qwen3.8-27B-FP8', display_name: 'Qwen3.8-27B-FP8' }) {
+  const root = project({ state: { project: 'demo' }, roadmap: ROADMAP });
+  const fakeHome = mkdtempSync(join(tmpdir(), 'ac-sl-cw-'));
+  const tp = join(fakeHome, 'transcript.jsonl');
+  writeFileSync(tp, JSON.stringify({ message: { usage: { input_tokens: 10_000, cache_read_input_tokens: 90_000 } } }));
+  const blob = { workspace: { current_dir: root }, model, transcript_path: tp };
+  if (contextWindow !== undefined) blob.context_window = contextWindow;
+  return spawnSync(process.execPath, [join(FRAMEWORK, 'hooks', 'astro-statusline.mjs'), join(fakeHome, '.claude')], {
+    input: JSON.stringify(blob),
+    env: { ...process.env, HOME: fakeHome, NO_COLOR: '1' },
+    encoding: 'utf8',
+  });
+}
+
+test('the context gauge uses the window Claude Code reports, not the model table (a local model)', () => {
+  const r = runWithContextWindow({ context_window_size: 131_072, total_input_tokens: 100_000, used_percentage: 76 });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /ctx [█░]{5} 76%/, `a 131,072 window at 100k tokens is 76%, not 10%:\n${r.stdout}`);
+});
+
+test("Claude Code's window is used even when it reports no token count yet — the transcript fills in", () => {
+  const r = runWithContextWindow({ context_window_size: 131_072, total_input_tokens: 0, used_percentage: null });
+  assert.match(r.stdout, /ctx [█░]{5} 76%/, `the transcript's 100k over the reported window:\n${r.stdout}`);
+});
+
+test('with no context_window in the blob (older Claude Code) the model table still decides', () => {
+  const r = runWithContextWindow(undefined, { id: 'claude-opus-4-8', display_name: 'Opus 4.8' });
+  assert.match(r.stdout, /ctx [█░]{5} 10%/, 'Opus 4.8 → 1M from the table');
 });
 
 // --- rate-limit quota: end-to-end through the real hook ----------------------

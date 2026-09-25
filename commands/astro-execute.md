@@ -107,7 +107,9 @@ Execute phase `$ARGUMENTS`.
      so the run is resumable if re-executed (ADR-017).
      Honor the effort dial here too: resolve the level (`ac phase effort <slug>`, or
      `ac phase effort <slug> --effort <level>` for a `--effort` one-off) and, for `deep`,
-     use the opus tier for both the `astro-executor` and `astro-verifier` calls (in-memory
+     use the opus tier for both the `astro-executor` and `astro-verifier` calls — unless
+     `ac config get models` returns `inherit` (a local-model session): then spawn every
+     agent with no model at all, so it runs on the session's model (in-memory
      only — never persisted). On a verify FAIL, run the same bounded verify→remediate loop:
      re-spawn the existing `astro-executor` scoped to ONLY the unmet criteria (with the
      verifier's failing command + output as evidence, plan-blind — never a new agent type),

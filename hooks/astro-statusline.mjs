@@ -95,13 +95,21 @@ const barsFit = cols === 0 || cols >= BAR_WIDTH_FLOOR;
 let claude = '';
 if (data) {
   const tp = data.transcript_path;
-  const tokens = readContextTokens(tp);
-  let limit = modelLimit(data.model);
+  // The window Claude Code itself runs on — the one auto-compaction uses — arrives in the
+  // blob as `context_window`, and wins over our table. The table knows only Claude ids,
+  // so a local model (Qwen via LiteLLM, 131,072 tokens) read as 1M: ~100k showed "10%"
+  // while Claude Code was already compacting. The table stays as the fallback for a
+  // Claude Code too old to send it; the transcript fills in a token count not yet reported.
+  const cw = data.context_window || {};
+  const reportedWindow = Number(cw.context_window_size) > 0 ? Number(cw.context_window_size) : null;
+  const reportedTokens = Number(cw.total_input_tokens) > 0 ? Number(cw.total_input_tokens) : null;
+  const tokens = reportedTokens ?? readContextTokens(tp);
+  let limit = reportedWindow ?? modelLimit(data.model);
   // Safety net: a real request can never exceed its context window, so if the measured
   // occupancy is above our table limit, the table is stale — bump it. This makes a
   // misleading >100% reading (the 236% bug) structurally impossible even if a model's
-  // window grows and modelLimit hasn't caught up.
-  if (tokens != null && limit && tokens > limit) limit = Math.max(1_000_000, tokens);
+  // window grows and modelLimit hasn't caught up. Claude Code's own figure is not second-guessed.
+  if (!reportedWindow && tokens != null && limit && tokens > limit) limit = Math.max(1_000_000, tokens);
   // Drawn like the quota gauges and shed the same way: bar above the floor, number below.
   claude = renderClaudeSegment({ model: data.model, tokens, limit, bar: barsFit });
 }

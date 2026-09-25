@@ -22,7 +22,12 @@ export const meta = {
 
 // Defensive: accept args as an object, or as a JSON string if the caller stringified it.
 const input = typeof args === 'string' ? JSON.parse(args) : args || {}
-const { root, phase: phaseSlug, goal = '(see PROJECT.md)', models = {}, reasoning = {} } = input
+const { root, phase: phaseSlug, goal = '(see PROJECT.md)', models: baseModels = {}, reasoning: baseReasoning = {} } = input
+// A local-model session hands every role the `inherit` tier (lib/models.mjs SESSION_MODEL):
+// no agent gets a model or an effort, so each one runs on the session's own model.
+const onSessionModel = Object.values(baseModels).includes('inherit')
+const models = onSessionModel ? {} : baseModels
+const reasoning = onSessionModel ? {} : baseReasoning
 if (!root || !phaseSlug) throw new Error('plan-phase requires args { root, phase }')
 
 // Agents read the canon + discussion brief from disk themselves.
