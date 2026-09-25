@@ -4,7 +4,10 @@
 // instead — a personal store, local, no connect/degrade dance. This file replaces
 // tests/forge.test.mjs's phase-15 guards outright (same readFileSync/scoped-slice shape,
 // case-insensitive regex assertions, messages that quote the offending text) so a forge
-// read cannot silently creep back into any of the five touched callers.
+// read cannot silently creep back into any of the five touched callers. Phase 27 (t9)
+// deleted the `templates/forge-knowledge.md` stub this file used to check for — the
+// pointer to "where the read went" now lives in AGENTS.md/MANUAL.md directly — and added
+// the "no shipped file mentions the deleted stub" guard below.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -14,7 +17,6 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const COMMANDS_DIR = join(ROOT, 'commands');
 const AGENTS_DIR = join(ROOT, 'agents');
-const SPEC_PATH = join(ROOT, 'templates', 'forge-knowledge.md');
 
 const FORGE_RE = /mcp__forge__|forge_knowledge|forge_capture_knowledge|FORGEMASTER/;
 
@@ -29,11 +31,21 @@ const TOUCHED_FILES = [
 const allCommandFiles = readdirSync(COMMANDS_DIR).filter((f) => f.endsWith('.md'));
 const allAgentFiles = readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'));
 
-test('templates/forge-knowledge.md is a short, non-empty stub naming the phase-27 import, never the service name', () => {
-  const src = readFileSync(SPEC_PATH, 'utf8');
-  assert.ok(src.trim().length > 0, 'templates/forge-knowledge.md must ship non-empty (the install path expects it)');
-  assert.ok(/phase.?27/i.test(src), 'templates/forge-knowledge.md must name the phase-27 import as where the graph comes back');
-  assert.ok(!/knowledge graph|the brain/i.test(src), 'templates/forge-knowledge.md must not name the service ("knowledge graph" / "the brain")');
+test('no shipped file (commands/, agents/, templates/, hooks/, workflows/, lib/, bin/) mentions forge-knowledge.md', () => {
+  const dirs = ['commands', 'agents', 'templates', 'hooks', 'workflows', 'lib', 'bin'];
+  const offenders = [];
+  for (const d of dirs) {
+    const full = join(ROOT, d);
+    let files;
+    try { files = readdirSync(full); } catch { continue; }
+    for (const f of files) {
+      const path = join(full, f);
+      let text;
+      try { text = readFileSync(path, 'utf8'); } catch { continue; }
+      if (text.includes('forge-knowledge.md')) offenders.push(`${d}/${f}`);
+    }
+  }
+  assert.deepEqual(offenders, [], `no shipped file may mention the deleted stub — offenders: ${offenders.join(', ') || 'none'}`);
 });
 
 test('no commands/ or agents/ file grants or mentions a forge tool any more', () => {

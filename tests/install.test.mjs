@@ -130,17 +130,16 @@ test('install honors a bare CLAUDE_CONFIG_DIR (no jean-claude)', async () => {
   });
 });
 
-test('install ships templates/forge-knowledge.md, and registers ONLY real commands/agents (no phantom slash command / subagent)', async () => {
+test('install does not ship templates/forge-knowledge.md, and registers ONLY real commands/agents (no phantom slash command / subagent)', async () => {
   const fakeHome = mkdtempSync(join(tmpdir(), 'ac-home-'));
   await withEnv({ home: fakeHome, configDir: undefined }, async () => {
     const { installClaude } = await import(`../lib/install.mjs?forge=${encodeURIComponent(fakeHome)}`);
     installClaude(FRAMEWORK);
 
-    // The shared spec ships to the home templates tree — an installed user must not
-    // hold a pointer (in a command/agent) to a file they don't actually have (C3).
+    // Phase 27 (t9) deleted the phase-25 stub outright — its consumers were retired,
+    // so nothing installed should still expect to find it (C11).
     const shipped = join(fakeHome, '.astro', 'code', 'templates', 'forge-knowledge.md');
-    assert.ok(existsSync(shipped), 'forge-knowledge.md ships under ~/.astro/code/templates');
-    assert.ok(readFileSync(shipped, 'utf8').trim().length > 0, 'shipped spec is non-empty');
+    assert.ok(!existsSync(shipped), 'forge-knowledge.md must not ship any more — the stub was deleted');
 
     // The registered dirs (symlinked into the Claude config dir) must contain EXACTLY
     // the repo's real commands/agents — nothing phantom, nothing missing.

@@ -560,6 +560,10 @@ store, local and always available, with no connect/degrade dance to document. No
 command or agent reads (or hosts) an external knowledge-graph server any more; retrieval
 now runs entirely through `ac principles` (see [Principles](#principles)).
 
+Bringing an existing forge graph over is `/astro-forge-import` (pages the forge server,
+writes an export file, then runs `ac principles import --from-forge`). A forge server
+reads the store back read-only through [`templates/PRINCIPLES-CONTRACT.md`](./templates/PRINCIPLES-CONTRACT.md).
+
 ---
 
 ## Command reference
