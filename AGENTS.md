@@ -11,8 +11,8 @@ Full rules: @LEAN-CTX.md
 
 astro-code no longer reads or writes an external knowledge-graph MCP server. Phase 25
 replaced every one of those calls with `ac principles ask` / `ac principles brief` — a
-personal store, local and always available. Bringing an existing forge graph over is
-`/astro-forge-import`; a forge server reads the store back through
+personal store, local and always available, holding only what astro-code itself captures
+(nothing is imported from forge). A forge server reads the store back through
 `templates/PRINCIPLES-CONTRACT.md`.
 
 <!-- astro-code -->

@@ -57,15 +57,14 @@ The status set is `proposed`, `accepted`, `rejected`, `retired`, `superseded`, `
 `source`, each `promotion`, each `history` and each `sighting` line is one JSON object:
 
 - **`source`** — `{ at, ref?, session?, project?, excerpt? }`. `at` (ISO-8601) is always
-  present; the rest are optional pointers to where the entry came from. An import sets
-  `ref` to `forge:<slug>`.
+  present; the rest are optional pointers to where the entry came from.
 - **`sighting`** — `{ at, ref?, session?, project?, excerpt?, mergedFrom? }`. Append-only
-  evidence that the entry recurred; never rewritten, only added to. An imported signal's
-  `ref` is `forge:<slug>#<key>`.
+  evidence that the entry recurred; never rewritten, only added to.
 - **`history`** — one lifecycle event per line, e.g. `{ action, at, ... }` with
   `action` one of `accepted`, `rejected`, `retired`, `superseded`, `merged`, `promoted`,
-  `edited`, `amended`, `refreshed`, `reopened`, `imported`. An imported entry's history
-  starts with `{ action: "imported", at, from: "forge:<slug>", forgeStatus, name? }`.
+  `edited`, `amended`, `refreshed`, `reopened`, `imported`. Nothing writes `imported`
+  any more (astro-code does not import from another store, ADR-065); it can still appear
+  on an entry written by v0.29.0, and a reader treats it like any other past event.
 - **`promotion`** — `{ project, path, as, ref, at }`, recorded when the entry was promoted
   into a project's own canon.
 
@@ -77,8 +76,7 @@ partially interpret it.
 
 ### Canonical example entry
 
-Includes a `forge:<slug>` source and one sighting, so an importing consumer can see both
-shapes in one file:
+Includes a source and one sighting, so a consumer can see both shapes in one file:
 
 <!-- contract:example-entry -->
 ```
@@ -90,10 +88,9 @@ status: accepted
 created: 2026-09-01T00:00:00.000Z
 stack: node
 work: code
-source: {"at":"2026-09-01T00:00:00.000Z","ref":"forge:commit-lockfiles"}
-history: {"action":"imported","at":"2026-09-25T09:00:00.000Z","from":"forge:commit-lockfiles","forgeStatus":"approved"}
-history: {"action":"accepted","at":"2026-09-25T09:00:00.000Z"}
-sighting: {"at":"2026-09-01T00:00:00.000Z","ref":"forge:commit-lockfiles#a1b2c3d4e5","excerpt":"always commit the lockfile, no exceptions","session":"session 8f2c"}
+source: {"session":"session 8f2c","project":"astro-code","at":"2026-09-01T00:00:00.000Z","excerpt":"always commit the lockfile, no exceptions"}
+history: {"action":"accepted","at":"2026-09-01T00:00:00.000Z"}
+sighting: {"session":"session 9a01","at":"2026-09-03T00:00:00.000Z","excerpt":"committed the lockfile again"}
 ---
 
 # Commit the lockfile with every dependency change
@@ -134,7 +131,7 @@ context but never treated as governing.
 ## 3. Read-only rule
 
 A consumer of this contract NEVER writes under the store: no `add`/`accept`/`reject`/
-`import`/any other mutating verb, no file write, no lock directory, no sync. Every command
+any other mutating verb, no file write, no lock directory, no sync. Every command
 this document names is run with `--no-sync` so it skips `lib/principlesync.mjs` entirely —
 no git fetch, no lock acquisition, nothing written — which is what makes it safe to run
 against a store the consumer does not own or cannot write to. `ac principles brief`/`ask`/
@@ -143,8 +140,7 @@ under `.local/`, itself a write) — a read-only consumer never calls them.
 
 ## Non-goals
 
-No write API for a foreign tool — importing INTO this store is `ac principles import
---from-forge` (`templates/FORGE-EXPORT.md`), a separate, one-directional path with its own
-contract. No embedding or index file is promised. No stability promise is made for
+No write API for a foreign tool, and no import path into this store: it holds only what
+astro-code itself captures (ADR-065). No embedding or index file is promised. No stability promise is made for
 non-`--json` (human-readable) output — only the on-disk format and the named `--json`
 commands are pinned.

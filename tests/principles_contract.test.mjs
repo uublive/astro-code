@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  readFileSync, mkdtempSync, writeFileSync, chmodSync, readdirSync, statSync, existsSync,
+  readFileSync, mkdtempSync, chmodSync, readdirSync, statSync, existsSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -47,21 +47,30 @@ function run(args, home, store) {
   });
 }
 
-function fixtureFile() {
-  const nodes = [
-    { slug: 'accepted-one', type: 'Principle', statement: 'An accepted contract example', status: 'approved',
-      signals: [{ text: 'a signal', source: 's', at: '2026-09-01T00:00:00.000Z' }] },
-    { slug: 'proposed-one', type: 'Pattern', statement: 'A proposed contract example', status: 'pending' },
-    { slug: 'rejected-one', type: 'AntiPattern', statement: 'A rejected contract example', status: 'rejected', reason: 'no' },
-    { slug: 'superseded-one', type: 'Principle', statement: 'An old contract example', status: 'superseded', superseded_by: 'superseded-two' },
-    { slug: 'superseded-two', type: 'Principle', statement: 'A new contract example', status: 'approved' },
-  ];
-  const dir = mkdtempSync(join(tmpdir(), 'ac-contract-fixture-'));
-  const file = join(dir, 'export.json');
-  writeFileSync(file, JSON.stringify({
-    format: 'astro-forge-export', version: 1, exported_at: '2026-09-20T00:00:00.000Z', nodes,
-  }));
-  return file;
+// Seeds a store through astro-code's own writers (there is no import path, ADR-065) with
+// one entry in each of accepted / proposed / rejected / superseded, plus a sighting and
+// a source, so the JSON-key check runs over every status shape a reader can meet.
+function seedStore(home, store) {
+  const ok = (args) => {
+    const r = run(args, home, store);
+    assert.equal(r.status, 0, `${args.join(' ')}: ${r.stderr}`);
+    return r;
+  };
+  const idOf = (statement) => {
+    const all = JSON.parse(ok(['principles', 'list', '--all', '--json']).stdout);
+    const hit = all.find((e) => e.statement === statement);
+    assert.ok(hit, `seeded entry "${statement}" not found`);
+    return hit.id;
+  };
+  ok(['principles', 'add', 'An accepted contract example', '--kind', 'principle',
+    '--from-session', 'session a', '--excerpt', 'a signal']);
+  ok(['principles', 'sight', idOf('An accepted contract example'), '--from-session', 'session b', '--excerpt', 'again']);
+  ok(['principles', 'add', 'A proposed contract example', '--kind', 'pattern', '--why', 'a reason', '--propose']);
+  ok(['principles', 'add', 'A rejected contract example', '--kind', 'antipattern', '--why', 'a reason', '--propose']);
+  ok(['principles', 'reject', idOf('A rejected contract example'), '--reason', 'no']);
+  ok(['principles', 'add', 'An old contract example', '--kind', 'principle']);
+  ok(['principles', 'add', 'A new contract example', '--kind', 'principle']);
+  ok(['principles', 'supersede', idOf('An old contract example'), '--by', idOf('A new contract example')]);
 }
 
 function listing(dir) {
@@ -121,9 +130,7 @@ test('contract:example-entry parses and round-trips byte-for-byte through parseP
 
 test('every documented json key is present with the documented type on list --all --json --no-sync and show --json --no-sync', async () => {
   const home = mkHome(); const store = mkStore();
-  const file = fixtureFile();
-  const importR = run(['principles', 'import', '--from-forge', file], home, store);
-  assert.equal(importR.status, 0, importR.stderr);
+  seedStore(home, store);
 
   const keyLines = fencedBlock('contract:json-keys').split('\n').map((l) => l.trim()).filter(Boolean);
   const keyTypes = keyLines.map((l) => {
@@ -157,8 +164,7 @@ test('every documented json key is present with the documented type on list --al
 
 test('every documented --no-sync command runs read-only against a chmod a-w store', async () => {
   const home = mkHome(); const store = mkStore();
-  const file = fixtureFile();
-  run(['principles', 'import', '--from-forge', file], home, store);
+  seedStore(home, store);
   const listR = run(['principles', 'list', '--all', '--json'], home, store);
   const [{ id }] = JSON.parse(listR.stdout);
 

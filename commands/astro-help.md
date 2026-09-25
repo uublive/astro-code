@@ -41,7 +41,6 @@ devs never collide.
 - `/astro-backlog-promote <id>` — turn a captured idea into a real phase, seeding its captured note into `CONTEXT.md`
 - `/astro-review` — walk the proposed personal principles in batches (accept / edit / reject / skip, merge duplicates)
 - `/astro-mine` — sweep this project's past sessions for principles you kept stating (on demand, never automatic)
-- `/astro-forge-import` — bring principles over from a connected forge server (writes an export file, then runs `ac principles import --from-forge`)
 
 **Set up & navigate:**
 - `/astro-new-project` — scaffold a new project · `/astro-adopt` — adopt an existing codebase; both give an app-shaped project a one-command container contract (`docker compose up` → healthy, seeded app) and leave `RUN-CONTRACT.md` behind
