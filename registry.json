@@ -388,6 +388,16 @@
       "branch": "develop",
       "claimed_at": "2026-09-25T14:17:19.428Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 29,
+      "milestone": 10,
+      "name": "Pi host adapter: prompt templates, agents, tool-name map, install, headless runs, verified on a real Pi install",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-09-25T14:17:22.773Z",
+      "status": "active"
     }
   ]
 }
