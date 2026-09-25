@@ -398,6 +398,16 @@
       "branch": "develop",
       "claimed_at": "2026-09-25T14:17:22.773Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 30,
+      "milestone": 10,
+      "name": "Pi runtime extension: the Workflow surface, structured output and ask-the-user on Pi's SDK, so commands and workflows run unchanged",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-09-25T14:17:26.224Z",
+      "status": "active"
     }
   ]
 }
