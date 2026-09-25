@@ -283,7 +283,7 @@ test('C5: a proposal can be reworded on accept, and an accepted entry is amended
   const id = extractId(p.stdout);
 
   const accept = run(['principles', 'accept', id, '--edit'], dir, home, {
-    EDITOR: "sed -i 's/Use pnpm/Always use pnpm/'",
+    EDITOR: "sed -i.bak 's/Use pnpm/Always use pnpm/'",
   });
   assert.strictEqual(accept.status, 0, accept.stderr);
   const accepted = showJSON(id, home, dir);

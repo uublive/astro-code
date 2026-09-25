@@ -6,6 +6,11 @@
 // `sed -i` for a real edit, `true`/`false` for the no-op and failure cases — the same
 // trick git's own test suite uses for `GIT_EDITOR`.
 //
+// Always `sed -i.bak`, suffix attached: it is the one spelling GNU, BSD (macOS) and
+// BusyBox sed all read the same way. Bare `sed -i 's/…/'` is GNU-only — BSD takes the
+// script as the backup suffix and fails on the path. The `.bak` lands in editText's own
+// temp dir, which is removed after every call.
+//
 // Per ADR-018 `lib/editor.mjs` is pulled in with `await import(...)` INSIDE each async
 // test body (never a static top-of-file import), since it does not exist on the branch
 // yet — a static import would crash the whole file at module load.
@@ -25,7 +30,7 @@ test('a real edit (sed rewording the statement) reports changed:true and the rew
   const { editText } = await import('../lib/editor.mjs');
   const before = acEditDirs();
   const { text, changed } = editText('Use pnpm', {
-    env: { EDITOR: "sed -i 's/Use pnpm/Always use pnpm/'" },
+    env: { EDITOR: "sed -i.bak 's/Use pnpm/Always use pnpm/'" },
   });
   assert.equal(changed, true);
   assert.equal(text, 'Always use pnpm');
@@ -53,7 +58,7 @@ test('#-comment lines are stripped from the result', async () => {
   // Prepend a `#` line ahead of the statement — a real edit that leaves the
   // instructional comments in place must never leak into the returned text.
   const { text } = editText('Use pnpm', {
-    env: { EDITOR: "sed -i '1i# a note from the editor'" },
+    env: { EDITOR: `sh -c 'printf "# a note from the editor\\n" | cat - "$0" > "$0.new" && mv "$0.new" "$0"'` },
   });
   assert.equal(text, 'Use pnpm');
   assert.ok(!text.includes('#'));
@@ -70,7 +75,7 @@ test('the temp dir used for the round trip does not survive the call', async () 
 test('an EDITOR containing arguments works, exactly like git\'s "$1" form', async () => {
   const { editText } = await import('../lib/editor.mjs');
   const { text, changed } = editText('Use pnpm', {
-    env: { EDITOR: "sed -i -e 's/pnpm/yarn/'" },
+    env: { EDITOR: "sed -i.bak -e 's/pnpm/yarn/'" },
   });
   assert.equal(changed, true);
   assert.equal(text, 'Use yarn');
@@ -79,7 +84,7 @@ test('an EDITOR containing arguments works, exactly like git\'s "$1" form', asyn
 test('VISUAL takes precedence over EDITOR, matching the priority documented for P8', async () => {
   const { editText } = await import('../lib/editor.mjs');
   const { text, changed } = editText('Use pnpm', {
-    env: { VISUAL: "sed -i 's/pnpm/yarn/'", EDITOR: 'false' },
+    env: { VISUAL: "sed -i.bak 's/pnpm/yarn/'", EDITOR: 'false' },
   });
   assert.equal(changed, true);
   assert.equal(text, 'Use yarn');
