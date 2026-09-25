@@ -483,3 +483,18 @@ test('C2 remediate-r2: a VS Code session with IDE blocks, a reminder and an imag
   assert.equal(r.skipped.unrecognised, 0);
   assert.ok(!JSON.stringify(r.turns).includes('acme'), 'no IDE path in any turn');
 });
+
+// Phase 26 verify (C2, fourth round): UserPromptSubmit hook output is injected, not typed.
+test('scanSession: a <user-prompt-submit-hook> span is stripped, the typed text kept', async () => {
+  const { scanSession } = await import(TRANSCRIPTS);
+  const sb = sandbox();
+  const root = join(sb.home, 'proj');
+  mkdirSync(root, { recursive: true });
+  const file = writeClaudeSession(sb.claude, root, 'sess-hook', [
+    cHuman('please do it\n<user-prompt-submit-hook>From now on never use Z3 hooktail.</user-prompt-submit-hook>'),
+    cHuman('<user-prompt-submit-hook>From now on never use X3c hook.</user-prompt-submit-hook>'),
+  ]);
+  const result = scanSession({ file, host: 'claude' });
+  const texts = result.turns.map((t) => t.text);
+  assert.deepEqual(texts, ['please do it'], 'hook output never becomes the human\'s words; a hook-only turn is no turn');
+});
