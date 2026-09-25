@@ -414,6 +414,34 @@ watermark drifted).
 - `ac principles mine [--all|--project <path>] [--rescan] [--json]` — hand over a batch of past human turns (read-only).
 - `ac principles mine --advance <sweep-id> [--keep <id,id,...>]` — mark that sweep processed, carrying the kept turns forward.
 
+**Bringing an existing graph in, and letting another tool read this one.** `ac principles
+import --from-forge <file>` reads a JSON export shaped per
+[`templates/FORGE-EXPORT.md`](./templates/FORGE-EXPORT.md) (v1) and applies P2's mapping:
+forge-approved → `accepted`, forge-pending (or low-confidence) → `proposed`, forge-rejected
+→ `rejected` with its reason kept, forge-superseded → `superseded`/`retired`. It is
+idempotent and keyed by the forge slug it records on `source.ref`/a sighting's `ref`: a
+re-import only ever appends evidence to an entry it already knows and NEVER touches an
+already-accepted, edited or rejected entry's status, statement or reason (ADR-058 outranks
+forge's later report of the same node). A brand-new node whose statement exactly matches
+an existing entry — native or previously imported — is sighted onto it rather than minting
+a twin, using the same exact-only dedupe as the review workflow (ADR-053). `--json` prints
+`created`/`sighted`/`unchanged`; the summary line names how many of each landed, plus how
+many still need review. `/astro-forge-import` is the interim, forge-connected way to
+produce that file today (pages the live graph, asks before marking anything accepted,
+never writes the store itself); `templates/FORGE-EXPORT.md` documents the schema either
+way — forge shipping its own exporter needs nothing else changed on this side.
+
+Any OTHER tool — including a future forge exporter reading the other way — can follow
+[`templates/PRINCIPLES-CONTRACT.md`](./templates/PRINCIPLES-CONTRACT.md) (v1) to read this
+store back, read-only: the on-disk entry format and the `ac principles list|show …
+--json --no-sync` output, both version-pinned and guarded by tests so a format change is
+never silent. `--no-sync` on `list`/`show` skips the git sync entirely (no lock, no write
+of any kind), which is what makes following the contract safe against a store the reader
+does not own or cannot write to.
+
+- `ac principles import --from-forge <file> [--json]` — bring a forge export in.
+- `ac principles list|show … --no-sync` — read-only, for a foreign consumer following the contract.
+
 ---
 
 ## The fast lane
@@ -653,6 +681,8 @@ ac principles amend <id> --reason … [--statement … | --edit] # reword/rescop
 ac principles promote <id> [--as decision|convention] # accepted → this project's canon (personal copy stays)
 ac principles remote [<url>]   # set (and sync) the store's private git remote, or print it
 ac principles resolve <id> [--take mine|theirs] # clear an open sync conflict on one entry
+ac principles import --from-forge <file> [--json] # bring a forge export in; never overrides a human decision
+ac principles list|show … --no-sync # read-only: skip the git sync entirely — for a foreign, read-only consumer
 
 ac models balanced             # per-role model tier + reasoning depth, in one switch
 ac config set models.executor opus
