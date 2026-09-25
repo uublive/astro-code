@@ -121,17 +121,18 @@ _Withdrawn R1 (user decision 2026-09-25, CONTEXT "Revision R1"): the forge impor
   stamp, sync) or mutates the store, so forge-as-reader (D5) would either fail or write.
 
 ### C10 — A forge-side handover task list exists that a forge maintainer could execute without astro-code context
-- **Observe:** read the handover document the phase ships in this repo. It contains four
-  actionable tasks: (1) an export verb producing exactly the documented import schema (by
-  reference to that schema), (2) a read path over the versioned read contract (C8), including
-  on-disk read in the shared container and the git-remote path for other machines, (3) turning
-  off forge's capture/miner and approval queue, (4) retiring the forge graph's generator nodes
-  only after the import has been verified. Each names its done-condition. Git history for the
-  phase shows no commit touching the astro-forge repository and the phase posted nothing
-  externally on its own (any external filing is presented as a question to the user).
-- **Fails if:** any of the four tasks is missing or vague ("update forge"), the export task
-  points at a schema different from the one the importer accepts, retirement is not gated on a
-  verified import, or the phase edits astro-forge / auto-posts the list externally.
+_Revised R1 (user decision 2026-09-25): no import, so no export task and no "verified import" gate._
+- **Observe:** read the handover document the phase ships in this repo. It contains three
+  actionable tasks: (1) a read path over the versioned read contract (C8), including on-disk
+  read in the shared container and the git-remote path for other machines, (2) turning off
+  forge's capture/miner and approval queue, (3) retiring the forge graph's generator nodes,
+  gated on the read path being live, capture being off, and the user confirming the old graph
+  may be discarded. Each names its done-condition, and no task mentions an import or export.
+  Git history for the phase shows no commit touching the astro-forge repository and the phase
+  posted nothing externally on its own (any external filing is presented as a question).
+- **Fails if:** any of the three tasks is missing or vague ("update forge"), a task still
+  refers to an import/export, retirement is not gated as above, or the phase edits
+  astro-forge / auto-posts the list externally.
 
 ### C11 — astro-code no longer depends on forge anywhere except the explicit import path, and the interim export only feeds the importer
 _Revised R1: there is no import path any more, so the exception is gone — astro-code has no forge dependency at all (no `/astro-forge-import`, no export schema, no importer)._
