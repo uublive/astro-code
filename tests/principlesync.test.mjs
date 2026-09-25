@@ -106,6 +106,34 @@ test('no .git => state local, nothing created, even when the store sits inside a
   assert.equal(statusAfter, statusBefore, 'the parent repo must see no new/changed files');
 });
 
+// remediate-r2: `git rev-parse --show-toplevel` returns the RESOLVED path, while the store
+// path may reach the same directory through a symlink (macOS: /var → /private/var, so
+// every tmpdir()). `relative()` over the two mixed forms came back `../…`, the store was
+// never excluded, and it showed up as untracked debris in the enclosing repo.
+test('a store reached through a symlink is still excluded from the enclosing repo', async () => {
+  const { syncPrinciples } = await import('../lib/principlesync.mjs');
+  const { realpathSync, symlinkSync, rmSync } = await import('node:fs');
+
+  const real = realpathSync(mkdtempSync(join(tmpdir(), 'ac-principles-real-')));
+  const linkParent = mkdtempSync(join(tmpdir(), 'ac-principles-link-'));
+  const link = join(linkParent, 'home');
+  symlinkSync(real, link);
+  try {
+    git(['init', '--quiet'], { cwd: real });
+    const statusBefore = git(['status', '--porcelain'], { cwd: real }).stdout;
+    const store = join(link, '.astro', 'principles');
+    writeEntry(store, mkEntry());
+
+    const result = await syncPrinciples(store);
+    assert.equal(result.state, 'local');
+    assert.equal(git(['status', '--porcelain'], { cwd: real }).stdout, statusBefore, 'the store must not show up in the enclosing repo');
+    assert.match(readFileSync(join(real, '.git', 'info', 'exclude'), 'utf8'), /^\/\.astro\/principles\/$/m);
+  } finally {
+    rmSync(linkParent, { recursive: true, force: true });
+    rmSync(real, { recursive: true, force: true });
+  }
+});
+
 test('setRemote seeds a fresh bare remote; a second machine setRemote pulls it in via unrelated-history merge', async () => {
   const { setRemote, isStoreRepo } = await import('../lib/principlesync.mjs');
 
