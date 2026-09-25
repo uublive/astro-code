@@ -509,6 +509,21 @@ Research stays 3 angles at every level; the budget goes into convergence, not fa
 Per-run without persisting: `/astro-plan <n> --fast` / `/astro-execute <n> --fast`.
 Fine-tune one role with `ac config set models.executor opus`, or use `/astro-config`.
 
+### Local models
+
+When Claude Code runs on a local model (for example Qwen served by vLLM behind
+`ANTHROPIC_BASE_URL`), the endpoint serves that one model and none of the Claude tiers.
+astro-code detects it and runs **every agent on the session's model**, with no reasoning
+effort: `ac config get models` returns `inherit` for each role, and the workflows then
+pass no model at all. That also switches off the `deep` escalation to opus and the
+integrator's sonnet floor. Your stored config is untouched, so a normal session gets its
+tiers back. `ac status` shows a `Models:` line while this is in effect.
+
+A session counts as local when `ANTHROPIC_BASE_URL` points anywhere other than
+`anthropic.com`, or `ANTHROPIC_MODEL` names a model that is not a Claude id or tier alias.
+`ASTRO_LOCAL_MODEL=1` or `=0` forces the answer. Use `=0` for a proxy in front of real
+Claude.
+
 ### Measuring cost
 
 `ac stats` reads Claude Code's session transcripts and reports the honest breakdown —
