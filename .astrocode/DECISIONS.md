@@ -429,3 +429,8 @@ _2026-09-25 · at 52c817b_
 
 **Rejected:** The phase-27 importer as built (forge export schema v1, ac principles import --from-forge, /astro-forge-import): working, but it serves data the user chose to leave behind
 
+## ADR-066 — The healed-wave test gate requires a count of tests executed (skipped/todo excluded) and fails closed: a runner that ran zero tests, or a missing/malformed count, stops the phase; only a project with no runner at all keeps ADR-028's unproven path
+_2026-09-25 · at 2817db4_
+
+**Why:** passed is vacuously true for a suite that collects nothing, so a wave that lost its tests passed the gate built to catch it (#79); a lost test dir and a brand-new project look the same to the gate, and the gate only runs after a heal or overflow, when proof matters most
+
