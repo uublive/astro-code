@@ -402,3 +402,84 @@ test('scanSession: drifted text blocks on both hosts are counted, so the scan di
   assert.equal(c.skipped.unrecognised, 1);
   assert.equal(c.turns.length, 1);
 });
+
+// ── phase 26 remediate-r2 (C2): human-only extraction ────────────────────────────────
+
+const userLine = (content, extra = {}) => ({ type: 'user', message: { role: 'user', content }, ...extra });
+
+test('C2(a) remediate-r2: <ide_*> blocks are stripped out of a human turn, so a client file path never reads as typed words', async () => {
+  const { classifyClaudeLine } = await import(TRANSCRIPTS);
+  const r = classifyClaudeLine(userLine([
+    { type: 'text', text: '<ide_opened_file>The user opened the file /Users/dev/clients/acme/secret-plan.ts in the IDE.</ide_opened_file>' },
+    { type: 'text', text: 'always run the linter before committing' },
+  ]));
+  assert.equal(r.kind, 'human');
+  assert.equal(r.text, 'always run the linter before committing');
+
+  const sel = classifyClaudeLine(userLine('<ide_selection>The user selected lines 1-9 of /x/y.ts</ide_selection> fix this'));
+  assert.deepEqual(sel, { kind: 'human', text: 'fix this' });
+});
+
+test('C2(a) remediate-r2: a turn that is only IDE / reminder blocks is not a turn', async () => {
+  const { classifyClaudeLine } = await import(TRANSCRIPTS);
+  assert.equal(classifyClaudeLine(userLine([{ type: 'text', text: '<ide_opened_file>/a/b.ts</ide_opened_file>' }])).kind, 'excluded');
+  assert.equal(classifyClaudeLine(userLine('<system-reminder>x</system-reminder>\n<ide_selection>y</ide_selection>  ')).kind, 'excluded');
+});
+
+test('C2(c) remediate-r2: a leading <system-reminder> block is stripped and the typed text after it survives', async () => {
+  const { classifyClaudeLine } = await import(TRANSCRIPTS);
+  const r = classifyClaudeLine(userLine('<system-reminder>injected context here</system-reminder>\nnever force-push to main'));
+  assert.deepEqual(r, { kind: 'human', text: 'never force-push to main' });
+  const arr = classifyClaudeLine(userLine([
+    { type: 'text', text: '<system-reminder>hook said things</system-reminder>' },
+    { type: 'text', text: 'prefer small commits' },
+  ]));
+  assert.deepEqual(arr, { kind: 'human', text: 'prefer small commits' });
+});
+
+test('C2(d) remediate-r2: an image (or other non-text) block is ignored; the typed text survives and nothing is counted as drift', async () => {
+  const { classifyClaudeLine } = await import(TRANSCRIPTS);
+  const r = classifyClaudeLine(userLine([
+    { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } },
+    { type: 'text', text: 'the button should be left-aligned like this' },
+  ]));
+  assert.deepEqual(r, { kind: 'human', text: 'the button should be left-aligned like this' });
+  assert.equal(classifyClaudeLine(userLine([{ type: 'image', source: {} }])).kind, 'excluded', 'an image-only message carries no typed words');
+  // C9 stays: a text block whose text is not a string is still drift, image or not.
+  assert.equal(classifyClaudeLine(userLine([{ type: 'image', source: {} }, { type: 'text', text: 4 }])).kind, 'unrecognised');
+  assert.equal(classifyClaudeLine(userLine([{ foo: 1 }])).kind, 'unrecognised', 'a block with no type is still drift');
+});
+
+test('C2(b) remediate-r2: only an sdk* entrypoint is headless — cli, claude-vscode and claude-desktop sessions are interactive', async () => {
+  const { scanSession } = await import(TRANSCRIPTS);
+  const sb = sandbox();
+  const root = join(sb.home, 'proj');
+  for (const ep of ['cli', 'claude-vscode', 'claude-desktop']) {
+    const file = writeClaudeSession(sb.claude, root, `sess-${ep}`, [{ ...cHuman(`use tabs in ${ep}`), entrypoint: ep }]);
+    const r = scanSession({ file, host: 'claude' });
+    assert.equal(r.headless, false, `${ep} is interactive`);
+    assert.deepEqual(r.turns.map((t) => t.text), [`use tabs in ${ep}`]);
+  }
+  for (const ep of ['sdk-cli', 'sdk-ts', 'sdk-py']) {
+    const file = writeClaudeSession(sb.claude, root, `sess-${ep}`, [{ ...cHuman('x'), entrypoint: ep }]);
+    assert.equal(scanSession({ file, host: 'claude' }).headless, true, `${ep} is headless`);
+  }
+});
+
+test('C2 remediate-r2: a VS Code session with IDE blocks, a reminder and an image yields only the typed words, with no skips', async () => {
+  const { scanSession } = await import(TRANSCRIPTS);
+  const sb = sandbox();
+  const root = join(sb.home, 'proj');
+  const file = writeClaudeSession(sb.claude, root, 'sess-ide', [
+    { ...userLine([
+      { type: 'text', text: '<ide_opened_file>The user opened /Users/dev/clients/acme/plan.ts</ide_opened_file>' },
+      { type: 'text', text: 'keep functions small' },
+    ]), entrypoint: 'claude-vscode' },
+    { ...userLine([{ type: 'image', source: {} }, { type: 'text', text: '<system-reminder>r</system-reminder>match this layout' }]), entrypoint: 'claude-vscode' },
+  ]);
+  const r = scanSession({ file, host: 'claude' });
+  assert.equal(r.headless, false);
+  assert.deepEqual(r.turns.map((t) => t.text), ['keep functions small', 'match this layout']);
+  assert.equal(r.skipped.unrecognised, 0);
+  assert.ok(!JSON.stringify(r.turns).includes('acme'), 'no IDE path in any turn');
+});
