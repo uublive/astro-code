@@ -56,8 +56,8 @@ test('C4(a): English, Italian and German turns all reach items[] — no language
 test('C4(a): turns identical after normalising collapse into ONE item carrying both sessions; near-identical ones do not', async () => {
   const sb = sandbox();
   const root = proj(sb);
-  writeClaudeSession(sb.claude, root, 's1', [cHuman('Nie die Datenbank in Tests mocken.'), cHuman('nie die datenbank in tests mocken')]);
-  writeClaudeSession(sb.claude, root, 's2', [cHuman('NIE die Datenbank in Tests mocken!')]);
+  writeClaudeSession(sb.claude, root, 's1', [cHuman('Nie die Datenbank in Tests mocken.'), cHuman('  nie die datenbank\tin  tests mocken.')]);
+  writeClaudeSession(sb.claude, root, 's2', [cHuman('NIE die Datenbank in Tests mocken.')]);
   writeClaudeSession(sb.claude, root, 's3', [cHuman("Don't mock the database in tests"), cHuman('Dont mock the database in tests')]);
 
   const r = await run(sb, root);
@@ -66,6 +66,27 @@ test('C4(a): turns identical after normalising collapse into ONE item carrying b
   assert.deepEqual(de[0].sessions, ['s1', 's2']);
   const en = r.items.filter((i) => /mock the database/.test(i.text));
   assert.equal(en.length, 2, '"Don\'t" vs "Dont" is a judgement for the agent, not an exact collapse');
+});
+
+test('C4 remediate-r2: the collapse keeps symbols and punctuation — opposite instructions never merge', async () => {
+  const sb = sandbox();
+  const root = proj(sb);
+  writeClaudeSession(sb.claude, root, 'ops1', [cHuman('always use === not ==')]);
+  writeClaudeSession(sb.claude, root, 'ops2', [cHuman('always use == not ===')]);
+  writeClaudeSession(sb.claude, root, 'ops3', [cHuman('Stop.'), cHuman('Stop!'), cHuman('use a && b'), cHuman('use a || b')]);
+
+  const r = await run(sb, root);
+  const ops = r.items.filter((i) => /^always use/.test(i.text));
+  assert.equal(ops.length, 2, JSON.stringify(ops));
+  assert.deepEqual(ops.map((i) => i.sessions), [['ops1'], ['ops2']]);
+  for (const t of ['Stop.', 'Stop!', 'use a && b', 'use a || b']) {
+    assert.equal(r.items.filter((i) => i.text === t).length, 1, `${t} is its own item`);
+  }
+});
+
+test('C4 remediate-r2: phase 24\'s normaliseStatement is untouched — it still strips symbols for store dedupe', async () => {
+  const { normaliseStatement } = await import('../lib/principlematch.mjs');
+  assert.equal(normaliseStatement('Always use === not =='), 'always use not');
 });
 
 test('C4(b): no word list decides dropping — "No.", "stop" and praise are all handed over; only blank turns are dropped', async () => {
