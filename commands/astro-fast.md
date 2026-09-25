@@ -96,6 +96,9 @@ prompt (one `AskUserQuestion` or just prompt for it) — never invent one.
    - keep `verifier` at its configured tier, defaulting to **`opus`** (speed must never
      silently cost correctness — the verify gate stays sharp),
    - keep `discover` at its configured tier, defaulting to `sonnet` (mechanical).
+   - **Local model:** if `ac config get models` returns `inherit` for the roles, the session
+     runs on a local model — pass that map through **unchanged** (no `opus` default, and
+     ignore `--model`): every agent must run on the session's model.
 
 8. **Execute straight through — sequential, no fan-out.** Run the execution workflow
    (its verifier runs at the end, so you do not verify separately):

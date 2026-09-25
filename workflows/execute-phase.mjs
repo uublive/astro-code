@@ -45,7 +45,12 @@ const maxCycles = ({ light: 0, standard: 1, deep: 3 })[effort] ?? 1
 // on execute+verify only, ADR-022).  `integrator` (phase-14, ADR-027) is likewise NEVER
 // escalated by `deep` — it stays a two-arm ternary on purpose (a third arm here is an
 // easy one-arm-only bug) and carries its own floor at the wave-integrator call site below.
-const models = effort === 'deep' ? { ...baseModels, executor: 'opus', verifier: 'opus' } : baseModels
+// A local-model session hands every role the `inherit` tier (lib/models.mjs SESSION_MODEL):
+// the endpoint serves one model and no Claude tier, so NO agent gets a model or an effort —
+// not from the config, not from `deep`'s escalation, not from the integrator's floor.
+const onSessionModel = Object.values(baseModels).includes('inherit')
+const models = onSessionModel ? {}
+  : effort === 'deep' ? { ...baseModels, executor: 'opus', verifier: 'opus' } : baseModels
 
 // The per-role REASONING depth, resolved the same way and for the same reason.
 // `deep` buys thinking depth on exactly the two roles it already escalates by
@@ -53,9 +58,10 @@ const models = effort === 'deep' ? { ...baseModels, executor: 'opus', verifier: 
 // two dials stay consistent instead of one silently lagging the other.
 // NOTE: `reasoning` (how hard one agent thinks) is NOT `effort` (how many
 // verify→remediate cycles the phase may burn). Same script, two dials.
-const reasoning = effort === 'deep'
-  ? { ...baseReasoning, executor: 'xhigh', verifier: 'xhigh' }
-  : baseReasoning
+const reasoning = onSessionModel ? {}
+  : effort === 'deep'
+    ? { ...baseReasoning, executor: 'xhigh', verifier: 'xhigh' }
+    : baseReasoning
 
 // Phase-07 / ADR-017: extract the zero-padded phase number from the slug as a
 // STRING so the commit-stamp grep pattern "(phase 07 tK)" is correct.
@@ -1154,7 +1160,7 @@ const integrateWave = (w, wave, reported = []) =>
     // at the session tier (opus) for every project predating this key, the exact
     // opposite of the goal.  Mirrors leanExecutionEnabled's default-on reasoning.  An
     // explicit `ac config set models.integrator sonnet` (or a profile) still wins.
-    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.integrator || 'sonnet', effort: reasoning.integrator, schema: INTEGRATE_SCHEMA },
+    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.integrator || (onSessionModel ? undefined : 'sonnet'), effort: reasoning.integrator, schema: INTEGRATE_SCHEMA },
   )
 
 // ── Phase-13 (ADR-026): warm batched sequential executor primitives ────────────

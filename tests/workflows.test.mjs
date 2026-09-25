@@ -2226,8 +2226,10 @@ test('t5 (phase 10): deep escalates executor+verifier to opus while other levels
 
   // A single up-front resolution: deep → a FRESH object forcing opus on execute+verify,
   // every other level → baseModels untouched (never mutate persisted config, C4).
-  const line = wfSrc.match(/const models\s*=\s*effort\s*===\s*'deep'\s*\?\s*\{([^}]*)\}\s*:\s*baseModels/)
-  assert.ok(line, 'execute-phase.mjs must resolve `const models = effort === \'deep\' ? { ...baseModels, executor:\'opus\', verifier:\'opus\' } : baseModels`')
+  // (A local-model session resolves to `{}` first — lib/models.mjs SESSION_MODEL — and is
+  // covered in tests/local_model.test.mjs; the deep arm below is unchanged.)
+  const line = wfSrc.match(/const models\s*=\s*onSessionModel\s*\?\s*\{\}\s*:\s*effort\s*===\s*'deep'\s*\?\s*\{([^}]*)\}\s*:\s*baseModels/)
+  assert.ok(line, 'execute-phase.mjs must resolve `const models = onSessionModel ? {} : effort === \'deep\' ? { ...baseModels, executor:\'opus\', verifier:\'opus\' } : baseModels`')
 
   const deepBranch = line[1]
   assert.ok(/\.\.\.baseModels/.test(deepBranch), 'the deep branch must spread baseModels (only override execute+verify, keep the rest)')
@@ -2971,8 +2973,8 @@ test('t2 (phase 14): source guard — the integrate agent() options line reads m
   const integrateLine = lines.find((l) => l.includes('label: `integrate:w'))
   assert.ok(integrateLine, 'integrate:w<n> agent() options line not found')
   assert.ok(
-    integrateLine.includes("model: models.integrator || 'sonnet'"),
-    'the integrate call must read models.integrator || \'sonnet\'',
+    integrateLine.includes("model: models.integrator || (onSessionModel ? undefined : 'sonnet')"),
+    'the integrate call must read models.integrator, floored to \'sonnet\' except on a local-model session',
   )
 
   for (const needle of ["label: taskLabel('heal', t)", "label: 'testgate'", 'label: `teardown:w']) {
