@@ -1385,12 +1385,29 @@ async function main() {
         }
 
         await principlesSync(dir);
-        const root = flags.project ? resolve(String(flags.project)) : (findAstroRoot(process.cwd()) || process.cwd());
-        // realpathSync throws on a non-existent path — fall back to the given root
-        // rather than dying on a read-only sweep (macOS /var vs /private/var, D-P2).
-        let real = root;
-        try { real = realpathSync(root); } catch { /* keep root */ }
-        const roots = [root, real];
+        // Claude names a project's transcript dir after the path the session was STARTED
+        // in, which may be the unresolved one: `process.cwd()` is already resolved
+        // (macOS /var → /private/var), so a project reached through a symlink never
+        // matched its own transcripts (C13). `$PWD` keeps the path as the shell spelled it —
+        // used only when it really is this same directory, never trusted blindly.
+        const bases = [];
+        if (flags.project) {
+          bases.push(resolve(String(flags.project)));
+        } else {
+          bases.push(process.cwd());
+          const pwd = process.env.PWD;
+          if (pwd && pwd !== process.cwd()) {
+            try { if (realpathSync(pwd) === realpathSync(process.cwd())) bases.push(pwd); } catch { /* not this dir */ }
+          }
+        }
+        const roots = [];
+        for (const base of bases) {
+          const root = flags.project ? base : (findAstroRoot(base) || base);
+          roots.push(root);
+          // realpathSync throws on a non-existent path — fall back to the given root
+          // rather than dying on a read-only sweep (macOS /var vs /private/var, D-P2).
+          try { roots.push(realpathSync(root)); } catch { /* keep root */ }
+        }
         const scope = flags.all
           ? { mode: 'all', roots: [] }
           : { mode: 'project', roots: [...new Set(roots)] };

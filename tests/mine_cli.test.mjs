@@ -4,7 +4,7 @@
 // with a non-zero exit — this file loads fine and fails RED until t14 lands (ADR-018).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, existsSync, readdirSync, realpathSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,8 +16,11 @@ import { sandbox as fixtureSandbox, addProfile, writeClaudeSession, writeCodexRo
 const FRAMEWORK = join(dirname(fileURLToPath(import.meta.url)), '..');
 const AC = join(FRAMEWORK, 'bin', 'ac.mjs');
 
+// `realpathSync` so the path the fixtures slug is the one the CLI resolves to: on macOS
+// `tmpdir()` is `/var/…`, a symlink to `/private/var/…`, and a fixture written under the
+// unresolved slug never matched (C13). The symlinked case is tested on purpose below.
 function mkProject(sb) {
-  const dir = mkdtempSync(join(tmpdir(), 'ac-mine-proj-'));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ac-mine-proj-')));
   git(['init', '--quiet'], { cwd: dir });
   git(['config', 'user.email', 'dev@example.com'], { cwd: dir });
   git(['config', 'user.name', 'dev'], { cwd: dir });
@@ -28,7 +31,7 @@ function mkProject(sb) {
 
 function run(argv, cwd, sb, extraEnv = {}) {
   return spawnSync(process.execPath, [AC, ...argv], {
-    cwd, encoding: 'utf8', env: { ...sb.env, GIT_AUTHOR_NAME: 'dev', GIT_AUTHOR_EMAIL: 'dev@example.com', GIT_COMMITTER_NAME: 'dev', GIT_COMMITTER_EMAIL: 'dev@example.com', ...extraEnv },
+    cwd, encoding: 'utf8', env: { ...sb.env, PWD: cwd, GIT_AUTHOR_NAME: 'dev', GIT_AUTHOR_EMAIL: 'dev@example.com', GIT_COMMITTER_NAME: 'dev', GIT_COMMITTER_EMAIL: 'dev@example.com', ...extraEnv },
     windowsHide: true,
   });
 }
@@ -36,7 +39,7 @@ function run(argv, cwd, sb, extraEnv = {}) {
 test('C1: default scope finds this project only; --project targets another; --all finds both', () => {
   const sb = fixtureSandbox();
   const P = mkProject(sb);
-  const Q = mkdtempSync(join(tmpdir(), 'ac-mine-q-'));
+  const Q = realpathSync(mkdtempSync(join(tmpdir(), 'ac-mine-q-')));
   writeClaudeSession(sb.claude, P, 'sess-p', [cHuman('always-P run tests before pushing')]);
   writeClaudeSession(sb.claude, Q, 'sess-q', [cHuman('always-Q run tests before pushing')]);
   const texts = (r) => JSON.parse(r.stdout).items.map((i) => i.text).join('\n');
@@ -58,6 +61,30 @@ test('C1: default scope finds this project only; --project targets another; --al
 
   const both = run(['principles', 'mine', '--all', '--project', Q, '--json'], P, sb);
   assert.notStrictEqual(both.status, 0, '--all together with --project must die');
+});
+
+test('C13: a project reached through a symlink matches transcripts slugged by the unresolved path ($PWD)', () => {
+  const sb = fixtureSandbox();
+  const P = mkProject(sb);
+  const linkParent = mkdtempSync(join(tmpdir(), 'ac-mine-link-'));
+  const L = join(linkParent, 'proj-link');
+  symlinkSync(P, L);
+  try {
+    writeClaudeSession(sb.claude, L, 'sess-link', [cHuman('typed while cd-ed into the symlink')]);
+    const res = run(['principles', 'mine', '--json'], L, sb, { PWD: L });
+    assert.strictEqual(res.status, 0, res.stderr);
+    const items = JSON.parse(res.stdout).items;
+    assert.ok(items.some((i) => /symlink/.test(i.text)), 'the unresolved-path slug must be in scope');
+
+    // A $PWD that is NOT this directory is never trusted.
+    const other = mkdtempSync(join(tmpdir(), 'ac-mine-other-'));
+    writeClaudeSession(sb.claude, other, 'sess-other', [cHuman('from an unrelated dir')]);
+    const res2 = run(['principles', 'mine', '--json', '--rescan'], P, sb, { PWD: other });
+    assert.ok(!JSON.parse(res2.stdout).items.some((i) => /unrelated/.test(i.text)));
+    rmSync(other, { recursive: true, force: true });
+  } finally {
+    rmSync(linkParent, { recursive: true, force: true });
+  }
 });
 
 test('C3: neither stdout/stderr nor any file under HOME contains a raw secret', () => {
