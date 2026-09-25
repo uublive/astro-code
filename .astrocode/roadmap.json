@@ -56,7 +56,7 @@
       "number": 27,
       "name": "Forge import and handover: bring the forge graph over, then forge reads astro-code",
       "slug": "27-forge-import-and-handover-bring-the-forge-graph-over-then-forge-reads-astro-code",
-      "status": "pending",
+      "status": "verified",
       "milestone": 9
     }
   ]
