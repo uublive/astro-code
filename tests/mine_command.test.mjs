@@ -128,3 +128,11 @@ test('the capture spec §7 folds the skipped count into its single line, never a
   assert.ok(/never a separate line/i.test(s7), '§7 forbids a separate skipped line');
   assert.ok(/K transcript line\(s\) skipped — ac principles mine`/.test(s7), '§7 states the line when only skips are reported');
 });
+
+// Phase 26 verify (C12, fourth round): an empty sweep is silent, per the spec's §7 —
+// the command must not grow a report line the spec does not define.
+test('/astro-mine prints nothing of its own when there is nothing new', () => {
+  const src = readFileSync(join(ROOT, 'commands', 'astro-mine.md'), 'utf8');
+  assert.doesNotMatch(src, /say `nothing new to mine`/);
+  assert.match(src, /`nothingNew` is true, stop and say nothing/);
+});

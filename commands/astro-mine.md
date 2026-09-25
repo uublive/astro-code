@@ -16,7 +16,8 @@ made by the capture spec's transcript-sweep rules.
 
 1. **Run the miner.** Run `ac principles mine --json`, passing through only the flags the
    user actually gave: `--all`, `--project <path>`, `--rescan`. If the result's
-   `nothingNew` is true, say `nothing new to mine` in one line and stop. Note the
+   `nothingNew` is true, stop and say nothing — the spec's zero-proposal silence (§7)
+   covers it, and an empty sweep is not news. Note the
    `skipped` counts for step 5; say nothing about them here.
 
 2. **Record exact repeats.** For each entry in `sightings[]`, run
