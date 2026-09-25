@@ -378,6 +378,16 @@
       "branch": "develop",
       "claimed_at": "2026-09-25T14:16:59.354Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 28,
+      "milestone": 10,
+      "name": "Cross-host parity guard: each host declares what it provides, and a test fails when a command, agent or workflow depends on something a wired host cannot",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-09-25T14:17:19.428Z",
+      "status": "active"
     }
   ]
 }
