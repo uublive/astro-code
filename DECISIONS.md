@@ -439,3 +439,8 @@ _2026-09-25 · at 2cc006f_
 
 **Why:** A local endpoint serves one model and none of the Claude tiers, so every subagent given an explicit tier failed with a model-name error; inheriting the session model is the one choice that always works there. The stored config is never changed, so leaving the local model restores the tiers. Per-role local mapping (e.g. executors on a coder model) is deliberately deferred.
 
+## ADR-068 — Extra MCP tools for astro-code's agents are set per user in ~/.astro/config.json agent_tools (agent name or * → list of mcp__ tool names) and merged into each agent's tools line on every install/update; only MCP names are accepted, and a bad entry is a warning, never an install failure
+_2026-09-27 · at 83a054f_
+
+**Why:** The agents are installed once per machine and shared by every project, so a per-project key would have no single project to read at install time; a hand edit of the installed agent was erased by the next install/update (#93). Accepting only MCP names widens what a role can reach through a server the user installed without ever widening its built-in permissions (the verifier never gets Write).
+
