@@ -428,6 +428,15 @@
       "branch": "develop",
       "claimed_at": "2026-09-25T14:17:32.568Z",
       "status": "complete"
+    },
+    {
+      "type": "fix",
+      "id": "2026-10-01-phase-slug-unbounded-enametoolong",
+      "name": "phase slug unbounded ENAMETOOLONG",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-01T07:10:47.404Z",
+      "status": "active"
     }
   ]
 }
