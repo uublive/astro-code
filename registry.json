@@ -437,6 +437,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-01T07:10:47.404Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-10-01-execute-phase-dispatches-dependents-of",
+      "name": "execute-phase dispatches dependents of a blocked task",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-01T07:14:52.767Z",
+      "status": "active"
     }
   ]
 }
