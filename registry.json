@@ -466,6 +466,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-02T11:42:48.023Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-10-02-codex-astro-config-offers-claude-models",
+      "name": "codex-astro-config-offers-claude-models",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-02T13:33:37.843Z",
+      "status": "active"
     }
   ]
 }
