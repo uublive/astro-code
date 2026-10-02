@@ -456,6 +456,16 @@
       "branch": "develop",
       "claimed_at": "2026-10-01T13:11:32.401Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 34,
+      "milestone": 10,
+      "name": "Challenge mode for new-project, adopt and discuss",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-02T11:42:48.023Z",
+      "status": "active"
     }
   ]
 }
