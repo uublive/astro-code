@@ -444,3 +444,10 @@ _2026-09-27 · at 83a054f_
 
 **Why:** The agents are installed once per machine and shared by every project, so a per-project key would have no single project to read at install time; a hand edit of the installed agent was erased by the next install/update (#93). Accepting only MCP names widens what a role can reach through a server the user installed without ever widening its built-in permissions (the verifier never gets Write).
 
+## ADR-069 — Challenge mode is one shared method (templates/challenge.md) applied by /astro-new-project, /astro-adopt, /astro-discuss --challenge and /astro-challenge: rounds of every unblocked decision as a numbered text message with a recommendation each, facts looked up never asked, answers saved after every round, a checkpoint each round, unknowns kept open. A challenge-discussed CONTEXT.md keeps the line-1 discuss marker and adds a line-2 astro-challenge marker
+_2026-10-02 · at 6868e19_
+
+**Why:** Four entry points sharing one method drift if each carries a copy (the principle-capture.md precedent). Numbered text rounds work on Codex and fit 5-12 unblocked questions, which AskUserQuestion (max 4, fixed options) cannot. Saving per round keeps the /clear-safe guarantee for long sessions. A separate line-2 marker records provenance without touching the discuss-gate regex that ADR-035/037 had to fix twice
+
+**Rejected:** Inline copies per command (drift); AskUserQuestion pages for the round (4-question cap, squeezed open answers, no picker on Codex); a single write at the end (a long session lives only in context); folding the challenge flag into the line-1 marker (re-opens the ADR-037 regex trap)
+
