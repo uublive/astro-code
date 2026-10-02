@@ -455,7 +455,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "develop",
       "claimed_at": "2026-10-01T13:11:32.401Z",
-      "status": "active"
+      "status": "complete"
     },
     {
       "type": "phase",
@@ -465,7 +465,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "develop",
       "claimed_at": "2026-10-02T11:42:48.023Z",
-      "status": "active"
+      "status": "complete"
     },
     {
       "type": "fix",
