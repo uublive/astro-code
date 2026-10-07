@@ -483,7 +483,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "develop",
       "claimed_at": "2026-10-07T10:46:27.145Z",
-      "status": "active"
+      "status": "complete"
     },
     {
       "type": "phase",
@@ -493,7 +493,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "develop",
       "claimed_at": "2026-10-07T10:46:31.064Z",
-      "status": "active"
+      "status": "complete"
     }
   ]
 }
