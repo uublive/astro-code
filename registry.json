@@ -484,6 +484,16 @@
       "branch": "develop",
       "claimed_at": "2026-10-07T10:46:27.145Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 35,
+      "milestone": 11,
+      "name": "Cursor host adapter",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-07T10:46:31.064Z",
+      "status": "active"
     }
   ]
 }
