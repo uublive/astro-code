@@ -475,6 +475,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-02T13:33:37.843Z",
       "status": "active"
+    },
+    {
+      "type": "milestone",
+      "number": 11,
+      "name": "Cursor as a host",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-07T10:46:27.145Z",
+      "status": "active"
     }
   ]
 }
