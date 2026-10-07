@@ -451,3 +451,10 @@ _2026-10-02 · at 6868e19_
 
 **Rejected:** Inline copies per command (drift); AskUserQuestion pages for the round (4-question cap, squeezed open answers, no picker on Codex); a single write at the end (a long session lives only in context); folding the challenge flag into the line-1 marker (re-opens the ADR-037 regex trap)
 
+## ADR-070 — Non-Claude hosts keep one command source: the host adapter prepends a short tool-mapping note at render time instead of rewriting command bodies per host
+_2026-10-07 · at 32cfd72_
+
+**Why:** One body for every host avoids per-host copies drifting; the existing Workflow→Agent→inline tiers already degrade, so the note only has to name each Claude tool's local equivalent
+
+**Rejected:** per-host body rewriting (fragile substitutions, divergent copies); no note at all (models stall on steps naming Claude-only tools)
+
