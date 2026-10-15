@@ -541,3 +541,10 @@ _2026-10-15 · at 5ecfb98_
 
 **Rejected:** Counting --evidence as human (an agent could fabricate it); regular expressions for prefixes; a per-project prefix list; honouring the prefixes in witness only (live-capture would capture machine-typed lines as the owner's rules).
 
+## ADR-082 — git-guard denies and never asks, on every host; a destructive git call it cannot show to be scoped is refused, and a call it cannot read at all (an expanded subcommand, a shell fed on stdin, nesting three deep) runs (amends phase 38 and ADR-076)
+_2026-10-15 · at c98cbd1_
+
+**Why:** Phase 38 chose ask on Claude Code from a -p probe where an ask acted as a refusal. A Workflow agent inside an interactive session is not -p: its ask goes to the user and the whole run waits, so unattended runs stalled for hours on false alarms (a mutation-test script refused because a comment said restore and the script started with $P). A deny reaches the agent at once with the scoped alternative, and nothing waits. Matching the text for git plus a destructive word anywhere caused most false alarms, so unreadable calls now run; destructive calls the parser does see stay refused.
+
+**Rejected:** Removing git-guard (loses the guard against the bare stash that destroyed a completed plan); keeping ask with fewer false alarms (any ask still stalls an unattended run); denying unreadable calls too (an agent cannot rephrase a refusal it cannot understand).
+
