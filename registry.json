@@ -164,7 +164,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "feature/lean-execution",
       "claimed_at": "2026-08-21T20:18:00.751Z",
-      "status": "active"
+      "status": "complete"
     },
     {
       "type": "phase",
@@ -174,7 +174,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "feature/lean-execution",
       "claimed_at": "2026-08-21T20:18:03.975Z",
-      "status": "active"
+      "status": "complete"
     },
     {
       "type": "phase",
@@ -184,7 +184,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "feature/lean-execution",
       "claimed_at": "2026-08-21T20:18:07.413Z",
-      "status": "active"
+      "status": "complete"
     },
     {
       "type": "milestone",
@@ -629,7 +629,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "develop",
       "claimed_at": "2026-10-15T05:47:00.947Z",
-      "status": "active"
+      "status": "complete"
     },
     {
       "type": "phase",
@@ -639,7 +639,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "develop",
       "claimed_at": "2026-10-15T05:47:04.976Z",
-      "status": "active"
+      "status": "complete"
     }
   ]
 }
