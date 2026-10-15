@@ -525,3 +525,10 @@ _2026-10-15 · at 3ef3f5b_
 
 **Rejected:** Carrying a PASS into verified with a diff-impact check (a fix's indirect side effect could reach /astro-accept); a narrowed run followed by a separate full run (every pass costs two runs); narrowing only the execute loop (at standard effort it has one cycle, the repeats are hand-run /astro-verify); keeping the verdict local only (lost on a fresh clone, not auditable).
 
+## ADR-080 — A human gate (phase accept/reject, fix accept) may cite a decision made elsewhere with --evidence "<id or URL>", stored beside the record --agent claude; a citation never makes the signer human, and prompts starting with a user-configured machine-typed prefix never count as human in any composer-gated mod (refines ADR-074)
+_2026-10-15 · at 5ecfb98_
+
+**Why:** #132: owners who approve on a separate decision board had no way to tie the agent's acceptance to their real decision, and tools that type fixed lines through tmux arrive as composer like a human. An agent can write any citation, so treating one as proof would let automation sign for the human (personal principle 1a0d); storing it as a citation keeps the record auditable while the signer stays what witness saw. The prefix list is per user (their machine's tools type the lines) and matched as a plain prefix, so one bad pattern cannot silently mark the owner's own prompts as machine-typed.
+
+**Rejected:** Counting --evidence as human (an agent could fabricate it); regular expressions for prefixes; a per-project prefix list; honouring the prefixes in witness only (live-capture would capture machine-typed lines as the owner's rules).
+
