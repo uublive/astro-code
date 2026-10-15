@@ -532,6 +532,8 @@ _2026-10-15 · at 5ecfb98_
 
 **Rejected:** Counting --evidence as human (an agent could fabricate it); regular expressions for prefixes; a per-project prefix list; honouring the prefixes in witness only (live-capture would capture machine-typed lines as the owner's rules).
 
+**Status:** superseded by ADR-081 (2026-10-15) — the title was corrupted in the recording command (a shell rewrite inserted text into it); same decision, clean text
+
 ## ADR-081 — A human gate (phase accept/reject, fix accept) may cite a decision made elsewhere with --evidence "<id or URL>", stored beside the record; a citation never makes the signer human, and prompts starting with a user-configured machine-typed prefix never count as human in any composer-gated mod (refines ADR-074)
 _2026-10-15 · at 5ecfb98_
 
