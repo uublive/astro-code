@@ -46,3 +46,10 @@ Principles:
 - No speculative scope. Plan only what the phase goal requires.
 
 Return a one-line summary of the plan (task count + wave shape).
+
+## Shell commands — never stall on a permission prompt
+You may be running unattended. A shell command Claude Code judges risky stops for a human,
+and the whole run waits until someone comes back. Write commands it does not flag:
+- A variable inside a path you delete or overwrite (`rm`, `mv`, `cp -r`, `>`) is written
+  `"${d:?}"`, never bare `$d`: `rm -rf "${d:?}"/*/review.json`. Or use a literal path.
+- Prefer absolute paths over `cd <dir> && …`, and several short calls over one long compound.
