@@ -1,28 +1,5 @@
 {
   "version": 1,
   "milestone": 5,
-  "phases": [
-    {
-      "number": 45,
-      "name": "Targeted re-verify after a FAIL: re-check the unmet criteria and only the passed ones the fix can affect, carry the rest over (GitHub #129)",
-      "slug": "45-targeted-re-verify-after-a-fail-re",
-      "status": "complete",
-      "milestone": 5,
-      "accepted_by": "matteo.alvazzi@gmail.com",
-      "accepted_kind": "human",
-      "accepted_at": "2026-10-15T09:50:46.876Z",
-      "accepted_evidence": "composer"
-    },
-    {
-      "number": 46,
-      "name": "witness: cite proof of a human choice made elsewhere (an --evidence id or URL stored with the acceptance), and a list of machine-typed prompt prefixes that never count as human (GitHub #132)",
-      "slug": "46-witness-cite-proof-of-a-human-choice",
-      "status": "complete",
-      "milestone": 5,
-      "accepted_by": "matteo.alvazzi@gmail.com",
-      "accepted_kind": "human",
-      "accepted_at": "2026-10-15T15:17:28.943Z",
-      "accepted_evidence": "composer"
-    }
-  ]
+  "phases": []
 }

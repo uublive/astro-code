@@ -4,6 +4,10 @@ Release notes in full live on the [GitHub releases page](https://github.com/uubl
 
 ## Unreleased
 
+## v0.45.1
+
+- The agents that run Bash (executor, mapper, planner, researcher, verifier) write a variable in a path they delete or overwrite as `"${d:?}"` and prefer absolute paths over `cd … &&`, so Claude Code's own safety check no longer stops an unattended run on a permission prompt (e.g. "Dangerous rm operation on possibly-empty variable path"). `tests/agent_shell.test.mjs` keeps the section identical in every Bash agent
+
 ## v0.45.0
 
 - `--evidence "<id or URL>"` on `ac phase accept`, `ac phase reject` and `ac fix accept` cites a decision made elsewhere. It is stored as `cited_evidence` beside the record, shown by `ac phase show` and the new `ac fix list --all`, and never makes the signer human (ADR-081, #132)
