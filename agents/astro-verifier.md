@@ -144,3 +144,10 @@ If the prompt gives you a `PRINCIPLES` line, run the `ac principles brief --rule
 command it names. These are one developer's personal rules, not canon — a violation goes in
 `findings[]` (title `principle <id>: …`, `outsideCriteria: true`) and is **never** grounds to
 set `passed=false` or fail any criterion. `CRITERIA.md` stays the sole pass/fail bar.
+
+## Shell commands — never stall on a permission prompt
+You may be running unattended. A shell command Claude Code judges risky stops for a human,
+and the whole run waits until someone comes back. Write commands it does not flag:
+- A variable inside a path you delete or overwrite (`rm`, `mv`, `cp -r`, `>`) is written
+  `"${d:?}"`, never bare `$d`: `rm -rf "${d:?}"/*/review.json`. Or use a literal path.
+- Prefer absolute paths over `cd <dir> && …`, and several short calls over one long compound.
