@@ -256,8 +256,8 @@ test('all shipped commands and agents render on every host without throwing', ()
 
 // --- the registry ---------------------------------------------------------------
 
-test('the host registry exposes claude, codex and cursor, and detect never throws', () => {
-  assert.deepEqual(HOSTS.map((h) => h.id), ['claude', 'codex', 'cursor']);
+test('the host registry exposes claude, codex, cursor and opencode, and detect never throws', () => {
+  assert.deepEqual(HOSTS.map((h) => h.id), ['claude', 'codex', 'cursor', 'opencode']);
   assert.equal(getHost('nope'), null);
   assert.ok(Array.isArray(detectHosts()), 'detectHosts must swallow adapter errors');
   for (const h of HOSTS) {
