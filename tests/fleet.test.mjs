@@ -126,9 +126,10 @@ test('nothing sensitive leaks: prompt text, tool payloads, messages and transcri
 test('a prompt says who wrote it: machine markers are auto, everything else human, never the text', () => {
   const by = (prompt) => mapEvent({ hook_event_name: 'UserPromptSubmit', session_id: 'S', cwd: '/w/x', prompt }, { project: PROJECT }).by;
   for (const p of ['[scheduled] Daily review', '[from:system #12] [forge:startup]', '[from:comms #3] gmail · Carlos', '[from:jobs #4] [stall] x',
-    '<task-notification>\n<task-id>a1</task-id>', '<<autonomous-loop-dynamic>>', '<pasted_content id="7b60">\n[scheduled] The owner asked', '  [forge:wake] go'])
+    '<task-notification>\n<task-id>a1</task-id>', '<<autonomous-loop-dynamic>>', '<pasted_content id="7b60">\n[scheduled] The owner asked', '  [forge:wake] go',
+    '<pasted_content id="986b">\n[heartbeat] New activity has arrived', '/clear', 'Channel: whatsapp\nSender: Fabio', 'You maintain a rolling summary of an ongoing conversation'])
     assert.equal(by(p), 'auto', p);
-  for (const p of ['[from:telegram #480] Buongiornissimo!', '[from:web #2]\nfix the logo', 'can you check the deploy', '/astro-status', '', undefined])
+  for (const p of ['[from:telegram #480] Buongiornissimo!', '[from:web #2]\nfix the logo', '[current local time: Thursday 15 October 2026, 16:26]\n[conversation memory — …]', '/clear the cache please', 'can you check the deploy', '/astro-status', '', undefined])
     assert.equal(by(p), 'human', String(p));
   for (const hook of ['SessionStart', 'PreToolUse', 'Stop']) assert.ok(!('by' in mapEvent({ hook_event_name: hook, session_id: 'S', cwd: '/w/x' }, { project: PROJECT })), hook);
 });
