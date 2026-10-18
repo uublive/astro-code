@@ -219,10 +219,11 @@ export function mapEvent(input, { project, hideNames = false, now = Date.now() }
 
 // Who wrote a prompt, for the fleet's leaderboard: 'auto' when it starts with a marker
 // a machine puts there (a scheduled task, a background-task notice, a forge system or
-// jobs message, a relayed incoming email/WhatsApp, a loop's sentinel), else 'human' (typed,
+// jobs message, a relayed incoming email/WhatsApp, a loop's sentinel, forge's heartbeat
+// and the /clear before it, the comms judge, the chat summarizer), else 'human' (typed,
 // or a person's own Telegram/web message relayed by forge). Only this word is sent,
 // never the text. A pasted_content wrapper around the marker is looked through.
-const AUTO_PROMPT = /^(?:\[scheduled\]|\[from:(?:system|comms|jobs)\b|\[forge:|<task-notification>|<<autonomous-loop)/;
+const AUTO_PROMPT = /^(?:\[scheduled\]|\[heartbeat\]|\[from:(?:system|comms|jobs)\b|\[forge:|<task-notification>|<<autonomous-loop|\/clear\s*$|Channel: \S+\s+Sender:|You maintain a rolling summary)/;
 export function promptBy(prompt) {
   if (typeof prompt !== 'string') return 'human';
   const s = prompt.trimStart().replace(/^<pasted_content\b[^>]*>\s*/, '');
