@@ -6,7 +6,7 @@ Release notes in full live on the [GitHub releases page](https://github.com/uubl
 
 ## v0.46.0
 
-- The fleet hook tags each prompt it reports as `human` or `auto`, from fixed markers a machine puts there (`[scheduled]`, `[from:system|comms|jobs]`, `[forge:`, `<task-notification>`, the loop sentinel), looking through a pasted-content wrapper. Only the word is sent, never the prompt text
+- The fleet hook tags each prompt it reports as `human` or `auto`, from fixed markers a machine puts there (`[scheduled]`, `[heartbeat]` and the `/clear` before it, `[from:system|comms|jobs]`, `[forge:`, `<task-notification>`, the loop sentinel, the comms triage judge and the chat summarizer), looking through a pasted-content wrapper. Only the word is sent, never the prompt text
 
 ## v0.45.1
 
