@@ -4,6 +4,10 @@ Release notes in full live on the [GitHub releases page](https://github.com/uubl
 
 ## Unreleased
 
+## v0.46.0
+
+- The fleet hook tags each prompt it reports as `human` or `auto`, from fixed markers a machine puts there (`[scheduled]`, `[from:system|comms|jobs]`, `[forge:`, `<task-notification>`, the loop sentinel), looking through a pasted-content wrapper. Only the word is sent, never the prompt text
+
 ## v0.45.1
 
 - The agents that run Bash (executor, mapper, planner, researcher, verifier) write a variable in a path they delete or overwrite as `"${d:?}"` and prefer absolute paths over `cd … &&`, so Claude Code's own safety check no longer stops an unattended run on a permission prompt (e.g. "Dangerous rm operation on possibly-empty variable path"). `tests/agent_shell.test.mjs` keeps the section identical in every Bash agent
