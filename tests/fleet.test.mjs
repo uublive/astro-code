@@ -118,8 +118,19 @@ test('nothing sensitive leaks: prompt text, tool payloads, messages and transcri
     const e = mapEvent({ hook_event_name: hook, session_id: 'S', cwd: '/w/shop', agent_id: 'a', agent_type: 't', ...SENSITIVE }, { project: PROJECT });
     const wire = JSON.stringify(e);
     for (const bad of ['SECRET', 'id_rsa', 'transcript', 'jsonl', 'permission', 'Bash']) assert.ok(!wire.includes(bad), `${hook} leaked ${bad}: ${wire}`);
-    assert.deepEqual(Object.keys(e).filter((k) => !['type', 'session_id', 'ts', 'cwd', 'project', 'agent_id', 'agent_type'].includes(k)), []);
+    assert.deepEqual(Object.keys(e).filter((k) => !['type', 'session_id', 'ts', 'cwd', 'project', 'agent_id', 'agent_type', ...(e.type === 'prompt' ? ['by'] : [])].includes(k)), []);
+    if (e.type === 'prompt') assert.ok(['human', 'auto'].includes(e.by), `prompt by ${e.by}`);
   }
+});
+
+test('a prompt says who wrote it: machine markers are auto, everything else human, never the text', () => {
+  const by = (prompt) => mapEvent({ hook_event_name: 'UserPromptSubmit', session_id: 'S', cwd: '/w/x', prompt }, { project: PROJECT }).by;
+  for (const p of ['[scheduled] Daily review', '[from:system #12] [forge:startup]', '[from:comms #3] gmail · Carlos', '[from:jobs #4] [stall] x',
+    '<task-notification>\n<task-id>a1</task-id>', '<<autonomous-loop-dynamic>>', '<pasted_content id="7b60">\n[scheduled] The owner asked', '  [forge:wake] go'])
+    assert.equal(by(p), 'auto', p);
+  for (const p of ['[from:telegram #480] Buongiornissimo!', '[from:web #2]\nfix the logo', 'can you check the deploy', '/astro-status', '', undefined])
+    assert.equal(by(p), 'human', String(p));
+  for (const hook of ['SessionStart', 'PreToolUse', 'Stop']) assert.ok(!('by' in mapEvent({ hook_event_name: hook, session_id: 'S', cwd: '/w/x' }, { project: PROJECT })), hook);
 });
 
 test('unknown hook events and payloads without a session_id are ignored', () => {

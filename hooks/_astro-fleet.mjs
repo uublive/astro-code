@@ -209,11 +209,24 @@ export function mapEvent(input, { project, hideNames = false, now = Date.now() }
   const ev = { type, session_id: input.session_id, ts: isoSecond(now) };
   const cwd = typeof input.cwd === 'string' && input.cwd ? input.cwd : null;
   attachProject(ev, project, cwd, hideNames);
+  if (type === 'prompt') ev.by = promptBy(input.prompt);
   if (type === 'subagent_start' || type === 'subagent_stop') {
     if (typeof input.agent_id === 'string') ev.agent_id = input.agent_id;
     if (typeof input.agent_type === 'string') ev.agent_type = input.agent_type;
   }
   return ev;
+}
+
+// Who wrote a prompt, for the fleet's leaderboard: 'auto' when it starts with a marker
+// a machine puts there (a scheduled task, a background-task notice, a forge system or
+// jobs message, a relayed incoming email/WhatsApp, a loop's sentinel), else 'human' (typed,
+// or a person's own Telegram/web message relayed by forge). Only this word is sent,
+// never the text. A pasted_content wrapper around the marker is looked through.
+const AUTO_PROMPT = /^(?:\[scheduled\]|\[from:(?:system|comms|jobs)\b|\[forge:|<task-notification>|<<autonomous-loop)/;
+export function promptBy(prompt) {
+  if (typeof prompt !== 'string') return 'human';
+  const s = prompt.trimStart().replace(/^<pasted_content\b[^>]*>\s*/, '');
+  return AUTO_PROMPT.test(s) ? 'auto' : 'human';
 }
 
 // `cwd` and `project` by the same rules on every event type: hide_names keeps only the
