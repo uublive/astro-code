@@ -22,7 +22,8 @@
     "workflows",
     "hooks",
     "templates",
-    "mods"
+    "mods",
+    "NOTICE"
   ],
-  "license": "MIT"
+  "license": "Apache-2.0"
 }
