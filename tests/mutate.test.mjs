@@ -162,6 +162,21 @@ test('C2 gremlins excludes every other tracked .go file; mutmut 2.x gets --paths
   } finally { done(p); }
 });
 
+test('mutmut 2 collects with untested/suspicious policy failure: an untested mutant is not run, never killed', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  // A run that stopped (crash or cap) after registering mutants it never tested.
+  const p = await rig('py', { report: 'mutmut2-junit-untested.xml' });
+  try {
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    const collect = logLines(p.log).find((l) => l.argv[0] === 'junitxml').argv;
+    assert.deepEqual(collect, ['junitxml', '--untested-policy', 'failure', '--suspicious-policy', 'failure']);
+    assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 1, 'no-coverage': 0, error: 0 });
+    assert.equal(r.not_run.length, 2);
+    assert.equal(r.complete, false);
+    assert.equal(r.outcome, 'incomplete', 'untested mutants never make a run clean');
+  } finally { done(p); }
+});
+
 test('an unknown mutmut major version is an error naming the version, and nothing runs', async () => {
   const { runMutate } = await import('../lib/mutate.mjs');
   const p = await rig('py', { report: 'mutmut2-junit.xml', version: 'mutmut, version 9.1.0' });
