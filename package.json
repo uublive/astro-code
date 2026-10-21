@@ -1,7 +1,8 @@
 {
   "name": "astro-code",
-  "version": "0.46.0",
+  "version": "0.47.0",
   "description": "Lean, multi-developer planning and execution for coding agents — milestones, phases, and a discuss → plan → execute → verify loop in plain files.",
+  "author": "Matteo Alvazzi",
   "type": "module",
   "bin": {
     "ac": "bin/ac.mjs",
@@ -22,7 +23,8 @@
     "workflows",
     "hooks",
     "templates",
-    "mods"
+    "mods",
+    "NOTICE"
   ],
-  "license": "MIT"
+  "license": "Apache-2.0"
 }

@@ -16,8 +16,8 @@ Planning and execution for coding agents. It runs a
 plain files in your repo — so an agent can't wander off, and nothing is ever marked done
 without a human saying so.
 
-Works with **Claude Code**, **Codex CLI** and **Cursor** (IDE agent and `cursor-agent`
-CLI) from one install, on Claude or on a **local model** (every agent then runs on the
+Works with **Claude Code**, **Codex CLI**, **Cursor** (IDE agent and `cursor-agent`
+CLI) and **OpenCode** from one install, on Claude or on a **local model** (every agent then runs on the
 session's model). Requires **Node ≥ 22**.
 
 📘 **[Open the visual guide →](https://claude.ai/code/artifact/80291435-e40c-4029-a933-8fbdf2d69539)**
@@ -66,7 +66,9 @@ Lost at any point? **`/astro-status`** tells you where you are and what to run n
 
 On Codex, type `$astro-plan 1` instead — it has no slash commands. Everything else is
 identical. On Cursor, the same `/astro-plan 1` works; install Cursor's CLI with
-`brew install --cask cursor-cli` (gives `cursor-agent`) and re-run `ac install`.
+`brew install --cask cursor-cli` (gives `cursor-agent`) and re-run `ac install`. On
+OpenCode, the same `/astro-plan 1` works too — see
+[`MANUAL.md`](./MANUAL.md#using-it-on-opencode) for mapping roles to your provider's models.
 
 ## The five steps
 
@@ -123,3 +125,8 @@ npm test     # engine units + a real bare-remote registry/canon integration test
 
 Contributions follow git-flow — PRs target `develop`, never `main`. See
 [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+## Licence
+
+Apache License 2.0 — see [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE). The licence
+does not cover the "astro-code" and "Astrolize" names or the logo.

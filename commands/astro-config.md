@@ -77,6 +77,32 @@ per-role Codex models. On Codex every role runs on this session's model.
 
 Then stop: skip the Steps and Apply below.
 
+## On OpenCode
+
+Check this next. This command opened with the **Running on OpenCode** note (the OpenCode
+adapter prepends it to every command body). Tiers still apply here, but OpenCode names
+models `<provider>/<model>`, so each role's model is picked in two layers, both shown by
+`ac opencode models`:
+
+- **Tier per role** — exactly the Steps and Apply below (`ac models <profile>`,
+  `ac config set models.<role> <tier>`). Tier names are host-neutral, so the shared project
+  config stays safe for Claude teammates.
+- **What each tier means on this machine** — `ac opencode map <opus|sonnet|haiku>
+  <provider/model>`, user-level. Pick the ids from `opencode models` (run it through the
+  shell and offer the matching ids as options; never invent one).
+- **Any model for one role** — `ac opencode set <role> <provider/model>` pins a role
+  whatever its tier (e.g. a non-Claude executor); `ac opencode unset <role>` removes the pin.
+  User-level only.
+
+**Never write a provider id into `.astrocode/config.json`** (`ac config set models.<role>
+openrouter/…`): it is committed, and a Claude teammate's workflows would hand it to Claude.
+
+Steps on OpenCode: show `ac opencode models`; ask with the `question` tool which layer to
+change (tier per role / tier → model map / pin one role); for the map or a pin, list the
+candidates from `opencode models`; apply with the commands above; finish by showing
+`ac opencode models` again. Commands pass these ids as each subagent's `model` at dispatch,
+so a change applies to the next run — no reinstall.
+
 ## Steps
 
 1. Show the current settings: `ac models` (prints both the tier and reasoning maps, and
