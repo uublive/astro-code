@@ -301,3 +301,67 @@ test('verifiedGate passes when CRITERIA.md is absent (self-derived bar)', async 
     assert.equal(verifiedGate(s.root, SLUG).ok, true);
   } finally { done(s); }
 });
+
+// ---- Phase 47 t1 — mutation evidence: marker, contract, C9 gate (ADR-083) ----
+const surv = (o = {}) => ({ file: 'src/a.mjs', line: 3, mutator: 'ArithmeticOperator', status: 'survived', triage: 'equivalent', justification: 'dead branch', ...o });
+const mut = (o = {}) => ({
+  outcome: 'survivors', tool: 'stryker', version: '8.0.0', command: 'stryker run', capped: false, complete: true,
+  counts: { killed: 4, survived: 1, timeout: 0, 'no-coverage': 0, error: 0 }, survivors: [surv()], fallback: null, ...o,
+});
+
+test('testStrengthIds finds the [mutation] tag in headings only, in file order', async () => {
+  const { testStrengthIds } = await import('../lib/verdict.mjs');
+  const t = '### C4 [mutation] — x\nbody [mutation]\n## C2 [Mutation]\n### C3 — plain\n### C1 — mentions [mutation]?\n';
+  assert.deepEqual(testStrengthIds(t), ['C4', 'C2', 'C1']);
+  assert.deepEqual(testStrengthIds('### C3 — plain\nC9 [mutation] in prose\n'), []);
+  assert.deepEqual(testStrengthIds(undefined), []);
+});
+
+test('mutationGate: control passes; each breach is refused with a reason', async () => {
+  const { mutationGate } = await import('../lib/verdict.mjs');
+  const g = (mutation, marked = true) => mutationGate({ marked, mutation });
+  assert.equal(g(mut()).ok, true);
+  assert.equal(g(mut({ outcome: 'clean', survivors: [], counts: { killed: 5, survived: 0, timeout: 1, 'no-coverage': 0, error: 0 } })).ok, true);
+  const refuse = (m, re) => { const r = g(m); assert.equal(r.ok, false); assert.match(r.reason, re); };
+  refuse(undefined, /no mutation evidence/);
+  refuse(mut({ survivors: [surv({ triage: 'test-gap' })] }), /src\/a\.mjs:3 ArithmeticOperator.*test-gap/);
+  refuse(mut({ survivors: [surv({ justification: '' })] }), /justification/);
+  refuse(mut({ survivors: [surv({ justification: 'a\nb' })] }), /justification/);
+  refuse(mut({ survivors: [surv({ triage: undefined })] }), /untriaged/);
+  refuse(mut({ survivors: [] }), /survivors listed but counts say 1/);
+  refuse(mut({ capped: true, complete: false }), /capped/);
+  refuse(mut({ complete: false }), /not complete/);
+  refuse(mut({ outcome: 'error' }), /outcome/);
+  refuse(mut({ counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 }, survivors: [] }), /zero mutants/);
+});
+
+test('mutationGate: fallback only for tool-missing/no-tool/no-scope with a one-line reason; unmarked bare is untouched', async () => {
+  const { mutationGate } = await import('../lib/verdict.mjs');
+  const fb = (outcome, reason) => mutationGate({ marked: true, mutation: mut({ outcome, fallback: { reason } }) });
+  for (const o of ['tool-missing', 'no-tool', 'no-scope']) assert.equal(fb(o, 'mutation tool not installed — AI mutants used').ok, true);
+  assert.equal(fb('survivors', 'because').ok, false);
+  assert.equal(fb('tool-missing', '').ok, false);
+  assert.equal(fb('tool-missing', 'a\nb').ok, false);
+  assert.equal(mutationGate({ marked: false, mutation: undefined }).ok, true);
+});
+
+test('recordVerdict keeps evidence, fails a breaching pass with refused, and carries prior evidence', async () => {
+  const { recordVerdict } = await import('../lib/verdict.mjs');
+  const s = sandbox(2);
+  try {
+    writeFileSync(s.crit, '### C1 [mutation] — strong\n### C2 — plain\n');
+    const r = (m, passed = true) => ({ mode: 'full', criteria: [{ id: 'C1', passed, ...(m ? { mutation: m } : {}) }, { id: 'C2', passed: true }] });
+    let out = await recordVerdict(s.root, SLUG, r(mut()));
+    assert.equal(out.passed, true);
+    assert.deepEqual(JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[0].mutation, mut());
+    out = await recordVerdict(s.root, SLUG, r(mut({ survivors: [surv({ triage: 'test-gap' })] })));
+    assert.equal(out.passed, false); assert.equal(out.refused[0].id, 'C1');
+    assert.match(JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[0].refused, /test-gap/);
+    out = await recordVerdict(s.root, SLUG, r(null));
+    assert.equal(out.passed, false);
+    await assert.rejects(recordVerdict(s.root, SLUG, r(mut({ counts: { ...mut().counts, killed: 'x' } }))), /counts\.killed/);
+    await recordVerdict(s.root, SLUG, r(mut()));
+    await recordVerdict(s.root, SLUG, { mode: 'narrowed', criteria: [{ id: 'C2', passed: true }] });
+    assert.deepEqual(JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[0].mutation, mut());
+  } finally { done(s); }
+});
