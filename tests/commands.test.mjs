@@ -1043,3 +1043,30 @@ test('phase 45: /astro-execute passes full to the Workflow and records verdicts 
   assert.match(src, /ac verdict plan/);
   assert.match(src, /\/astro-verify <number>/);
 });
+
+// ── Phase 47 (ADR-083): /astro-mutate and the verify/execute/help surfaces ───────────────────────
+
+test('phase 47: /astro-mutate routes by argument, bounds every reporting slot and never installs', () => {
+  const src = readFileSync(join(COMMANDS, 'astro-mutate.md'), 'utf8');
+  const fm = src.split('---')[1];
+  assert.match(fm, /description:\s*\S/);
+  assert.match(fm, /argument-hint:\s*\S/);
+  for (const needle of ['ac mutate <phase>', 'ac mutate --check', 'ac mutate setup', 'ac mutate dismiss']) {
+    assert.ok(src.includes(needle), `astro-mutate.md must name ${needle}`);
+  }
+  assertSlotBound(src, 'astro-mutate.md', 'run report', 'Reporting bounds:', '- When the tool is missing');
+  assertSlotBound(src, 'astro-mutate.md', 'missing tool', '- When the tool is missing', '- For `check`');
+  assertSlotBound(src, 'astro-mutate.md', 'check/setup/dismiss', '- For `check`', '**Never run an install');
+  assert.match(src, /never run an install command/i);
+  assert.doesNotMatch(src, /(?:run|execute)\s+`(?:npm|pip|go install|npx)/i);
+});
+
+test('phase 47: verify, execute and help surface the mutation evidence', () => {
+  const verify = readFileSync(join(COMMANDS, 'astro-verify.md'), 'utf8');
+  assert.match(verify, /"mutation": \{…\}/);
+  assert.ok(verify.includes('\\u0027'), 'the verify JSON explains the quote encoding');
+  assert.match(verify, /at most one\s+line/);
+  assert.match(readFileSync(EXECUTE_MD, 'utf8'), /`mutation` blocks\s+through unchanged/);
+  assert.match(readFileSync(join(COMMANDS, 'astro-help.md'), 'utf8'), /\/astro-mutate/);
+  assert.ok(verify.includes('3. Clear the live status first') && verify.includes('3b. **On PASS only'));
+});

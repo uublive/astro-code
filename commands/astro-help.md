@@ -51,6 +51,7 @@ devs never collide.
 - `/astro-kit-convert <source path>` — convert an existing non-kit implementation into a standard Astro kit at verified feature parity with the original
 - `/astro-kit-source <source id> <instance URL>` — author/refresh a kit's data source by introspecting the database through a running Astro instance (writes schema.json + SOURCE.md, merges on re-run)
 - `/astro-phase <name>` — add a phase · `/astro-milestone` — start the next milestone
+- `/astro-mutate <n>` — run the project's mutation tool (Stryker / Gremlins / mutmut) on a phase's changed files; `check` · `setup` · `dismiss`. Never installs a tool
 - `/astro-status` — where am I, what's next · `/astro-decision` — record an ADR into the canon
 - `/astro-fleet` — report this machine's Claude Code sessions to an Astro Fleet's Forge (`connect <url> --token <t>`, `status`, `pause`/`resume`, `color`, `disconnect`)
 - `/astro-statusline` — set a rich statusline (busy/idle dot · task recap · model · context-fill bar · milestone/phase)

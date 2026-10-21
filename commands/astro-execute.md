@@ -120,7 +120,8 @@ Execute phase `$ARGUMENTS`.
      agent with no model at all, so it runs on the session's model (in-memory
      only — never persisted). Follow `/astro-verify`'s sequence around every verify:
      `ac verdict plan <slug> --json` (add `--full` when the user passed it), verify, then
-     `ac verdict record <slug> --result '<json>'` — so these tiers record verdicts too.
+     `ac verdict record <slug> --result '<json>'` — so these tiers record verdicts too, passing
+     the verifier's per-criterion `mutation` blocks through unchanged.
      On a verify FAIL, run the same bounded verify→remediate loop:
      re-spawn the existing `astro-executor` scoped to ONLY the unmet criteria (with the
      verifier's failing command + output as evidence, plan-blind — never a new agent type),

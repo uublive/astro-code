@@ -30,8 +30,11 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
      with a FAIL and report every other criterion as `carried` (never as passed); if they all now
      pass, **continue in the same run** over EVERY other criterion and return `mode: full`.
    - **Ask the verifier to end with a fenced JSON block**
-     `{"mode": "full"|"narrowed", "broad": <bool>, "criteria": [{"id": "C1", "passed": <bool>}]}`
-     listing only the criteria it actually checked this run (omit carried ones).
+     `{"mode": "full"|"narrowed", "broad": <bool>, "criteria": [{"id": "C1", "passed": <bool>, "mutation": {…}}]}`
+     listing only the criteria it actually checked this run (omit carried ones). `mutation` is
+     optional per criterion: the `ac mutate <slug> --json` evidence for a `[mutation]` criterion,
+     with `triage` added per survivor. A `'` inside it is written `\u0027` so the single-quoted
+     `--result '<json>'` survives.
 3. Clear the live status first (`ac activity clear`). **Record the verdict** whenever the plan's
    `ids` is non-empty: `ac verdict record <slug> --result '<that JSON>'` (it saves and commits
    `VERDICT.json`, and derives `passed` itself). PASS requires the record's `passed: true`; if the
@@ -45,6 +48,8 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    criteria: `carried, not re-checked: <n> (run <R> @ <sha7>)`, citing the saved run and commit;
    then one line pointing to the verifier's full
    per-criterion report for the reproduction detail, then stop. Do not mark it verified.
+   On PASS or FAIL, when a criterion's `mutation` evidence has a `fallback`, add **at most one
+   line** with its reason (AI mutants stood in); say nothing about mutation otherwise.
 3b. **On PASS only, file the verifier's non-blocking findings as debt.** If the agent
    returned `findings[]`, file each item whose `outsideCriteria` is **explicitly `true`**:
 
