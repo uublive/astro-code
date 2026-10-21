@@ -1,0 +1,150 @@
+// Phase 47 t9 — `ac mutate` through the real CLI (C1-C4, help). Real tmp git projects with ac
+// phases and stamped commits; the tools are tests/fixtures/mutate/stub.mjs on a restricted PATH,
+// so a real Stryker/Gremlins/mutmut on the dev machine can never be found (C11).
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { makeProject, installStub, restrictedEnv, FX } from './fixtures/mutate/project.mjs';
+
+const AC = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ac.mjs');
+const ac = (p, args, o = {}) => spawnSync(process.execPath, [AC, ...args], { cwd: p.dir, encoding: 'utf8', env: p.env, input: '', timeout: 60000, ...o });
+const logLines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+const done = (p) => rmSync(p.dir, { recursive: true, force: true });
+const strip = ({ started_at, duration_ms, log, ...rest }) => rest;
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+async function rig(kind, { report, version, extra = {}, nodeModules = false } = {}) {
+  const p = await makeProject(kind);
+  const name = { js: 'stryker', go: 'gremlins', py: 'mutmut' }[kind];
+  const bin = installStub(p.dir, name, nodeModules ? 'node_modules/.bin' : 'stubbin');
+  p.log = join(p.dir, 'stub.log');
+  p.pids = join(p.dir, 'stub.pids');
+  p.env = restrictedEnv(nodeModules ? [] : [bin], {
+    MUTATE_STUB_LOG: p.log, MUTATE_STUB_PIDS: p.pids,
+    ...(report ? { MUTATE_STUB_REPORT: join(FX, report) } : {}), ...(version ? { MUTATE_STUB_VERSION: version } : {}), ...extra,
+  });
+  return p;
+}
+
+test('C1: --json twice is identical and complete; human output shows the same counts, survivors, tool and why', async () => {
+  const p = await rig('js', { report: 'stryker-mutation.json', nodeModules: true });
+  try {
+    const a = ac(p, ['mutate', '1', '--json']);
+    assert.equal(a.status, 0, a.stderr);
+    const b = ac(p, ['mutate', '1', '--json']);
+    const ra = JSON.parse(a.stdout);
+    assert.deepEqual(strip(ra), strip(JSON.parse(b.stdout)));
+    assert.deepEqual(ra.counts, { killed: 2, survived: 1, timeout: 1, 'no-coverage': 1, error: 2 });
+    assert.equal(ra.mutants.length, 7);
+    assert.ok(ra.mutants.every((m) => m.file && m.line > 0 && m.mutator));
+    assert.equal(ra.tool.why, 'package.json → stryker');
+    const h = ac(p, ['mutate', '1']);
+    assert.equal(h.status, 0, h.stderr);
+    assert.match(h.stdout, /^⚠ Stryker \(package\.json → stryker\) · 7 mutants: 2 killed · 1 timeout · 1 survived · 1 no-coverage · 2 error$/m);
+    assert.match(h.stdout, /^scope: src\/a\.mjs$/m);
+    assert.match(h.stdout, /^⚠ src\/a\.mjs:10 ArithmeticOperator survived$/m);
+    assert.match(h.stdout, /^⚠ src\/a\.mjs:15 ConditionalExpression no-coverage$/m);
+  } finally { done(p); }
+});
+
+test('C2: only the first phase\'s files reach the tool, for JS, Go and Python', async () => {
+  const cases = [
+    ['js', 'stryker-mutation.json', (l) => { const a = l.find((x) => x.argv[0] === 'run').argv; return a[a.indexOf('--mutate') + 1]; }, 'src/a.mjs', true],
+    ['go', 'gremlins.json', (l) => l.find((x) => x.argv[0] === 'unleash').argv.filter((a, i, all) => all[i - 1] === '--exclude-files').sort().join(' '), '^b\\.go$ ^c\\.go$', false],
+    ['py', 'mutmut2-junit.xml', (l) => l.find((x) => x.argv[0] === 'run').argv.join(' '), 'run --paths-to-mutate src/a.py', false],
+  ];
+  for (const [kind, report, pick, want, nm] of cases) {
+    const p = await rig(kind, { report, nodeModules: nm });
+    try {
+      const r = ac(p, ['mutate', '1']);
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(pick(logLines(p.log)), want, kind);
+      assert.match(r.stdout, new RegExp(`^scope: ${{ js: 'src/a\\.mjs', go: 'a\\.go', py: 'src/a\\.py' }[kind]}$`, 'm'));
+    } finally { done(p); }
+  }
+});
+
+test('C3: Go -> gremlins, Python -> mutmut complete; mutation.tool overrides and says config', async () => {
+  let p = await rig('go', { report: 'gremlins.json' });
+  try {
+    const r = JSON.parse(ac(p, ['mutate', '1', '--json']).stdout);
+    assert.equal(r.tool.id, 'gremlins'); assert.equal(r.tool.why, 'go.mod → gremlins');
+    assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 1, 'no-coverage': 1, error: 1 });
+  } finally { done(p); }
+  p = await rig('py', { report: 'mutmut2-junit.xml' });
+  try {
+    const r = JSON.parse(ac(p, ['mutate', '1', '--json']).stdout);
+    assert.equal(r.tool.id, 'mutmut'); assert.equal(r.tool.why, 'pyproject.toml → mutmut');
+    assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 2, 'no-coverage': 0, error: 0 });
+    // override: this Python project is told to use stryker -> config wins, detection no longer decides
+    assert.equal(ac(p, ['config', 'set', 'mutation.tool', 'stryker']).status, 0);
+    const o = JSON.parse(ac(p, ['mutate', '1', '--json']).stdout);
+    assert.equal(o.tool.id, 'stryker'); assert.equal(o.tool.source, 'config'); assert.equal(o.outcome, 'no-scope', 'no .mjs files in a Python phase');
+    assert.match(ac(p, ['mutate', '--check']).stdout, /config mutation\.tool/);
+  } finally { done(p); }
+});
+
+test('C4: default cap 600; a 2s cap returns fast, capped, with not-run listed and no process left', async () => {
+  let p = await rig('js', { report: 'stryker-mutation.json', nodeModules: true });
+  try {
+    assert.equal(JSON.parse(ac(p, ['mutate', '1', '--json']).stdout).cap_seconds, 600);
+  } finally { done(p); }
+  p = await rig('js', { report: 'stryker-partial.json', nodeModules: true, extra: { MUTATE_STUB_SLEEP: '60', MUTATE_STUB_CHILD: '1' } });
+  try {
+    ac(p, ['config', 'set', 'mutation.cap_seconds', '2']);
+    const t0 = Date.now();
+    const r = ac(p, ['mutate', '1', '--json']);
+    assert.ok(Date.now() - t0 < 8000, `took ${Date.now() - t0}ms`);
+    const res = JSON.parse(r.stdout);
+    assert.equal(res.cap_seconds, 2); assert.equal(res.capped, true); assert.equal(res.outcome, 'incomplete');
+    assert.ok(res.not_run.length > 0);
+    const h = ac(p, ['mutate', '1']);
+    assert.match(h.stdout, /^⚠ capped at 2s — not run: 1 mutants/m);
+    await new Promise((x) => setTimeout(x, 300));
+    for (const pid of readFileSync(p.pids, 'utf8').split(' ').map(Number)) assert.equal(alive(pid), false);
+  } finally { done(p); }
+  p = await rig('js', { nodeModules: true });
+  try {
+    const body = { files: { 'src/a.mjs': { mutants: [1, 2, 3].map((i) => ({ id: String(i), mutatorName: 'X', location: { start: { line: i } }, status: 'Timeout' })) } } };
+    writeFileSync(join(p.dir, 'rep.json'), JSON.stringify(body));
+    p.env.MUTATE_STUB_REPORT = join(p.dir, 'rep.json');
+    const res = JSON.parse(ac(p, ['mutate', '1', '--json']).stdout);
+    assert.equal(res.outcome, 'clean'); assert.equal(res.counts.timeout, 3); assert.equal(res.survivors.length, 0);
+    assert.match(ac(p, ['mutate', '1']).stdout, /^✓ Stryker/m);
+  } finally { done(p); }
+});
+
+test('usage: unknown flags and unknown phases exit non-zero; --check takes an optional phase', async () => {
+  const p = await rig('js', { report: 'stryker-mutation.json', nodeModules: true });
+  try {
+    assert.notEqual(ac(p, ['mutate', '--bogus']).status, 0);
+    assert.notEqual(ac(p, ['mutate', '1', '--bogus']).status, 0);
+    assert.notEqual(ac(p, ['mutate', 'setup', '--bogus']).status, 0);
+    assert.notEqual(ac(p, ['mutate', '99']).status, 0);
+    assert.notEqual(ac(p, ['mutate']).status, 0);
+    const c = ac(p, ['mutate', '--check', '1']);
+    assert.equal(c.status, 0, c.stderr);
+    assert.match(c.stdout, /^✓ Stryker \(package\.json → stryker\) 8\.2\.6 at node_modules\/\.bin\/stryker$/m);
+    assert.equal(JSON.parse(ac(p, ['mutate', '--check', '--json']).stdout).outcome, 'ready');
+  } finally { done(p); }
+});
+
+test('ac help lists all four forms', () => {
+  const out = spawnSync(process.execPath, [AC, 'help'], { encoding: 'utf8' }).stdout;
+  for (const form of ['ac mutate <phase> [--json]', 'ac mutate --check [<phase>] [--json]', 'ac mutate setup', 'ac mutate dismiss [<tool>]']) {
+    assert.ok(out.includes(form), form);
+  }
+});
+
+test('verdict record prints one stderr line per refused criterion', async () => {
+  const p = await rig('js', { nodeModules: true });
+  try {
+    writeFileSync(join(p.dir, '.astrocode', 'phases', p.slug1, 'CRITERIA.md'), '### C1 [mutation] — strong\n- **Observe:** y\n');
+    const r = ac(p, ['verdict', 'record', '1', '--result', JSON.stringify({ mode: 'full', criteria: [{ id: 'C1', passed: true }] })]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /⚠ C1 refused: marked \[mutation\] but no mutation evidence/);
+  } finally { done(p); }
+});

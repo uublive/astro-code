@@ -127,6 +127,8 @@ import { inForceText } from '../lib/decisions.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate } from '../lib/verdict.mjs';
+import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
+import { REMINDER as MUTATE_REMINDER } from '../lib/mutnotice.mjs';
 import { milestoneHarvest } from '../lib/harvest.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
 import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME, refreshAgents, agentNames, republishHost } from '../lib/install.mjs';
@@ -236,6 +238,11 @@ const ALLOWED_FLAGS = {
   'verdict plan': ['full', 'json'],
   // `--result` is the verifier's checked criteria; a typo must not record an empty verdict.
   'verdict record': ['result'],
+  // Phase 47 (ADR-083) — a typo'd flag must not degrade `--check` into a real run, or a
+  // `setup` into a write the user did not ask for.
+  'mutate': ['check', 'json'],
+  'mutate setup': ['json'],
+  'mutate dismiss': ['json'],
   // Phase 23 (P2) — a stand-in agent rejects on the human's behalf; `agent` is the
   // declared signer, mirroring `phase accept --agent` (ADR-033, now symmetric).
   'phase reject': ['reason', 'agent', 'witnessed', 'evidence'],
@@ -533,6 +540,10 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full recorded verdict)
   ac verdict plan <phase> [--full] [--json]  should the next verify narrow? (ADR-079)
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
+  ac mutate <phase> [--json]          run the project's mutation tool on the phase's changed files (ADR-083)
+  ac mutate --check [<phase>] [--json]  which tool applies, is it installed, how to install it (read-only)
+  ac mutate setup                     write a minimal tool config if absent (the only writer; installs nothing)
+  ac mutate dismiss [<tool>]          stop showing the full install suggestion for this project
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase accept <p> --agent <name>  machine-signed sign-off (records accepted_kind=agent)
   ac phase accept <p> --witnessed composer  record that a human typed the gate command (set by the witness mod, ADR-074)
@@ -2580,7 +2591,77 @@ async function main() {
       let out;
       try { out = await recordVerdict(r, ph.slug, result); } catch (e) { die(e.message); }
       if (out.ignored) console.error(`⚠ ${out.ignored} reported criterion id(s) are not in CRITERIA.md and were ignored`);
+      for (const f of out.refused ?? []) console.error(`⚠ ${f.id} refused: ${f.reason}`);
       json(out);
+      return;
+    }
+
+    // Phase 47 (ADR-083). A thin dispatcher: lib/mutate.mjs does every mechanical step. Exit 0
+    // for every reported outcome (a missing tool is a fallback, not a failure); only usage
+    // errors die. stdin is never read and nothing is ever installed.
+    case 'mutate': {
+      const r = root();
+      const sub = pos[0] === 'setup' || pos[0] === 'dismiss' ? pos[0] : null;
+      checkFlags(sub ? `mutate ${sub}` : 'mutate', flags);
+      if (sub === 'setup') {
+        const s = setupFor(r, pos[1] || null);
+        if (s.error) die(s.error);
+        if (flags.json) { json(s); return; }
+        if (!s.exists) {
+          writeFileSync(join(r, s.file), s.content);
+          console.log(`✓ wrote ${s.file} — minimal ${s.tool} config; nothing installed`);
+        } else if (s.tool === 'mutmut') {
+          console.log(`• ${s.file} exists — left alone; add this section to it:\n${s.content.trimEnd().replace(/^/gm, '    ')}`);
+        } else {
+          console.log(`• ${s.file} exists — left alone`);
+        }
+        return;
+      }
+      if (sub === 'dismiss') {
+        const d = await dismissTool(r, pos[1] || null);
+        if (d.error) die(d.error);
+        if (flags.json) json(d);
+        else console.log(`✓ install suggestion dismissed for ${d.tool} in this project`);
+        return;
+      }
+      // `--check 1` / `--json 1` parse the phase ref as the flag's value.
+      const ref = pos[0] ?? [flags.check, flags.json].find((v) => typeof v === 'string');
+      const ph = ref !== undefined ? findPhase(r, ref) : null;
+      if (ref !== undefined && !ph) die(`unknown phase "${ref}" — usage: ac mutate <phase> [--json] | --check [<phase>] | setup | dismiss [<tool>]`);
+      if (!flags.check && !ph) die('usage: ac mutate <phase> [--json] | --check [<phase>] | setup | dismiss [<tool>]');
+      const res = flags.check ? await checkMutate(r, ph?.slug ?? null) : await runMutate(r, ph.slug);
+      if (flags.json) { json(res); return; }
+      const t = res.tool;
+      const via = t ? `${t.label} (${t.why})` : '';
+      if (res.outcome === 'ready') {
+        console.log(`✓ ${via} ${t.version ?? ''} at ${t.path}`.replace(/\s+/g, ' '));
+      } else if (res.outcome === 'tool-missing') {
+        if (res.notice === 'full') {
+          console.log(`⊡ ${t.label} (${t.why}) is not installed — AI mutants used`);
+          console.log(`  install: ${res.suggestion.install}`);
+          console.log('  astro-code never installs it. Silence this hint: ac mutate dismiss');
+        } else console.log(`⊡ ${MUTATE_REMINDER}`);
+      } else if (res.outcome === 'no-tool' || res.outcome === 'no-scope') {
+        console.log(`⊡ ${res.fallback.reason}`);
+      } else if (res.outcome === 'error' && !t) {
+        console.log(`⚠ ${res.error}`);
+      } else {
+        const c = res.counts;
+        const total = Object.values(c).reduce((n, v) => n + v, 0);
+        const sym = res.outcome === 'clean' ? '✓' : '⚠';
+        console.log(`${sym} ${via} · ${total} mutants: ${c.killed} killed · ${c.timeout} timeout · ${c.survived} survived · ${c['no-coverage']} no-coverage · ${c.error} error`);
+        if (res.scope.length) console.log(`scope: ${res.scope.join(', ')}`);
+        if (res.error) console.log(`⚠ ${res.error}`);
+        for (const m of res.survivors) console.log(`⚠ ${m.file}:${m.line} ${m.mutator} ${m.status}`);
+        if (res.capped) {
+          const left = res.not_run.length ? `${res.not_run.length} mutants` : '';
+          const files = res.not_run_files.length ? `${res.not_run_files.length} file(s): ${res.not_run_files.join(', ')}` : '';
+          console.log(`⚠ capped at ${res.cap_seconds}s — not run: ${[left, files].filter(Boolean).join(' + ') || 'unknown'}${res.not_run_note ? ` (${res.not_run_note})` : ''}`);
+        } else if (res.outcome === 'incomplete' && res.not_run.length) {
+          console.log(`⚠ incomplete — ${res.not_run.length} mutants not run`);
+        }
+        for (const w of res.warnings) console.log(`⚠ ${w}`);
+      }
       return;
     }
 
