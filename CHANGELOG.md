@@ -4,6 +4,9 @@ Release notes in full live on the [GitHub releases page](https://github.com/uubl
 
 ## Unreleased
 
+## v0.47.0
+
+- Licensed under Apache-2.0 (`LICENSE`, `NOTICE`); `package.json` said MIT with no licence file. The licence does not cover the astro-code/Astrolize names or logo
 - OpenCode is a supported host: `ac install` publishes every command to `~/.config/opencode/commands` and every agent to `~/.config/opencode/agents` as a registered subagent, so `/astro-plan`, `/astro-execute` and the rest run natively, dispatching `astro-executor`, `astro-verifier`, … by name. Pick each role's model with `ac opencode map <tier> <provider/model>` (what a tier means on your provider) and `ac opencode set <role> <provider/model>` (pin a role to any model, e.g. DeepSeek for the executor); `ac opencode models` shows the result. The controller passes each role's model at dispatch, as obra/superpowers does, so project tiers and `--fast` apply without a reinstall.
 
 ## v0.46.0
