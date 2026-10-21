@@ -3,7 +3,7 @@
 // Stryker/Gremlins/mutmut is ever needed). Modules reached by dynamic import (ADR-018).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, utimesSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeProject, installStub, restrictedEnv, commit, sh, FX } from './fixtures/mutate/project.mjs';
 
@@ -137,7 +137,7 @@ test('C2 gremlins excludes every other tracked .go file; mutmut 2.x gets --paths
   p = await rig('py', { report: 'mutmut3-results.txt', version: 'mutmut, version 3.2.0' });
   try {
     const r = await runMutate(p.dir, p.slug1, { env: p.env });
-    assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'run').argv, ['run', 'src.a.*']);
+    assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'run').argv, ['run', 'a.*']);
     assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 2, 'no-coverage': 1, error: 1 });
     assert.equal(r.complete, false, 'a "not checked" mutant means the run is not complete');
     assert.equal(r.not_run.length, 1);
@@ -278,5 +278,19 @@ test('setupFor returns parseable content per tool and exists:true when a config 
     assert.match(m.content, /^\[mutmut\]\npaths_to_mutate=.+\ntests_dir=.+\n$/);
     assert.match(setupFor(p.dir, 'nope').error, /unknown/);
     assert.deepEqual(await dismissTool(p.dir), { tool: 'stryker' });
+  } finally { done(p); }
+});
+
+test('a stale report left by an earlier run is never this run\'s result', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('js'); // the stub writes no report
+  try {
+    mkdirSync(join(p.dir, 'reports', 'mutation'), { recursive: true });
+    const stale = join(p.dir, 'reports', 'mutation', 'mutation.json');
+    writeFileSync(stale, readFileSync(fx('stryker-mutation.json')));
+    const old = new Date(Date.now() - 3600_000);
+    utimesSync(stale, old, old);
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(r.outcome, 'error'); assert.match(r.error, /no report/);
   } finally { done(p); }
 });

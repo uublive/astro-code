@@ -337,7 +337,7 @@ test('mutationGate: control passes; each breach is refused with a reason', async
 
 test('mutationGate: fallback only for tool-missing/no-tool/no-scope with a one-line reason; unmarked bare is untouched', async () => {
   const { mutationGate } = await import('../lib/verdict.mjs');
-  const fb = (outcome, reason) => mutationGate({ marked: true, mutation: mut({ outcome, fallback: { reason } }) });
+  const fb = (outcome, reason) => mutationGate({ marked: true, mutation: mut({ outcome, fallback: { reason }, counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 }, survivors: [] }) });
   for (const o of ['tool-missing', 'no-tool', 'no-scope']) assert.equal(fb(o, 'mutation tool not installed — AI mutants used').ok, true);
   assert.equal(fb('survivors', 'because').ok, false);
   assert.equal(fb('tool-missing', '').ok, false);
@@ -364,4 +364,12 @@ test('recordVerdict keeps evidence, fails a breaching pass with refused, and car
     await recordVerdict(s.root, SLUG, { mode: 'narrowed', criteria: [{ id: 'C2', passed: true }] });
     assert.deepEqual(JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[0].mutation, mut());
   } finally { done(s); }
+});
+
+test('mutationGate: a fallback beside real run counts or survivors is refused', async () => {
+  const { mutationGate } = await import('../lib/verdict.mjs');
+  const zero = { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 };
+  const fb = { reason: 'mutation tool not installed — AI mutants used' };
+  assert.equal(mutationGate({ marked: true, mutation: mut({ outcome: 'tool-missing', fallback: fb, counts: { ...zero, survived: 2 }, survivors: [surv({ triage: 'equivalent', justification: 'x' })] }) }).ok, false);
+  assert.equal(mutationGate({ marked: true, mutation: mut({ outcome: 'tool-missing', fallback: fb, counts: zero, survivors: [] }) }).ok, true);
 });

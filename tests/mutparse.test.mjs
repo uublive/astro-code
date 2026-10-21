@@ -89,3 +89,13 @@ test('an unknown tool status is an error mutant, never dropped or killed', async
   const rep = { files: { 'a.js': { mutants: [{ id: '1', mutatorName: 'X', location: { start: { line: 1 } }, status: 'Weird' }] } } };
   assert.deepEqual(parseStryker(JSON.stringify(rep)).mutants.map((m) => m.status), ['error']);
 });
+
+test('real junit_xml shape: message beats type; mutmut 3 names with class bars parse', async () => {
+  const { parseMutmutJunit, parseMutmutResults } = await import('../lib/mutparse.mjs');
+  const xml = '<testsuite><testcase classname="src/a.py" file="src/a.py" line="3" name="m 1"><failure type="failure" message="bad_survived">--- diff</failure><system-out>x = 1</system-out></testcase>'
+    + '<testcase classname="src/a.py" file="src/a.py" line="4" name="m 2"><failure type="failure" message="bad_timeout">d</failure></testcase></testsuite>';
+  const j = parseMutmutJunit(xml, { scope: ['src/a.py'] });
+  assert.deepEqual(j.mutants.map((m) => m.status), ['survived', 'timeout']);
+  const r = parseMutmutResults('    a.xǁCalcǁmul__mutmut_1: survived\n    a.x_add__mutmut_1: killed\n', { scope: ['src/a.py'] });
+  assert.deepEqual(r.mutants.map((m) => m.status).sort(), ['killed', 'survived']);
+});

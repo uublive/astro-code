@@ -128,9 +128,10 @@ gives a closed, reproducible list, and you judge only what it leaves behind.
    Timeouts are killed. For each survivor decide `triage`: `test-gap` (a real behavior no test
    pins — this **fails the criterion**) or `equivalent` (no test could tell it apart; passes, and
    needs a one-line `justification`).
-3. Copy the result's fields into the criterion's `mutation` object (`outcome`, `tool`,
-   `version`, `command`, `reproduce`, `head`, `scope`, `cap_seconds`, `capped`, `complete`,
-   `counts`, `survivors`, `fallback`) and add `triage` (plus `justification` for `equivalent`) to
+3. Copy the result's fields into the criterion's `mutation` object (`outcome`, `reproduce`,
+   `head`, `scope`, `cap_seconds`, `capped`, `complete`, `counts`, `survivors`) with these
+   reshapes: `tool` = the result's `tool.id` (a string), `version` = `tool.version`, and leave
+   out `command` and `fallback` when they are null. Then add `triage` (plus `justification` for `equivalent`) to
    each survivor. Record it through `ac verdict record`; the code gate there refuses a pass over a
    test-gap, an unjustified equivalent or an untriaged survivor.
 4. `outcome` `incomplete` or `error` fails the criterion: a capped run is never all killed.
