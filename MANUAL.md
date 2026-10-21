@@ -8,6 +8,7 @@ For *why* it is built this way, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
 - [Install and hosts](#install-and-hosts)
 - [The loop](#the-loop)
 - [Two gates close a phase](#two-gates-close-a-phase)
+- [Mutation testing (test-strength criteria)](#mutation-testing-test-strength-criteria)
 - [Numbering and duplicate detection](#numbering-and-duplicate-detection)
 - [Bugs are not phases](#bugs-are-not-phases)
 - [Technical debt](#technical-debt)
@@ -584,6 +585,49 @@ verdict (`--force` is the escape).
 
 ---
 
+## Mutation testing (test-strength criteria)
+
+When a goal asks for test strength ("the tests would catch a regression"), the criteria author
+writes that criterion with the `[mutation]` tag in its heading: `### C4 [mutation] — <claim>`.
+Only tagged criteria trigger mutation testing; a phase without one pays nothing.
+
+For a tagged criterion the verifier runs `ac mutate <phase> --json` instead of inventing broken
+versions by hand. `ac mutate` is mechanical: it picks the tool, scopes, runs under a time cap and
+parses the report into one fixed list (file, line, mutator, status). The verifier then judges only
+the survivors.
+
+| Language | Tool | Install (astro-code never installs it) |
+|---|---|---|
+| JS / TS (`package.json`) | Stryker | `npm i -D @stryker-mutator/core` |
+| Go (`go.mod`) | Gremlins | `go install github.com/go-gremlins/gremlins/cmd/gremlins@latest` |
+| Python (`pyproject.toml`, `setup.py`, `requirements.txt`) | mutmut | `pip install mutmut` |
+
+- **Scope.** Only the files the phase's own `(phase NN tK)` commits changed, minus tests, deleted
+  files and `.astrocode/`. The list is passed to the tool explicitly, and every other phase's
+  files are left alone. Nothing changed means `no-scope`, never a pass.
+- **Tool choice.** Detected from the manifests; `ac config set mutation.tool stryker|gremlins|mutmut`
+  overrides detection. Every result says which tool applied and why.
+- **Cap.** 10 minutes by default; `ac config set mutation.cap_seconds 1200` changes it. At the cap the
+  whole process group is killed, the result lists what did not run, and a capped run is never
+  "all killed".
+- **Outcomes.** `clean`, `survivors`, `incomplete` (capped or not every mutant ran), `no-scope`,
+  `tool-missing`, `no-tool`, `error`. Timeouts count as killed. A dirty scope is an `error`: the
+  result must grade HEAD.
+- **Triage.** A survivor that is a real test gap fails the criterion; an equivalent mutant passes
+  with a one-line justification, kept in `VERDICT.json`. `ac verdict record` enforces this in code.
+- **No tool.** Verification falls back to AI-invented mutants and says why. The full install
+  suggestion shows once per project per tool, then one line (`mutation tool not installed — AI
+  mutants used`). The memory is **local, never committed**: `.astrocode/.local/mutate-notices.json`,
+  because "has this developer been told" is per machine (a fresh clone shows it once more).
+  `ac mutate dismiss [<tool>]` silences it; `ac mutate --check` always shows it, because you asked.
+- **`ac mutate setup`.** Writes a minimal config for the detected tool (`stryker.config.json`,
+  `.gremlins.yaml`, or a `[mutmut]` section in `setup.cfg`) only when none exists. It is the one
+  writer; a run or a check never changes your project, and astro-code never installs a tool or edits
+  your dependency list.
+- **Trust.** The tool runs your project's own tests, the same trust level as `npm test`.
+
+---
+
 ## Numbering and duplicate detection
 
 `ac phase add` / `ac milestone new` claim the next free number from `registry.json` on an
@@ -1098,6 +1142,7 @@ astro-code itself captures (ADR-065). A forge server reads the store back read-o
 /astro-plan <phase>       parallel research → executable PLAN.md (reads CONTEXT.md)
 /astro-execute <phase>    wave-based parallel execution, then verify
 /astro-verify <phase>     AI gate: confirm the phase goal is met (goal-backward)
+/astro-mutate <phase>     run the project's mutation tool on a phase's changed files; also `check`, `setup`, `dismiss`
 /astro-accept <phase>     human gate: UAT sign-off, then close the phase
 /astro-autonomous <phase> run a whole phase end-to-end (discuss→plan→execute→verify), then stop
 /astro-autonomous <phase> --challenge  same, with a challenge-mode discuss step
@@ -1142,6 +1187,10 @@ ac phase show <n> [--json]     # one phase's record, incl. accepted_kind / accep
 ac phase reject <n> --reason … [--agent name]  # UAT failed → rejected + a blocker (--agent: machine-signed)
 ac phase surprise <n> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]  # execute records a run surprise
 ac phase context <n> [--author]  # discuss-gate status, or who captured it: human | agent <name> | none
+ac mutate <n> [--json]         # mutation-test the phase's changed files (Stryker / Gremlins / mutmut)
+ac mutate --check [<n>] [--json]  # which tool applies, is it installed, how to install it (read-only)
+ac mutate setup                # write a minimal tool config if absent (the only writer; installs nothing)
+ac mutate dismiss [<tool>]     # stop the full install suggestion for this project
 ac phase effort <n> deep       # per-phase verify→remediate budget (light|standard|deep)
 ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
 ac phase note <n> --append "…" # add a line to it; --replace overwrites (a plain write never drops a note)
