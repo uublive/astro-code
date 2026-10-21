@@ -649,6 +649,16 @@
       "branch": "develop",
       "claimed_at": "2026-10-21T22:09:39.794Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 47,
+      "milestone": 13,
+      "name": "Deterministic mutation testing in the verifier",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-21T22:09:44.583Z",
+      "status": "active"
     }
   ]
 }
