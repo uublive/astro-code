@@ -129,7 +129,9 @@ import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate } from '../lib/verdict.mjs';
 import { milestoneHarvest } from '../lib/harvest.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
-import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME, refreshAgents, agentNames } from '../lib/install.mjs';
+import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME, refreshAgents, agentNames, republishHost } from '../lib/install.mjs';
+// Imported directly (not via getHost) for the model-mapping helpers, which are not part of the host contract.
+import opencodeHost, { resolveRoleModels, setOpencodeModel, TIERS as OPENCODE_TIERS, ROLES as OPENCODE_ROLES } from '../lib/hosts/opencode.mjs';
 import { readAgentTools, updateAgentTools } from '../lib/agenttools.mjs';
 import { GAUGES, GAUGE_MODES, readGaugeModes, setGaugeMode, statuslineDedupe, setStatuslineDedupe } from '../lib/statuslinegauges.mjs';
 import { applyTune, undoTune, tuneTarget, UNTUNABLE } from '../lib/tune.mjs';
@@ -260,6 +262,10 @@ const ALLOWED_FLAGS = {
   'milestone activate': [],
   'milestone rename': [],
   'agent-tools': ['json'],
+  'opencode models': ['json', 'fast'],
+  'opencode map': [],
+  'opencode set': [],
+  'opencode unset': [],
   'agent-tools add': [],
   'agent-tools remove': [],
   'agent-tools clear': [],
@@ -596,6 +602,9 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
                                        (stack override: ac config set stack '["rust"]' — replaces detection)
   ac models [max|balanced|fast] [--preview]  apply a per-role model preset (speed switch)
+  ac opencode models [--fast] [--json]  each role's OpenCode model id for this project
+  ac opencode map <opus|sonnet|haiku> <provider/model>  how your OpenCode provider spells a tier
+  ac opencode set|unset <role> [<provider/model>]  pin one role to any OpenCode model (user-level)
   ac models <profile> --user           set your default for every project (~/.astro/config.json)
   ac preflight                        warn if HEAD diverged from upstream (silent when in sync)
   ac fixtures check [--phase N]       advisory: warn if this phase's stamped commits changed
@@ -3114,6 +3123,38 @@ async function main() {
         console.log('• optional on Claude Code: enforcement mods — see `ac mods status`, turn one on with `ac mods enable <feature>`');
       }
       console.log('  after pulling updates, refresh the global CLI: npm install -g .');
+      return;
+    }
+
+    case 'opencode': {
+      // OpenCode names models <provider>/<id>, not tiers. Translation and per-role pins live in
+      // ~/.astro/config.json `opencode` (lib/hosts/opencode.mjs). The commands' host note has the
+      // controller run `ac opencode models --json` and pass each role's id as the subagent's
+      // `model`, so a project's own tiers and `--fast` apply at dispatch time.
+      const sub = pos[0] || 'models';
+      checkFlags(`opencode ${sub}`, flags);
+      if (sub === 'models') {
+        const res = resolveRoleModels({ root: findRoot(), fast: !!flags.fast });
+        if (flags.json) { json(res.models); return; }
+        for (const r of OPENCODE_ROLES) console.log(`  ${r.padEnd(11)} ${(res.models[r] || '(session model)').padEnd(46)} ${res.sources[r]}`);
+        return;
+      }
+      let res;
+      if (sub === 'map') {
+        if (pos.length !== 3) die(`usage: ac opencode map <${OPENCODE_TIERS.join('|')}> <provider/model>`);
+        res = setOpencodeModel({ kind: 'models', key: pos[1], id: pos[2] });
+      } else if (sub === 'set') {
+        if (pos.length !== 3) die(`usage: ac opencode set <${OPENCODE_ROLES.join('|')}> <provider/model>`);
+        res = setOpencodeModel({ kind: 'roles', key: pos[1], id: pos[2] });
+      } else if (sub === 'unset') {
+        if (pos.length !== 2) die(`usage: ac opencode unset <${OPENCODE_ROLES.join('|')}>`);
+        res = setOpencodeModel({ kind: 'roles', key: pos[1], id: null });
+      } else {
+        die('usage: ac opencode [models [--fast] [--json] | map <tier> <provider/model> | set <role> <provider/model> | unset <role>]');
+      }
+      if (!res.ok) die(res.error);
+      const dirs = existsSync(join(ASTRO_HOME, 'commands')) ? republishHost(opencodeHost, FRAMEWORK_ROOT) : [];
+      console.log(`✓ saved to ${res.file}${dirs.length ? ` and re-stamped the OpenCode agents in ${dirs.join(', ')}` : ''}`);
       return;
     }
 

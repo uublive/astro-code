@@ -426,6 +426,61 @@ present, Cursor imports its hooks itself, so astro-code leaves Cursor's files al
 runs there through that import instead — `ac install`/`ac update` say which branch was
 taken. Headless: `cursor-agent -p --trust "/astro-status"`.
 
+### Using it on OpenCode
+
+OpenCode counts as present when `$OPENCODE_CONFIG_DIR` (else
+`$XDG_CONFIG_HOME/opencode`, else `~/.config/opencode`) exists, or `opencode` is on `PATH`.
+`ac install` copies commands to `commands/` and agents to `agents/` there. Commands keep
+their `/astro-plan 3` form and carry a short host note mapping Claude Code's tools onto
+OpenCode's (`subagent`/`task`, `question`, `shell`/`bash`); there is no Workflow tool, so
+orchestration falls to subagents, else inline work. Unlike on Cursor, the astro agents are
+installed as real subagents (`mode: subagent`) and are dispatched by name.
+
+OpenCode names models `<provider>/<id>`, not `opus`/`sonnet`/`haiku`, so tell astro-code
+how your provider spells each tier, in `~/.astro/config.json`:
+
+```json
+{
+  "models": { "planner": "opus", "researcher": "sonnet", "executor": "haiku", "verifier": "opus" },
+  "opencode": {
+    "models": {
+      "opus": "openrouter/anthropic/claude-opus-5.5",
+      "sonnet": "openrouter/anthropic/claude-sonnet-5.5",
+      "haiku": "openrouter/anthropic/claude-haiku-5.5"
+    }
+  }
+}
+```
+
+Or set those from the CLI, and pin any role to any model your provider serves, whatever its
+tier — e.g. DeepSeek for execution:
+
+```bash
+ac opencode map opus openrouter/anthropic/claude-opus-5.5     # what a tier means here
+ac opencode set executor openrouter/deepseek/deepseek-v4.1-flash   # pin one role
+ac opencode unset executor                                     # back to its tier
+ac opencode models                                             # what each role runs on
+```
+
+Per role: the `opencode.roles` pin, else the role's tier (this project's
+`.astrocode/config.json`, then your default) through `opencode.models`, else the session's
+model. Like obra/superpowers, the model is chosen **at dispatch time**: each command tells
+the controller to run `ac opencode models --json` and pass the role's id as the subagent's
+`model`, so a project's own tiers, `ac models <profile>` and `--fast` all apply on the next
+run with no reinstall. The agent files are also stamped with your user-level result, as a
+fallback (`ac opencode map|set|unset` re-stamps them at once). Both keys are user-level on
+purpose — never put a provider id in `.astrocode/config.json`, which Claude teammates share.
+A provider id in `.astrocode/config.json` is ignored on purpose; `ac opencode models` says so.
+The read-only agents (`astro-verifier`, `astro-researcher`, `astro-mapper`) get a
+`permission: edit: deny` block, derived from their source `tools:`.
+`/astro-config` walks all of this on OpenCode.
+
+**Not wired on OpenCode yet:** hooks and the status line, and with them the guards —
+canon-guard (which protects `VERDICT.json`) and git-guard never run, so nothing blocks a
+write the agent decides to make through `shell`. Follow-ups: those plugins, headless
+`execCommand`/`parseResult` (`opencode run "/astro-status"` works by hand), and `agent_tools`
+MCP extras (ADR-068), which are dropped.
+
 ---
 
 ## The loop

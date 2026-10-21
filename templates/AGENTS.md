@@ -77,6 +77,7 @@ invocation differs by host:
 | Claude Code | `/astro-status`, `/astro-plan 3` |
 | Codex CLI | `$astro-status`, `$astro-plan 3` — Codex has **no** custom slash commands |
 | Cursor (IDE agent, `cursor-agent` CLI) | `/astro-status`, `/astro-plan 3`; headless `cursor-agent -p --trust "/astro-status"` — installed to `~/.cursor` by `ac install` when Cursor is present |
+| OpenCode | `/astro-status`, `/astro-plan 3`; headless `opencode run "/astro-status"` — installed to `~/.config/opencode` by `ac install` when OpenCode is present |
 | any host | the `ac` CLI directly: `ac status`, `ac phase add "<name>"` |
 
 `ac help` lists the whole CLI surface.
