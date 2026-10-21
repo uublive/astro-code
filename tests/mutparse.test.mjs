@@ -99,3 +99,27 @@ test('real junit_xml shape: message beats type; mutmut 3 names with class bars p
   const r = parseMutmutResults('    a.xǁCalcǁmul__mutmut_1: survived\n    a.x_add__mutmut_1: killed\n', { scope: ['src/a.py'] });
   assert.deepEqual(r.mutants.map((m) => m.status).sort(), ['killed', 'survived']);
 });
+
+test('mutmut 2.x real shape: every testcase carries <system-out>, killed ones included', async () => {
+  const { parseMutmutJunit } = await import('../lib/mutparse.mjs');
+  // junit_xml 1.9 as mutmut 2.4.5 writes it (cache.py: TestCase(..., stdout=mutant.line.line)).
+  const xml = '<testsuites><testsuite name="mutmut" tests="4">'
+    + '<testcase classname="" file="src/pkg/a.py" line="3" name="Mutant #1"><system-out>    return a + b</system-out></testcase>'
+    + '<testcase classname="" file="src/pkg/a.py" line="4" name="Mutant #2"><failure type="failure" message="bad_survived"/><system-out>x</system-out></testcase>'
+    + '<testcase classname="" file="src/pkg/a.py" line="5" name="Mutant #3"><failure type="failure" message="bad_timeout"/><system-out>y</system-out></testcase>'
+    + '<testcase classname="" file="src/pkg/a.py" line="6" name="Mutant #4"><system-out>    return 0</system-out></testcase>'
+    + '</testsuite></testsuites>';
+  const r = parseMutmutJunit(xml, { scope: ['src/pkg/a.py'] });
+  assert.deepEqual(r.mutants.map((m) => m.status), ['killed', 'survived', 'timeout', 'killed']);
+});
+
+test('mutmut 3: a package __init__.py mutant (pkg.x_f__mutmut_N) maps to pkg/__init__.py, never dropped', async () => {
+  const { parseMutmutResults } = await import('../lib/mutparse.mjs');
+  const text = '    pkg.x_f__mutmut_1: survived\n    pkg.a.x_g__mutmut_1: killed\n';
+  const r = parseMutmutResults(text, { scope: ['src/pkg/__init__.py', 'src/pkg/a.py'] });
+  assert.deepEqual(r.mutants.map((m) => [m.file, m.status]),
+    [['src/pkg/__init__.py', 'survived'], ['src/pkg/a.py', 'killed']]);
+  // a real module pkg.py still wins over pkg/__init__.py
+  const m = parseMutmutResults('    pkg.x_f__mutmut_1: killed\n', { scope: ['src/pkg.py'] });
+  assert.equal(m.mutants[0].file, 'src/pkg.py');
+});

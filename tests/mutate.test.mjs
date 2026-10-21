@@ -67,6 +67,23 @@ test('C2 scope: only the phase\'s own stamped, existing, non-test source files',
   }
 });
 
+test('C2 scope: the phase\'s own remediation commits (phase NN remediate-cK) are in scope too', async () => {
+  const { phaseScope, pickTool } = await import('../lib/mutate.mjs');
+  const p = await makeProject('js');
+  try {
+    writeFileSync(join(p.dir, 'src', 'd.mjs'), '// d\n');
+    commit(p.dir, 'fix: add d (phase 1 remediate-c0)');
+    assert.deepEqual(phaseScope(p.dir, '1', pickTool(p.dir).row).sort(), ['src/a.mjs', 'src/d.mjs']);
+  } finally { done(p); }
+});
+
+test('mutmut 3 globs a package __init__.py as the package itself (its mutants are named pkg.x_f__mutmut_N)', async () => {
+  const { MUTATION_TOOLS } = await import('../lib/mutate.mjs');
+  const row = MUTATION_TOOLS.find((r) => r.id === 'mutmut');
+  const { argv } = row.build({ major: 3, bin: 'mutmut', scope: ['src/pkg/__init__.py', 'src/pkg/a.py'] });
+  assert.deepEqual(argv, ['mutmut', 'run', 'pkg.*', 'pkg.a.*']);
+});
+
 test('C3 detection: manifest picks the tool and says why; mutation.tool overrides; no manifest is no-tool', async () => {
   const { pickTool } = await import('../lib/mutate.mjs');
   const cases = [['js', 'stryker', 'package.json → stryker'], ['go', 'gremlins', 'go.mod → gremlins'], ['py', 'mutmut', 'pyproject.toml → mutmut']];

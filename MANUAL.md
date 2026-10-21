@@ -602,7 +602,7 @@ the survivors.
 | Go (`go.mod`) | Gremlins | `go install github.com/go-gremlins/gremlins/cmd/gremlins@latest` |
 | Python (`pyproject.toml`, `setup.py`, `requirements.txt`) | mutmut | `pip install mutmut` |
 
-- **Scope.** Only the files the phase's own `(phase NN tK)` commits changed, minus tests, deleted
+- **Scope.** Only the files the phase's own `(phase NN tK)` and `(phase NN remediate-cK)` commits changed, minus tests, deleted
   files and `.astrocode/`. The list is passed to the tool explicitly, and every other phase's
   files are left alone. Nothing changed means `no-scope`, never a pass.
 - **Tool choice.** Detected from the manifests; `ac config set mutation.tool stryker|gremlins|mutmut`
