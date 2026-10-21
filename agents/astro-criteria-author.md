@@ -42,6 +42,19 @@ A short list of falsifiable criteria. Each one, exactly this shape:
 
 Number them C1, C2, … Keep to the handful that actually prove the goal is met.
 
+## Test-strength criteria — only when the goal asks for them
+When the goal asks for test strength ("the tests would catch a regression", "every behavior is
+pinned"), write that criterion with the `[mutation]` tag in its heading, exactly:
+
+```
+### C4 [mutation] — <claim about how strongly the tests pin the changed code>
+- **Observe:** `ac mutate <phase> --json`; every survivor is a justified equivalent
+- **Fails if:** a survivor is a test gap, or the run is capped
+```
+
+The verifier and `ac mutate` look for that exact tag. **Never tag a criterion that does not ask
+for test strength** — the tag is what makes the verifier run a mutation tool (D2).
+
 ## Rules for good criteria
 - **Goal-level and behavioral.** State an *outcome* a user or the system can observe. A
   different-but-valid implementation of the same goal must still satisfy it. Describe what
