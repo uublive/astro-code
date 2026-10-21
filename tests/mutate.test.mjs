@@ -177,6 +177,32 @@ test('mutmut 2 collects with untested/suspicious policy failure: an untested mut
   } finally { done(p); }
 });
 
+test('mutmut 2 fatal exit (bit 1) is an error even when junitxml prints an old all-killed cache', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('py', { report: 'mutmut2-junit.xml', extra: { MUTATE_STUB_EXIT: '1' } });
+  try {
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(r.outcome, 'error');
+    assert.match(r.error, /fatal error \(exit 1: RuntimeError/);
+  } finally { done(p); }
+  // survivors set bit 2 only: that is a normal finished run, not fatal
+  const q = await rig('py', { report: 'mutmut2-junit.xml', extra: { MUTATE_STUB_EXIT: '2' } });
+  try {
+    assert.notEqual((await runMutate(q.dir, q.slug1, { env: q.env })).outcome, 'error');
+  } finally { done(q); }
+});
+
+test('mutmut 2 mutants a pre_mutation hook skipped are ignored, never killed', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('py', { report: 'mutmut2-junit-untested.xml', extra: { MUTATE_STUB_SKIPPED: '1\n' } });
+  try {
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'result-ids').argv, ['result-ids', 'skipped']);
+    assert.equal(r.counts.killed, 0);
+    assert.deepEqual(r.ignored.map((m) => m.line), [1]);
+  } finally { done(p); }
+});
+
 test('an unknown mutmut major version is an error naming the version, and nothing runs', async () => {
   const { runMutate } = await import('../lib/mutate.mjs');
   const p = await rig('py', { report: 'mutmut2-junit.xml', version: 'mutmut, version 9.1.0' });

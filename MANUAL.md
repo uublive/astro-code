@@ -612,7 +612,9 @@ the survivors.
   "all killed".
 - **Outcomes.** `clean`, `survivors`, `incomplete` (capped or not every mutant ran), `no-scope`,
   `tool-missing`, `no-tool`, `error`. Timeouts count as killed. A dirty scope is an `error`: the
-  result must grade HEAD.
+  result must grade HEAD. A tool's fatal exit (mutmut 2: exit bit 1, e.g. the tests already fail)
+  is an `error` too, because its report would be an old cache; a mutant the tool never tested is
+  not run, and one a `pre_mutation` hook skipped is ignored, never killed.
 - **Triage.** A survivor that is a real test gap fails the criterion; an equivalent mutant passes
   with a one-line justification, kept in `VERDICT.json`. `ac verdict record` enforces this in code.
 - **No tool.** Verification falls back to AI-invented mutants and says why. The full install

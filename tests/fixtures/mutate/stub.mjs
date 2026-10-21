@@ -6,6 +6,8 @@
 //   MUTATE_STUB_SLEEP    sleep N seconds after writing
 //   MUTATE_STUB_CHILD=1  spawn a sleeping child first (records pids to MUTATE_STUB_PIDS)
 //   MUTATE_STUB_VERSION  version string to report
+//   MUTATE_STUB_EXIT     mutmut: `run` exits with this status at once (a fatal baseline)
+//   MUTATE_STUB_SKIPPED  mutmut: what `result-ids skipped` prints
 import { appendFileSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { basename, dirname } from 'node:path';
@@ -48,6 +50,9 @@ if (name === 'stryker') {
   }
   hang();
 } else if (name === 'mutmut') {
-  if (argv[0] === 'run') hang();
+  if (argv[0] === 'run') {
+    if (env.MUTATE_STUB_EXIT) { process.stderr.write('RuntimeError: Tests don\'t run cleanly\n'); process.exit(Number(env.MUTATE_STUB_EXIT)); }
+    hang();
+  } else if (argv[0] === 'result-ids') process.stdout.write(env.MUTATE_STUB_SKIPPED ?? '');
   else process.stdout.write(report());
 }
