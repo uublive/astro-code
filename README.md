@@ -123,3 +123,8 @@ npm test     # engine units + a real bare-remote registry/canon integration test
 
 Contributions follow git-flow — PRs target `develop`, never `main`. See
 [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+## Licence
+
+Apache License 2.0 — see [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE). The licence
+does not cover the "astro-code" and "Astrolize" names or the logo.
