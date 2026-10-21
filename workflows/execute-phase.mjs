@@ -1852,6 +1852,29 @@ const VERIFY_SCHEMA = {
           status: { type: 'string', enum: ['passed', 'failed', 'carried'] },
           command: { type: 'string' },
           output: { type: 'string' },
+          // Phase 47 (ADR-083) — test-strength evidence from `ac mutate <phase> --json`, copied
+          // across by the verifier with `triage` added per survivor. The code gate in
+          // lib/verdict.mjs (`validateMutation` / `mutationGate`) is the validator; this schema
+          // only lets the evidence through to `ac verdict record`, hence extra properties.
+          mutation: {
+            type: 'object',
+            additionalProperties: true,
+            properties: {
+              outcome: { type: 'string' },
+              tool: { type: 'string' },
+              version: { type: 'string' },
+              command: { type: 'string' },
+              reproduce: { type: 'string' },
+              head: { type: 'string' },
+              scope: { type: 'array', items: { type: 'string' } },
+              cap_seconds: { type: 'number' },
+              capped: { type: 'boolean' },
+              complete: { type: 'boolean' },
+              counts: { type: 'object', additionalProperties: true },
+              survivors: { type: 'array', items: { type: 'object', additionalProperties: true } },
+              fallback: { type: 'object', additionalProperties: true },
+            },
+          },
         },
         required: ['id', 'passed'],
       },
@@ -2245,12 +2268,15 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
 
   if (v.criteriaFound === false) return v
   const checked = items.filter((c) => c.status !== 'carried' && /^C\d+$/.test(c.id))
+  // ONE line when a checked criterion fell back to AI mutants; the reason is the evidence's own.
+  const fb = checked.find((c) => c.mutation && c.mutation.fallback && c.mutation.fallback.reason)
+  if (fb) log(`• ${fb.mutation.fallback.reason}`)
   let rec = null
   try {
     rec = await runVerdictRecord(JSON.stringify({
       mode, broad: v.broad === true,
-      criteria: checked.map((c) => ({ id: c.id, passed: c.passed === true })),
-    }))
+      criteria: checked.map((c) => ({ id: c.id, passed: c.passed === true, ...(c.mutation ? { mutation: c.mutation } : {}) })),
+    }).replace(/'/g, '\\u0027'))
   } catch (e) { rec = null }
   if (rec && rec.recorded === true) {
     log(`• verdict run ${rec.run} saved (${rec.mode || mode})`)
