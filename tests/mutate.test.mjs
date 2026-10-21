@@ -203,6 +203,17 @@ test('mutmut 2 mutants a pre_mutation hook skipped are ignored, never killed', a
   } finally { done(p); }
 });
 
+test('mutmut 2.x is detected through `mutmut version` (it has no --version flag)', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('py', { report: 'mutmut2-junit.xml', extra: { MUTATE_STUB_V2_REAL: '1', MUTATE_STUB_VERSION: '2.4.5' } });
+  try {
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.notEqual(r.outcome, 'tool-missing');
+    assert.equal(r.tool.version, '2.4.5');
+    assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'run').argv, ['run', '--paths-to-mutate', 'src/a.py']);
+  } finally { done(p); }
+});
+
 test('an unknown mutmut major version is an error naming the version, and nothing runs', async () => {
   const { runMutate } = await import('../lib/mutate.mjs');
   const p = await rig('py', { report: 'mutmut2-junit.xml', version: 'mutmut, version 9.1.0' });

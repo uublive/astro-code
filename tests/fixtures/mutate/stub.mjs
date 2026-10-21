@@ -6,6 +6,7 @@
 //   MUTATE_STUB_SLEEP    sleep N seconds after writing
 //   MUTATE_STUB_CHILD=1  spawn a sleeping child first (records pids to MUTATE_STUB_PIDS)
 //   MUTATE_STUB_VERSION  version string to report
+//   MUTATE_STUB_V2_REAL=1  mutmut: reject --version like real 2.x (only `mutmut version` answers)
 //   MUTATE_STUB_EXIT     mutmut: `run` exits with this status at once (a fatal baseline)
 //   MUTATE_STUB_SKIPPED  mutmut: what `result-ids skipped` prints
 import { appendFileSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
@@ -20,6 +21,15 @@ if (env.MUTATE_STUB_LOG) {
   appendFileSync(env.MUTATE_STUB_LOG, JSON.stringify({ tool: name, argv, cwd: process.cwd(), configs }) + '\n');
 }
 const DEFAULT_VERSION = { stryker: '8.2.6', gremlins: 'gremlins version 0.5.0', mutmut: 'mutmut, version 2.4.4' };
+// Real mutmut 2.x: no --version flag (click exits 2), only a `version` subcommand.
+if (name === 'mutmut' && env.MUTATE_STUB_V2_REAL === '1' && argv[0] === '--version') {
+  process.stderr.write("Error: No such option '--version'.\n");
+  process.exit(2);
+}
+if (name === 'mutmut' && argv[0] === 'version') {
+  console.log(`mutmut version ${env.MUTATE_STUB_VERSION ?? '2.4.5'}`);
+  process.exit(0);
+}
 if (argv[0] === '--version') {
   console.log(env.MUTATE_STUB_VERSION ?? DEFAULT_VERSION[name]);
   process.exit(0);
