@@ -640,6 +640,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-15T05:47:04.976Z",
       "status": "complete"
+    },
+    {
+      "type": "milestone",
+      "number": 13,
+      "name": "Verification evidence",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-21T22:09:39.794Z",
+      "status": "active"
     }
   ]
 }
