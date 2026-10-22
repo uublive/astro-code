@@ -71,3 +71,43 @@ test('stderr is appended to the log file', async () => {
     assert.equal(readFileSync(log, 'utf8'), 'before\nboom\n');
   } finally { rmSync(d, { recursive: true, force: true }); }
 });
+
+test('phase 48: both streams reach the log file; logStdout:false keeps stdout out', async () => {
+  const { runCapped } = await import('../lib/caprun.mjs');
+  const d = tmp();
+  try {
+    const prog = 'console.log("OUT-x");console.error("ERR-y")';
+    const both = join(d, 'both.log');
+    await runCapped([process.execPath, '-e', prog], { cwd: d, capMs: 10000, logFile: both });
+    const text = readFileSync(both, 'utf8');
+    assert.match(text, /OUT-x/); assert.match(text, /ERR-y/);
+    const errOnly = join(d, 'err.log');
+    await runCapped([process.execPath, '-e', prog], { cwd: d, capMs: 10000, logFile: errOnly, logStdout: false });
+    const t2 = readFileSync(errOnly, 'utf8');
+    assert.doesNotMatch(t2, /OUT-x/); assert.match(t2, /ERR-y/);
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test('phase 48: onData sees every byte in order, tagged by stream', async () => {
+  const { runCapped } = await import('../lib/caprun.mjs');
+  const d = tmp();
+  try {
+    const seen = [];
+    await runCapped([process.execPath, '-e', 'process.stdout.write("A");setTimeout(()=>{process.stderr.write("B");setTimeout(()=>process.stdout.write("C"),100)},100)'],
+      { cwd: d, capMs: 10000, onData: (c, s) => seen.push([s, c]) });
+    assert.deepEqual(seen, [['stdout', 'A'], ['stderr', 'B'], ['stdout', 'C']]);
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
+
+test('phase 48: tailBytes bounds the returned stdout to its tail; the default keeps it all', async () => {
+  const { runCapped } = await import('../lib/caprun.mjs');
+  const d = tmp();
+  try {
+    const prog = 'process.stdout.write("x".repeat(1024*1024));process.stdout.write("END")';
+    const tail = await runCapped([process.execPath, '-e', prog], { cwd: d, capMs: 20000, tailBytes: 1024 });
+    assert.ok(tail.stdout.length <= 1024, `tail is ${tail.stdout.length}`);
+    assert.ok(tail.stdout.endsWith('END'));
+    const all = await runCapped([process.execPath, '-e', prog], { cwd: d, capMs: 20000 });
+    assert.equal(all.stdout.length, 1024 * 1024 + 3);
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
