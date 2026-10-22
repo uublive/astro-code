@@ -25,3 +25,21 @@ Log markers (stdout, in order):
   Mutation testing  <pct>% (elapsed: <t>, remaining: <t>) <tested>/<total> Mutants tested (<n> survived, <n> timed out)
 
 Report: reports/mutation/mutation.json (mutation-testing-elements schema), written by the `json` reporter.
+
+---- phase 49 t6 additions (transcribed from the Stryker 10 documentation; NOT captured, Stryker is not installed here) ----
+
+Selecting single mutants with --mutate: the column-range form pins a mutant's exact span.
+  --mutate "src/a.mjs:2:7-2:12"          file:startLine:startColumn-endLine:endColumn   (one entry per open survivor)
+  Several entries are comma-joined. The span is the mutant's `location` in the report, so a survivor can be
+  re-selected from `location.start` / `location.end` without parsing source. Mutants that share the same span
+  (e.g. two mutators on one `x === 0`) are selected together — ac reports those as extra_executed.
+
+Report fields the triage relies on (mutation-testing-elements schema, `reports/mutation/mutation.json`):
+  files[path].mutants[]: { id, mutatorName, replacement, location: {start:{line,column}, end:{line,column}},
+                           status, killedBy?: [testId], coveredBy?: [testId] }
+  testFiles[path].tests[]: { id, name, location? }        killedBy ids resolve to test NAMES through this table.
+  `id` is a run-local counter ("1", "2", ...): it is not a stable identity across runs.
+
+Test attribution depends on the runner: the `command` runner (the default, `npm test`) runs the whole command as
+one opaque test and gives NO per-test attribution — killedBy is absent or names the single command, so a kill
+cannot be traced to a flaky test. mocha, jest, vitest and tap runners attribute kills to individual tests.

@@ -1,0 +1,20 @@
+$ pytest tests -p no:cacheprovider -rf -q
+..F                                                                      [100%]
+=================================== FAILURES ===================================
+__________________________________ test_flaky __________________________________
+
+    def test_flaky():
+>       assert False, "flaky boom"
+E       AssertionError: flaky boom
+E       assert False
+
+tests/test_mod.py:20: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_mod.py::test_flaky - AssertionError: flaky boom
+1 failed, 2 passed in 0.01s
+exit 1
+
+$ PYTEST_ADDOPTS="--deselect tests/test_mod.py::test_flaky" pytest tests -p no:cacheprovider -rf -q
+..                                                                       [100%]
+2 passed, 1 deselected in 0.00s
+exit 0
