@@ -1,0 +1,51 @@
+{
+  "go_module": "example.com/fx",
+  "test_efficacy": 40,
+  "mutations_coverage": 100,
+  "mutants_total": 5,
+  "mutants_killed": 1,
+  "mutants_lived": 4,
+  "mutants_not_viable": 0,
+  "mutants_not_covered": 0,
+  "elapsed_time": {
+    "mutation": 1.5,
+    "total": 2
+  },
+  "files": [
+    {
+      "file_name": "a.go",
+      "mutations": [
+        {
+          "line": 4,
+          "column": 5,
+          "type": "CONDITIONALS_BOUNDARY",
+          "status": "LIVED"
+        },
+        {
+          "line": 5,
+          "column": 12,
+          "type": "ARITHMETIC_BASE",
+          "status": "KILLED"
+        },
+        {
+          "line": 10,
+          "column": 5,
+          "type": "CONDITIONALS_BOUNDARY",
+          "status": "LIVED"
+        },
+        {
+          "line": 11,
+          "column": 3,
+          "type": "INCREMENT_DECREMENT",
+          "status": "LIVED"
+        },
+        {
+          "line": 13,
+          "column": 11,
+          "type": "ARITHMETIC_BASE",
+          "status": "LIVED"
+        }
+      ]
+    }
+  ]
+}
