@@ -32,8 +32,8 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    - **Ask the verifier to end with a fenced JSON block**
      `{"mode": "full"|"narrowed", "broad": <bool>, "criteria": [{"id": "C1", "passed": <bool>, "mutation": {…}}]}`
      listing only the criteria it actually checked this run (omit carried ones). `mutation` is
-     optional per criterion: the `ac mutate <slug> --json` evidence for a `[mutation]` criterion,
-     with `triage` added per survivor. A `'` inside it is written `\u0027` so the single-quoted
+     optional per criterion: the `ac mutate <slug> --json` evidence (gated in code only for a
+     `[mutation]` criterion; supporting evidence otherwise), with `triage` added per survivor. A `'` inside it is written `\u0027` so the single-quoted
      `--result '<json>'` survives.
 3. Clear the live status first (`ac activity clear`). **Record the verdict** whenever the plan's
    `ids` is non-empty: `ac verdict record <slug> --result '<that JSON>'` (it saves and commits

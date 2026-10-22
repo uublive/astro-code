@@ -1061,6 +1061,17 @@ test('phase 47: /astro-mutate routes by argument, bounds every reporting slot an
   assert.doesNotMatch(src, /(?:run|execute)\s+`(?:npm|pip|go install|npx)/i);
 });
 
+test('phase 48: /astro-mutate names the per-phase settings commands and bounds the run report with the paths', () => {
+  const src = readFileSync(join(COMMANDS, 'astro-mutate.md'), 'utf8');
+  assert.match(src, /ac config set mutation\.phases\.<n>\.cap_seconds/);
+  assert.match(src, /mutation\.tests/);
+  const slot = src.slice(src.indexOf('Reporting bounds:'), src.indexOf('- When the tool is missing'));
+  assert.match(slot, /at most\s+10/);
+  assert.match(slot, /full-list and log paths/);
+  assert.match(slot, /scope and tests lines/);
+  assert.match(readFileSync(join(COMMANDS, 'astro-verify.md'), 'utf8'), /gated in code only for a\s+`\[mutation\]` criterion/);
+});
+
 test('phase 47: verify, execute and help surface the mutation evidence', () => {
   const verify = readFileSync(join(COMMANDS, 'astro-verify.md'), 'utf8');
   assert.match(verify, /"mutation": \{…\}/);

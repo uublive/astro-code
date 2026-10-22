@@ -53,7 +53,9 @@ pinned"), write that criterion with the `[mutation]` tag in its heading, exactly
 ```
 
 The verifier and `ac mutate` look for that exact tag. **Never tag a criterion that does not ask
-for test strength** — the tag is what makes the verifier run a mutation tool (D2).
+for test strength** — the tag is what puts a criterion behind the hard pass bar in code (D3,
+ADR-084). It is not what makes the verifier run a tool: with a tool installed the verifier runs
+`ac mutate` for any criterion where it would otherwise hand-make mutants.
 
 ## Rules for good criteria
 - **Goal-level and behavioral.** State an *outcome* a user or the system can observe. A

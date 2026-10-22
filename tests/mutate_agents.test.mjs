@@ -24,13 +24,13 @@ test('the criteria author example, written word for word, is recognised by testS
 
 test('the verifier instructions state the mutation workflow and its limits', () => {
   const v = read('astro-verifier.md');
-  const sec = v.slice(v.indexOf('## Test-strength criteria ([mutation])'), v.indexOf('## Non-blocking findings'));
+  const sec = v.slice(v.indexOf('## Test-strength checks'), v.indexOf('## Non-blocking findings'));
   assert.ok(sec.length > 200, 'section exists');
   for (const re of [
     /`ac mutate <phase> --json`/, /Triage only the survivors/, /`test-gap`[^.]*\*\*fails the criterion\*\*/,
     /one-line `justification`/, /Timeouts are killed/, /capped run is never all killed/, /`ac verdict record`/,
     /AI mutants only for `tool-missing`, `no-tool` or `no-scope`/, /with the reason/,
-    /never run this for a criterion without\s+the\s+tag/, /`mutation\.cap_seconds`/,
+    /`mutation\.cap_seconds`/, /`mutation\.phases\.<n>\.cap_seconds`/,
   ]) assert.match(sec, re);
   assert.match(v, /`criteria\[\]\.mutation`/);
 });
@@ -39,4 +39,21 @@ test('the verifier shell section is untouched (identical across agents)', () => 
   const H = '## Shell commands — never stall on a permission prompt';
   const tail = (t) => t.slice(t.indexOf(H));
   assert.equal(tail(read('astro-verifier.md')), tail(read('astro-executor.md')));
+});
+
+test('phase 48 D3: with a tool installed the verifier runs ac mutate for ANY criterion that would hand-make mutants', () => {
+  const v = read('astro-verifier.md');
+  const sec = v.slice(v.indexOf('## Test-strength checks'), v.indexOf('## Non-blocking findings'));
+  assert.match(sec, /ANY other criterion where you would otherwise invent\s+mutants/);
+  assert.match(sec, /Never invent mutants by hand while a tool is installed/);
+  assert.match(sec, /\*\*AI mutants only for `tool-missing`, `no-tool` or `no-scope`\*\*/);
+  assert.match(sec, /`not-configured`[^]*\*\*fails\*\*[^]*`ac mutate setup`[^]*no mutants by hand/);
+  assert.match(sec, /supporting evidence with no code gate/);
+  assert.match(sec, /prompt-only by design/);
+  for (const src of [v, read('astro-criteria-author.md')]) {
+    assert.doesNotMatch(src, /Only those criteria/);
+    assert.doesNotMatch(src, /never run this for a criterion without\s+the\s+tag/);
+  }
+  assert.doesNotMatch(read('astro-criteria-author.md'), /the tag is what makes the verifier run a mutation tool/);
+  assert.match(read('astro-criteria-author.md'), /hard pass bar in code/);
 });
