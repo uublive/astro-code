@@ -312,7 +312,9 @@ const mut = (o = {}) => ({
 test('testStrengthIds finds the [mutation] tag in headings only, in file order', async () => {
   const { testStrengthIds } = await import('../lib/verdict.mjs');
   const t = '### C4 [mutation] — x\nbody [mutation]\n## C2 [Mutation]\n### C3 — plain\n### C1 — mentions [mutation]?\n';
-  assert.deepEqual(testStrengthIds(t), ['C4', 'C2', 'C1']);
+  assert.deepEqual(testStrengthIds(t), ['C4', 'C2']);
+  // a heading that only talks about the tag is not tagged (phase 48's own C13 tripped on this)
+  assert.deepEqual(testStrengthIds('### C13 — only `[mutation]`-tagged criteria get the code pass bar\n'), []);
   assert.deepEqual(testStrengthIds('### C3 — plain\nC9 [mutation] in prose\n'), []);
   assert.deepEqual(testStrengthIds(undefined), []);
 });

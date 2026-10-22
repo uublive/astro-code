@@ -44,7 +44,8 @@ Number them C1, C2, … Keep to the handful that actually prove the goal is met.
 
 ## Test-strength criteria — only when the goal asks for them
 When the goal asks for test strength ("the tests would catch a regression", "every behavior is
-pinned"), write that criterion with the `[mutation]` tag in its heading, exactly:
+pinned"), write that criterion with the `[mutation]` tag right after its id, exactly (anywhere else in the
+heading it is not recognised):
 
 ```
 ### C4 [mutation] — <claim about how strongly the tests pin the changed code>

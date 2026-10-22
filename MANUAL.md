@@ -588,7 +588,7 @@ verdict (`--force` is the escape).
 ## Mutation testing (test-strength criteria)
 
 When a goal asks for test strength ("the tests would catch a regression"), the criteria author
-writes that criterion with the `[mutation]` tag in its heading: `### C4 [mutation] — <claim>`.
+writes that criterion with the `[mutation]` tag right after its id: `### C4 [mutation] — <claim>`. A heading that only mentions the tag elsewhere is not tagged.
 The tag is the only **code** gate: `ac verdict record` refuses a tagged pass without clean evidence.
 
 Whenever a mutation tool is installed, the verifier uses it wherever it would otherwise hand-make
