@@ -148,3 +148,91 @@ test('verdict record prints one stderr line per refused criterion', async () => 
     assert.match(r.stderr, /⚠ C1 refused: marked \[mutation\] but no mutation evidence/);
   } finally { done(p); }
 });
+
+// ---- Phase 48 t10 — C10-C12 through the real CLI ----
+import { mkdirSync, mkdtempSync, chmodSync, readdirSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
+
+test('C10: with no tool, the hint matches the project (uv venv, pnpm, yarn), warns on pins, and changes nothing', async () => {
+  const cases = [
+    ['py', { '.venv/bin/python': '' }, 'uv pip install --python .venv/bin/python mutmut', null],
+    ['py', { '.venv/bin/python': '', 'requirements.txt': 'mutmut==2.4.4\n' }, 'uv pip install --python .venv/bin/python mutmut', /requirements\.txt/],
+    ['js', { 'pnpm-lock.yaml': 'lockfileVersion: 9\n' }, 'pnpm add -D @stryker-mutator/core', null],
+    ['js', { 'yarn.lock': '# yarn\n' }, 'yarn add -D @stryker-mutator/core', null],
+    ['js', { 'package-lock.json': '{}\n' }, 'npm i -D @stryker-mutator/core', null],
+    ['py', { 'uv.lock': 'version = 1\n' }, 'pip install mutmut', /uv\.lock/],
+  ];
+  for (const [kind, files, want, warn] of cases) {
+    const p = await makeProject(kind);
+    const spyDir = mkdtempSync(join(tmpdir(), 'ac-hint-spy-'));
+    const spyLog = join(spyDir, 'calls.log');
+    for (const n of ['npm', 'pnpm', 'yarn', 'pip', 'uv', 'go']) {
+      writeFileSync(join(spyDir, n), `#!/bin/sh\necho ${n} >> "${spyLog}"\nexit 1\n`);
+      chmodSync(join(spyDir, n), 0o755);
+    }
+    try {
+      for (const [f, body] of Object.entries(files)) { mkdirSync(dirname(join(p.dir, f)), { recursive: true }); writeFileSync(join(p.dir, f), body); }
+      p.env = restrictedEnv([spyDir]);
+      const hash = () => Object.fromEntries(Object.keys(files).map((f) => [f, createHash('sha256').update(readFileSync(join(p.dir, f))).digest('hex')]));
+      const before = hash();
+      for (const args of [['mutate', '1'], ['mutate', '--check']]) {
+        const r = ac(p, args);
+        assert.equal(r.status, 0, r.stderr);
+        assert.ok(r.stdout.includes(`install: ${want}`), `${kind} ${JSON.stringify(files)}: ${r.stdout}`);
+        if (warn) assert.match(r.stdout, new RegExp(`⚠ .*${warn.source}`));
+        else assert.doesNotMatch(r.stdout, /⚠/);
+      }
+      assert.deepEqual(hash(), before);
+      assert.equal(existsSync(spyLog), false, 'no package manager ran');
+    } finally { done(p); rmSync(spyDir, { recursive: true, force: true }); }
+  }
+});
+
+test('C11: an unconfigured mutmut 3 is reported as installed but not configured, in human and JSON, with no install hint', async () => {
+  const p = await rig('py', { extra: { MUTATE_STUB_VERSION_CRASH: '1' } });
+  try {
+    for (const args of [['mutate', '1'], ['mutate', '--check']]) {
+      const h = ac(p, args);
+      assert.equal(h.status, 0, h.stderr);
+      assert.match(h.stdout, /mutmut is installed but not configured — run: ac mutate setup/);
+      assert.doesNotMatch(h.stdout, /not installed|install:/);
+    }
+    const j = JSON.parse(ac(p, ['mutate', '1', '--json']).stdout);
+    assert.equal(j.outcome, 'not-configured');
+    assert.equal(j.hint, 'ac mutate setup');
+    assert.equal(existsSync(join(p.dir, '.astrocode', '.local', 'mutate-notices.json')), false);
+  } finally { done(p); }
+});
+
+test('C12: ac mutate setup writes the 3.x keys under a 3.8 mutmut, the 2.x keys under 2.4, and a second run changes no byte', async () => {
+  for (const [version, v2, want, deny] of [
+    ['3.8.0', '0', /source_paths=src\/\npytest_add_cli_args_test_selection=tests\/\n/, /paths_to_mutate|tests_dir/],
+    ['2.4.4', '1', /paths_to_mutate=src\/\ntests_dir=tests\/\n/, /source_paths/],
+  ]) {
+    const p = await rig('py', { version, extra: { MUTATE_STUB_V2_REAL: v2 } });
+    try {
+      const a = ac(p, ['mutate', 'setup']);
+      assert.equal(a.status, 0, a.stderr);
+      const text = readFileSync(join(p.dir, 'setup.cfg'), 'utf8');
+      assert.match(text, want);
+      assert.doesNotMatch(text, deny);
+      const b = ac(p, ['mutate', 'setup']);
+      assert.match(b.stdout, /left alone/);
+      assert.equal(readFileSync(join(p.dir, 'setup.cfg'), 'utf8'), text);
+    } finally { done(p); }
+  }
+  // an existing setup.cfg with deprecated keys, under 3.x: named, not rewritten
+  const p = await rig('py', { version: '3.8.0', extra: { MUTATE_STUB_V2_REAL: '0' } });
+  try {
+    writeFileSync(join(p.dir, 'setup.cfg'), '[mutmut]\npaths_to_mutate=src/\ntests_dir=tests/\n');
+    const r = ac(p, ['mutate', 'setup']);
+    assert.match(r.stdout, /deprecated in mutmut 3: paths_to_mutate → source_paths, tests_dir → pytest_add_cli_args_test_selection/);
+    assert.match(readFileSync(join(p.dir, 'setup.cfg'), 'utf8'), /paths_to_mutate=src\//);
+    writeFileSync(join(p.dir, 'pyproject.toml'), '[tool.mutmut]\nsource_paths = ["src"]\n');
+    rmSync(join(p.dir, 'setup.cfg'));
+    const q = ac(p, ['mutate', 'setup']);
+    assert.match(q.stdout, /pyproject\.toml has \[tool\.mutmut\]/);
+    assert.equal(existsSync(join(p.dir, 'setup.cfg')), false, 'nothing written when pyproject owns the config');
+  } finally { done(p); }
+});

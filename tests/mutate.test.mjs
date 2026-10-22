@@ -42,9 +42,9 @@ test('classifyRun covers every outcome; capped and zero mutants are never clean'
 });
 
 test('the tool table carries the exact install strings and the 600s default cap', async () => {
-  const { MUTATION_TOOLS, DEFAULT_CAP_SECONDS } = await import('../lib/mutate.mjs');
+  const { MUTATION_TOOLS, DEFAULT_CAP_SECONDS, DEFAULT_ENV } = await import('../lib/mutate.mjs');
   assert.equal(DEFAULT_CAP_SECONDS, 600);
-  assert.deepEqual(Object.fromEntries(MUTATION_TOOLS.map((r) => [r.id, r.install])), {
+  assert.deepEqual(Object.fromEntries(MUTATION_TOOLS.map((r) => [r.id, r.install(DEFAULT_ENV)])), {
     stryker: 'npm i -D @stryker-mutator/core',
     gremlins: 'go install github.com/go-gremlins/gremlins/cmd/gremlins@latest',
     mutmut: 'pip install mutmut',
@@ -334,18 +334,20 @@ test('setupFor returns parseable content per tool and exists:true when a config 
   const p = await makeProject('js');
   try {
     mkdirSync(join(p.dir, 'src'), { recursive: true });
-    const s = setupFor(p.dir);
+    const env = restrictedEnv([]); // no mutmut on the PATH: the major is assumed
+    const s = await setupFor(p.dir, null, { env });
     assert.equal(s.file, 'stryker.config.json'); assert.equal(s.exists, false);
     const cfg = JSON.parse(s.content);
     assert.equal(cfg.testRunner, 'command'); assert.ok(cfg.mutate.some((g) => g.startsWith('src/')));
     writeFileSync(join(p.dir, 'stryker.config.json'), '{}');
-    assert.equal(setupFor(p.dir).exists, true);
-    const g = setupFor(p.dir, 'gremlins');
+    assert.equal((await setupFor(p.dir, null, { env })).exists, true);
+    const g = await setupFor(p.dir, 'gremlins', { env });
     assert.equal(g.file, '.gremlins.yaml');
     for (const l of g.content.split('\n').filter((x) => x && !x.startsWith('#'))) assert.match(l, /^\s*[\w-]+:( .+)?$/);
-    const m = setupFor(p.dir, 'mutmut');
-    assert.match(m.content, /^\[mutmut\]\npaths_to_mutate=.+\ntests_dir=.+\n$/);
-    assert.match(setupFor(p.dir, 'nope').error, /unknown/);
+    const m = await setupFor(p.dir, 'mutmut', { env });
+    assert.match(m.content, /^\[mutmut\]\nsource_paths=.+\npytest_add_cli_args_test_selection=.+\n$/);
+    assert.match(m.assumed, /not installed/);
+    assert.match((await setupFor(p.dir, 'nope', { env })).error, /unknown/);
     assert.deepEqual(await dismissTool(p.dir), { tool: 'stryker' });
   } finally { done(p); }
 });
@@ -362,4 +364,94 @@ test('a stale report left by an earlier run is never this run\'s result', async 
     const r = await runMutate(p.dir, p.slug1, { env: p.env });
     assert.equal(r.outcome, 'error'); assert.match(r.error, /no report/);
   } finally { done(p); }
+});
+
+// ---- Phase 48 t10 — install hints match the project (C10), not-configured (C11), setup (C12) ----
+import { mkdtempSync as mk10, mkdirSync as md10, writeFileSync as wf10 } from 'node:fs';
+import { tmpdir as td10 } from 'node:os';
+
+const tmp10 = (files = {}) => {
+  const d = mk10(join(td10(), 'ac-hint-'));
+  for (const [f, body] of Object.entries(files)) { md10(join(d, f, '..'), { recursive: true }); wf10(join(d, f), body); }
+  return d;
+};
+
+test('C10: installHint follows the lockfile and the venv layout; the default variants are the phase-47 strings', async () => {
+  const { installHint, MUTATION_TOOLS } = await import('../lib/mutate.mjs');
+  const row = (id) => MUTATION_TOOLS.find((r) => r.id === id);
+  assert.equal(installHint(tmp10({ '.venv/bin/python': '' }), row('mutmut')).install, 'uv pip install --python .venv/bin/python mutmut');
+  assert.equal(installHint(tmp10({ '.venv/bin/python': '', '.venv/bin/pip': '' }), row('mutmut')).install, 'pip install mutmut');
+  assert.equal(installHint(tmp10({ 'pnpm-lock.yaml': '' }), row('stryker')).install, 'pnpm add -D @stryker-mutator/core');
+  assert.equal(installHint(tmp10({ 'yarn.lock': '' }), row('stryker')).install, 'yarn add -D @stryker-mutator/core');
+  assert.equal(installHint(tmp10({ 'package-lock.json': '{}' }), row('stryker')).install, 'npm i -D @stryker-mutator/core');
+  assert.equal(installHint(tmp10(), row('stryker')).install, 'npm i -D @stryker-mutator/core');
+  assert.equal(installHint(tmp10({ 'go.mod': 'module x\n' }), row('gremlins')).install, 'go install github.com/go-gremlins/gremlins/cmd/gremlins@latest');
+  assert.equal(installHint(tmp10(), row('stryker')).warning, undefined, 'a plain project warns about nothing');
+  assert.match(installHint(tmp10({ 'pnpm-lock.yaml': '' }), row('stryker')).why, /pnpm-lock\.yaml/);
+});
+
+test('C10: a pinned package or a lock-managed Python environment adds a warning naming the file', async () => {
+  const { installHint, MUTATION_TOOLS } = await import('../lib/mutate.mjs');
+  const mutmut = MUTATION_TOOLS.find((r) => r.id === 'mutmut');
+  assert.match(installHint(tmp10({ 'requirements.txt': 'mutmut==2.4.4\n' }), mutmut).warning, /requirements\.txt/);
+  assert.match(installHint(tmp10({ 'uv.lock': '[[package]]\nname = "mutmut"\n' }), mutmut).warning, /uv\.lock/);
+  assert.match(installHint(tmp10({ 'uv.lock': '# no mutmut\n' }), mutmut).warning, /uv\.lock/, 'a lock-managed environment warns even when the tool is not in it');
+});
+
+test('C11: an installed mutmut 3 that crashes on --version for lack of config is not-configured, never missing', async () => {
+  const { runMutate, checkMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('py', { extra: { MUTATE_STUB_VERSION_CRASH: '1' } });
+  try {
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(r.outcome, 'not-configured');
+    assert.equal(r.hint, 'ac mutate setup');
+    assert.equal(r.fallback, null);
+    assert.equal(r.suggestion, undefined);
+    assert.equal(existsSync(join(p.dir, '.astrocode', '.local', 'mutate-notices.json')), false, 'no notice memory');
+    const c = await checkMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(c.outcome, 'not-configured');
+    assert.equal(c.suggestion, undefined);
+  } finally { done(p); }
+});
+
+test('C11: a mutmut whose version command fails without the signature is still tool-missing, with the failure in warnings', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('py', { extra: { MUTATE_STUB_V2_REAL: '1', MUTATE_STUB_VERSION: 'x' } });
+  try {
+    // 2.x answers `version`, so make both fail: a stub copy that always exits 1
+    wf10(join(p.dir, 'stubbin', 'mutmut'), '#!/bin/sh\necho boom >&2\nexit 1\n');
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(r.outcome, 'tool-missing');
+    assert.ok(r.warnings.some((w) => /failed/.test(w)));
+  } finally { done(p); }
+});
+
+test('C12: setupFor writes the keys the installed mutmut major accepts, names deprecated ones, and respects [tool.mutmut]', async () => {
+  const { setupFor } = await import('../lib/mutate.mjs');
+  for (const [version, wantNew] of [['3.8.0', true], ['2.4.4', false]]) {
+    const p = await rig('py', { version, extra: { MUTATE_STUB_V2_REAL: version.startsWith('2') ? '1' : '0' } });
+    try {
+      md10(join(p.dir, 'src'), { recursive: true });
+      const s = await setupFor(p.dir, 'mutmut', { env: p.env });
+      assert.equal(s.file, 'setup.cfg');
+      if (wantNew) {
+        assert.match(s.content, /^\[mutmut\]\nsource_paths=src\/\npytest_add_cli_args_test_selection=tests\/\n$/);
+        assert.doesNotMatch(s.content, /paths_to_mutate|tests_dir/);
+      } else {
+        assert.match(s.content, /paths_to_mutate=src\/\ntests_dir=tests\/\n$/);
+        assert.doesNotMatch(s.content, /source_paths/);
+      }
+      if (wantNew) {
+        wf10(join(p.dir, 'setup.cfg'), '[mutmut]\npaths_to_mutate=src/\ntests_dir=tests/\n');
+        const old = await setupFor(p.dir, 'mutmut', { env: p.env });
+        assert.equal(old.exists, true);
+        assert.deepEqual(old.deprecated.map((d) => d.key), ['paths_to_mutate', 'tests_dir']);
+        wf10(join(p.dir, 'pyproject.toml'), '[tool.mutmut]\nsource_paths = ["x"]\n');
+        const py = await setupFor(p.dir, 'mutmut', { env: p.env });
+        assert.equal(py.file, 'pyproject.toml');
+        assert.equal(py.exists, true);
+        assert.match(py.content, /\[tool\.mutmut\]/);
+      }
+    } finally { done(p); }
+  }
 });

@@ -2604,14 +2604,17 @@ async function main() {
       const sub = pos[0] === 'setup' || pos[0] === 'dismiss' ? pos[0] : null;
       checkFlags(sub ? `mutate ${sub}` : 'mutate', flags);
       if (sub === 'setup') {
-        const s = setupFor(r, pos[1] || null);
+        const s = await setupFor(r, pos[1] || null);
         if (s.error) die(s.error);
         if (flags.json) { json(s); return; }
         if (!s.exists) {
           writeFileSync(join(r, s.file), s.content);
           console.log(`✓ wrote ${s.file} — minimal ${s.tool} config; nothing installed`);
+          if (s.assumed) console.log(`• ${s.assumed}`);
         } else if (s.tool === 'mutmut') {
-          console.log(`• ${s.file} exists — left alone; add this section to it:\n${s.content.trimEnd().replace(/^/gm, '    ')}`);
+          // Never rewritten: name what the installed major deprecated and print the replacements (≤3 lines).
+          console.log(`• ${s.file} exists — left alone; ${s.note ?? 'add this section to it'}:\n${s.content.trimEnd().replace(/^/gm, '    ')}`);
+          if (s.deprecated) console.log(`⚠ deprecated in mutmut ${s.major}: ${s.deprecated.map((d) => `${d.key} → ${d.replacement}`).join(', ')}`);
         } else {
           console.log(`• ${s.file} exists — left alone`);
         }
@@ -2639,8 +2642,11 @@ async function main() {
         if (res.notice === 'full') {
           console.log(`⊡ ${t.label} (${t.why}) is not installed — AI mutants used`);
           console.log(`  install: ${res.suggestion.install}`);
+          if (res.suggestion.warning) console.log(`  ⚠ ${res.suggestion.warning}`);
           console.log('  astro-code never installs it. Silence this hint: ac mutate dismiss');
         } else console.log(`⊡ ${MUTATE_REMINDER}`);
+      } else if (res.outcome === 'not-configured') {
+        console.log(`⚠ ${t.label} is installed but not configured — run: ${res.hint}`);
       } else if (res.outcome === 'no-tool' || res.outcome === 'no-scope') {
         console.log(`⊡ ${res.fallback.reason}`);
       } else if (res.outcome === 'error' && !t) {

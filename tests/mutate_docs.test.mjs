@@ -10,9 +10,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const manual = readFileSync(join(ROOT, 'MANUAL.md'), 'utf8');
 
 test('every tool row\'s install string appears verbatim in the MANUAL', async () => {
-  const { MUTATION_TOOLS } = await import('../lib/mutate.mjs');
+  const { MUTATION_TOOLS, DEFAULT_ENV } = await import('../lib/mutate.mjs');
   assert.ok(MUTATION_TOOLS.length >= 3);
-  for (const row of MUTATION_TOOLS) assert.ok(manual.includes(row.install), `${row.id}: ${row.install}`);
+  for (const row of MUTATION_TOOLS) assert.ok(manual.includes(row.install(DEFAULT_ENV)), `${row.id}: ${row.install(DEFAULT_ENV)}`);
 });
 
 test('the MANUAL explains the keys, the dismissal, where the memory lives and that nothing is installed', () => {
