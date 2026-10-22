@@ -105,7 +105,23 @@
       "note": "--diff <phase base> and GOFLAGS -run accepted; scope narrowed to the diff; log and full list written."
     },
     "stryker": "not run: not installed",
-    "mutmut2": "not run: not installed"
+    "mutmut2": "not run: not installed",
+    "phase_49": {
+      "date": "2026-10-22",
+      "command": "AC_MUTATE_REAL=1 node --test tests/mutate_real.test.mjs",
+      "mutmut": {
+        "version": "3.8.0",
+        "result": "pass",
+        "note": "groups with a g:text-only group; a group note carried over and survived 5 lines inserted above; --survivors ran `mutmut run <open names>` and the tool's own counter showed exactly the open mutants tested (extra_executed 0); a toggling pytest test was named flaky and deselected through PYTEST_ADDOPTS (kills: excluded)."
+      },
+      "gremlins": {
+        "version": "v0.6.0 (from build info; --version prints dev)",
+        "result": "pass",
+        "note": "tool.version equalled the module version `go version -m` prints; survivors carried keys and groups; a judgement carried over; --survivors narrowed by files+kinds and its why says killed mutants re-ran too."
+      },
+      "stryker": "not run: not installed",
+      "mutmut2": "not run: not installed"
+    }
   },
   "mutmut3_config_keys": [
     "source_paths",
