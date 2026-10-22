@@ -1,9 +1,24 @@
 {
   "captured_in": "astro-forge container, no network installs, no host commands",
   "tools": {
-    "mutmut": { "version": "3.8.0", "source": "captured" },
-    "gremlins": { "version": "dev linux/arm64 (0.6 line)", "source": "captured" },
-    "stryker": { "version": "10.x", "source": "transcribed, not captured", "file": "stryker-cli-documented.txt" }
+    "mutmut": {
+      "version": "3.8.0",
+      "source": "captured"
+    },
+    "gremlins": {
+      "version": "dev linux/arm64 (0.6 line)",
+      "source": "captured"
+    },
+    "stryker": {
+      "version": "10.x",
+      "source": "transcribed, not captured",
+      "file": "stryker-cli-documented.txt"
+    },
+    "mutmut2": {
+      "version": "2.4.x",
+      "source": "transcribed, not captured",
+      "file": "mutmut2-cli-documented.txt"
+    }
   },
   "files": {
     "mutmut3-version-unconfigured.txt": "stderr of `mutmut --version` in a directory with no src/lib/<dirname> and no config",
@@ -16,19 +31,35 @@
     "mutmut3-mutants-mod.py.txt": "the generated mutants/pkg/mod.py",
     "gremlins-unleash-help.txt": "`gremlins unleash --help`",
     "gremlins-run-output.txt": "`gremlins unleash --diff <sha> -o out.json` on a two-package module",
-    "stryker-cli-documented.txt": "transcribed Stryker 10 CLI and log markers"
+    "stryker-cli-documented.txt": "transcribed Stryker 10 CLI and log markers",
+    "mutmut3-help.txt": "`mutmut --help`, `run --help`, `results --help`, `show --help` (run from a configured project)",
+    "mutmut2-cli-documented.txt": "transcribed mutmut 2.4 CLI"
   },
   "markers": {
     "mutmut3": {
-      "steps": ["Generating mutants", "Running stats", "Running clean tests", "Running forced fail test", "Running mutation testing"],
+      "steps": [
+        "Generating mutants",
+        "Running stats",
+        "Running clean tests",
+        "Running forced fail test",
+        "Running mutation testing"
+      ],
       "progress": "N/M followed by the emoji counters, e.g. `13/13  🎉 10 🫥 0 ⏰ 0 🤔 0 🙁 3 🔇 0 🧙 0`"
     },
     "gremlins": {
-      "steps": ["Gathering files diff", "Gathering coverage", "Mutation testing completed"],
+      "steps": [
+        "Gathering files diff",
+        "Gathering coverage",
+        "Mutation testing completed"
+      ],
       "progress": "none: one line per finished mutant (`KILLED|LIVED|NOT COVERED|SKIPPED|TIMED OUT|NOT VIABLE <TYPE> at file:line:col`)"
     },
     "stryker": {
-      "steps": ["Starting initial test run", "Initial test run succeeded", "Mutation testing"],
+      "steps": [
+        "Starting initial test run",
+        "Initial test run succeeded",
+        "Mutation testing"
+      ],
       "progress": "`<pct>% (elapsed: ..., remaining: ...) <tested>/<total> Mutants tested`"
     }
   },
@@ -46,8 +77,39 @@
     "gremlins `-o <file>` writes JSON {go_module, files:[{file_name, mutations:[{type,status,line,column}]}]}. `--exclude-files` is a repeatable regexp flag. There is no test-selection flag.",
     "GOFLAGS='-run=^(TestSub)$' reaches gremlins' go test calls: with it a package whose tests do not match reported its mutants NOT COVERED. It narrows, but unmatched mutants read as not covered (survivor status no-coverage), so the filter must be the phase's tests for the phase's package.",
     "gremlins prints no progress count; the step is inferred from `Gathering files diff...` / `Gathering coverage...` and the per-mutant status lines.",
-    "gremlins --version prints `gremlins version dev linux/arm64` here (no numeric 0.x), so ac's version regex finds `\\d+\\.\\d+` only from arm64? it does not: the tool reports a non-numeric version; supportedMajors is not set for gremlins so this is accepted.",
-    "Stryker is not installed here and no network installs are allowed: its CLI is transcribed, marked as such, and C14 compares flags against the transcription."
+    "Stryker is not installed here and no network installs are allowed: its CLI is transcribed, marked as such, and C14 compares flags against the transcription.",
+    "gremlins --version prints `gremlins version dev linux/arm64` here (no numeric 0.x): ac's version regex finds nothing, version is null, and gremlins has no supportedMajors, so the run proceeds."
   ],
-  "real_runs": {}
+  "real_runs": {
+    "date": "2026-10-22",
+    "command": "AC_MUTATE_REAL=1 node --test tests/mutate_real.test.mjs",
+    "mutmut": {
+      "version": "3.8.0",
+      "result": "pass",
+      "note": "scope narrowed to functions, tests from the phase's commits (PYTEST_ADDOPTS), survivors at real lines, log and full list written. Finding: `ac mutate setup` wrote source_paths=src/ for a project with a top-level package; fixed to pick the first directory with an __init__.py."
+    },
+    "gremlins": {
+      "version": "dev linux/arm64",
+      "result": "pass",
+      "note": "--diff <phase base> and GOFLAGS -run accepted; scope narrowed to the diff; log and full list written."
+    },
+    "stryker": "not run: not installed",
+    "mutmut2": "not run: not installed"
+  },
+  "mutmut3_config_keys": [
+    "source_paths",
+    "pytest_add_cli_args_test_selection",
+    "pytest_add_cli_args",
+    "only_mutate",
+    "do_not_mutate",
+    "do_not_mutate_patterns",
+    "also_copy",
+    "max_stack_depth",
+    "debug",
+    "mutate_only_covered_lines",
+    "process_isolation",
+    "forkserver_warmup",
+    "paths_to_mutate",
+    "tests_dir"
+  ]
 }

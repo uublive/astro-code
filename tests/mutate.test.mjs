@@ -621,3 +621,13 @@ test('C9: mutmut 3 survivors and killed mutants carry real source lines inside t
 });
 function copyFileSync14(a, b) { cp14(a, b); }
 void cps14;
+
+test('C12: mutmut setup finds a top-level package when there is no src/ or lib/', async () => {
+  const { MUTATION_TOOLS } = await import('../lib/mutate.mjs');
+  const row = MUTATION_TOOLS.find((r) => r.id === 'mutmut');
+  const d = mk10(join(td10(), 'ac-setup-'));
+  md10(join(d, 'mypkg'), { recursive: true }); wf10(join(d, 'mypkg', '__init__.py'), '');
+  md10(join(d, 'tests'), { recursive: true }); wf10(join(d, 'tests', '__init__.py'), '');
+  assert.match(row.setup(d, { major: 3 }).content, /^\[mutmut\]\nsource_paths=mypkg\/\npytest_add_cli_args_test_selection=tests\/\n$/);
+  assert.match(row.setup(mk10(join(td10(), 'ac-setup-')), { major: 3 }).content, /source_paths=src\//);
+});

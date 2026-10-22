@@ -1,0 +1,33 @@
+Usage: mutmut [OPTIONS] COMMAND [ARGS]...
+
+Options:
+  --version  Show the version and exit.
+  --help     Show this message and exit.
+
+Commands:
+  apply
+  badge
+  browse
+  export-cicd-stats
+  print-time-estimates
+  results
+  run
+  show
+  tests-for-mutant
+======
+Usage: mutmut run [OPTIONS] [MUTANT_NAMES]...
+
+Options:
+  --max-children INTEGER
+  --help                  Show this message and exit.
+======
+Usage: mutmut results [OPTIONS]
+
+Options:
+  --all BOOLEAN
+  --help         Show this message and exit.
+======
+Usage: mutmut show [OPTIONS] MUTANT_NAME
+
+Options:
+  --help  Show this message and exit.
