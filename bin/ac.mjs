@@ -2657,7 +2657,7 @@ async function main() {
         const c = res.counts;
         const total = Object.values(c).reduce((n, v) => n + v, 0);
         const sym = res.outcome === 'clean' ? '✓' : '⚠';
-        console.log(`${sym} ${via} · ${total} mutants: ${c.killed} killed · ${c.timeout} timeout · ${c.survived} survived · ${c['no-coverage']} no-coverage · ${c.error} error`);
+        console.log(`${sym} ${via} · ${total} mutants: ${c.killed} killed · ${c.timeout} timeout · ${c.survived} survived · ${c['no-coverage']} no-coverage · ${c.error} error${res.ignored_count ? ` · ${res.ignored_count} ignored` : ''}`);
         if (res.scope.length) {
           // Never the joined file list (it scales with the phase): the source, the sizes and why.
           const d = res.scope_detail;
@@ -2672,9 +2672,9 @@ async function main() {
         }
         if (res.error) console.log(`⚠ ${res.error}`);
         for (const m of res.survivors) console.log(`⚠ ${m.file}:${m.line ?? '?'} ${m.mutator} ${m.status}`);
-        const look = Object.entries(res.per_file).filter(([, k]) => k.survived || k['no-coverage'] || k.timeout || k.error || k.not_run);
+        const look = Object.entries(res.per_file).filter(([, k]) => k.survived || k['no-coverage'] || k.timeout || k.error || k.not_run || k.ignored);
         for (const [f, k] of look.slice(0, 20)) {
-          console.log(`  ${f} — ${k.killed} killed · ${k.survived} survived · ${k.timeout} timeout · ${k['no-coverage']} no-coverage · ${k.error} error${k.not_run ? ` · ${k.not_run} not run` : ''}`);
+          console.log(`  ${f} — ${k.killed} killed · ${k.survived} survived · ${k.timeout} timeout · ${k['no-coverage']} no-coverage · ${k.error} error${k.ignored ? ` · ${k.ignored} ignored` : ''}${k.not_run ? ` · ${k.not_run} not run` : ''}`);
         }
         if (look.length > 20) console.log(`  +${look.length - 20} more files (full list below)`);
         if (res.out_of_scope_count) console.log(`  ${res.out_of_scope_count} mutants outside the scope not counted`);

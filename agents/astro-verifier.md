@@ -145,7 +145,9 @@ reproducible list, and you judge only what it leaves behind.
    (this phase only, set with `ac config set`); raising it is the user's call, you stay read-only.
 5. **AI mutants only for `tool-missing`, `no-tool` or `no-scope`**, and then only with the reason:
    keep the result's `fallback.reason` in the evidence (a one-line reason, never empty) and
-   invent mutants by hand for that criterion as before. `not-configured` (the tool is installed
+   invent mutants by hand for that criterion as before. The exception is a `no-scope` whose
+   reason names `mutation.exclude`: the tool is installed and the user excluded those files, so
+   record the reason and invent no mutants by hand for them. `not-configured` (the tool is installed
    but has no configuration) **fails** the criterion with `ac mutate setup` as the next step, and
    you invent no mutants by hand.
 

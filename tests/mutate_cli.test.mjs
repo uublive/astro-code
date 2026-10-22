@@ -44,7 +44,7 @@ test('C1: --json twice is identical and complete; human output shows the same co
     assert.equal(ra.tool.why, 'package.json → stryker');
     const h = ac(p, ['mutate', '1']);
     assert.equal(h.status, 0, h.stderr);
-    assert.match(h.stdout, /^⚠ Stryker \(package\.json → stryker\) · 7 mutants: 2 killed · 1 timeout · 1 survived · 1 no-coverage · 2 error$/m);
+    assert.match(h.stdout, /^⚠ Stryker \(package\.json → stryker\) · 7 mutants: 2 killed · 1 timeout · 1 survived · 1 no-coverage · 2 error · 1 ignored$/m);
     assert.match(h.stdout, /^scope: changed-lines — 1 files, 1 line ranges \(line ranges the phase wrote/m);
     assert.match(h.stdout, /^⚠ src\/a\.mjs:10 ArithmeticOperator survived$/m);
     assert.match(h.stdout, /^⚠ src\/a\.mjs:15 ConditionalExpression no-coverage$/m);
