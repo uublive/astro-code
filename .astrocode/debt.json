@@ -543,6 +543,16 @@
       "why": "In an sdk turn, cat > notes.md <<'EOF' / run ac phase accept 1 later / EOF reaches the engine with --agent claude spliced into the heredoc body, so the file content is silently altered (also observed live in this verifier's own session).",
       "phase": "46",
       "file": "mods/astro-mods/hooks/lib/gates.js"
+    },
+    {
+      "id": "2026-10-22-ac-mutate-reads-an-installed-mutmut-3",
+      "title": "ac mutate reads an installed mutmut 3 as not installed when it cannot guess the source folder",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-10-22T07:55:47.272Z",
+      "why": "mutmut 3.8 loads its config on import, so 'mutmut --version' crashes (FileNotFoundError: could not figure out where the code to mutate is) in a Python project with no src/ or package dir and no [mutmut] section; ac then prints the install hint for a tool that is installed. Should tell the two apart and point at ac mutate setup.",
+      "phase": "47",
+      "file": "lib/mutate.mjs"
     }
   ]
 }

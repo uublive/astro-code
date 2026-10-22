@@ -544,6 +544,11 @@ _2026-10-21 · at 00220f3_
 
 **Why:** A verifier inventing mutants by hand has no closed list and no natural end (Waupaca phase 23 C11 took hours, every round found new survivors); a tool's list is reproducible and bounded (phase 47, Matteo)
 
+## ADR-084 — When a mutation tool is installed, the verifier never hand-invents mutants: wherever it would, it runs ac mutate and triages survivors; only [mutation]-tagged criteria get the code pass bar (amends ADR-083), and ac mutate scopes to the lines the phase changed and to the phase's own tests by default
+_2026-10-22 · at 4551842_
+
+**Why:** Waupaca phase 26: whole-file scope gave 15,022 mutants and a 13-minute full-suite baseline outlasted the cap, while untagged criteria kept the verifier in endless hand-made rounds (phase 48, Matteo)
+
 ## Not in force
 
 These decisions no longer apply — follow the decision each one names. They are listed so a citation still resolves; the full text is in DECISIONS.md.
