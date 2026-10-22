@@ -202,3 +202,10 @@ test('bandView: a next command that is not a phase button becomes the hint; a bu
   assert.deepEqual(v.buttons, []);
   assert.equal(bandView(STATUS, null, {}).hint, null);
 });
+
+test('bandView: a teammate\'s phase chip carries their tag, e.g. ○84(a)', async () => {
+  const { bandView } = await band();
+  const phases = [...STATUS.phases, { number: 84, status: 'pending', owner: 'a', remote: true, planned: false, discussed: false }];
+  const v = bandView({ ...STATUS, phases }, null, {});
+  assert.match(v.lines[0], /○84\(a\)$/);
+});

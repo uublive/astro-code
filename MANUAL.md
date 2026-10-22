@@ -381,6 +381,14 @@ keeps the rest. It does so only when the `phase-band` switch is on *and* the ast
 installed in that Claude profile, so a band that cannot draw never takes the facts with it.
 `ac statusline dedupe off` keeps everything on the line; `ac statusline dedupe on` is the default.
 
+**Teammates' phases.** The phase track and the band also show the phases a teammate claimed in
+the current milestone, tagged with who: `P84(a)` / `○84(a)` is a phase `alex@…` claimed. The tag
+is the first letter of the owner's email, longer only when two teammates would share it (`al`,
+`an`). Phases you claimed stay plain. One that is not merged into your roadmap yet is shown dimmed
+and is never offered as a next step. They come from your **local copy** of the shared registry
+(the `astro-registry` branch of `origin` as of the last fetch, cached in `.astrocode/.local/`), never from the
+network, so the bar stays fast and offline; any `ac` claim or a `git fetch` brings in new ones.
+
 ### Windows / PowerShell
 
 `ac` is shadowed by PowerShell's built-in `Add-Content` alias (aliases beat external
