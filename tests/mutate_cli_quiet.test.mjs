@@ -142,7 +142,7 @@ test('C7: running and checking change nothing; setup is the only writer, parses,
       } else if (kind === 'go') {
         for (const l of text.split('\n').filter((x) => x.trim() && !x.startsWith('#'))) assert.match(l, /^\s*[\w-]+:( .+)?$/);
       } else {
-        assert.match(text, /^\[mutmut\]$/m); assert.match(text, /^paths_to_mutate=/m);
+        assert.match(text, /^\[mutmut\]$/m); assert.match(text, /^paths_to_mutate=/m); // the stub answers like mutmut 2.4
       }
       assert.equal(readFileSync(join(p.dir, manifest), 'utf8'), p.L.manifest[1], 'manifest untouched');
 
@@ -153,7 +153,8 @@ test('C7: running and checking change nothing; setup is the only writer, parses,
       const calls = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
       const call = calls.find((c) => c.argv[0] === 'run' || c.argv[0] === 'unleash');
       assert.ok(call.configs.includes(file), `${kind}: config visible from the tool's cwd`);
-      if (kind === 'js') assert.equal(call.argv[1], 'stryker.config.json', 'passed explicitly');
+      // phase 48: the phase wrote a test file, so a generated config imports the project's and is passed instead
+      if (kind === 'js') { assert.match(call.argv[1], /\.stryker\.config\.mjs$/); assert.match(call.configText, /stryker\.config\.json/); }
 
       // a second setup leaves it alone
       const again = run(p.dir, env, ['mutate', 'setup']);

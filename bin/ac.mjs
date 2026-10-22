@@ -2663,6 +2663,11 @@ async function main() {
             : d.narrowed === 'files' ? null : `${d.line_ranges} line ranges`;
           console.log(`scope: ${d.source} — ${res.scope.length} files${unit ? `, ${unit}` : ''} (${d.why})`);
         }
+        if (res.tests) {
+          const t = res.tests;
+          const shown = t.files.length ? `${t.files.slice(0, 5).join(', ')}${t.files.length > 5 ? `, +${t.files.length - 5}` : ''}` : 'all tests';
+          console.log(`tests: ${t.source} — ${shown} (${t.mechanism})${t.note ? ` — ${t.note}` : ''}`);
+        }
         if (res.error) console.log(`⚠ ${res.error}`);
         for (const m of res.survivors) console.log(`⚠ ${m.file}:${m.line} ${m.mutator} ${m.status}`);
         if (res.capped) {
