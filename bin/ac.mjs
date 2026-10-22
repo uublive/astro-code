@@ -4,7 +4,7 @@
 import process from 'node:process';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { basename, join, dirname, resolve } from 'node:path';
+import { basename, join, dirname, resolve, relative } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { findRoot, paths } from '../lib/paths.mjs';
@@ -128,6 +128,7 @@ import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate } from '../lib/verdict.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
+import { recordJudgements } from '../lib/survivors.mjs';
 import { REMINDER as MUTATE_REMINDER } from '../lib/mutnotice.mjs';
 import { milestoneHarvest } from '../lib/harvest.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
@@ -243,6 +244,8 @@ const ALLOWED_FLAGS = {
   'mutate': ['check', 'json'],
   'mutate setup': ['json'],
   'mutate dismiss': ['json'],
+  // Phase 49 — a typo'd flag must not turn a judgement into a write nobody asked for.
+  'mutate judge': ['equivalent', 'test-gap', 'json'],
   // Phase 23 (P2) — a stand-in agent rejects on the human's behalf; `agent` is the
   // declared signer, mirroring `phase accept --agent` (ADR-033, now symmetric).
   'phase reject': ['reason', 'agent', 'witnessed', 'evidence'],
@@ -544,6 +547,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac mutate --check [<phase>] [--json]  which tool applies, is it installed, how to install it (read-only)
   ac mutate setup                     write a minimal tool config if absent (the only writer; installs nothing)
   ac mutate dismiss [<tool>]          stop showing the full install suggestion for this project
+  ac mutate judge <phase> <s:key|g:group>... --equivalent "<why>" | --test-gap ["<note>"]  record a survivor judgement (SURVIVORS.json)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase accept <p> --agent <name>  machine-signed sign-off (records accepted_kind=agent)
   ac phase accept <p> --witnessed composer  record that a human typed the gate command (set by the witness mod, ADR-074)
@@ -2601,7 +2605,7 @@ async function main() {
     // errors die. stdin is never read and nothing is ever installed.
     case 'mutate': {
       const r = root();
-      const sub = pos[0] === 'setup' || pos[0] === 'dismiss' ? pos[0] : null;
+      const sub = pos[0] === 'setup' || pos[0] === 'dismiss' || pos[0] === 'judge' ? pos[0] : null;
       checkFlags(sub ? `mutate ${sub}` : 'mutate', flags);
       if (sub === 'setup') {
         const s = await setupFor(r, pos[1] || null);
@@ -2620,6 +2624,30 @@ async function main() {
         }
         return;
       }
+      if (sub === 'judge') {
+        // Phase 49 (D3/D6): the one writer of SURVIVORS.json. Written, never committed here — `ac verdict
+        // record` commits it with the verdict. Every refusal dies before anything is written.
+        const usage = 'usage: ac mutate judge <phase> <s:key|g:group>... --equivalent "<one line why>" | --test-gap ["<note>"]';
+        const ph = pos[1] !== undefined ? findPhase(r, pos[1]) : null;
+        if (!ph) die(pos[1] === undefined ? usage : `unknown phase "${pos[1]}" — ${usage}`);
+        const ids = pos.slice(2);
+        let note = flags['test-gap'];
+        // `--test-gap s:abc` parses the key as the flag's value: a key is never a note.
+        if (typeof note === 'string' && /^[sg]:/.test(note)) { ids.push(note); note = true; }
+        const eq = flags.equivalent;
+        if ((eq !== undefined) === (note !== undefined)) die(`name exactly one of --equivalent and --test-gap — ${usage}`);
+        if (!ids.length) die(usage);
+        let w;
+        try {
+          w = eq !== undefined
+            ? await recordJudgements(r, ph.slug, { ids, triage: 'equivalent', justification: typeof eq === 'string' ? eq : '' })
+            : await recordJudgements(r, ph.slug, { ids, triage: 'test-gap', justification: typeof note === 'string' ? note : null });
+        } catch (e) { die(e.message); }
+        if (flags.json) { json({ ...w, triage: eq !== undefined ? 'equivalent' : 'test-gap' }); return; }
+        console.log(`✓ ${w.written} survivor(s) judged ${eq !== undefined ? 'equivalent' : 'test-gap'} — ${relative(r, w.file)}`);
+        console.log('• written, not committed: commit it, or `ac verdict record` will');
+        return;
+      }
       if (sub === 'dismiss') {
         const d = await dismissTool(r, pos[1] || null);
         if (d.error) die(d.error);
@@ -2630,7 +2658,7 @@ async function main() {
       // `--check 1` / `--json 1` parse the phase ref as the flag's value.
       const ref = pos[0] ?? [flags.check, flags.json].find((v) => typeof v === 'string');
       const ph = ref !== undefined ? findPhase(r, ref) : null;
-      if (ref !== undefined && !ph) die(`unknown phase "${ref}" — usage: ac mutate <phase> [--json] | --check [<phase>] | setup | dismiss [<tool>]`);
+      if (ref !== undefined && !ph) die(`unknown phase "${ref}" — usage: ac mutate <phase> [--json] | --check [<phase>] | setup | dismiss [<tool>] | judge <phase> <id>...`);
       if (!flags.check && !ph) die('usage: ac mutate <phase> [--json] | --check [<phase>] | setup | dismiss [<tool>]');
       const res = flags.check ? await checkMutate(r, ph?.slug ?? null) : await runMutate(r, ph.slug);
       if (flags.json) { json(res); return; }
@@ -2679,11 +2707,31 @@ async function main() {
           else if (f.tests.length) {
             const how = { excluded: 'excluded from the mutation run', discounted: 'discounted by the report\'s attribution', unverified: 'unverified: run marked incomplete' }[f.kills] ?? f.kills;
             console.log(`⚠ flaky: ${list(f.tests)} — kills ${how}`);
-          } else console.log(`• flaky check: stable (${f.runs} runs, ${(f.duration_ms / 1000).toFixed(1)}s)`);
+          } else if (!f.baseline_failing.length) console.log(`• flaky check: stable (${f.runs} runs, ${(f.duration_ms / 1000).toFixed(1)}s)`);
           if (f.checked && f.baseline_failing.length) console.log(`• tests already fail before mutating: ${list(f.baseline_failing)}`);
         }
         if (res.error) console.log(`⚠ ${res.error}`);
-        for (const m of res.survivors) console.log(`⚠ ${m.file}:${m.line ?? '?'} ${m.mutator} ${m.status}`);
+        if (res.survivors.length) {
+          // Groups, not a flat dump (e618, D6): open groups only, 20 of them, 3 members each; the full
+          // list is `--json`. Judged survivors are counted apart from the ones still needing a verdict.
+          const tr = res.triage ?? { judged: 0, open: res.survivors.length, test_gap: 0, untriaged: res.survivors.length };
+          const n = res.reproduce.match(/ac mutate (\d+)/)?.[1] ?? '<n>';
+          const open = (res.groups ?? []).filter((g) => g.open > 0);
+          console.log(`survivors: ${res.survivors.length} in ${(res.groups ?? []).length} groups — ${tr.judged} judged, ${tr.open} open`);
+          console.log(`judged (SURVIVORS.json): ${tr.judged} equivalent`);
+          console.log(`open: ${tr.open} (${tr.test_gap} test-gap, ${tr.untriaged} untriaged)`);
+          const byKey = new Map(res.survivors.map((s) => [s.key, s]));
+          for (const g of open.slice(0, 20)) {
+            const where = g.text_only ? 'text-only (string/message literals)' : `${g.file} · ${g.fn ?? '(outside any function)'} · ${g.kind}`;
+            console.log(`⚠ ${where} — ${g.open} open [${g.id}]`);
+            const members = g.keys.map((k) => byKey.get(k)).filter((m) => m && !(m.triage === 'equivalent' && m.judged));
+            for (const m of members.slice(0, 3)) console.log(`    ${g.text_only ? `${m.file}:` : ''}${m.line ?? '?'} ${m.key}${m.triage === 'test-gap' ? ' (test-gap)' : ''}`);
+            if (members.length > 3) console.log(`    +${members.length - 3} more`);
+          }
+          if (open.length > 20) console.log(`+${open.length - 20} more groups — ac mutate ${n} --json`);
+          if (tr.stale) console.log(`• ${tr.stale} judgement(s) match no survivor now — kept in ${tr.file}`);
+          if (tr.invalid) console.log(`⚠ ${tr.invalid} invalid entr${tr.invalid === 1 ? 'y' : 'ies'} in ${tr.file} ignored`);
+        }
         const look = Object.entries(res.per_file).filter(([, k]) => k.survived || k['no-coverage'] || k.timeout || k.error || k.not_run || k.ignored);
         for (const [f, k] of look.slice(0, 20)) {
           console.log(`  ${f} — ${k.killed} killed · ${k.survived} survived · ${k.timeout} timeout · ${k['no-coverage']} no-coverage · ${k.error} error${k.ignored ? ` · ${k.ignored} ignored` : ''}${k.not_run ? ` · ${k.not_run} not run` : ''}`);
