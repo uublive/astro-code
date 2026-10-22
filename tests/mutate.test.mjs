@@ -455,3 +455,105 @@ test('C12: setupFor writes the keys the installed mutmut major accepts, names de
     } finally { done(p); }
   }
 });
+
+// ---- Phase 48 t11 — the log beside the run (C7), the per-phase cap and the step a cap hit (C6) ----
+import { readdirSync as rd11, mkdtempSync as mk11 } from 'node:fs';
+import { tmpdir as td11 } from 'node:os';
+
+const cfgSet = async (dir, patch) => {
+  const { updateConfig } = await import('../lib/config.mjs');
+  await updateConfig(dir, (c) => { c.mutation = { ...(c.mutation ?? {}), ...patch }; return c; });
+};
+const runDirOf = (p) => join(p.dir, '.astrocode', '.local', 'mutate-runs');
+
+test('C7: the log sits beside the run, holds both streams, is never committed and is replaced by a rerun', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const before = new Set(rd11(td11()).filter((n) => n.startsWith('ac-mutate-')));
+  const p = await rig('js', { report: 'stryker-mutation.json', nodeModules: true, extra: { MUTATE_STUB_OUT: 'MARK-1\n', MUTATE_STUB_ERR: 'MARK-E\n' } });
+  try {
+    const res = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(res.log, `.astrocode/.local/mutate-runs/${p.slug1}.log`);
+    const text = readFileSync(join(p.dir, res.log), 'utf8');
+    assert.match(text, /MARK-1/); assert.match(text, /MARK-E/);
+    assert.equal(sh(p.dir, 'status', '--porcelain', '--untracked-files=all').stdout.includes('mutate-runs'), false);
+    assert.equal(sh(p.dir, 'check-ignore', '-q', res.log).status, 0);
+    // a rerun with another marker replaces, never accumulates
+    const env2 = { ...p.env, MUTATE_STUB_OUT: 'MARK-2\n', MUTATE_STUB_ERR: '' };
+    await runMutate(p.dir, p.slug1, { env: env2 });
+    const again = readFileSync(join(p.dir, res.log), 'utf8');
+    assert.match(again, /MARK-2/); assert.doesNotMatch(again, /MARK-1/);
+    assert.equal(rd11(runDirOf(p)).filter((n) => n.endsWith('.log')).length, 1);
+    // another phase leaves this log alone
+    await runMutate(p.dir, p.slug2, { env: p.env });
+    assert.match(readFileSync(join(p.dir, res.log), 'utf8'), /MARK-2/);
+    assert.equal(rd11(runDirOf(p)).filter((n) => n.endsWith('.log')).length, 2);
+    const after = rd11(td11()).filter((n) => n.startsWith('ac-mutate-') && !before.has(n) && !n.startsWith('ac-mutate-proj-') && !n.startsWith('ac-mutate-home-'));
+    assert.deepEqual(after, [], 'nothing lands only in the system temp dir');
+  } finally { done(p); }
+});
+
+// Per tool: a marker the real tool prints (tests/fixtures/mutate/real), then a long sleep.
+const CAP_RIGS = [
+  ['js', 'stryker', 'Starting initial test run (command test runner with "off" coverage analysis).\n', /initial test run/, 'Mutation testing  30% (elapsed: <1m, remaining: ~1m) 120/400 Mutants tested (3 survived, 0 timed out)\n', 'mutation testing'],
+  ['go', 'gremlins', 'Gathering files diff...\nGathering coverage... ', /gathering coverage/, null, null],
+  ['py', 'mutmut', '⠋ Running stats\n    done\n', /stats run/, '⠙ 120/400  \u{1F389} 100 \u{1FAE5} 0 ⏰ 0 \u{1F914} 0 \u{1F641} 20 \u{1F507} 0 \u{1F9D9} 0\n', 'mutation testing'],
+];
+
+for (const [kind, tool, marker, stepRe, progress, progressStep] of CAP_RIGS) {
+  test(`C6 (${tool}): a capped run returns promptly, kills the tool, and names the step, the counts and the keys to raise`, async () => {
+    const { runMutate } = await import('../lib/mutate.mjs');
+    const p = await rig(kind, { nodeModules: kind === 'js', version: kind === 'py' ? '3.8.0' : undefined,
+      extra: { MUTATE_STUB_SLEEP: '30', MUTATE_STUB_CHILD: '1', MUTATE_STUB_OUT: marker } });
+    try {
+      await cfgSet(p.dir, { cap_seconds: 2 });
+      const t0 = Date.now();
+      const res = await runMutate(p.dir, p.slug1, { env: p.env });
+      assert.ok(Date.now() - t0 < 8000, `took ${Date.now() - t0}ms`);
+      assert.equal(res.capped, true); assert.equal(res.outcome, 'incomplete');
+      assert.match(res.cap.step, stepRe);
+      assert.equal(res.cap.tested, 0);
+      assert.deepEqual(res.cap.keys, [`mutation.phases.1.cap_seconds`, 'mutation.cap_seconds']);
+      assert.equal(res.cap.source, 'project');
+      await new Promise((x) => setTimeout(x, 300));
+      for (const pid of readFileSync(p.pids, 'utf8').split(' ').map(Number)) assert.equal(alive(pid), false);
+      if (progress) {
+        const p2 = await rig(kind, { nodeModules: kind === 'js', version: kind === 'py' ? '3.8.0' : undefined,
+          extra: { MUTATE_STUB_SLEEP: '30', MUTATE_STUB_OUT: marker + progress } });
+        try {
+          await cfgSet(p2.dir, { cap_seconds: 2 });
+          const r2 = await runMutate(p2.dir, p2.slug1, { env: p2.env });
+          assert.equal(r2.cap.step, progressStep);
+          assert.equal(r2.cap.tested, 120); assert.equal(r2.cap.total, 400);
+        } finally { done(p2); }
+      }
+    } finally { done(p); }
+  });
+}
+
+test('C6: a run that prints nothing reports step null', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('js', { nodeModules: true, extra: { MUTATE_STUB_SLEEP: '30' } });
+  try {
+    await cfgSet(p.dir, { cap_seconds: 1 });
+    const res = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(res.cap.step, null);
+  } finally { done(p); }
+});
+
+test('C6: the phase cap beats the project cap for that phase only; with no setting the cap is 600 s from the default', async () => {
+  const { runMutate, mutationSettings } = await import('../lib/mutate.mjs');
+  const p = await rig('js', { report: 'stryker-mutation.json', nodeModules: true });
+  try {
+    assert.deepEqual(mutationSettings(p.dir, 1).cap, { seconds: 600, source: 'default', keys: ['mutation.phases.1.cap_seconds', 'mutation.cap_seconds'] });
+    await cfgSet(p.dir, { cap_seconds: 100, phases: { 1: { cap_seconds: 60 } } });
+    const one = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(one.cap.source, 'phase'); assert.equal(one.cap_seconds, 60);
+    assert.equal(one.capped, false); assert.equal(one.outcome, 'survivors');
+    const two = await runMutate(p.dir, p.slug2, { env: p.env });
+    assert.equal(two.cap.source, 'project'); assert.equal(two.cap_seconds, 100);
+    const w = [];
+    await cfgSet(p.dir, { cap_seconds: 'soon', phases: { 1: { cap_seconds: -1 } } });
+    assert.equal(mutationSettings(p.dir, '01', w).cap.source, 'default');
+    assert.equal(w.length, 2);
+  } finally { done(p); }
+});

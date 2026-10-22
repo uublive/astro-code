@@ -2660,13 +2660,16 @@ async function main() {
         if (res.error) console.log(`⚠ ${res.error}`);
         for (const m of res.survivors) console.log(`⚠ ${m.file}:${m.line} ${m.mutator} ${m.status}`);
         if (res.capped) {
-          const left = res.not_run.length ? `${res.not_run.length} mutants` : '';
-          const files = res.not_run_files.length ? `${res.not_run_files.length} file(s): ${res.not_run_files.join(', ')}` : '';
-          console.log(`⚠ capped at ${res.cap_seconds}s — not run: ${[left, files].filter(Boolean).join(' + ') || 'unknown'}${res.not_run_note ? ` (${res.not_run_note})` : ''}`);
+          // Name the step, how far it got and the key to raise (D4); the cap is doubled as a first guess.
+          const cp = res.cap;
+          const n = res.reproduce.match(/ac mutate (\d+)/)?.[1] ?? '<n>';
+          console.log(`⚠ cap reached after ${res.cap_seconds}s during ${cp.step ?? 'step unknown'} — ${cp.tested ?? 0} of ${cp.total ?? '?'} mutants tested; raise for this phase: ac config set mutation.phases.${n}.cap_seconds ${res.cap_seconds * 2}`);
+          if (res.not_run_files.length) console.log(`⚠ not run: ${res.not_run_files.length} file(s): ${res.not_run_files.join(', ')}${res.not_run_note ? ` (${res.not_run_note})` : ''}`);
         } else if (res.outcome === 'incomplete' && res.not_run.length) {
           console.log(`⚠ incomplete — ${res.not_run.length} mutants not run`);
         }
         for (const w of res.warnings) console.log(`⚠ ${w}`);
+        if (res.log) console.log(`log: ${res.log}`);
       }
       return;
     }

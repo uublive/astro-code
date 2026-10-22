@@ -102,7 +102,7 @@ test('C4: default cap 600; a 2s cap returns fast, capped, with not-run listed an
     assert.equal(res.cap_seconds, 2); assert.equal(res.capped, true); assert.equal(res.outcome, 'incomplete');
     assert.ok(res.not_run.length > 0);
     const h = ac(p, ['mutate', '1']);
-    assert.match(h.stdout, /^⚠ capped at 2s — not run: 1 mutants/m);
+    assert.match(h.stdout, /^⚠ cap reached after 2s during step unknown — \d+ of \d+ mutants tested; raise for this phase: ac config set mutation\.phases\.1\.cap_seconds 4$/m);
     await new Promise((x) => setTimeout(x, 300));
     for (const pid of readFileSync(p.pids, 'utf8').split(' ').map(Number)) assert.equal(alive(pid), false);
   } finally { done(p); }
@@ -234,5 +234,20 @@ test('C12: ac mutate setup writes the 3.x keys under a 3.8 mutmut, the 2.x keys 
     const q = ac(p, ['mutate', 'setup']);
     assert.match(q.stdout, /pyproject\.toml has \[tool\.mutmut\]/);
     assert.equal(existsSync(join(p.dir, 'setup.cfg')), false, 'nothing written when pyproject owns the config');
+  } finally { done(p); }
+});
+
+// ---- Phase 48 t11 — the per-phase cap through `ac config set`, and the log path last ----
+test('C6/C7: ac config set mutation.phases.<n>.cap_seconds applies to that phase only; the human output ends with the log path', async () => {
+  const p = await rig('js', { report: 'stryker-mutation.json', nodeModules: true });
+  try {
+    assert.equal(ac(p, ['config', 'set', 'mutation.phases.1.cap_seconds', '60']).status, 0);
+    const one = JSON.parse(ac(p, ['mutate', '1', '--json']).stdout);
+    assert.equal(one.cap.source, 'phase'); assert.equal(one.cap_seconds, 60);
+    const two = JSON.parse(ac(p, ['mutate', '2', '--json']).stdout);
+    assert.equal(two.cap.source, 'default'); assert.equal(two.cap_seconds, 600);
+    const h = ac(p, ['mutate', '1']);
+    const lines = h.stdout.trim().split('\n');
+    assert.match(lines[lines.length - 1], /^log: \.astrocode\/\.local\/mutate-runs\/0?1-.*\.log$/);
   } finally { done(p); }
 });
