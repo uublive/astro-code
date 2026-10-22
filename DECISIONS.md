@@ -558,3 +558,8 @@ _2026-10-22 · at 4551842_
 
 **Why:** Waupaca phase 26: whole-file scope gave 15,022 mutants and a 13-minute full-suite baseline outlasted the cap, while untagged criteria kept the verifier in endless hand-made rounds (phase 48, Matteo)
 
+## ADR-085 — The mutation tool's result is the code-checked bar for every test-strength criterion, tagged or not: when the verifier uses ac mutate for a criterion it marks it test-strength in the verdict, ac verdict record then applies the [mutation] gate, and the mark is sticky for the phase (amends ADR-084's tag-only gate)
+_2026-10-22 · at 8c4b061_
+
+**Why:** Untagged criteria (Waupaca phase 26) left the verifier to decide test strength alone, the loop that never closed; the verifier declaring and code holding it needs no edits to old criteria (phase 49, Matteo)
+
