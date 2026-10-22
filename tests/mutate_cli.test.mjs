@@ -44,7 +44,7 @@ test('C1: --json twice is identical and complete; human output shows the same co
     const h = ac(p, ['mutate', '1']);
     assert.equal(h.status, 0, h.stderr);
     assert.match(h.stdout, /^⚠ Stryker \(package\.json → stryker\) · 7 mutants: 2 killed · 1 timeout · 1 survived · 1 no-coverage · 2 error$/m);
-    assert.match(h.stdout, /^scope: src\/a\.mjs$/m);
+    assert.match(h.stdout, /^scope: changed-lines — 1 files, 1 line ranges \(line ranges the phase wrote/m);
     assert.match(h.stdout, /^⚠ src\/a\.mjs:10 ArithmeticOperator survived$/m);
     assert.match(h.stdout, /^⚠ src\/a\.mjs:15 ConditionalExpression no-coverage$/m);
   } finally { done(p); }
@@ -52,8 +52,8 @@ test('C1: --json twice is identical and complete; human output shows the same co
 
 test('C2: only the first phase\'s files reach the tool, for JS, Go and Python', async () => {
   const cases = [
-    ['js', 'stryker-mutation.json', (l) => { const a = l.find((x) => x.argv[0] === 'run').argv; return a[a.indexOf('--mutate') + 1]; }, 'src/a.mjs', true],
-    ['go', 'gremlins.json', (l) => l.find((x) => x.argv[0] === 'unleash').argv.filter((a, i, all) => all[i - 1] === '--exclude-files').sort().join(' '), '^b\\.go$ ^c\\.go$', false],
+    ['js', 'stryker-mutation.json', (l) => { const a = l.find((x) => x.argv[0] === 'run').argv; return a[a.indexOf('--mutate') + 1]; }, 'src/a.mjs:1-30', true],
+    ['go', 'gremlins.json', (l) => l.find((x) => x.argv[0] === 'unleash').argv.filter((a) => a === '--exclude-files').length, 0, false],
     ['py', 'mutmut2-junit.xml', (l) => l.find((x) => x.argv[0] === 'run').argv.join(' '), 'run --paths-to-mutate src/a.py', false],
   ];
   for (const [kind, report, pick, want, nm] of cases) {
@@ -62,7 +62,7 @@ test('C2: only the first phase\'s files reach the tool, for JS, Go and Python', 
       const r = ac(p, ['mutate', '1']);
       assert.equal(r.status, 0, r.stderr);
       assert.equal(pick(logLines(p.log)), want, kind);
-      assert.match(r.stdout, new RegExp(`^scope: ${{ js: 'src/a\\.mjs', go: 'a\\.go', py: 'src/a\\.py' }[kind]}$`, 'm'));
+      assert.match(r.stdout, /^scope: changed-lines — 1 files(?:, 1 line ranges)? \(/m);
     } finally { done(p); }
   }
 });

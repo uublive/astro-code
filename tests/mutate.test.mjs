@@ -77,11 +77,11 @@ test('C2 scope: the phase\'s own remediation commits (phase NN remediate-cK) are
   } finally { done(p); }
 });
 
-test('mutmut 3 globs a package __init__.py as the package itself (its mutants are named pkg.x_f__mutmut_N)', async () => {
+test('mutmut 3 runs exactly the globs it is given (naming lives in lib/pyscan.mjs; tests/mutate_scope.test.mjs covers a package __init__.py)', async () => {
   const { MUTATION_TOOLS } = await import('../lib/mutate.mjs');
   const row = MUTATION_TOOLS.find((r) => r.id === 'mutmut');
-  const { argv } = row.build({ major: 3, bin: 'mutmut', scope: ['src/pkg/__init__.py', 'src/pkg/a.py'] });
-  assert.deepEqual(argv, ['mutmut', 'run', 'pkg.*', 'pkg.a.*']);
+  const { argv } = row.build({ major: 3, bin: 'mutmut', scope: ['src/pkg/a.py'], mutantGlobs: ['pkg.a.x_f__mutmut_*'] });
+  assert.deepEqual(argv, ['mutmut', 'run', 'pkg.a.x_f__mutmut_*']);
 });
 
 test('C3 detection: manifest picks the tool and says why; mutation.tool overrides; no manifest is no-tool', async () => {
@@ -124,15 +124,15 @@ test('C1/C2 runMutate (stryker): every mutant present, statuses counted, argv ca
     assert.equal(r.reproduce, 'ac mutate 1 --json');
     assert.equal(r.head, sh(p.dir, 'rev-parse', 'HEAD').stdout.trim());
     const [call] = logLines(p.log).filter((l) => l.argv[0] === 'run');
-    assert.equal(call.argv[call.argv.indexOf('--mutate') + 1], 'src/a.mjs');
-    assert.equal(r.command, 'stryker run --mutate src/a.mjs --reporters json');
+    assert.equal(call.argv[call.argv.indexOf('--mutate') + 1], 'src/a.mjs:1-30');
+    assert.equal(r.command, 'stryker run --mutate src/a.mjs:1-30 --reporters json');
     const again = await runMutate(p.dir, p.slug1, { env: p.env });
     const strip = ({ started_at, duration_ms, log, ...rest }) => rest;
     assert.deepEqual(strip(again), strip(r));
   } finally { done(p); }
 });
 
-test('C2 gremlins excludes every other tracked .go file; mutmut 2.x gets --paths-to-mutate; mutmut 3.x gets globs', async () => {
+test('C2 gremlins gets --diff against the phase base; mutmut 2.x gets --paths-to-mutate; mutmut 3.x gets function globs', async () => {
   const { runMutate } = await import('../lib/mutate.mjs');
   let p = await rig('go', { report: 'gremlins.json' });
   try {
@@ -140,8 +140,8 @@ test('C2 gremlins excludes every other tracked .go file; mutmut 2.x gets --paths
     assert.equal(r.tool.id, 'gremlins'); assert.deepEqual(r.scope, ['a.go']);
     assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 1, 'no-coverage': 1, error: 1 });
     const argv = logLines(p.log).find((l) => l.argv[0] === 'unleash').argv;
-    const ex = argv.filter((a, i) => argv[i - 1] === '--exclude-files');
-    assert.deepEqual(ex.sort(), ['^b\\.go$', '^c\\.go$']);
+    assert.equal(argv[argv.indexOf('--diff') + 1], sh(p.dir, 'rev-parse', `${sh(p.dir, 'log', '--format=%H', '--grep', '(phase 1 t1)', '--fixed-strings').stdout.trim()}^`).stdout.trim());
+    assert.equal(argv.includes('--exclude-files'), false, 'no blanket exclusion list');
   } finally { done(p); }
   p = await rig('py', { report: 'mutmut2-junit.xml' });
   try {
@@ -154,7 +154,7 @@ test('C2 gremlins excludes every other tracked .go file; mutmut 2.x gets --paths
   p = await rig('py', { report: 'mutmut3-results.txt', version: 'mutmut, version 3.2.0' });
   try {
     const r = await runMutate(p.dir, p.slug1, { env: p.env });
-    assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'run').argv, ['run', 'a.*']);
+    assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'run').argv, ['run', 'a.x_add__mutmut_*', 'a.x_mul__mutmut_*', 'a.x_sub__mutmut_*']);
     assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 2, 'no-coverage': 1, error: 1 });
     assert.equal(r.complete, false, 'a "not checked" mutant means the run is not complete');
     assert.equal(r.not_run.length, 1);

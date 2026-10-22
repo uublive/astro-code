@@ -39,6 +39,18 @@ export function writeLines(dir, file, n, edits = []) {
   put(dir, file, `${lines.join('\n')}\n`);
 }
 
+// A 30-line body for the files a phase writes. The fixture reports put mutants on lines up to 22, and
+// since phase 48 a mutant outside the lines the phase wrote is out of scope, so the files must be long
+// enough to hold them. Python gets three 10-line functions (add, sub, mul) because mutmut 3 mutates
+// functions: the fixture names `x_add` / `x_sub` / `x_mul`.
+function body(kind, tag) {
+  const n = 30;
+  if (kind === 'py') {
+    return ['add', 'sub', 'mul'].map((f) => [`def ${f}(x):`, ...Array.from({ length: 8 }, (_, i) => `    # ${tag} ${f} ${i + 1}`), '    return x'].join('\n')).join('\n') + '\n';
+  }
+  return Array.from({ length: n }, (_, i) => `// ${tag} ${i + 1}`).join('\n') + '\n';
+}
+
 /** Phase 1 changed a (+ a test file), phase 2 changed b, c belongs to no phase. */
 export async function makeProject(kind = 'js') {
   const L = LAYOUT[kind];
@@ -52,10 +64,10 @@ export async function makeProject(kind = 'js') {
   put(dir, L.manifest[0], L.manifest[1]);
   put(dir, L.c, '// c\n');
   commit(dir, 'init');
-  put(dir, L.a, '// a\n');
+  put(dir, L.a, body(kind, 'a'));
   put(dir, L.test, '// test\n');
   commit(dir, 'feat: a (phase 1 t1)');
-  put(dir, L.b, '// b\n');
+  put(dir, L.b, body(kind, 'b'));
   commit(dir, 'feat: b (phase 2 t1)');
   return { dir, kind, L, slug1: findPhase(dir, '1').slug, slug2: findPhase(dir, '2').slug };
 }

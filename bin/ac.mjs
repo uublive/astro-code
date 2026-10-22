@@ -540,7 +540,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full recorded verdict)
   ac verdict plan <phase> [--full] [--json]  should the next verify narrow? (ADR-079)
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
-  ac mutate <phase> [--json]          run the project's mutation tool on the phase's changed files (ADR-083)
+  ac mutate <phase> [--json]          run the project's mutation tool on the lines the phase changed (ADR-083, ADR-084)
   ac mutate --check [<phase>] [--json]  which tool applies, is it installed, how to install it (read-only)
   ac mutate setup                     write a minimal tool config if absent (the only writer; installs nothing)
   ac mutate dismiss [<tool>]          stop showing the full install suggestion for this project
@@ -2656,7 +2656,13 @@ async function main() {
         const total = Object.values(c).reduce((n, v) => n + v, 0);
         const sym = res.outcome === 'clean' ? '✓' : '⚠';
         console.log(`${sym} ${via} · ${total} mutants: ${c.killed} killed · ${c.timeout} timeout · ${c.survived} survived · ${c['no-coverage']} no-coverage · ${c.error} error`);
-        if (res.scope.length) console.log(`scope: ${res.scope.join(', ')}`);
+        if (res.scope.length) {
+          // Never the joined file list (it scales with the phase): the source, the sizes and why.
+          const d = res.scope_detail;
+          const unit = d.narrowed === 'functions' ? `${Object.values(d.functions ?? {}).reduce((n, q) => n + q.length, 0)} functions`
+            : d.narrowed === 'files' ? null : `${d.line_ranges} line ranges`;
+          console.log(`scope: ${d.source} — ${res.scope.length} files${unit ? `, ${unit}` : ''} (${d.why})`);
+        }
         if (res.error) console.log(`⚠ ${res.error}`);
         for (const m of res.survivors) console.log(`⚠ ${m.file}:${m.line} ${m.mutator} ${m.status}`);
         if (res.capped) {
