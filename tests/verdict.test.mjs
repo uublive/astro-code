@@ -305,7 +305,7 @@ test('verifiedGate passes when CRITERIA.md is absent (self-derived bar)', async 
 // ---- Phase 47 t1 — mutation evidence: marker, contract, C9 gate (ADR-083) ----
 const surv = (o = {}) => ({ file: 'src/a.mjs', line: 3, mutator: 'ArithmeticOperator', status: 'survived', triage: 'equivalent', justification: 'dead branch', ...o });
 const mut = (o = {}) => ({
-  outcome: 'survivors', tool: 'stryker', version: '8.0.0', command: 'stryker run', capped: false, complete: true,
+  outcome: 'survivors', tool: 'stryker', version: '8.0.0', command: 'stryker run', head: 'abc1234', capped: false, complete: true,
   counts: { killed: 4, survived: 1, timeout: 0, 'no-coverage': 0, error: 0 }, survivors: [surv()], fallback: null, ...o,
 });
 
@@ -371,10 +371,11 @@ test('mutationGate: fallback only for tool-missing/no-tool/no-scope with a one-l
 });
 
 test('recordVerdict keeps evidence, fails a breaching pass with refused, and carries prior evidence', async () => {
-  const { recordVerdict } = await import('../lib/verdict.mjs');
+  const { recordVerdict, saveMutateRun } = await import('../lib/verdict.mjs');
   const s = sandbox(2);
   try {
     writeFileSync(s.crit, '### C1 [mutation] — strong\n### C2 — plain\n');
+    saveMutateRun(s.root, SLUG, { ...mut(), tool: { id: 'stryker' } });
     const r = (m, passed = true) => ({ mode: 'full', criteria: [{ id: 'C1', passed, ...(m ? { mutation: m } : {}) }, { id: 'C2', passed: true }] });
     let out = await recordVerdict(s.root, SLUG, r(mut()));
     assert.equal(out.passed, true);
@@ -397,4 +398,30 @@ test('mutationGate: a fallback beside real run counts or survivors is refused', 
   const fb = { reason: 'mutation tool not installed — AI mutants used' };
   assert.equal(mutationGate({ marked: true, mutation: mut({ outcome: 'tool-missing', fallback: fb, counts: { ...zero, survived: 2 }, survivors: [surv({ triage: 'equivalent', justification: 'x' })] }) }).ok, false);
   assert.equal(mutationGate({ marked: true, mutation: mut({ outcome: 'tool-missing', fallback: fb, counts: zero, survivors: [] }) }).ok, true);
+});
+
+test('recordVerdict binds evidence to the kept ac mutate run: no run, or an edited survivor list, is refused (C9)', async () => {
+  const { recordVerdict, saveMutateRun } = await import('../lib/verdict.mjs');
+  const s = sandbox(2);
+  try {
+    writeFileSync(s.crit, '### C1 [mutation] — strong\n### C2 — plain\n');
+    const r = (m) => ({ mode: 'full', criteria: [{ id: 'C1', passed: true, mutation: m }, { id: 'C2', passed: true }] });
+    const counts = { killed: 4, survived: 2, timeout: 0, 'no-coverage': 1, error: 0 };
+    const tool = [surv({ id: '2' }), surv({ id: '3' }), surv({ id: '5', line: 7, mutator: 'EqualityOperator', status: 'no-coverage' })];
+    const ev = (survivors, o = {}) => mut({ counts, survivors, ...o });
+    const refused = async (m, re) => { const out = await recordVerdict(s.root, SLUG, r(m)); assert.equal(out.passed, false); assert.match(out.refused[0].reason, re); };
+    // no run kept on this machine
+    await refused(ev(tool), /no `ac mutate` run on record/);
+    saveMutateRun(s.root, SLUG, { ...ev(tool), tool: { id: 'stryker' } });
+    assert.equal((await recordVerdict(s.root, SLUG, r(ev(tool)))).passed, true);
+    // #3 replaced by #2 with its id dropped; by a respelled path; by an invented survivor
+    const { id: _drop, ...noId } = surv({ id: '2' });
+    await refused(ev([tool[0], noId, tool[2]]), /#3 from the `ac mutate` run is not triaged/);
+    await refused(ev([tool[0], surv({ id: '2', file: './src/a.mjs' }), tool[2]]), /#3 .*not triaged/);
+    await refused(ev([tool[0], surv({ id: '99' }), tool[2]]), /#3 .*not triaged/);
+    // counts lowered to hide #3; another commit; another outcome
+    await refused(ev([tool[0], tool[2]], { counts: { ...counts, survived: 1 } }), /counts 1 "survived"/);
+    await refused(ev(tool, { head: 'fff0000' }), /last `ac mutate` run graded abc1234/);
+    await refused(ev([], { outcome: 'tool-missing', fallback: { reason: 'mutation tool not installed — AI mutants used' }, counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 } }), /outcome "tool-missing" but the `ac mutate` run says "survivors"/);
+  } finally { done(s); }
 });

@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { initPlanning } from '../lib/planning.mjs';
 import { addPhase, findPhase } from '../lib/roadmap.mjs';
+import { saveMutateRun } from '../lib/verdict.mjs';
 
 const AC = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ac.mjs');
 const ac = (cwd, ...a) => spawnSync(process.execPath, [AC, ...a], { cwd, encoding: 'utf8' });
@@ -160,15 +161,19 @@ const mut47 = (o = {}) => ({
 });
 const rec47 = (p, m) => ac(p.dir, 'verdict', 'record', '1', '--result',
   JSON.stringify({ mode: 'full', criteria: [{ id: 'C1', passed: true, ...(m ? { mutation: m } : {}) }] }));
+// The `ac mutate` run the evidence is bound to (C9): the same facts, as the tool produced them.
+const keep47 = (p, m) => saveMutateRun(p.dir, p.slug, { ...m, tool: { id: m.tool } });
 
 test('phase 47 C8: evidence round-trips field for field; a fallback keeps its reason', async () => {
   const p = await project(1);
   try {
     writeFileSync(p.crit, '### C1 [mutation] — strong tests\n- **Observe:** y\n');
+    keep47(p, mut47());
     let r = rec47(p, mut47());
     assert.equal(r.status, 0, r.stderr);
     assert.deepEqual(JSON.parse(readFileSync(p.vfile, 'utf8')).criteria[0].mutation, mut47());
     const fb = mut47({ outcome: 'tool-missing', fallback: { reason: 'mutation tool not installed — AI mutants used' }, counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 }, survivors: [] });
+    keep47(p, fb);
     r = rec47(p, fb);
     assert.equal(JSON.parse(r.stdout).passed, true);
     assert.equal(JSON.parse(readFileSync(p.vfile, 'utf8')).criteria[0].mutation.fallback.reason, 'mutation tool not installed — AI mutants used');
@@ -186,13 +191,17 @@ test('phase 47 C9: breaches are saved failed with refused; the justified control
       ['e', mut47({ capped: true, complete: false, outcome: 'incomplete' }), /capped/],
     ];
     for (const [name, m, re] of cases) {
+      keep47(p, m);
       const out = JSON.parse(rec47(p, m).stdout);
       assert.equal(out.passed, false, name);
       assert.match(out.refused[0].reason, re, name);
       assert.equal(JSON.parse(readFileSync(p.vfile, 'utf8')).criteria[0].status, 'failed', name);
     }
+    keep47(p, mut47());
     const out = JSON.parse(rec47(p, mut47()).stdout);
     assert.equal(out.passed, true);
+    // an edited survivor list no longer matches the kept run
+    assert.match(JSON.parse(rec47(p, mut47({ survivors: [surv47({ line: 9 })] })).stdout).refused[0].reason, /not triaged/);
     assert.equal(JSON.parse(readFileSync(p.vfile, 'utf8')).criteria[0].mutation.survivors[0].justification, 'dead branch');
     // marked, no evidence -> failed
     assert.equal(JSON.parse(rec47(p, null).stdout).passed, false);

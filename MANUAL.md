@@ -616,7 +616,10 @@ the survivors.
   is an `error` too, because its report would be an old cache; a mutant the tool never tested is
   not run, and one a `pre_mutation` hook skipped is ignored, never killed.
 - **Triage.** A survivor that is a real test gap fails the criterion; an equivalent mutant passes
-  with a one-line justification, kept in `VERDICT.json`. `ac verdict record` enforces this in code.
+  with a one-line justification, kept in `VERDICT.json`. `ac verdict record` enforces this in code,
+  and binds the evidence to the last `ac mutate` run for the phase on this machine (kept, never
+  committed, in `.astrocode/.local/mutate-runs/`): its commit, counts and survivors must match, so
+  an edited survivor list cannot hide one nobody triaged.
 - **No tool.** Verification falls back to AI-invented mutants and says why. The full install
   suggestion shows once per project per tool, then one line (`mutation tool not installed — AI
   mutants used`). The memory is **local, never committed**: `.astrocode/.local/mutate-notices.json`,
