@@ -6,15 +6,21 @@
       "number": 47,
       "name": "Deterministic mutation testing in the verifier",
       "slug": "47-deterministic-mutation-testing-in-the",
-      "status": "verified",
-      "milestone": 13
+      "status": "complete",
+      "milestone": 13,
+      "accepted_by": "claude",
+      "accepted_kind": "agent",
+      "accepted_at": "2026-10-22T13:48:24.408Z"
     },
     {
       "number": 48,
       "name": "Mutation testing that scales to real projects",
       "slug": "48-mutation-testing-that-scales-to-real",
-      "status": "verified",
-      "milestone": 13
+      "status": "complete",
+      "milestone": 13,
+      "accepted_by": "claude",
+      "accepted_kind": "agent",
+      "accepted_at": "2026-10-22T13:48:24.589Z"
     },
     {
       "number": 49,
