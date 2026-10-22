@@ -2657,7 +2657,7 @@ async function main() {
         const c = res.counts;
         const total = Object.values(c).reduce((n, v) => n + v, 0);
         const sym = res.outcome === 'clean' ? '✓' : '⚠';
-        console.log(`${sym} ${via} · ${total} mutants: ${c.killed} killed · ${c.timeout} timeout · ${c.survived} survived · ${c['no-coverage']} no-coverage · ${c.error} error${res.ignored_count ? ` · ${res.ignored_count} ignored` : ''}`);
+        console.log(`${sym} ${via} · ${total} mutants: ${c.killed} killed · ${c.timeout} timeout · ${c.survived} survived · ${c['no-coverage']} no-coverage · ${c.error} error${res.ignored_count ? ` (+ ${res.ignored_count} ignored by the tool)` : ''}`);
         if (res.scope.length) {
           // Never the joined file list (it scales with the phase): the source, the sizes and why.
           const d = res.scope_detail;

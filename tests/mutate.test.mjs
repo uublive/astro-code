@@ -492,7 +492,9 @@ test('C7: the log sits beside the run, holds both streams, is never committed an
     await runMutate(p.dir, p.slug2, { env: p.env });
     assert.match(readFileSync(join(p.dir, res.log), 'utf8'), /MARK-2/);
     assert.equal(rd11(runDirOf(p)).filter((n) => n.endsWith('.log')).length, 2);
-    const after = rd11(td11()).filter((n) => n.startsWith('ac-mutate-') && !before.has(n) && !n.startsWith('ac-mutate-proj-') && !n.startsWith('ac-mutate-home-'));
+    // Only the shape runMutate's old run dir had (`mkdtemp('ac-mutate-')`: six random characters);
+    // other test files running alongside make their own `ac-mutate-<word>-*` dirs in the same TMPDIR.
+    const after = rd11(td11()).filter((n) => /^ac-mutate-[A-Za-z0-9]{6}$/.test(n) && !before.has(n));
     assert.deepEqual(after, [], 'nothing lands only in the system temp dir');
   } finally { done(p); }
 });
@@ -630,4 +632,60 @@ test('C12: mutmut setup finds a top-level package when there is no src/ or lib/'
   md10(join(d, 'tests'), { recursive: true }); wf10(join(d, 'tests', '__init__.py'), '');
   assert.match(row.setup(d, { major: 3 }).content, /^\[mutmut\]\nsource_paths=mypkg\/\npytest_add_cli_args_test_selection=tests\/\n$/);
   assert.match(row.setup(mk10(join(td10(), 'ac-setup-')), { major: 3 }).content, /source_paths=src\//);
+});
+
+// ---- Phase 48 remediate-c1: C6 tested count, C13 no-scope with the tool installed ----
+import { addPhase as ap48, findPhase as fp48 } from '../lib/roadmap.mjs';
+
+test('C6 a Gremlins cap counts only the mutants it tested, never SKIPPED or NOT COVERED', async () => {
+  const { stepScanner, MUTATION_TOOLS } = await import('../lib/mutate.mjs');
+  const sc = stepScanner(MUTATION_TOOLS.find((r) => r.id === 'gremlins'));
+  sc.feed(['SKIPPED CONDITIONALS_BOUNDARY at a.go:3', 'SKIPPED ARITHMETIC_BASE at b.go:9', 'NOT COVERED INCREMENT_DECREMENT at a.go:7',
+    'KILLED CONDITIONALS_NEGATION at a.go:5', 'TIMED OUT ARITHMETIC_BASE at a.go:6', 'LIVED INVERT_NEGATIVES at a.go:8', ''].join('\n'));
+  assert.equal(sc.state.tested, 3);
+});
+
+test('C13 a tests-only phase with the tool installed is no-scope that licenses no AI mutants, and is never a pass', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const { recordVerdict } = await import('../lib/verdict.mjs');
+  const p = await rig('js', { report: 'stryker-mutation.json' });
+  try {
+    await ap48(p.dir, { number: 3, name: 'Tests only' });
+    writeFileSync(join(p.dir, 'tests', 'a.test.mjs'), '// stronger test\n');
+    commit(p.dir, 'test: pin a (phase 3 t1)');
+    const slug = fp48(p.dir, '3').slug;
+    const r = await runMutate(p.dir, slug, { env: p.env });
+    assert.equal(r.outcome, 'no-scope');
+    assert.equal(r.tool_installed, true);
+    assert.match(r.fallback.reason, /the tool is installed, so no AI mutants/);
+    assert.doesNotMatch(r.fallback.reason, /AI mutants used/);
+    assert.match(r.fallback.reason, /mutation\.files/);
+    // a tagged criterion recorded as passed on that fallback is refused
+    const crit = join(p.dir, '.astrocode', 'phases', slug, 'CRITERIA.md');
+    mkdirSync(join(p.dir, '.astrocode', 'phases', slug), { recursive: true });
+    writeFileSync(crit, '### C1 [mutation] — strong\n');
+    const m = { outcome: 'no-scope', tool: 'stryker', head: r.head, capped: false, complete: false, counts: r.counts, survivors: [], fallback: { reason: r.fallback.reason } };
+    const out = await recordVerdict(p.dir, slug, { mode: 'full', criteria: [{ id: 'C1', passed: true, mutation: m }] });
+    assert.equal(out.passed, false);
+    assert.match(out.refused[0].reason, /tool is installed, so a no-scope run is not a pass/);
+  } finally { done(p); }
+});
+
+test('C4 mutmut 3: a scope decided by mutation.files and mutation.exclude names both settings', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('py', { report: 'mutmut3-results.txt', version: 'mutmut, version 3.8.0' });
+  try {
+    writeFileSync(join(p.dir, 'src', 'extra.py'), 'def g():\n    return 1\n');
+    commit(p.dir, 'chore: extra (no phase)');
+    sh(p.dir, 'config', 'user.name', 't');
+    const cfgFile = join(p.dir, '.astrocode', 'config.json');
+    const cfg = JSON.parse(readFileSync(cfgFile, 'utf8'));
+    cfg.mutation = { ...(cfg.mutation ?? {}), files: ['src/extra.py'], exclude: ['src/a.py'] };
+    writeFileSync(cfgFile, JSON.stringify(cfg, null, 2));
+    commit(p.dir, 'chore: mutation settings');
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.match(r.scope_detail.why, /mutation\.files decides the scope: 1 whole file/);
+    assert.match(r.scope_detail.why, /left out by mutation\.exclude/);
+    assert.doesNotMatch(r.scope_detail.why, /functions holding changed lines/);
+  } finally { done(p); }
 });

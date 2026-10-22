@@ -147,7 +147,10 @@ reproducible list, and you judge only what it leaves behind.
    keep the result's `fallback.reason` in the evidence (a one-line reason, never empty) and
    invent mutants by hand for that criterion as before. The exception is a `no-scope` whose
    reason names `mutation.exclude`: the tool is installed and the user excluded those files, so
-   record the reason and invent no mutants by hand for them. `not-configured` (the tool is installed
+   record the reason and invent no mutants by hand for them. A `no-scope` whose reason says the
+   tool is installed (the phase changed only tests, say) is the same: invent no mutants by hand; a
+   tagged criterion **fails** with "bring the code under test into scope with `mutation.files`" as
+   the next step (the user's call — you stay read-only). `not-configured` (the tool is installed
    but has no configuration) **fails** the criterion with `ac mutate setup` as the next step, and
    you invent no mutants by hand.
 
