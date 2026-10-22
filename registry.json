@@ -659,6 +659,16 @@
       "branch": "develop",
       "claimed_at": "2026-10-21T22:09:44.583Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 48,
+      "milestone": 13,
+      "name": "Mutation testing that scales to real projects",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-22T08:16:56.042Z",
+      "status": "active"
     }
   ]
 }
