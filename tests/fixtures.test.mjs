@@ -253,3 +253,110 @@ test('ADR-054/C1/C6: a verbatim shipped RUN-CONTRACT.md reads as not-opted-in, n
   assert.match(res.stdout, /⊡/, 'must read as not-checked, never as clean silence');
   assert.strictEqual(res.stderr, '');
 });
+
+// ── phase 48 t1 — changed lines in HEAD coordinates, the phase base ──────────────
+
+const nLines = (n, tag = 'orig') => Array.from({ length: n }, (_, i) => `line ${i + 1} ${tag}`);
+// Rewrite 1-based inclusive ranges of an array of lines, return the file text.
+function edited(lines, ranges, tag) {
+  const out = [...lines];
+  for (const [a, b] of ranges) for (let i = a; i <= b; i++) out[i - 1] = `line ${i} ${tag}`;
+  return `${out.join('\n')}\n`;
+}
+const mkMkdir = (dir) => git(['-C', dir, 'config', 'commit.gpgsign', 'false']);
+
+test('phase 48 P1: phaseChangedLines returns only the HEAD lines the phase stamps wrote (stamped, remediate, unstamped before and after)', async () => {
+  const { phaseChangedLines } = await import('../lib/fixtures.mjs');
+  const dir = mkRepo();
+  mkMkdir(dir);
+  const base = nLines(300);
+  commit(dir, { 'big.js': `${base.join('\n')}\n`, 'other.js': 'x\n' }, 'baseline');
+  commit(dir, { 'big.js': edited(base, [[200, 210]], 'unstamped') }, 'unstamped edit');
+  const afterUnstamped = edited(base, [[200, 210]], 'unstamped').trimEnd().split('\n');
+  commit(dir, { 'big.js': edited(afterUnstamped, [[40, 45]], 'p5') }, 'task (phase 5 t1)');
+  const afterT1 = edited(afterUnstamped, [[40, 45]], 'p5').trimEnd().split('\n');
+  commit(dir, { 'big.js': edited(afterT1, [[90, 91]], 'rem') }, 'fix (phase 5 remediate-c2)');
+  commit(dir, { 'other.js': 'y\n' }, 'later unstamped');
+  assert.deepEqual(phaseChangedLines(dir, '5', ['big.js', 'other.js']), { 'big.js': [[40, 45], [90, 91]] });
+  // a zero-padded stamp spelling counts too
+  const padded = mkRepo();
+  commit(padded, { 'a.js': 'one\ntwo\n' }, 'base');
+  commit(padded, { 'a.js': 'one\nTWO\n' }, 'edit (phase 05 t1)');
+  assert.deepEqual(phaseChangedLines(padded, '5', ['a.js']), { 'a.js': [[2, 2]] });
+});
+
+test('phase 48 P1: a new file is all in range; a later rewrite of a stamped line drops out; a pure deletion owns no lines', async () => {
+  const { phaseChangedLines } = await import('../lib/fixtures.mjs');
+  const dir = mkRepo();
+  commit(dir, { 'seed.txt': 's\n' }, 'baseline');
+  commit(dir, { 'new.js': 'a\nb\nc\nd\n', 'del.js': 'p\nq\nr\n' }, 'seed files');
+  commit(dir, { 'new.js': 'a\nb\nc\nd\n' }, 'noop-ish (phase 7 t1)');
+  assert.deepEqual(phaseChangedLines(dir, '7', ['new.js']), {}, 'a stamped commit that wrote nothing new owns nothing');
+  const d2 = mkRepo();
+  commit(d2, { 'seed.txt': 's\n' }, 'baseline');
+  commit(d2, { 'new.js': 'a\nb\nc\nd\n' }, 'create (phase 7 t1)');
+  assert.deepEqual(phaseChangedLines(d2, '7', ['new.js']), { 'new.js': [[1, 4]] });
+  commit(d2, { 'new.js': 'a\nB\nc\nd\n' }, 'unstamped rewrite');
+  assert.deepEqual(phaseChangedLines(d2, '7', ['new.js']), { 'new.js': [[1, 1], [3, 4]] });
+  // pure deletion
+  const d3 = mkRepo();
+  commit(d3, { 'f.js': '1\n2\n3\n4\n' }, 'baseline');
+  commit(d3, { 'f.js': '1\n4\n' }, 'delete (phase 7 t1)');
+  assert.deepEqual(phaseChangedLines(d3, '7', ['f.js']), {});
+});
+
+test('phase 48 P1: a rename-only stamped commit owns no lines; a rename plus an edit owns the edited lines at the new path', async () => {
+  const { phaseChangedLines } = await import('../lib/fixtures.mjs');
+  const dir = mkRepo();
+  const body = nLines(20).join('\n');
+  commit(dir, { 'old.js': `${body}\n` }, 'baseline');
+  git(['mv', 'old.js', 'renamed.js'], { cwd: dir });
+  git(['commit', '-qm', 'rename (phase 9 t1)'], { cwd: dir });
+  assert.deepEqual(phaseChangedLines(dir, '9', ['renamed.js']), {});
+  git(['mv', 'renamed.js', 'moved.js'], { cwd: dir });
+  writeFileSync(join(dir, 'moved.js'), edited(nLines(20), [[5, 5]], 'edit'));
+  git(['add', '-A'], { cwd: dir });
+  git(['commit', '-qm', 'move and edit (phase 9 t2)'], { cwd: dir });
+  assert.deepEqual(phaseChangedLines(dir, '9', ['moved.js']), { 'moved.js': [[5, 5]] });
+});
+
+test('phase 48 P2: phaseBase is the parent of the topologically oldest stamped commit, even off a merged side branch; a root stamp gives the empty tree', async () => {
+  const { phaseBase, phaseStampedShas } = await import('../lib/fixtures.mjs');
+  const dir = mkRepo();
+  commit(dir, { 'a.txt': '1\n' }, 'baseline');
+  const baseSha = git(['rev-parse', 'HEAD'], { cwd: dir }).stdout.trim();
+  const main = git(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir }).stdout.trim();
+  git(['checkout', '-qb', 'side'], { cwd: dir });
+  commit(dir, { 'b.txt': '1\n' }, 'side first (phase 3 t1)');
+  const first = git(['rev-parse', 'HEAD'], { cwd: dir }).stdout.trim();
+  git(['checkout', '-q', main], { cwd: dir });
+  commit(dir, { 'c.txt': '1\n' }, 'main work (phase 3 t2)');
+  git(['merge', '-q', '--no-ff', '-m', 'merge side', 'side'], { cwd: dir });
+  const pb = phaseBase(dir, '3');
+  assert.equal(pb.root, false);
+  assert.ok(phaseStampedShas(dir, '3').shas.has(pb.first), 'first is one of the stamped commits');
+  assert.ok([first, git(['rev-parse', 'HEAD^1'], { cwd: dir }).stdout.trim()].includes(pb.first));
+  assert.equal(pb.base, baseSha);
+  assert.equal(phaseStampedShas(dir, '3').shas.size, 2);
+  assert.equal(phaseBase(dir, '99'), null);
+  const rootRepo = mkRepo();
+  commit(rootRepo, { 'a.txt': '1\n' }, 'init (phase 4 t1)');
+  const rb = phaseBase(rootRepo, '4');
+  assert.equal(rb.root, true);
+  assert.equal(rb.base, git(['hash-object', '-t', 'tree', '/dev/null'], { cwd: rootRepo }).stdout.trim());
+});
+
+test('phase 48: pathMatches treats a trailing slash as a directory; phaseStampedPaths output is unchanged', async () => {
+  const { pathMatches, phaseStampedPaths } = await import('../lib/fixtures.mjs');
+  assert.equal(pathMatches('src/', 'src/a.js'), true);
+  assert.equal(pathMatches('src', 'src/a.js'), true);
+  assert.equal(pathMatches('src/a.js', 'src/b.js'), false);
+  const dir = mkRepo();
+  commit(dir, { 'x.txt': '1\n' }, 'baseline');
+  commit(dir, { 'a.txt': '1\n', 'b.txt': '1\n' }, 'work (phase 12 t1)');
+  commit(dir, { 'c.txt': '1\n' }, 'work (phase 12 remediate-c1)');
+  const r = phaseStampedPaths(dir, '12-name');
+  assert.equal(r.num, '12');
+  assert.deepEqual([...r.files].sort(), ['a.txt', 'b.txt', 'c.txt']);
+  assert.deepEqual(phaseStampedPaths(dir, 'nope'), { num: '', files: [] });
+});
