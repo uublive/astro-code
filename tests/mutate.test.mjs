@@ -118,7 +118,9 @@ test('C1/C2 runMutate (stryker): every mutant present, statuses counted, argv ca
     assert.equal(r.tool.id, 'stryker'); assert.equal(r.tool.version, '8.2.6'); assert.equal(r.tool.why, 'package.json → stryker');
     assert.deepEqual(r.scope, ['src/a.mjs']);
     assert.deepEqual(r.counts, { killed: 2, survived: 1, timeout: 1, 'no-coverage': 1, error: 2 });
-    assert.equal(r.mutants.length, 7); assert.equal(r.ignored.length, 1);
+    assert.equal(Object.values(r.counts).reduce((a, b) => a + b, 0), 7); assert.equal(r.ignored_count, 1);
+    assert.equal(r.mutants, undefined, 'no per-mutant array in the result (phase 48 D5)');
+    assert.deepEqual(r.per_file['src/a.mjs'].ignored, 1);
     assert.deepEqual(r.survivors.map((m) => m.status), ['survived', 'no-coverage']);
     assert.equal(r.complete, true); assert.equal(r.capped, false); assert.equal(r.cap_seconds, 600);
     assert.equal(r.reproduce, 'ac mutate 1 --json');
@@ -158,7 +160,7 @@ test('C2 gremlins gets --diff against the phase base; mutmut 2.x gets --paths-to
     assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'run').argv, ['run', 'a.x_add__mutmut_*', 'a.x_mul__mutmut_*', 'a.x_sub__mutmut_*']);
     assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 2, 'no-coverage': 1, error: 1 });
     assert.equal(r.complete, false, 'a "not checked" mutant means the run is not complete');
-    assert.equal(r.not_run.length, 1);
+    assert.equal(r.not_run_count, 1);
     assert.equal(r.outcome, 'incomplete');
   } finally { done(p); }
 });
@@ -172,7 +174,7 @@ test('mutmut 2 collects with untested/suspicious policy failure: an untested mut
     const collect = logLines(p.log).find((l) => l.argv[0] === 'junitxml').argv;
     assert.deepEqual(collect, ['junitxml', '--untested-policy', 'failure', '--suspicious-policy', 'failure']);
     assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 1, 'no-coverage': 0, error: 0 });
-    assert.equal(r.not_run.length, 2);
+    assert.equal(r.not_run_count, 2);
     assert.equal(r.complete, false);
     assert.equal(r.outcome, 'incomplete', 'untested mutants never make a run clean');
   } finally { done(p); }
@@ -200,7 +202,9 @@ test('mutmut 2 mutants a pre_mutation hook skipped are ignored, never killed', a
     const r = await runMutate(p.dir, p.slug1, { env: p.env });
     assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'result-ids').argv, ['result-ids', 'skipped']);
     assert.equal(r.counts.killed, 0);
-    assert.deepEqual(r.ignored.map((m) => m.line), [1]);
+    assert.equal(r.ignored_count, 1);
+    const listed = readFileSync(join(p.dir, r.full_list), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(listed.filter((m) => m.status === 'ignored').map((m) => m.line), [1]);
   } finally { done(p); }
 });
 
@@ -235,7 +239,7 @@ test('C4 a cap returns capped/incomplete with not-run listed, and kills the stub
     assert.ok(Date.now() - t0 < 9000, `took ${Date.now() - t0}ms`);
     assert.equal(r.cap_seconds, 2); assert.equal(r.capped, true); assert.equal(r.complete, false);
     assert.equal(r.outcome, 'incomplete');
-    assert.equal(r.not_run.length, 1);
+    assert.equal(r.not_run_count, 1);
     const pids = readFileSync(p.pids, 'utf8').split(' ').map(Number);
     await new Promise((res) => setTimeout(res, 300));
     for (const pid of pids) assert.equal(alive(pid), false, `pid ${pid} still alive`);
@@ -558,3 +562,62 @@ test('C6: the phase cap beats the project cap for that phase only; with no setti
     assert.equal(w.length, 2);
   } finally { done(p); }
 });
+
+// ---- Phase 48 t14 — survivors whole, everything else counted, the full list on disk (C8); mutmut 3 real lines (C9) ----
+import { copyFileSync as cp14, cpSync as cps14, mkdirSync as md14 } from 'node:fs';
+
+test('C9: mutmut 3 survivors and killed mutants carry real source lines inside the changed functions', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const { addPhase, findPhase } = await import('../lib/roadmap.mjs');
+  const REAL = join(FX, 'real');
+  const src = readFileSync(join(REAL, 'mutmut3-src-mod.py.txt'), 'utf8');
+  const p = await makeProject('py');
+  try {
+    await addPhase(p.dir, { number: 5, name: 'Lines' });
+    md14(join(p.dir, 'pkg'), { recursive: true });
+    // baseline differs from the real source on b's last line and K.m's: the phase "wrote" those lines
+    writeFileSync(join(p.dir, 'pkg', 'mod.py'), src.replace('return x * 2', 'return x * 3').replace('return x + self.v', 'return x + self.v + 1'));
+    commit(p.dir, 'baseline');
+    writeFileSync(join(p.dir, 'pkg', 'mod.py'), src);
+    commit(p.dir, 'work (phase 5 t1)');
+    const show = join(p.dir, 'show'); md14(show);
+    copyFileSync14(join(REAL, 'mutmut3-show-b-1.txt'), join(show, 'pkg.mod.x_b__mutmut_1.diff'));
+    copyFileSync14(join(REAL, 'mutmut3-show-b-N.txt'), join(show, 'pkg.mod.x_b__mutmut_4.diff'));
+    copyFileSync14(join(REAL, 'mutmut3-show-Km.txt'), join(show, 'pkg.mod.xǁKǁm__mutmut_1.diff'));
+    const gen = join(p.dir, 'gen', 'pkg'); md14(gen, { recursive: true });
+    copyFileSync14(join(REAL, 'mutmut3-mutants-mod.py.txt'), join(gen, 'mod.py'));
+    const bin = installStub(p.dir, 'mutmut', 'stubbin');
+    p.log = join(p.dir, 'stub.log');
+    const env = restrictedEnv([bin], { MUTATE_STUB_LOG: p.log, MUTATE_STUB_VERSION: 'mutmut, version 3.8.0', MUTATE_STUB_REPORT: join(REAL, 'mutmut3-results-methods.txt'), MUTATE_STUB_SHOW: show, MUTATE_STUB_MUTANTS: join(p.dir, 'gen') });
+    const slug = findPhase(p.dir, '5').slug;
+    const r = await runMutate(p.dir, slug, { env });
+    const lineAt = (n) => src.split('\n')[n - 1];
+    const byName = Object.fromEntries(r.survivors.map((s) => [s.name, s]));
+    assert.deepEqual(Object.keys(byName).sort(), ['pkg.mod.x_b__mutmut_1', 'pkg.mod.xǁKǁm__mutmut_1']);
+    assert.match(lineAt(byName['pkg.mod.x_b__mutmut_1'].line), /if x > 10/);
+    assert.match(lineAt(byName['pkg.mod.xǁKǁm__mutmut_1'].line), /return x \+ self\.v/);
+    for (const s of r.survivors) assert.ok(s.line > 0);
+    const full = readFileSync(join(p.dir, r.full_list), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(full.length >= 9);
+    assert.ok(full.every((m) => m.line === null || m.line > 0), 'no 0 lines');
+    const b4 = full.find((m) => m.mutator === 'x_b__mutmut_4');
+    assert.match(lineAt(b4.line), /return x - 10/, 'a later mutant of b is on its own line, not the def line');
+    assert.notEqual(b4.line, full.find((m) => m.mutator === 'x_b__mutmut_1').line);
+    assert.ok(full.filter((m) => m.scope === 'in').every((m) => m.line > 0), 'every in-scope mutant is placed by the generated file');
+    // c and __init__ were outside the changed functions: out of scope, not survivors
+    assert.ok(r.out_of_scope_count >= 5);
+    assert.equal(r.survivors.some((s) => s.func === 'c'), false);
+    assert.ok(r.warnings.every((w) => !/could not be mapped/.test(w)));
+
+    // without the generated file, killed mutants are unmapped (null, counted in a warning), survivors still come from `show`
+    const env2 = { ...env }; delete env2.MUTATE_STUB_MUTANTS;
+    const r2 = await runMutate(p.dir, slug, { env: env2 });
+    const full2 = readFileSync(join(p.dir, r2.full_list), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(full2.filter((m) => m.scope === 'in' && m.status === 'killed').every((m) => m.line === null));
+    assert.ok(r2.survivors.every((s) => s.line > 0));
+    assert.ok(r2.warnings.some((w) => /could not be mapped to a source line/.test(w)));
+    assert.ok(!full2.some((m) => m.line === 0));
+  } finally { done(p); }
+});
+function copyFileSync14(a, b) { cp14(a, b); }
+void cps14;

@@ -38,8 +38,9 @@ test('C1: --json twice is identical and complete; human output shows the same co
     const ra = JSON.parse(a.stdout);
     assert.deepEqual(strip(ra), strip(JSON.parse(b.stdout)));
     assert.deepEqual(ra.counts, { killed: 2, survived: 1, timeout: 1, 'no-coverage': 1, error: 2 });
-    assert.equal(ra.mutants.length, 7);
-    assert.ok(ra.mutants.every((m) => m.file && m.line > 0 && m.mutator));
+    assert.equal(ra.mutants, undefined);
+    assert.equal(Object.values(ra.counts).reduce((a, b) => a + b, 0), 7);
+    assert.ok(ra.survivors.every((m) => m.file && m.line > 0 && m.mutator));
     assert.equal(ra.tool.why, 'package.json → stryker');
     const h = ac(p, ['mutate', '1']);
     assert.equal(h.status, 0, h.stderr);
@@ -100,7 +101,7 @@ test('C4: default cap 600; a 2s cap returns fast, capped, with not-run listed an
     assert.ok(Date.now() - t0 < 8000, `took ${Date.now() - t0}ms`);
     const res = JSON.parse(r.stdout);
     assert.equal(res.cap_seconds, 2); assert.equal(res.capped, true); assert.equal(res.outcome, 'incomplete');
-    assert.ok(res.not_run.length > 0);
+    assert.ok(res.not_run_count > 0);
     const h = ac(p, ['mutate', '1']);
     assert.match(h.stdout, /^⚠ cap reached after 2s during step unknown — \d+ of \d+ mutants tested; raise for this phase: ac config set mutation\.phases\.1\.cap_seconds 4$/m);
     await new Promise((x) => setTimeout(x, 300));
@@ -249,5 +250,67 @@ test('C6/C7: ac config set mutation.phases.<n>.cap_seconds applies to that phase
     const h = ac(p, ['mutate', '1']);
     const lines = h.stdout.trim().split('\n');
     assert.match(lines[lines.length - 1], /^log: \.astrocode\/\.local\/mutate-runs\/0?1-.*\.log$/);
+  } finally { done(p); }
+});
+
+// ---- Phase 48 t14 — C8: survivors whole, everything else counted, the complete list on disk ----
+test('C8: 5,200 in-scope mutants give a small JSON with every survivor whole, per-file counts that reconcile, and a full list file', async () => {
+  const { addPhase, findPhase } = await import('../lib/roadmap.mjs');
+  const { writeLines, commit } = await import('./fixtures/mutate/project.mjs');
+  const p = await makeProject('js');
+  try {
+    await addPhase(p.dir, { number: 5, name: 'Big' });
+    for (const f of ['f1', 'f2', 'f3']) writeLines(p.dir, `src/${f}.mjs`, 2000);
+    commit(p.dir, 'big files (phase 5 t1)');
+    writeLines(p.dir, 'src/outside.mjs', 50);
+    commit(p.dir, 'unrelated');
+    const files = {};
+    const add = (file, line, status, id) => { (files[file] ??= { mutants: [] }).mutants.push({ id: String(id), mutatorName: 'ArithmeticOperator', location: { start: { line } }, status }); };
+    let id = 0;
+    const plan = [['src/f1.mjs', 2000], ['src/f2.mjs', 2000], ['src/f3.mjs', 1200]];
+    let total = 0;
+    for (const [f, n] of plan) for (let i = 0; i < n; i++) { add(f, 1 + (i % 2000), i % 400 === 7 ? 'Timeout' : 'Killed', id++); total++; }
+    for (let i = 0; i < 40; i++) { add('src/f1.mjs', 5 + i, 'Pending', id++); total++; }
+    // 4 survivors, in the scope
+    for (const [f, l] of [['src/f1.mjs', 10], ['src/f1.mjs', 11], ['src/f2.mjs', 500], ['src/f3.mjs', 1999]]) { add(f, l, 'Survived', id++); total++; }
+    // out of scope: another file and a file beyond the phase's lines
+    for (let i = 0; i < 25; i++) { add('src/outside.mjs', 1 + i, 'Survived', id++); total++; }
+    const reportTotal = total;
+    const bin = installStub(p.dir, 'stryker', 'node_modules/.bin');
+    void bin;
+    p.log = join(p.dir, 'stub.log');
+    writeFileSync(join(p.dir, 'big-report.json'), JSON.stringify({ schemaVersion: '2', files }));
+    p.env = restrictedEnv([], { MUTATE_STUB_LOG: p.log, MUTATE_STUB_REPORT: join(p.dir, 'big-report.json') });
+    const slug = findPhase(p.dir, '5').slug;
+    const r = ac(p, ['mutate', slug, '--json']);
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(r.stdout.length < 100_000, `json is ${r.stdout.length} bytes`);
+    const j = JSON.parse(r.stdout);
+    for (const k of ['mutants', 'not_run', 'ignored']) assert.equal(j[k], undefined, k);
+    assert.equal(j.survivors.length, 4);
+    assert.deepEqual(j.survivors.map((s) => `${s.file}:${s.line}`).sort(), ['src/f1.mjs:10', 'src/f1.mjs:11', 'src/f2.mjs:500', 'src/f3.mjs:1999']);
+    const statusSum = Object.values(j.counts).reduce((a, b) => a + b, 0);
+    assert.equal(statusSum + j.not_run_count + j.ignored_count + j.out_of_scope_count, reportTotal);
+    assert.equal(j.out_of_scope_count, 25);
+    assert.equal(j.not_run_count, 40);
+    const perFileTotal = Object.values(j.per_file).reduce((n, k) => n + Object.values(k).reduce((a, b) => a + b, 0), 0);
+    assert.equal(perFileTotal, statusSum + j.not_run_count + j.ignored_count);
+    assert.deepEqual(Object.keys(j.per_file).sort(), ['src/f1.mjs', 'src/f2.mjs', 'src/f3.mjs']);
+    const list = readFileSync(join(p.dir, j.full_list), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.equal(list.length, reportTotal);
+    assert.ok(list.every((m) => m.status && m.file));
+    assert.equal(list.filter((m) => m.scope === 'out').length, 25);
+    const h = ac(p, ['mutate', slug]);
+    const survLines = h.stdout.split('\n').filter((l) => /^⚠ src\/\S+:\d+ ArithmeticOperator survived$/.test(l));
+    assert.equal(survLines.length, 4);
+    assert.match(h.stdout, /^  src\/f1\.mjs — /m);
+    assert.doesNotMatch(h.stdout, /killed$/m, 'no per-mutant killed line');
+    assert.match(h.stdout, /^full list: \.astrocode\/\.local\/mutate-runs\/05-big\.mutants\.jsonl$/m);
+    const lines = h.stdout.trim().split('\n');
+    assert.match(lines[lines.length - 1], /^log: /);
+    // the evidence round trip still holds: the kept run matches the copied fields
+    const run = JSON.parse(readFileSync(join(p.dir, '.astrocode', '.local', 'mutate-runs', `${slug}.json`), 'utf8'));
+    assert.equal(run.survivors.length, 4);
+    assert.deepEqual(run.counts, j.counts);
   } finally { done(p); }
 });

@@ -2652,6 +2652,8 @@ async function main() {
       } else if (res.outcome === 'error' && !t) {
         console.log(`⚠ ${res.error}`);
       } else {
+        // Lead with the change (CONVENTIONS §Voice): outcome and counts, scope, tests, every survivor,
+        // then per-file counts only where something needs a look, with the full versions' paths last.
         const c = res.counts;
         const total = Object.values(c).reduce((n, v) => n + v, 0);
         const sym = res.outcome === 'clean' ? '✓' : '⚠';
@@ -2669,17 +2671,24 @@ async function main() {
           console.log(`tests: ${t.source} — ${shown} (${t.mechanism})${t.note ? ` — ${t.note}` : ''}`);
         }
         if (res.error) console.log(`⚠ ${res.error}`);
-        for (const m of res.survivors) console.log(`⚠ ${m.file}:${m.line} ${m.mutator} ${m.status}`);
+        for (const m of res.survivors) console.log(`⚠ ${m.file}:${m.line ?? '?'} ${m.mutator} ${m.status}`);
+        const look = Object.entries(res.per_file).filter(([, k]) => k.survived || k['no-coverage'] || k.timeout || k.error || k.not_run);
+        for (const [f, k] of look.slice(0, 20)) {
+          console.log(`  ${f} — ${k.killed} killed · ${k.survived} survived · ${k.timeout} timeout · ${k['no-coverage']} no-coverage · ${k.error} error${k.not_run ? ` · ${k.not_run} not run` : ''}`);
+        }
+        if (look.length > 20) console.log(`  +${look.length - 20} more files (full list below)`);
+        if (res.out_of_scope_count) console.log(`  ${res.out_of_scope_count} mutants outside the scope not counted`);
         if (res.capped) {
           // Name the step, how far it got and the key to raise (D4); the cap is doubled as a first guess.
           const cp = res.cap;
           const n = res.reproduce.match(/ac mutate (\d+)/)?.[1] ?? '<n>';
           console.log(`⚠ cap reached after ${res.cap_seconds}s during ${cp.step ?? 'step unknown'} — ${cp.tested ?? 0} of ${cp.total ?? '?'} mutants tested; raise for this phase: ac config set mutation.phases.${n}.cap_seconds ${res.cap_seconds * 2}`);
           if (res.not_run_files.length) console.log(`⚠ not run: ${res.not_run_files.length} file(s): ${res.not_run_files.join(', ')}${res.not_run_note ? ` (${res.not_run_note})` : ''}`);
-        } else if (res.outcome === 'incomplete' && res.not_run.length) {
-          console.log(`⚠ incomplete — ${res.not_run.length} mutants not run`);
+        } else if (res.outcome === 'incomplete' && res.not_run_count) {
+          console.log(`⚠ incomplete — ${res.not_run_count} mutants not run`);
         }
         for (const w of res.warnings) console.log(`⚠ ${w}`);
+        if (res.full_list) console.log(`full list: ${res.full_list}`);
         if (res.log) console.log(`log: ${res.log}`);
       }
       return;
