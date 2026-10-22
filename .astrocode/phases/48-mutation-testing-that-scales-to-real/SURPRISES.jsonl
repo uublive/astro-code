@@ -1,0 +1,1 @@
+{"at":"2026-10-22T12:13:01.031Z","phase":"48-mutation-testing-that-scales-to-real","signals":["remediation","max-cycles"],"note":"Gremlins --diff prints SKIPPED for every out-of-diff mutant; no-scope was decided before probing the tool"}
