@@ -425,3 +425,38 @@ test('recordVerdict binds evidence to the kept ac mutate run: no run, or an edit
     await refused(ev([], { outcome: 'tool-missing', fallback: { reason: 'mutation tool not installed — AI mutants used' }, counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 } }), /outcome "tool-missing" but the `ac mutate` run says "survivors"/);
   } finally { done(s); }
 });
+
+// ---- Phase 48 t8 — run-file paths, the not-configured outcome ----
+import { mkdtempSync as mk48, existsSync as ex48, readFileSync as rf48 } from 'node:fs';
+import { tmpdir as td48 } from 'node:os';
+import { join as j48 } from 'node:path';
+import { spawnSync as sp48 } from 'node:child_process';
+
+test('phase 48: mutateRunPaths names every file one run leaves beside the kept run', async () => {
+  const { mutateRunPaths } = await import('../lib/verdict.mjs');
+  const d = '/proj';
+  const p = mutateRunPaths(d, '48-x');
+  const dir = j48(d, '.astrocode', '.local', 'mutate-runs');
+  assert.deepEqual(p, {
+    dir, run: j48(dir, '48-x.json'), log: j48(dir, '48-x.log'), list: j48(dir, '48-x.mutants.jsonl'),
+    strykerConfig: j48(dir, '48-x.stryker.config.mjs'), gremlinsReport: j48(dir, '48-x.gremlins.json'),
+  });
+});
+
+test('phase 48: ensureLocalDir creates the directory and a gitignore that covers a log there', async () => {
+  const { ensureLocalDir, mutateRunPaths } = await import('../lib/verdict.mjs');
+  const d = mk48(j48(td48(), 'ac-vlocal-'));
+  sp48('git', ['init', '-q'], { cwd: d });
+  ensureLocalDir(d);
+  const p = mutateRunPaths(d, '1-a');
+  assert.ok(ex48(p.dir));
+  assert.equal(rf48(j48(d, '.astrocode', '.local', '.gitignore'), 'utf8'), '*\n');
+  ensureLocalDir(d); // idempotent
+  assert.equal(sp48('git', ['check-ignore', '-q', p.log], { cwd: d }).status, 0);
+});
+
+test('phase 48: not-configured is a mutation outcome and not a fallback outcome', async () => {
+  const { MUTATION_OUTCOMES, FALLBACK_OUTCOMES } = await import('../lib/verdict.mjs');
+  assert.ok(MUTATION_OUTCOMES.includes('not-configured'));
+  assert.deepEqual(FALLBACK_OUTCOMES, ['tool-missing', 'no-tool', 'no-scope']);
+});
