@@ -81,6 +81,38 @@ export function installStub(dir, name, sub = 'stubbin') {
   return bin;
 }
 
+/** Copy the stub in as the project's test runner (`go` or `pytest`) for the flaky pre-check. */
+export const installRunner = (dir, name, sub = 'runnerbin') => installStub(dir, name, sub);
+
+/**
+ * A JS project whose phase-1 tests run through a Stryker `command` runner (`node --test`), one
+ * stable test and — unless `flaky: false` — one that fails on every other run, toggling a counter
+ * file under the project's `.astrocode/.local/`.
+ */
+export async function jsFlakyProject({ flaky = true } = {}) {
+  const p = await makeProject('js');
+  put(p.dir, 'stryker.config.json', JSON.stringify({ testRunner: 'command', commandRunner: { command: 'node --test' } }) + '\n');
+  put(p.dir, p.L.test, [
+    "import test from 'node:test';",
+    "import assert from 'node:assert/strict';",
+    "import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';",
+    "test('stable', () => assert.ok(true));",
+    ...(flaky ? [
+      "test('flaky toggles', () => {",
+      "  const f = '.astrocode/.local/flaky-counter';",
+      "  mkdirSync('.astrocode/.local', { recursive: true });",
+      "  let n = 0;",
+      "  try { n = Number(readFileSync(f, 'utf8')); } catch { /* first run */ }",
+      "  writeFileSync(f, String(n + 1));",
+      "  assert.equal(n % 2, 1);",
+      "});",
+    ] : []),
+    '',
+  ].join('\n'));
+  commit(p.dir, 'test: a (phase 1 t2)');
+  return p;
+}
+
 /** An env where only the given bin dirs, node and git are reachable; no GOBIN/GOPATH. */
 export function restrictedEnv(binDirs, extra = {}) {
   const env = { ...process.env, PATH: [...binDirs, dirname(process.execPath), GIT_DIR].join(delimiter), HOME: mkdtempSync(join(tmpdir(), 'ac-mutate-home-')) };

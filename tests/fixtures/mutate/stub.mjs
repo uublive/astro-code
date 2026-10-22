@@ -15,6 +15,13 @@
 //   MUTATE_STUB_VERSION_CRASH=1  mutmut: `--version` and `version` exit 1 like an unconfigured 3.x
 //   MUTATE_STUB_SHOW=<dir>  mutmut: `show <name>` prints `<dir>/<name>.diff`
 //   MUTATE_STUB_MUTANTS=<dir>  mutmut: `run` copies <dir> to ./mutants (the generated sources)
+// Phase 49 knobs (the flaky pre-check runs the project's own test runner; copied as `go` or
+// `pytest` the stub emulates that runner, argv `test …` for go):
+//   MUTATE_STUB_FLAKY=<counterfile>:<name>  fails <name> on odd-numbered invocations
+//                        (go prints `--- FAIL: <name>`, pytest prints `FAILED <name>`; exit 1)
+//   MUTATE_STUB_BROKEN=<name>   fails <name> on every invocation
+//   MUTATE_STUB_TEST_SLEEP=<s>  sleeps per invocation, for the cap tests
+// Every log line also carries `at` (epoch ms), so a test can see when a tool started.
 // The log line also records env {GOFLAGS, PYTEST_ADDOPTS}, and `configText` (the content) when
 // `run`'s first operand is a file path (the Stryker config ac generates).
 import { appendFileSync, readFileSync, writeFileSync, mkdirSync, existsSync, statSync, cpSync } from 'node:fs';
@@ -27,11 +34,31 @@ const env = process.env;
 if (env.MUTATE_STUB_LOG) {
   const configs = ['stryker.config.json', '.gremlins.yaml', 'setup.cfg'].filter((f) => existsSync(f));
   const entry = {
-    tool: name, argv, cwd: process.cwd(), configs,
+    tool: name, argv, cwd: process.cwd(), configs, at: Date.now(),
     env: { GOFLAGS: env.GOFLAGS ?? null, PYTEST_ADDOPTS: env.PYTEST_ADDOPTS ?? null },
   };
   if (argv[0] === 'run' && argv[1] && existsSync(argv[1]) && statSync(argv[1]).isFile()) entry.configText = readFileSync(argv[1], 'utf8');
   appendFileSync(env.MUTATE_STUB_LOG, JSON.stringify(entry) + '\n');
+}
+if ((name === 'go' && argv[0] === 'test') || name === 'pytest') {
+  if (env.MUTATE_STUB_TEST_SLEEP) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(env.MUTATE_STUB_TEST_SLEEP) * 1000);
+  const failing = [];
+  if (env.MUTATE_STUB_BROKEN) failing.push(env.MUTATE_STUB_BROKEN);
+  if (env.MUTATE_STUB_FLAKY) {
+    const at = env.MUTATE_STUB_FLAKY.lastIndexOf(':');
+    const file = env.MUTATE_STUB_FLAKY.slice(0, at);
+    const n = (existsSync(file) ? Number(readFileSync(file, 'utf8')) || 0 : 0) + 1;
+    writeFileSync(file, String(n));
+    if (n % 2 === 1) failing.push(env.MUTATE_STUB_FLAKY.slice(at + 1));
+  }
+  if (name === 'go') {
+    for (const f of failing) console.log(`=== RUN   ${f}\n--- FAIL: ${f} (0.00s)`);
+    console.log(failing.length ? 'FAIL\nFAIL\texample.com/p\t0.01s' : 'ok  \texample.com/p\t0.01s');
+  } else {
+    for (const f of failing) console.log(`FAILED ${f} - AssertionError`);
+    console.log(failing.length ? `${failing.length} failed in 0.01s` : '1 passed in 0.01s');
+  }
+  process.exit(failing.length ? 1 : 0);
 }
 const DEFAULT_VERSION = { stryker: '8.2.6', gremlins: 'gremlins version 0.5.0', mutmut: 'mutmut, version 2.4.4' };
 // An unconfigured mutmut 3.x cannot even answer --version (phase 47 debt, real 3.8 behaviour).
