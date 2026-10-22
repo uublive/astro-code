@@ -241,7 +241,7 @@ const ALLOWED_FLAGS = {
   'verdict record': ['result'],
   // Phase 47 (ADR-083) — a typo'd flag must not degrade `--check` into a real run, or a
   // `setup` into a write the user did not ask for.
-  'mutate': ['check', 'json'],
+  'mutate': ['check', 'json', 'survivors'],
   'mutate setup': ['json'],
   'mutate dismiss': ['json'],
   // Phase 49 — a typo'd flag must not turn a judgement into a write nobody asked for.
@@ -544,6 +544,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac verdict plan <phase> [--full] [--json]  should the next verify narrow? (ADR-079)
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
   ac mutate <phase> [--json]          run the project's mutation tool on the lines the phase changed (ADR-083, ADR-084)
+  ac mutate <phase> --survivors [--json]  re-test only the open survivors of the last full run (partial; never a verdict)
   ac mutate --check [<phase>] [--json]  which tool applies, is it installed, how to install it (read-only)
   ac mutate setup                     write a minimal tool config if absent (the only writer; installs nothing)
   ac mutate dismiss [<tool>]          stop showing the full install suggestion for this project
@@ -2656,11 +2657,11 @@ async function main() {
         return;
       }
       // `--check 1` / `--json 1` parse the phase ref as the flag's value.
-      const ref = pos[0] ?? [flags.check, flags.json].find((v) => typeof v === 'string');
+      const ref = pos[0] ?? [flags.check, flags.json, flags.survivors].find((v) => typeof v === 'string');
       const ph = ref !== undefined ? findPhase(r, ref) : null;
-      if (ref !== undefined && !ph) die(`unknown phase "${ref}" — usage: ac mutate <phase> [--json] | --check [<phase>] | setup | dismiss [<tool>] | judge <phase> <id>...`);
-      if (!flags.check && !ph) die('usage: ac mutate <phase> [--json] | --check [<phase>] | setup | dismiss [<tool>]');
-      const res = flags.check ? await checkMutate(r, ph?.slug ?? null) : await runMutate(r, ph.slug);
+      if (ref !== undefined && !ph) die(`unknown phase "${ref}" — usage: ac mutate <phase> [--json|--survivors] | --check [<phase>] | setup | dismiss [<tool>] | judge <phase> <id>...`);
+      if (!flags.check && !ph) die('usage: ac mutate <phase> [--json|--survivors] | --check [<phase>] | setup | dismiss [<tool>] | judge <phase> <id>...');
+      const res = flags.check ? await checkMutate(r, ph?.slug ?? null) : await runMutate(r, ph.slug, { survivors: !!flags.survivors });
       if (flags.json) { json(res); return; }
       const t = res.tool;
       const via = t ? `${t.label} (${t.why})` : '';
@@ -2677,7 +2678,7 @@ async function main() {
         console.log(`⚠ ${t.label} is installed but not configured — run: ${res.hint}`);
       } else if (res.outcome === 'no-tool' || res.outcome === 'no-scope') {
         console.log(`⊡ ${res.fallback.reason}`);
-      } else if (res.outcome === 'error' && !t) {
+      } else if (res.outcome === 'error' && (!t || (res.partial && !res.rerun))) {
         console.log(`⚠ ${res.error}`);
       } else {
         // Lead with the change (CONVENTIONS §Voice): outcome and counts, scope, tests, every survivor,
@@ -2685,6 +2686,18 @@ async function main() {
         const c = res.counts;
         const total = Object.values(c).reduce((n, v) => n + v, 0);
         const sym = res.outcome === 'clean' ? '✓' : '⚠';
+        if (res.partial) {
+          // Never mistaken for a full run (ADR-085): the first line says so, then what the re-test did.
+          const n = res.reproduce.match(/ac mutate (\d+)/)?.[1] ?? '<n>';
+          const b = res.base_run ?? {};
+          console.log(`partial re-run on top of the full run ${String(b.head ?? '?').slice(0, 7)} (${String(b.started_at ?? 'time unknown').replace('T', ' ').slice(0, 16)}) — not a recordable verdict; final: ac mutate ${n}`);
+          const rr = res.rerun;
+          if (!rr.open) console.log('• no open survivors — record against the last full run');
+          else {
+            console.log(`re-ran ${rr.open} open survivor(s): ${rr.killed_now} killed now · ${rr.still_open} still open${rr.not_reobserved ? ` · ${rr.not_reobserved} not re-observed` : ''} — the tool ran ${rr.executed} mutants${rr.extra_executed ? ` (${rr.extra_executed} beyond the open ones)` : ''}`);
+            console.log(`narrowed: ${rr.narrowing.narrowed} — ${rr.narrowing.why}`);
+          }
+        }
         console.log(`${sym} ${via} · ${total} mutants: ${c.killed} killed · ${c.timeout} timeout · ${c.survived} survived · ${c['no-coverage']} no-coverage · ${c.error} error${res.ignored_count ? ` (+ ${res.ignored_count} ignored by the tool)` : ''}`);
         if (res.scope.length) {
           // Never the joined file list (it scales with the phase): the source, the sizes and why.
