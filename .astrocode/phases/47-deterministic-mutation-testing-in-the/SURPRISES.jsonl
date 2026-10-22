@@ -1,0 +1,1 @@
+{"at":"2026-10-22T00:30:33.790Z","phase":"47-deterministic-mutation-testing-in-the","signals":["remediation","max-cycles"],"note":"verifier kept finding real-tool gaps the stubs hid (mutmut 2 has no --version, untested/skipped/fatal statuses) and gate bypasses until evidence was bound to the kept ac mutate run"}

@@ -2,13 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 13,
-  "active_phase": null,
+  "active_phase": "47-deterministic-mutation-testing-in-the",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-10-21T22:16:17.418Z",
-  "activity": {
-    "text": "⚙ researching · plan",
-    "at": 1792620977
-  }
+  "updated_at": "2026-10-22T00:30:33.431Z",
+  "activity": null
 }
