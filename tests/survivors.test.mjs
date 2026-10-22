@@ -210,3 +210,17 @@ test('the judgements file is inside the phase folder and git does not ignore it'
     assert.match(sh(root, 'status', '--porcelain', '--', f).stdout, /SURVIVORS\.json/);
   } finally { done(root); }
 });
+
+test('kindClass: same-class mutmut token pairs share one group; Stryker mutators unchanged', async () => {
+  const { kindClass, groupSurvivors } = await import('../lib/survivors.mjs');
+  assert.equal(kindClass('`0` → `1`'), kindClass('`100` → `101`'));
+  assert.equal(kindClass('`0` → `1`'), 'number literal');
+  assert.equal(kindClass('`<` → `<=`'), 'comparison operator');
+  assert.notEqual(kindClass('`<` → `<=`'), kindClass('`0` → `1`'));
+  assert.equal(kindClass('EqualityOperator'), 'EqualityOperator');
+  const g = groupSurvivors([
+    surv({ key: 's:1', kind: '`0` → `1`' }), surv({ key: 's:2', kind: '`100` → `101`' }),
+  ].map((s) => ({ ...s, group: undefined })));
+  assert.equal(g.length, 1);
+  assert.equal(g[0].count, 2);
+});

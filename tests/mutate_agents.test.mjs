@@ -108,3 +108,10 @@ test('phase 49: /astro-mutate names judge and --survivors', () => {
   assert.match(src, /never a recordable verdict/);
   assert.match(src, /at most 20 open groups/);
 });
+
+test('execute-phase: VERIFY_SCHEMA carries test_strength through to the verdict record', async () => {
+  const { readFileSync } = await import('node:fs');
+  const w = readFileSync(new URL('../workflows/execute-phase.mjs', import.meta.url), 'utf8');
+  assert.match(w, /test_strength: \{ type: 'boolean' \}/);
+  assert.match(w, /c\.test_strength === true \? \{ test_strength: true \}/);
+});

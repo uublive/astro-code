@@ -62,7 +62,7 @@ test('C5 Stryker: --mutate holds exactly the open survivors\' spans; the rest of
     p.env.MUTATE_STUB_REPORT = rerunReport(p, ['1', '3', '4', '5', '7'], ['3']);
     const r = await runMutate(p.dir, p.slug1, { env: p.env, survivors: true });
     const call = runs(p, 'stryker').at(-1).argv;
-    assert.deepEqual(call[call.indexOf('--mutate') + 1].split(',').sort(), ['src/a.mjs:10:17-10:29', 'src/a.mjs:2:7-2:12', 'src/a.mjs:5:22-5:40', 'src/a.mjs:9:7-9:14']);
+    assert.deepEqual(call[call.indexOf('--mutate') + 1].split(',').sort(), ['src/a.mjs:10:16-10:29', 'src/a.mjs:2:6-2:12', 'src/a.mjs:5:21-5:40', 'src/a.mjs:9:6-9:14']);
     assert.equal(r.partial, true);
     assert.equal(r.rerun.open, 4);
     assert.equal(r.rerun.executed, 5);

@@ -211,3 +211,8 @@ test('C8: with a generous cap the check completes and the tool starts after both
     assert.ok(unleash.at - tests[0].at >= 900, 'the tool started after the check\'s two runs');
   } finally { done(p); }
 });
+
+test('discountFlakyKills source: the command runner "All tests" attribution counts as unattributed', async () => {
+  const { readFileSync } = await import('node:fs');
+  assert.match(readFileSync(new URL('../lib/mutate.mjs', import.meta.url), 'utf8'), /every\(\(n\) => n === 'All tests'\)/);
+});

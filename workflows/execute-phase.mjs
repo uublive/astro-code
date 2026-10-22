@@ -1852,6 +1852,9 @@ const VERIFY_SCHEMA = {
           status: { type: 'string', enum: ['passed', 'failed', 'carried'] },
           command: { type: 'string' },
           output: { type: 'string' },
+          // Phase 49 (ADR-085) — `true` on a criterion the verifier used `ac mutate` for; the code
+          // gate in lib/verdict.mjs applies it, so it must reach `ac verdict record`.
+          test_strength: { type: 'boolean' },
           // Phase 47 (ADR-083) — test-strength evidence from `ac mutate <phase> --json`, copied
           // across by the verifier with `triage` added per survivor. The code gate in
           // lib/verdict.mjs (`validateMutation` / `mutationGate`) is the validator; this schema
@@ -2275,7 +2278,7 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
   try {
     rec = await runVerdictRecord(JSON.stringify({
       mode, broad: v.broad === true,
-      criteria: checked.map((c) => ({ id: c.id, passed: c.passed === true, ...(c.mutation ? { mutation: c.mutation } : {}) })),
+      criteria: checked.map((c) => ({ id: c.id, passed: c.passed === true, ...(c.test_strength === true ? { test_strength: true } : {}), ...(c.mutation ? { mutation: c.mutation } : {}) })),
     }).replace(/'/g, '\\u0027'))
   } catch (e) { rec = null }
   if (rec && rec.recorded === true) {
