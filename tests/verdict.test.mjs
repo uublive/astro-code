@@ -315,6 +315,11 @@ test('testStrengthIds finds the [mutation] tag in headings only, in file order',
   assert.deepEqual(testStrengthIds(t), ['C4', 'C2']);
   // a heading that only talks about the tag is not tagged (phase 48's own C13 tripped on this)
   assert.deepEqual(testStrengthIds('### C13 — only `[mutation]`-tagged criteria get the code pass bar\n'), []);
+  // the tag never reaches across a line break into the body
+  for (const t of ['### C6\n[mutation] appears on the next line\n', '#\nC9 [mutation] in prose\n', '### C6 \n\n  [mutation] two lines down\n']) {
+    assert.deepEqual(testStrengthIds(t), [], JSON.stringify(t));
+  }
+  assert.deepEqual(testStrengthIds('###\tC7\t[mutation] — tabs are fine\n'), ['C7']);
   assert.deepEqual(testStrengthIds('### C3 — plain\nC9 [mutation] in prose\n'), []);
   assert.deepEqual(testStrengthIds(undefined), []);
 });
