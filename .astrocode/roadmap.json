@@ -15,6 +15,13 @@
       "slug": "48-mutation-testing-that-scales-to-real",
       "status": "verified",
       "milestone": 13
+    },
+    {
+      "number": 49,
+      "name": "Survivor triage support",
+      "slug": "49-survivor-triage-support",
+      "status": "pending",
+      "milestone": 13
     }
   ]
 }
