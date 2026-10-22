@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "run": 1,
+  "run": 2,
   "mode": "full",
   "broad": false,
-  "commit": "11de933bd7eb287d103d7e51c7834cc623db858e",
+  "commit": "507dfe42d055fdc8b9102ae20a6aebe2f8ddffeb",
   "criteria_sha": "sha256:f96d44815ffce7a83fe2b0b20e9e8e46abbb5c1b55dc97a93bab857356b7a18b",
-  "at": "2026-10-22T10:51:45.903Z",
+  "at": "2026-10-22T11:26:46.220Z",
   "criteria": [
     {
       "id": "C1",
@@ -37,7 +37,7 @@
     },
     {
       "id": "C8",
-      "status": "failed"
+      "status": "passed"
     },
     {
       "id": "C9",
