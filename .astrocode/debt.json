@@ -565,6 +565,16 @@
       "why": "commands/astro-verify.md step 3 tells the orchestrator a fallback line means AI mutants stood in, but the mutation.exclude no-scope and the tool-installed no-scope reasons both say no AI mutants were used; the report gloss is now wrong for those cases (the verifier role itself is correct)",
       "phase": "48",
       "file": "commands/astro-verify.md"
+    },
+    {
+      "id": "2026-10-22-gremlins-installed-via-go-install",
+      "title": "Gremlins installed via go install reports version null in ac mutate evidence",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-10-22T12:54:46.703Z",
+      "why": "A Gremlins v0.6.0 built with go install (the exact install hint ac prints) answers --version with gremlins version dev, so ac mutate records tool.version null; the evidence never carries a version for the hinted install path (go version -m on the binary gives the module version).",
+      "phase": "48",
+      "file": "lib/mutate.mjs"
     }
   ]
 }
