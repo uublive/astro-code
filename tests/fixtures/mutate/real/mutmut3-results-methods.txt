@@ -1,0 +1,13 @@
+    pkg.mod.x_a__mutmut_1: killed
+    pkg.mod.x_a__mutmut_2: killed
+    pkg.mod.x_b__mutmut_1: survived
+    pkg.mod.x_b__mutmut_2: killed
+    pkg.mod.x_b__mutmut_3: killed
+    pkg.mod.x_b__mutmut_4: killed
+    pkg.mod.x_b__mutmut_5: killed
+    pkg.mod.x_b__mutmut_6: killed
+    pkg.mod.x_c__mutmut_1: survived
+    pkg.mod.x_c__mutmut_2: killed
+    pkg.mod.xǁKǁ__init____mutmut_1: killed
+    pkg.mod.xǁKǁ__init____mutmut_2: killed
+    pkg.mod.xǁKǁm__mutmut_1: survived

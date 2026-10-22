@@ -1,0 +1,27 @@
+Stryker 10 CLI, transcribed from the Stryker documentation (NOT captured: no network install here).
+
+  stryker run [configFile] [options]
+
+  --mutate <patterns>        comma-separated globs; a glob may carry a line range:
+                               src/big.js:40-45            lines 40 to 45
+                               src/big.js:40:3-45:10       with columns
+                               !src/**/*.test.js           negation
+  --reporters <names>        comma-separated: json, clear-text, progress, html ...
+  --concurrency <n>
+  --timeoutMS <ms>
+  --testRunner <name>        command | mocha | jest | vitest | tap | karma | jasmine | cucumber
+  --commandRunner.command <cmd>   (also reachable as commandRunner.command in the config file)
+
+Per-runner test selection (config file only; there is no CLI test-file flag):
+  command  : commandRunner.command   the full command, test files appended by the caller
+  mocha    : mochaOptions.spec       array of spec files
+  jest     : jest.config.testMatch   array of globs
+  tap      : tap.testFiles           array of files
+  vitest   : none (the runner has no test-file option in Stryker)
+
+Log markers (stdout, in order):
+  Starting initial test run (<runner> test runner with "<coverage>" coverage analysis). This may take a while.
+  Initial test run succeeded. Ran <n> tests in <time>.
+  Mutation testing  <pct>% (elapsed: <t>, remaining: <t>) <tested>/<total> Mutants tested (<n> survived, <n> timed out)
+
+Report: reports/mutation/mutation.json (mutation-testing-elements schema), written by the `json` reporter.

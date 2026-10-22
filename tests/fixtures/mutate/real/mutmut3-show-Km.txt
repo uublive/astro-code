@@ -1,0 +1,7 @@
+# pkg.mod.xǁKǁm__mutmut_1: survived
+--- pkg/mod.py
++++ pkg/mod.py
+@@ -1,2 +1,2 @@
+ def m(self, x):
+-    return x + self.v
++    return x - self.v
