@@ -4,6 +4,8 @@ Release notes in full live on the [GitHub releases page](https://github.com/uubl
 
 ## Unreleased
 
+- `ac mutate` now mutates only the lines a phase changed (Stryker line ranges, Gremlins `--diff`, mutmut 3 functions) against the phase's own tests, so a large project finishes instead of hitting the cap. A capped run names the step, the mutants tested and the key to raise (`mutation.phases.<n>.cap_seconds`); the tool log and the full mutant list are kept beside the run in `.astrocode/.local/mutate-runs/`; survivors are listed in full and the rest are per-file counts; mutmut 3 mutants carry real source lines. Install hints follow the project (uv venv, pnpm, yarn) and warn on pins; an installed but unconfigured mutmut 3 is `not-configured` with `ac mutate setup`, which writes the current mutmut keys. Settings: `mutation.files`, `mutation.exclude`, `mutation.tests`. The verifier runs `ac mutate` wherever it would hand-make mutants when a tool is installed; only `[mutation]`-tagged criteria stay a code gate (ADR-084)
+
 ## v0.48.0
 
 - `ac mutate <phase>` runs the project's own mutation tool (Stryker, Gremlins or mutmut) on the files a phase's commits changed, under a time cap (`mutation.cap_seconds`, default 10 minutes), and the verifier triages only the survivors for criteria tagged `[mutation]`. `ac verdict record` keeps the evidence and refuses a pass over a test gap, an unjustified equivalent or a capped run. A missing tool is suggested once per project (`ac mutate dismiss` silences it, `ac mutate --check` always shows it), never installed. The evidence is bound to the last `ac mutate` run kept on the machine (`.astrocode/.local/mutate-runs/`), so an edited survivor list cannot hide one nobody triaged. New: `/astro-mutate`, `ac mutate setup` (ADR-083)

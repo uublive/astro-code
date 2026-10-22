@@ -12,7 +12,14 @@ const manual = readFileSync(join(ROOT, 'MANUAL.md'), 'utf8');
 test('every tool row\'s install string appears verbatim in the MANUAL', async () => {
   const { MUTATION_TOOLS, DEFAULT_ENV } = await import('../lib/mutate.mjs');
   assert.ok(MUTATION_TOOLS.length >= 3);
-  for (const row of MUTATION_TOOLS) assert.ok(manual.includes(row.install(DEFAULT_ENV)), `${row.id}: ${row.install(DEFAULT_ENV)}`);
+  // every variant a row can produce, over every environment shape detectEnv knows (phase 48 P12)
+  const envs = [DEFAULT_ENV,
+    { node: { manager: 'pnpm', via: 'pnpm-lock.yaml' }, python: DEFAULT_ENV.python },
+    { node: { manager: 'yarn', via: 'yarn.lock' }, python: DEFAULT_ENV.python },
+    { node: DEFAULT_ENV.node, python: { installer: 'uv-venv', via: '.venv', locked: null } }];
+  for (const row of MUTATION_TOOLS) {
+    for (const env of envs) assert.ok(manual.includes(row.install(env)), `${row.id}: ${row.install(env)}`);
+  }
 });
 
 test('the MANUAL explains the keys, the dismissal, where the memory lives and that nothing is installed', () => {
@@ -23,13 +30,34 @@ test('the MANUAL explains the keys, the dismissal, where the memory lives and th
   assert.match(manual, /local, never committed/);
   const at = manual.indexOf('## Mutation testing (test-strength criteria)');
   const lines = manual.slice(at, manual.indexOf('\n## ', at + 5)).split('\n').length;
-  assert.ok(lines >= 30 && lines <= 60, `section is ${lines} lines`);
+  // widened from 60 to 75 in phase 48: line scope, phase tests, the settings, the install variants and the
+  // output files are each a sentence the reader needs, and a MANUAL that omits them sends people to the code
+  assert.ok(lines >= 30 && lines <= 75, `section is ${lines} lines`);
+});
+
+test('phase 48: the MANUAL names the settings, the run files, the outcomes, the per-tool narrowing and the verifier rule', () => {
+  for (const needle of ['mutation.files', 'mutation.exclude', 'mutation.tests', 'mutation.phases.<n>.cap_seconds',
+    'mutation.phases.<n>.tests', '.astrocode/.local/mutate-runs/', 'not-configured', 'changed lines']) {
+    assert.ok(manual.includes(needle), needle);
+  }
+  const at = manual.indexOf('## Mutation testing (test-strength criteria)');
+  const sec = manual.slice(at, manual.indexOf('\n## ', at + 5));
+  assert.match(sec, /Stryker gets line ranges/);
+  assert.match(sec, /Gremlins its own `--diff`/);
+  assert.match(sec, /mutmut 3\s+the functions/);
+  assert.match(sec, /mutmut 2 whole files/);
+  assert.match(sec, /uses it wherever it would otherwise hand-make\s+mutants/);
+  assert.match(sec, /tag is the only \*\*code\*\* gate/);
+  assert.match(manual, /ac mutate <n> \[--json\]\s+# mutation-test the phase's changed lines/);
 });
 
 test('the CHANGELOG records the feature under Unreleased', () => {
   const log = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
   const unreleased = log.slice(log.indexOf('## Unreleased'), log.indexOf('## v0.'));
   assert.match(unreleased, /ac mutate/);
+  assert.match(unreleased, /lines a phase changed/);
+  assert.match(unreleased, /phase's own tests/);
+  assert.match(unreleased, /ADR-084/);
 });
 
 test('astro-code stays dependency-free (ADR-001, C11)', () => {
