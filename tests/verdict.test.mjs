@@ -335,6 +335,31 @@ test('mutationGate: control passes; each breach is refused with a reason', async
   refuse(mut({ counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 }, survivors: [] }), /zero mutants/);
 });
 
+test('mutationGate: a padded survivor list cannot hide an untriaged survivor (C9)', async () => {
+  const { mutationGate } = await import('../lib/verdict.mjs');
+  const g = (mutation) => mutationGate({ marked: true, mutation });
+  const counts = { killed: 4, survived: 2, timeout: 0, 'no-coverage': 1, error: 0 };
+  // the same survivor three times, the no-coverage one never triaged
+  const padded = [surv({ id: '7' }), surv({ id: '7' }), surv({ id: '7' })];
+  let r = g(mut({ counts, survivors: padded }));
+  assert.equal(r.ok, false); assert.match(r.reason, /3 "survived" survivors listed but counts say 2/);
+  // statuses add up, but one survivor is listed twice in place of another
+  r = g(mut({ counts, survivors: [surv({ id: '7' }), surv({ id: '7' }), surv({ id: '9', status: 'no-coverage' })] }));
+  assert.equal(r.ok, false); assert.match(r.reason, /#7 is listed twice/);
+  // distinct mutants at the same file, line and mutator are fine: the tool id tells them apart
+  r = g(mut({ counts, survivors: [surv({ id: '7' }), surv({ id: '8' }), surv({ id: '9', status: 'no-coverage' })] }));
+  assert.equal(r.ok, true);
+});
+
+test('parsed mutants keep the tool mutant id, so survivors can be told apart', async () => {
+  const { parseStryker } = await import('../lib/mutparse.mjs');
+  const r = parseStryker(JSON.stringify({ files: { 'src/a.mjs': { mutants: [
+    { id: '11', mutatorName: 'StringLiteral', status: 'Survived', location: { start: { line: 5, column: 1 } } },
+    { id: '12', mutatorName: 'StringLiteral', status: 'Survived', location: { start: { line: 5, column: 9 } } },
+  ] } } }), { scope: ['src/a.mjs'] });
+  assert.deepEqual(r.mutants.map((m) => m.id), ['11', '12']);
+});
+
 test('mutationGate: fallback only for tool-missing/no-tool/no-scope with a one-line reason; unmarked bare is untouched', async () => {
   const { mutationGate } = await import('../lib/verdict.mjs');
   const fb = (outcome, reason) => mutationGate({ marked: true, mutation: mut({ outcome, fallback: { reason }, counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 }, survivors: [] }) });

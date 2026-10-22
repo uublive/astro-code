@@ -132,7 +132,7 @@ gives a closed, reproducible list, and you judge only what it leaves behind.
    `head`, `scope`, `cap_seconds`, `capped`, `complete`, `counts`, `survivors`) with these
    reshapes: `tool` = the result's `tool.id` (a string), `version` = `tool.version`, and leave
    out `command` and `fallback` when they are null. Then add `triage` (plus `justification` for `equivalent`) to
-   each survivor. Record it through `ac verdict record`; the code gate there refuses a pass over a
+   each survivor, keeping each one exactly once with its `id`. Record it through `ac verdict record`; the code gate there refuses a pass over a
    test-gap, an unjustified equivalent or an untriaged survivor.
 4. `outcome` `incomplete` or `error` fails the criterion: a capped run is never all killed.
    Name the cap key `mutation.cap_seconds`; raising it is the user's call, you stay read-only.
