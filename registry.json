@@ -669,6 +669,16 @@
       "branch": "develop",
       "claimed_at": "2026-10-22T08:16:56.042Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 49,
+      "milestone": 13,
+      "name": "Survivor triage support",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-22T13:02:49.535Z",
+      "status": "active"
     }
   ]
 }
