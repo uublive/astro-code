@@ -131,7 +131,9 @@ function chipOf(p, runs, current) {
   else if (p.status === 'executing') [glyph, tone] = ['⚙', 'chip:executing']
   else if (p.planned) [glyph, tone] = ['▸', 'chip:planned']
   else if (p.discussed) [glyph, tone] = ['◌', 'chip:discussed']
-  return { text: `${glyph}${p.number}`, tone, current: p.number === current }
+  // `○84(a)`: a teammate's phase, tagged with who; one not merged into this roadmap yet is dimmed.
+  if (p.remote && !running) tone = 'chip:todo'
+  return { text: `${glyph}${p.number}${p.owner ? `(${p.owner})` : ''}`, tone, current: p.number === current }
 }
 
 function roadmapRow(status, runs) {
