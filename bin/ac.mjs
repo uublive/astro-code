@@ -540,7 +540,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full recorded verdict)
   ac verdict plan <phase> [--full] [--json]  should the next verify narrow? (ADR-079)
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
-  ac mutate <phase> [--json]          run the project's mutation tool on the phase's changed files (ADR-083)
+  ac mutate <phase> [--json]          run the project's mutation tool on the lines the phase changed (ADR-083, ADR-084)
   ac mutate --check [<phase>] [--json]  which tool applies, is it installed, how to install it (read-only)
   ac mutate setup                     write a minimal tool config if absent (the only writer; installs nothing)
   ac mutate dismiss [<tool>]          stop showing the full install suggestion for this project
@@ -2604,14 +2604,17 @@ async function main() {
       const sub = pos[0] === 'setup' || pos[0] === 'dismiss' ? pos[0] : null;
       checkFlags(sub ? `mutate ${sub}` : 'mutate', flags);
       if (sub === 'setup') {
-        const s = setupFor(r, pos[1] || null);
+        const s = await setupFor(r, pos[1] || null);
         if (s.error) die(s.error);
         if (flags.json) { json(s); return; }
         if (!s.exists) {
           writeFileSync(join(r, s.file), s.content);
           console.log(`✓ wrote ${s.file} — minimal ${s.tool} config; nothing installed`);
+          if (s.assumed) console.log(`• ${s.assumed}`);
         } else if (s.tool === 'mutmut') {
-          console.log(`• ${s.file} exists — left alone; add this section to it:\n${s.content.trimEnd().replace(/^/gm, '    ')}`);
+          // Never rewritten: name what the installed major deprecated and print the replacements (≤3 lines).
+          console.log(`• ${s.file} exists — left alone; ${s.note ?? 'add this section to it'}:\n${s.content.trimEnd().replace(/^/gm, '    ')}`);
+          if (s.deprecated) console.log(`⚠ deprecated in mutmut ${s.major}: ${s.deprecated.map((d) => `${d.key} → ${d.replacement}`).join(', ')}`);
         } else {
           console.log(`• ${s.file} exists — left alone`);
         }
@@ -2639,28 +2642,54 @@ async function main() {
         if (res.notice === 'full') {
           console.log(`⊡ ${t.label} (${t.why}) is not installed — AI mutants used`);
           console.log(`  install: ${res.suggestion.install}`);
+          if (res.suggestion.warning) console.log(`  ⚠ ${res.suggestion.warning}`);
           console.log('  astro-code never installs it. Silence this hint: ac mutate dismiss');
         } else console.log(`⊡ ${MUTATE_REMINDER}`);
+      } else if (res.outcome === 'not-configured') {
+        console.log(`⚠ ${t.label} is installed but not configured — run: ${res.hint}`);
       } else if (res.outcome === 'no-tool' || res.outcome === 'no-scope') {
         console.log(`⊡ ${res.fallback.reason}`);
       } else if (res.outcome === 'error' && !t) {
         console.log(`⚠ ${res.error}`);
       } else {
+        // Lead with the change (CONVENTIONS §Voice): outcome and counts, scope, tests, every survivor,
+        // then per-file counts only where something needs a look, with the full versions' paths last.
         const c = res.counts;
         const total = Object.values(c).reduce((n, v) => n + v, 0);
         const sym = res.outcome === 'clean' ? '✓' : '⚠';
-        console.log(`${sym} ${via} · ${total} mutants: ${c.killed} killed · ${c.timeout} timeout · ${c.survived} survived · ${c['no-coverage']} no-coverage · ${c.error} error`);
-        if (res.scope.length) console.log(`scope: ${res.scope.join(', ')}`);
+        console.log(`${sym} ${via} · ${total} mutants: ${c.killed} killed · ${c.timeout} timeout · ${c.survived} survived · ${c['no-coverage']} no-coverage · ${c.error} error${res.ignored_count ? ` (+ ${res.ignored_count} ignored by the tool)` : ''}`);
+        if (res.scope.length) {
+          // Never the joined file list (it scales with the phase): the source, the sizes and why.
+          const d = res.scope_detail;
+          const unit = d.narrowed === 'functions' ? `${Object.values(d.functions ?? {}).reduce((n, q) => n + q.length, 0)} functions`
+            : d.narrowed === 'files' ? null : `${d.line_ranges} line ranges`;
+          console.log(`scope: ${d.source} — ${res.scope.length} files${unit ? `, ${unit}` : ''} (${d.why})`);
+        }
+        if (res.tests) {
+          const t = res.tests;
+          const shown = t.files.length ? `${t.files.slice(0, 5).join(', ')}${t.files.length > 5 ? `, +${t.files.length - 5}` : ''}` : 'all tests';
+          console.log(`tests: ${t.source} — ${shown} (${t.mechanism})${t.note ? ` — ${t.note}` : ''}`);
+        }
         if (res.error) console.log(`⚠ ${res.error}`);
-        for (const m of res.survivors) console.log(`⚠ ${m.file}:${m.line} ${m.mutator} ${m.status}`);
+        for (const m of res.survivors) console.log(`⚠ ${m.file}:${m.line ?? '?'} ${m.mutator} ${m.status}`);
+        const look = Object.entries(res.per_file).filter(([, k]) => k.survived || k['no-coverage'] || k.timeout || k.error || k.not_run || k.ignored);
+        for (const [f, k] of look.slice(0, 20)) {
+          console.log(`  ${f} — ${k.killed} killed · ${k.survived} survived · ${k.timeout} timeout · ${k['no-coverage']} no-coverage · ${k.error} error${k.ignored ? ` · ${k.ignored} ignored` : ''}${k.not_run ? ` · ${k.not_run} not run` : ''}`);
+        }
+        if (look.length > 20) console.log(`  +${look.length - 20} more files (full list below)`);
+        if (res.out_of_scope_count) console.log(`  ${res.out_of_scope_count} mutants outside the scope not counted`);
         if (res.capped) {
-          const left = res.not_run.length ? `${res.not_run.length} mutants` : '';
-          const files = res.not_run_files.length ? `${res.not_run_files.length} file(s): ${res.not_run_files.join(', ')}` : '';
-          console.log(`⚠ capped at ${res.cap_seconds}s — not run: ${[left, files].filter(Boolean).join(' + ') || 'unknown'}${res.not_run_note ? ` (${res.not_run_note})` : ''}`);
-        } else if (res.outcome === 'incomplete' && res.not_run.length) {
-          console.log(`⚠ incomplete — ${res.not_run.length} mutants not run`);
+          // Name the step, how far it got and the key to raise (D4); the cap is doubled as a first guess.
+          const cp = res.cap;
+          const n = res.reproduce.match(/ac mutate (\d+)/)?.[1] ?? '<n>';
+          console.log(`⚠ cap reached after ${res.cap_seconds}s during ${cp.step ?? 'step unknown'} — ${cp.tested ?? 0} of ${cp.total ?? '?'} mutants tested; raise for this phase: ac config set mutation.phases.${n}.cap_seconds ${res.cap_seconds * 2}`);
+          if (res.not_run_files.length) console.log(`⚠ not run: ${res.not_run_files.length} file(s): ${res.not_run_files.join(', ')}${res.not_run_note ? ` (${res.not_run_note})` : ''}`);
+        } else if (res.outcome === 'incomplete' && res.not_run_count) {
+          console.log(`⚠ incomplete — ${res.not_run_count} mutants not run`);
         }
         for (const w of res.warnings) console.log(`⚠ ${w}`);
+        if (res.full_list) console.log(`full list: ${res.full_list}`);
+        if (res.log) console.log(`log: ${res.log}`);
       }
       return;
     }

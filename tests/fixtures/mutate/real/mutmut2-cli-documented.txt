@@ -1,0 +1,13 @@
+mutmut 2.4 CLI, transcribed from the mutmut 2.x README / click definitions (NOT captured: mutmut 2 is not installed here).
+
+  mutmut version                       (2.x has no --version flag; only this subcommand)
+  mutmut run [options]
+    --paths-to-mutate TEXT             comma-separated paths (files or directories) to mutate
+    --tests-dir TEXT
+    --runner TEXT
+    --use-coverage
+  mutmut results
+  mutmut result-ids STATUS...          e.g. `mutmut result-ids skipped`
+  mutmut junitxml [options]
+    --suspicious-policy [ignore|skipped|error|failure]
+    --untested-policy   [ignore|skipped|error|failure]

@@ -543,6 +543,38 @@
       "why": "In an sdk turn, cat > notes.md <<'EOF' / run ac phase accept 1 later / EOF reaches the engine with --agent claude spliced into the heredoc body, so the file content is silently altered (also observed live in this verifier's own session).",
       "phase": "46",
       "file": "mods/astro-mods/hooks/lib/gates.js"
+    },
+    {
+      "id": "2026-10-22-ac-mutate-reads-an-installed-mutmut-3",
+      "title": "ac mutate reads an installed mutmut 3 as not installed when it cannot guess the source folder",
+      "status": "dropped",
+      "cost": "small",
+      "found_at": "2026-10-22T07:55:47.272Z",
+      "why": "mutmut 3.8 loads its config on import, so 'mutmut --version' crashes (FileNotFoundError: could not figure out where the code to mutate is) in a Python project with no src/ or package dir and no [mutmut] section; ac then prints the install hint for a tool that is installed. Should tell the two apart and point at ac mutate setup.",
+      "phase": "47",
+      "file": "lib/mutate.mjs",
+      "dropped_at": "2026-10-22T09:48:56.538Z",
+      "drop_reason": "phase 48 t10: reported as not-configured with ac mutate setup (C11)"
+    },
+    {
+      "id": "2026-10-22-astro-verify-fallback-line-glosses",
+      "title": "astro-verify fallback line glosses every fallback as (AI mutants stood in)",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-10-22T12:13:00.426Z",
+      "why": "commands/astro-verify.md step 3 tells the orchestrator a fallback line means AI mutants stood in, but the mutation.exclude no-scope and the tool-installed no-scope reasons both say no AI mutants were used; the report gloss is now wrong for those cases (the verifier role itself is correct)",
+      "phase": "48",
+      "file": "commands/astro-verify.md"
+    },
+    {
+      "id": "2026-10-22-gremlins-installed-via-go-install",
+      "title": "Gremlins installed via go install reports version null in ac mutate evidence",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-10-22T12:54:46.703Z",
+      "why": "A Gremlins v0.6.0 built with go install (the exact install hint ac prints) answers --version with gremlins version dev, so ac mutate records tool.version null; the evidence never carries a version for the hinted install path (go version -m on the binary gives the module version).",
+      "phase": "48",
+      "file": "lib/mutate.mjs"
     }
   ]
 }

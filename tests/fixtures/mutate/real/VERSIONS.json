@@ -1,0 +1,115 @@
+{
+  "captured_in": "astro-forge container, no network installs, no host commands",
+  "tools": {
+    "mutmut": {
+      "version": "3.8.0",
+      "source": "captured"
+    },
+    "gremlins": {
+      "version": "dev linux/arm64 (0.6 line)",
+      "source": "captured"
+    },
+    "stryker": {
+      "version": "10.x",
+      "source": "transcribed, not captured",
+      "file": "stryker-cli-documented.txt"
+    },
+    "mutmut2": {
+      "version": "2.4.x",
+      "source": "transcribed, not captured",
+      "file": "mutmut2-cli-documented.txt"
+    }
+  },
+  "files": {
+    "mutmut3-version-unconfigured.txt": "stderr of `mutmut --version` in a directory with no src/lib/<dirname> and no config",
+    "mutmut3-run-output.txt": "full `mutmut run` stdout+stderr (spinner frames are carriage-return overwrites)",
+    "mutmut3-results-methods.txt": "`mutmut results --all true`, including xǁKǁ... method names",
+    "mutmut3-show-b-1.txt": "`mutmut show pkg.mod.x_b__mutmut_1`",
+    "mutmut3-show-b-N.txt": "`mutmut show pkg.mod.x_b__mutmut_4` (a later mutant of b)",
+    "mutmut3-show-Km.txt": "`mutmut show pkg.mod.xǁKǁm__mutmut_1`",
+    "mutmut3-src-mod.py.txt": "the scratch source pkg/mod.py (functions a, b, c, class K with __init__ and m)",
+    "mutmut3-mutants-mod.py.txt": "the generated mutants/pkg/mod.py",
+    "gremlins-unleash-help.txt": "`gremlins unleash --help`",
+    "gremlins-run-output.txt": "`gremlins unleash --diff <sha> -o out.json` on a two-package module",
+    "stryker-cli-documented.txt": "transcribed Stryker 10 CLI and log markers",
+    "mutmut3-help.txt": "`mutmut --help`, `run --help`, `results --help`, `show --help` (run from a configured project)",
+    "mutmut2-cli-documented.txt": "transcribed mutmut 2.4 CLI"
+  },
+  "markers": {
+    "mutmut3": {
+      "steps": [
+        "Generating mutants",
+        "Running stats",
+        "Running clean tests",
+        "Running forced fail test",
+        "Running mutation testing"
+      ],
+      "progress": "N/M followed by the emoji counters, e.g. `13/13  🎉 10 🫥 0 ⏰ 0 🤔 0 🙁 3 🔇 0 🧙 0`"
+    },
+    "gremlins": {
+      "steps": [
+        "Gathering files diff",
+        "Gathering coverage",
+        "Mutation testing completed"
+      ],
+      "progress": "none: one line per finished mutant (`KILLED|LIVED|NOT COVERED|SKIPPED|TIMED OUT|NOT VIABLE <TYPE> at file:line:col`)"
+    },
+    "stryker": {
+      "steps": [
+        "Starting initial test run",
+        "Initial test run succeeded",
+        "Mutation testing"
+      ],
+      "progress": "`<pct>% (elapsed: ..., remaining: ...) <tested>/<total> Mutants tested`"
+    }
+  },
+  "notes": [
+    "mutmut 3.8 `--version` in an unconfigured project exits 1 with a Python traceback ending `FileNotFoundError: Could not figure out where the code to mutate is. Please specify it by adding \"source_paths=code_dir\" in setup.cfg to the [mutmut] section.` The signature is `Could not figure out where the code to mutate is`.",
+    "mutmut 3.8 config keys (configuration.py): source_paths, pytest_add_cli_args_test_selection, pytest_add_cli_args, only_mutate, do_not_mutate, do_not_mutate_patterns, also_copy, max_stack_depth, debug, mutate_only_covered_lines, process_isolation, forkserver_warmup. Read from pyproject.toml [tool.mutmut] when that table exists, else setup.cfg [mutmut].",
+    "DEPRECATED in 3.8 (UserWarning): paths_to_mutate -> source_paths, tests_dir -> pytest_add_cli_args_test_selection. source_paths + pytest_add_cli_args_test_selection in setup.cfg produce no warning.",
+    "mutmut 3.8 defaults source_paths by guessing lib/, src/, <dirname>/ — an unconfigured project with none of those cannot even run --version.",
+    "mutant-name globs work: `mutmut run 'pkg.mod.x_b__mutmut_*' 'pkg.mod.xǁKǁm__mutmut_*'` ran only those mutants; every other mutant stays `not checked` in `results --all true`.",
+    "PYTEST_ADDOPTS=tests/test_b.py narrows the stats and clean runs ONLY when the project config has no pytest_add_cli_args_test_selection. With `pytest_add_cli_args_test_selection=tests/` (what `ac mutate setup` writes) the union still collects tests/test_a.py, so positional files do NOT narrow.",
+    "PYTEST_ADDOPTS=--ignore=tests/test_a.py DOES narrow even when the config names tests/ (collected only tests/test_b.py). So: positional files when the config has no selection, --ignore=<other test file> when it does.",
+    "`mutmut show <name>` prints a unified diff whose hunk header (`@@ -1,4 +1,4 @@`) is relative to the FUNCTION, not the file: line 1 is the def line. The real source line is the function's def line + (hunk old offset + index of the `-` line) - 1.",
+    "The generated mutants/pkg/mod.py holds, per function, `<f>` (trampoline), `x_<f>__mutmut_orig` and `x_<f>__mutmut_N`; N bodies differ from orig by one line, so a per-mutant offset needs no process.",
+    "gremlins `unleash --diff <sha>` accepts a commit sha and diffs <sha> against HEAD (committed changes): with the phase base it also covers post-phase commits, so survivors MUST be filtered back to the phase's lines.",
+    "gremlins `-o <file>` writes JSON {go_module, files:[{file_name, mutations:[{type,status,line,column}]}]}. `--exclude-files` is a repeatable regexp flag. There is no test-selection flag.",
+    "GOFLAGS='-run=^(TestSub)$' reaches gremlins' go test calls: with it a package whose tests do not match reported its mutants NOT COVERED. It narrows, but unmatched mutants read as not covered (survivor status no-coverage), so the filter must be the phase's tests for the phase's package.",
+    "gremlins prints no progress count; the step is inferred from `Gathering files diff...` / `Gathering coverage...` and the per-mutant status lines.",
+    "Stryker is not installed here and no network installs are allowed: its CLI is transcribed, marked as such, and C14 compares flags against the transcription.",
+    "gremlins --version prints `gremlins version dev linux/arm64` here (no numeric 0.x): ac's version regex finds nothing, version is null, and gremlins has no supportedMajors, so the run proceeds."
+  ],
+  "real_runs": {
+    "date": "2026-10-22",
+    "command": "AC_MUTATE_REAL=1 node --test tests/mutate_real.test.mjs",
+    "mutmut": {
+      "version": "3.8.0",
+      "result": "pass",
+      "note": "scope narrowed to functions, tests from the phase's commits (PYTEST_ADDOPTS), survivors at real lines, log and full list written. Finding: `ac mutate setup` wrote source_paths=src/ for a project with a top-level package; fixed to pick the first directory with an __init__.py."
+    },
+    "gremlins": {
+      "version": "dev linux/arm64",
+      "result": "pass",
+      "note": "--diff <phase base> and GOFLAGS -run accepted; scope narrowed to the diff; log and full list written."
+    },
+    "stryker": "not run: not installed",
+    "mutmut2": "not run: not installed"
+  },
+  "mutmut3_config_keys": [
+    "source_paths",
+    "pytest_add_cli_args_test_selection",
+    "pytest_add_cli_args",
+    "only_mutate",
+    "do_not_mutate",
+    "do_not_mutate_patterns",
+    "also_copy",
+    "max_stack_depth",
+    "debug",
+    "mutate_only_covered_lines",
+    "process_isolation",
+    "forkserver_warmup",
+    "paths_to_mutate",
+    "tests_dir"
+  ]
+}

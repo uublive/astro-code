@@ -42,9 +42,9 @@ test('classifyRun covers every outcome; capped and zero mutants are never clean'
 });
 
 test('the tool table carries the exact install strings and the 600s default cap', async () => {
-  const { MUTATION_TOOLS, DEFAULT_CAP_SECONDS } = await import('../lib/mutate.mjs');
+  const { MUTATION_TOOLS, DEFAULT_CAP_SECONDS, DEFAULT_ENV } = await import('../lib/mutate.mjs');
   assert.equal(DEFAULT_CAP_SECONDS, 600);
-  assert.deepEqual(Object.fromEntries(MUTATION_TOOLS.map((r) => [r.id, r.install])), {
+  assert.deepEqual(Object.fromEntries(MUTATION_TOOLS.map((r) => [r.id, r.install(DEFAULT_ENV)])), {
     stryker: 'npm i -D @stryker-mutator/core',
     gremlins: 'go install github.com/go-gremlins/gremlins/cmd/gremlins@latest',
     mutmut: 'pip install mutmut',
@@ -77,11 +77,11 @@ test('C2 scope: the phase\'s own remediation commits (phase NN remediate-cK) are
   } finally { done(p); }
 });
 
-test('mutmut 3 globs a package __init__.py as the package itself (its mutants are named pkg.x_f__mutmut_N)', async () => {
+test('mutmut 3 runs exactly the globs it is given (naming lives in lib/pyscan.mjs; tests/mutate_scope.test.mjs covers a package __init__.py)', async () => {
   const { MUTATION_TOOLS } = await import('../lib/mutate.mjs');
   const row = MUTATION_TOOLS.find((r) => r.id === 'mutmut');
-  const { argv } = row.build({ major: 3, bin: 'mutmut', scope: ['src/pkg/__init__.py', 'src/pkg/a.py'] });
-  assert.deepEqual(argv, ['mutmut', 'run', 'pkg.*', 'pkg.a.*']);
+  const { argv } = row.build({ major: 3, bin: 'mutmut', scope: ['src/pkg/a.py'], mutantGlobs: ['pkg.a.x_f__mutmut_*'] });
+  assert.deepEqual(argv, ['mutmut', 'run', 'pkg.a.x_f__mutmut_*']);
 });
 
 test('C3 detection: manifest picks the tool and says why; mutation.tool overrides; no manifest is no-tool', async () => {
@@ -118,21 +118,24 @@ test('C1/C2 runMutate (stryker): every mutant present, statuses counted, argv ca
     assert.equal(r.tool.id, 'stryker'); assert.equal(r.tool.version, '8.2.6'); assert.equal(r.tool.why, 'package.json → stryker');
     assert.deepEqual(r.scope, ['src/a.mjs']);
     assert.deepEqual(r.counts, { killed: 2, survived: 1, timeout: 1, 'no-coverage': 1, error: 2 });
-    assert.equal(r.mutants.length, 7); assert.equal(r.ignored.length, 1);
+    assert.equal(Object.values(r.counts).reduce((a, b) => a + b, 0), 7); assert.equal(r.ignored_count, 1);
+    assert.equal(r.mutants, undefined, 'no per-mutant array in the result (phase 48 D5)');
+    assert.deepEqual(r.per_file['src/a.mjs'].ignored, 1);
     assert.deepEqual(r.survivors.map((m) => m.status), ['survived', 'no-coverage']);
     assert.equal(r.complete, true); assert.equal(r.capped, false); assert.equal(r.cap_seconds, 600);
     assert.equal(r.reproduce, 'ac mutate 1 --json');
     assert.equal(r.head, sh(p.dir, 'rev-parse', 'HEAD').stdout.trim());
     const [call] = logLines(p.log).filter((l) => l.argv[0] === 'run');
-    assert.equal(call.argv[call.argv.indexOf('--mutate') + 1], 'src/a.mjs');
-    assert.equal(r.command, 'stryker run --mutate src/a.mjs --reporters json');
+    assert.equal(call.argv[call.argv.indexOf('--mutate') + 1], 'src/a.mjs:1-30');
+    // phase 1 wrote tests/a.test.mjs, so the run goes through the generated config (D2)
+    assert.equal(r.command, `stryker run .astrocode/.local/mutate-runs/${p.slug1}.stryker.config.mjs --mutate src/a.mjs:1-30 --reporters json`);
     const again = await runMutate(p.dir, p.slug1, { env: p.env });
     const strip = ({ started_at, duration_ms, log, ...rest }) => rest;
     assert.deepEqual(strip(again), strip(r));
   } finally { done(p); }
 });
 
-test('C2 gremlins excludes every other tracked .go file; mutmut 2.x gets --paths-to-mutate; mutmut 3.x gets globs', async () => {
+test('C2 gremlins gets --diff against the phase base; mutmut 2.x gets --paths-to-mutate; mutmut 3.x gets function globs', async () => {
   const { runMutate } = await import('../lib/mutate.mjs');
   let p = await rig('go', { report: 'gremlins.json' });
   try {
@@ -140,8 +143,8 @@ test('C2 gremlins excludes every other tracked .go file; mutmut 2.x gets --paths
     assert.equal(r.tool.id, 'gremlins'); assert.deepEqual(r.scope, ['a.go']);
     assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 1, 'no-coverage': 1, error: 1 });
     const argv = logLines(p.log).find((l) => l.argv[0] === 'unleash').argv;
-    const ex = argv.filter((a, i) => argv[i - 1] === '--exclude-files');
-    assert.deepEqual(ex.sort(), ['^b\\.go$', '^c\\.go$']);
+    assert.equal(argv[argv.indexOf('--diff') + 1], sh(p.dir, 'rev-parse', `${sh(p.dir, 'log', '--format=%H', '--grep', '(phase 1 t1)', '--fixed-strings').stdout.trim()}^`).stdout.trim());
+    assert.equal(argv.includes('--exclude-files'), false, 'no blanket exclusion list');
   } finally { done(p); }
   p = await rig('py', { report: 'mutmut2-junit.xml' });
   try {
@@ -154,10 +157,10 @@ test('C2 gremlins excludes every other tracked .go file; mutmut 2.x gets --paths
   p = await rig('py', { report: 'mutmut3-results.txt', version: 'mutmut, version 3.2.0' });
   try {
     const r = await runMutate(p.dir, p.slug1, { env: p.env });
-    assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'run').argv, ['run', 'a.*']);
+    assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'run').argv, ['run', 'a.x_add__mutmut_*', 'a.x_mul__mutmut_*', 'a.x_sub__mutmut_*']);
     assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 2, 'no-coverage': 1, error: 1 });
     assert.equal(r.complete, false, 'a "not checked" mutant means the run is not complete');
-    assert.equal(r.not_run.length, 1);
+    assert.equal(r.not_run_count, 1);
     assert.equal(r.outcome, 'incomplete');
   } finally { done(p); }
 });
@@ -171,7 +174,7 @@ test('mutmut 2 collects with untested/suspicious policy failure: an untested mut
     const collect = logLines(p.log).find((l) => l.argv[0] === 'junitxml').argv;
     assert.deepEqual(collect, ['junitxml', '--untested-policy', 'failure', '--suspicious-policy', 'failure']);
     assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 1, 'no-coverage': 0, error: 0 });
-    assert.equal(r.not_run.length, 2);
+    assert.equal(r.not_run_count, 2);
     assert.equal(r.complete, false);
     assert.equal(r.outcome, 'incomplete', 'untested mutants never make a run clean');
   } finally { done(p); }
@@ -199,7 +202,9 @@ test('mutmut 2 mutants a pre_mutation hook skipped are ignored, never killed', a
     const r = await runMutate(p.dir, p.slug1, { env: p.env });
     assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'result-ids').argv, ['result-ids', 'skipped']);
     assert.equal(r.counts.killed, 0);
-    assert.deepEqual(r.ignored.map((m) => m.line), [1]);
+    assert.equal(r.ignored_count, 1);
+    const listed = readFileSync(join(p.dir, r.full_list), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(listed.filter((m) => m.status === 'ignored').map((m) => m.line), [1]);
   } finally { done(p); }
 });
 
@@ -234,7 +239,7 @@ test('C4 a cap returns capped/incomplete with not-run listed, and kills the stub
     assert.ok(Date.now() - t0 < 9000, `took ${Date.now() - t0}ms`);
     assert.equal(r.cap_seconds, 2); assert.equal(r.capped, true); assert.equal(r.complete, false);
     assert.equal(r.outcome, 'incomplete');
-    assert.equal(r.not_run.length, 1);
+    assert.equal(r.not_run_count, 1);
     const pids = readFileSync(p.pids, 'utf8').split(' ').map(Number);
     await new Promise((res) => setTimeout(res, 300));
     for (const pid of pids) assert.equal(alive(pid), false, `pid ${pid} still alive`);
@@ -334,18 +339,20 @@ test('setupFor returns parseable content per tool and exists:true when a config 
   const p = await makeProject('js');
   try {
     mkdirSync(join(p.dir, 'src'), { recursive: true });
-    const s = setupFor(p.dir);
+    const env = restrictedEnv([]); // no mutmut on the PATH: the major is assumed
+    const s = await setupFor(p.dir, null, { env });
     assert.equal(s.file, 'stryker.config.json'); assert.equal(s.exists, false);
     const cfg = JSON.parse(s.content);
     assert.equal(cfg.testRunner, 'command'); assert.ok(cfg.mutate.some((g) => g.startsWith('src/')));
     writeFileSync(join(p.dir, 'stryker.config.json'), '{}');
-    assert.equal(setupFor(p.dir).exists, true);
-    const g = setupFor(p.dir, 'gremlins');
+    assert.equal((await setupFor(p.dir, null, { env })).exists, true);
+    const g = await setupFor(p.dir, 'gremlins', { env });
     assert.equal(g.file, '.gremlins.yaml');
     for (const l of g.content.split('\n').filter((x) => x && !x.startsWith('#'))) assert.match(l, /^\s*[\w-]+:( .+)?$/);
-    const m = setupFor(p.dir, 'mutmut');
-    assert.match(m.content, /^\[mutmut\]\npaths_to_mutate=.+\ntests_dir=.+\n$/);
-    assert.match(setupFor(p.dir, 'nope').error, /unknown/);
+    const m = await setupFor(p.dir, 'mutmut', { env });
+    assert.match(m.content, /^\[mutmut\]\nsource_paths=.+\npytest_add_cli_args_test_selection=.+\n$/);
+    assert.match(m.assumed, /not installed/);
+    assert.match((await setupFor(p.dir, 'nope', { env })).error, /unknown/);
     assert.deepEqual(await dismissTool(p.dir), { tool: 'stryker' });
   } finally { done(p); }
 });
@@ -361,5 +368,324 @@ test('a stale report left by an earlier run is never this run\'s result', async 
     utimesSync(stale, old, old);
     const r = await runMutate(p.dir, p.slug1, { env: p.env });
     assert.equal(r.outcome, 'error'); assert.match(r.error, /no report/);
+  } finally { done(p); }
+});
+
+// ---- Phase 48 t10 — install hints match the project (C10), not-configured (C11), setup (C12) ----
+import { mkdtempSync as mk10, mkdirSync as md10, writeFileSync as wf10 } from 'node:fs';
+import { tmpdir as td10 } from 'node:os';
+
+const tmp10 = (files = {}) => {
+  const d = mk10(join(td10(), 'ac-hint-'));
+  for (const [f, body] of Object.entries(files)) { md10(join(d, f, '..'), { recursive: true }); wf10(join(d, f), body); }
+  return d;
+};
+
+test('C10: installHint follows the lockfile and the venv layout; the default variants are the phase-47 strings', async () => {
+  const { installHint, MUTATION_TOOLS } = await import('../lib/mutate.mjs');
+  const row = (id) => MUTATION_TOOLS.find((r) => r.id === id);
+  assert.equal(installHint(tmp10({ '.venv/bin/python': '' }), row('mutmut')).install, 'uv pip install --python .venv/bin/python mutmut');
+  assert.equal(installHint(tmp10({ '.venv/bin/python': '', '.venv/bin/pip': '' }), row('mutmut')).install, 'pip install mutmut');
+  assert.equal(installHint(tmp10({ 'pnpm-lock.yaml': '' }), row('stryker')).install, 'pnpm add -D @stryker-mutator/core');
+  assert.equal(installHint(tmp10({ 'yarn.lock': '' }), row('stryker')).install, 'yarn add -D @stryker-mutator/core');
+  assert.equal(installHint(tmp10({ 'package-lock.json': '{}' }), row('stryker')).install, 'npm i -D @stryker-mutator/core');
+  assert.equal(installHint(tmp10(), row('stryker')).install, 'npm i -D @stryker-mutator/core');
+  assert.equal(installHint(tmp10({ 'go.mod': 'module x\n' }), row('gremlins')).install, 'go install github.com/go-gremlins/gremlins/cmd/gremlins@latest');
+  assert.equal(installHint(tmp10(), row('stryker')).warning, undefined, 'a plain project warns about nothing');
+  assert.match(installHint(tmp10({ 'pnpm-lock.yaml': '' }), row('stryker')).why, /pnpm-lock\.yaml/);
+});
+
+test('C10: a pinned package or a lock-managed Python environment adds a warning naming the file', async () => {
+  const { installHint, MUTATION_TOOLS } = await import('../lib/mutate.mjs');
+  const mutmut = MUTATION_TOOLS.find((r) => r.id === 'mutmut');
+  assert.match(installHint(tmp10({ 'requirements.txt': 'mutmut==2.4.4\n' }), mutmut).warning, /requirements\.txt/);
+  assert.match(installHint(tmp10({ 'uv.lock': '[[package]]\nname = "mutmut"\n' }), mutmut).warning, /uv\.lock/);
+  assert.match(installHint(tmp10({ 'uv.lock': '# no mutmut\n' }), mutmut).warning, /uv\.lock/, 'a lock-managed environment warns even when the tool is not in it');
+});
+
+test('C11: an installed mutmut 3 that crashes on --version for lack of config is not-configured, never missing', async () => {
+  const { runMutate, checkMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('py', { extra: { MUTATE_STUB_VERSION_CRASH: '1' } });
+  try {
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(r.outcome, 'not-configured');
+    assert.equal(r.hint, 'ac mutate setup');
+    assert.equal(r.fallback, null);
+    assert.equal(r.suggestion, undefined);
+    assert.equal(existsSync(join(p.dir, '.astrocode', '.local', 'mutate-notices.json')), false, 'no notice memory');
+    const c = await checkMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(c.outcome, 'not-configured');
+    assert.equal(c.suggestion, undefined);
+  } finally { done(p); }
+});
+
+test('C11: a mutmut whose version command fails without the signature is still tool-missing, with the failure in warnings', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('py', { extra: { MUTATE_STUB_V2_REAL: '1', MUTATE_STUB_VERSION: 'x' } });
+  try {
+    // 2.x answers `version`, so make both fail: a stub copy that always exits 1
+    wf10(join(p.dir, 'stubbin', 'mutmut'), '#!/bin/sh\necho boom >&2\nexit 1\n');
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(r.outcome, 'tool-missing');
+    assert.ok(r.warnings.some((w) => /failed/.test(w)));
+  } finally { done(p); }
+});
+
+test('C12: setupFor writes the keys the installed mutmut major accepts, names deprecated ones, and respects [tool.mutmut]', async () => {
+  const { setupFor } = await import('../lib/mutate.mjs');
+  for (const [version, wantNew] of [['3.8.0', true], ['2.4.4', false]]) {
+    const p = await rig('py', { version, extra: { MUTATE_STUB_V2_REAL: version.startsWith('2') ? '1' : '0' } });
+    try {
+      md10(join(p.dir, 'src'), { recursive: true });
+      const s = await setupFor(p.dir, 'mutmut', { env: p.env });
+      assert.equal(s.file, 'setup.cfg');
+      if (wantNew) {
+        assert.match(s.content, /^\[mutmut\]\nsource_paths=src\/\npytest_add_cli_args_test_selection=tests\/\n$/);
+        assert.doesNotMatch(s.content, /paths_to_mutate|tests_dir/);
+      } else {
+        assert.match(s.content, /paths_to_mutate=src\/\ntests_dir=tests\/\n$/);
+        assert.doesNotMatch(s.content, /source_paths/);
+      }
+      if (wantNew) {
+        wf10(join(p.dir, 'setup.cfg'), '[mutmut]\npaths_to_mutate=src/\ntests_dir=tests/\n');
+        const old = await setupFor(p.dir, 'mutmut', { env: p.env });
+        assert.equal(old.exists, true);
+        assert.deepEqual(old.deprecated.map((d) => d.key), ['paths_to_mutate', 'tests_dir']);
+        wf10(join(p.dir, 'pyproject.toml'), '[tool.mutmut]\nsource_paths = ["x"]\n');
+        const py = await setupFor(p.dir, 'mutmut', { env: p.env });
+        assert.equal(py.file, 'pyproject.toml');
+        assert.equal(py.exists, true);
+        assert.match(py.content, /\[tool\.mutmut\]/);
+      }
+    } finally { done(p); }
+  }
+});
+
+// ---- Phase 48 t11 — the log beside the run (C7), the per-phase cap and the step a cap hit (C6) ----
+import { readdirSync as rd11, mkdtempSync as mk11 } from 'node:fs';
+import { tmpdir as td11 } from 'node:os';
+
+const cfgSet = async (dir, patch) => {
+  const { updateConfig } = await import('../lib/config.mjs');
+  await updateConfig(dir, (c) => { c.mutation = { ...(c.mutation ?? {}), ...patch }; return c; });
+};
+const runDirOf = (p) => join(p.dir, '.astrocode', '.local', 'mutate-runs');
+
+test('C7: the log sits beside the run, holds both streams, is never committed and is replaced by a rerun', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const before = new Set(rd11(td11()).filter((n) => n.startsWith('ac-mutate-')));
+  const p = await rig('js', { report: 'stryker-mutation.json', nodeModules: true, extra: { MUTATE_STUB_OUT: 'MARK-1\n', MUTATE_STUB_ERR: 'MARK-E\n' } });
+  try {
+    const res = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(res.log, `.astrocode/.local/mutate-runs/${p.slug1}.log`);
+    const text = readFileSync(join(p.dir, res.log), 'utf8');
+    assert.match(text, /MARK-1/); assert.match(text, /MARK-E/);
+    assert.equal(sh(p.dir, 'status', '--porcelain', '--untracked-files=all').stdout.includes('mutate-runs'), false);
+    assert.equal(sh(p.dir, 'check-ignore', '-q', res.log).status, 0);
+    // a rerun with another marker replaces, never accumulates
+    const env2 = { ...p.env, MUTATE_STUB_OUT: 'MARK-2\n', MUTATE_STUB_ERR: '' };
+    await runMutate(p.dir, p.slug1, { env: env2 });
+    const again = readFileSync(join(p.dir, res.log), 'utf8');
+    assert.match(again, /MARK-2/); assert.doesNotMatch(again, /MARK-1/);
+    assert.equal(rd11(runDirOf(p)).filter((n) => n.endsWith('.log')).length, 1);
+    // another phase leaves this log alone
+    await runMutate(p.dir, p.slug2, { env: p.env });
+    assert.match(readFileSync(join(p.dir, res.log), 'utf8'), /MARK-2/);
+    assert.equal(rd11(runDirOf(p)).filter((n) => n.endsWith('.log')).length, 2);
+    // Only the shape runMutate's old run dir had (`mkdtemp('ac-mutate-')`: six random characters);
+    // other test files running alongside make their own `ac-mutate-<word>-*` dirs in the same TMPDIR.
+    const after = rd11(td11()).filter((n) => /^ac-mutate-[A-Za-z0-9]{6}$/.test(n) && !before.has(n));
+    assert.deepEqual(after, [], 'nothing lands only in the system temp dir');
+  } finally { done(p); }
+});
+
+// Per tool: a marker the real tool prints (tests/fixtures/mutate/real), then a long sleep.
+const CAP_RIGS = [
+  ['js', 'stryker', 'Starting initial test run (command test runner with "off" coverage analysis).\n', /initial test run/, 'Mutation testing  30% (elapsed: <1m, remaining: ~1m) 120/400 Mutants tested (3 survived, 0 timed out)\n', 'mutation testing'],
+  ['go', 'gremlins', 'Gathering files diff...\nGathering coverage... ', /gathering coverage/, null, null],
+  ['py', 'mutmut', '⠋ Running stats\n    done\n', /stats run/, '⠙ 120/400  \u{1F389} 100 \u{1FAE5} 0 ⏰ 0 \u{1F914} 0 \u{1F641} 20 \u{1F507} 0 \u{1F9D9} 0\n', 'mutation testing'],
+];
+
+for (const [kind, tool, marker, stepRe, progress, progressStep] of CAP_RIGS) {
+  test(`C6 (${tool}): a capped run returns promptly, kills the tool, and names the step, the counts and the keys to raise`, async () => {
+    const { runMutate } = await import('../lib/mutate.mjs');
+    const p = await rig(kind, { nodeModules: kind === 'js', version: kind === 'py' ? '3.8.0' : undefined,
+      extra: { MUTATE_STUB_SLEEP: '30', MUTATE_STUB_CHILD: '1', MUTATE_STUB_OUT: marker } });
+    try {
+      await cfgSet(p.dir, { cap_seconds: 2 });
+      const t0 = Date.now();
+      const res = await runMutate(p.dir, p.slug1, { env: p.env });
+      assert.ok(Date.now() - t0 < 8000, `took ${Date.now() - t0}ms`);
+      assert.equal(res.capped, true); assert.equal(res.outcome, 'incomplete');
+      assert.match(res.cap.step, stepRe);
+      assert.equal(res.cap.tested, 0);
+      assert.deepEqual(res.cap.keys, [`mutation.phases.1.cap_seconds`, 'mutation.cap_seconds']);
+      assert.equal(res.cap.source, 'project');
+      await new Promise((x) => setTimeout(x, 300));
+      for (const pid of readFileSync(p.pids, 'utf8').split(' ').map(Number)) assert.equal(alive(pid), false);
+      if (progress) {
+        const p2 = await rig(kind, { nodeModules: kind === 'js', version: kind === 'py' ? '3.8.0' : undefined,
+          extra: { MUTATE_STUB_SLEEP: '30', MUTATE_STUB_OUT: marker + progress } });
+        try {
+          await cfgSet(p2.dir, { cap_seconds: 2 });
+          const r2 = await runMutate(p2.dir, p2.slug1, { env: p2.env });
+          assert.equal(r2.cap.step, progressStep);
+          assert.equal(r2.cap.tested, 120); assert.equal(r2.cap.total, 400);
+        } finally { done(p2); }
+      }
+    } finally { done(p); }
+  });
+}
+
+test('C6: a run that prints nothing reports step null', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('js', { nodeModules: true, extra: { MUTATE_STUB_SLEEP: '30' } });
+  try {
+    await cfgSet(p.dir, { cap_seconds: 1 });
+    const res = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(res.cap.step, null);
+  } finally { done(p); }
+});
+
+test('C6: the phase cap beats the project cap for that phase only; with no setting the cap is 600 s from the default', async () => {
+  const { runMutate, mutationSettings } = await import('../lib/mutate.mjs');
+  const p = await rig('js', { report: 'stryker-mutation.json', nodeModules: true });
+  try {
+    assert.deepEqual(mutationSettings(p.dir, 1).cap, { seconds: 600, source: 'default', keys: ['mutation.phases.1.cap_seconds', 'mutation.cap_seconds'] });
+    await cfgSet(p.dir, { cap_seconds: 100, phases: { 1: { cap_seconds: 60 } } });
+    const one = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(one.cap.source, 'phase'); assert.equal(one.cap_seconds, 60);
+    assert.equal(one.capped, false); assert.equal(one.outcome, 'survivors');
+    const two = await runMutate(p.dir, p.slug2, { env: p.env });
+    assert.equal(two.cap.source, 'project'); assert.equal(two.cap_seconds, 100);
+    const w = [];
+    await cfgSet(p.dir, { cap_seconds: 'soon', phases: { 1: { cap_seconds: -1 } } });
+    assert.equal(mutationSettings(p.dir, '01', w).cap.source, 'default');
+    assert.equal(w.length, 2);
+  } finally { done(p); }
+});
+
+// ---- Phase 48 t14 — survivors whole, everything else counted, the full list on disk (C8); mutmut 3 real lines (C9) ----
+import { copyFileSync as cp14, cpSync as cps14, mkdirSync as md14 } from 'node:fs';
+
+test('C9: mutmut 3 survivors and killed mutants carry real source lines inside the changed functions', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const { addPhase, findPhase } = await import('../lib/roadmap.mjs');
+  const REAL = join(FX, 'real');
+  const src = readFileSync(join(REAL, 'mutmut3-src-mod.py.txt'), 'utf8');
+  const p = await makeProject('py');
+  try {
+    await addPhase(p.dir, { number: 5, name: 'Lines' });
+    md14(join(p.dir, 'pkg'), { recursive: true });
+    // baseline differs from the real source on b's last line and K.m's: the phase "wrote" those lines
+    writeFileSync(join(p.dir, 'pkg', 'mod.py'), src.replace('return x * 2', 'return x * 3').replace('return x + self.v', 'return x + self.v + 1'));
+    commit(p.dir, 'baseline');
+    writeFileSync(join(p.dir, 'pkg', 'mod.py'), src);
+    commit(p.dir, 'work (phase 5 t1)');
+    const show = join(p.dir, 'show'); md14(show);
+    copyFileSync14(join(REAL, 'mutmut3-show-b-1.txt'), join(show, 'pkg.mod.x_b__mutmut_1.diff'));
+    copyFileSync14(join(REAL, 'mutmut3-show-b-N.txt'), join(show, 'pkg.mod.x_b__mutmut_4.diff'));
+    copyFileSync14(join(REAL, 'mutmut3-show-Km.txt'), join(show, 'pkg.mod.xǁKǁm__mutmut_1.diff'));
+    const gen = join(p.dir, 'gen', 'pkg'); md14(gen, { recursive: true });
+    copyFileSync14(join(REAL, 'mutmut3-mutants-mod.py.txt'), join(gen, 'mod.py'));
+    const bin = installStub(p.dir, 'mutmut', 'stubbin');
+    p.log = join(p.dir, 'stub.log');
+    const env = restrictedEnv([bin], { MUTATE_STUB_LOG: p.log, MUTATE_STUB_VERSION: 'mutmut, version 3.8.0', MUTATE_STUB_REPORT: join(REAL, 'mutmut3-results-methods.txt'), MUTATE_STUB_SHOW: show, MUTATE_STUB_MUTANTS: join(p.dir, 'gen') });
+    const slug = findPhase(p.dir, '5').slug;
+    const r = await runMutate(p.dir, slug, { env });
+    const lineAt = (n) => src.split('\n')[n - 1];
+    const byName = Object.fromEntries(r.survivors.map((s) => [s.name, s]));
+    assert.deepEqual(Object.keys(byName).sort(), ['pkg.mod.x_b__mutmut_1', 'pkg.mod.xǁKǁm__mutmut_1']);
+    assert.match(lineAt(byName['pkg.mod.x_b__mutmut_1'].line), /if x > 10/);
+    assert.match(lineAt(byName['pkg.mod.xǁKǁm__mutmut_1'].line), /return x \+ self\.v/);
+    for (const s of r.survivors) assert.ok(s.line > 0);
+    const full = readFileSync(join(p.dir, r.full_list), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(full.length >= 9);
+    assert.ok(full.every((m) => m.line === null || m.line > 0), 'no 0 lines');
+    const b4 = full.find((m) => m.mutator === 'x_b__mutmut_4');
+    assert.match(lineAt(b4.line), /return x - 10/, 'a later mutant of b is on its own line, not the def line');
+    assert.notEqual(b4.line, full.find((m) => m.mutator === 'x_b__mutmut_1').line);
+    assert.ok(full.filter((m) => m.scope === 'in').every((m) => m.line > 0), 'every in-scope mutant is placed by the generated file');
+    // c and __init__ were outside the changed functions: out of scope, not survivors
+    assert.ok(r.out_of_scope_count >= 5);
+    assert.equal(r.survivors.some((s) => s.func === 'c'), false);
+    assert.ok(r.warnings.every((w) => !/could not be mapped/.test(w)));
+
+    // without the generated file, killed mutants are unmapped (null, counted in a warning), survivors still come from `show`
+    const env2 = { ...env }; delete env2.MUTATE_STUB_MUTANTS;
+    const r2 = await runMutate(p.dir, slug, { env: env2 });
+    const full2 = readFileSync(join(p.dir, r2.full_list), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(full2.filter((m) => m.scope === 'in' && m.status === 'killed').every((m) => m.line === null));
+    assert.ok(r2.survivors.every((s) => s.line > 0));
+    assert.ok(r2.warnings.some((w) => /could not be mapped to a source line/.test(w)));
+    assert.ok(!full2.some((m) => m.line === 0));
+  } finally { done(p); }
+});
+function copyFileSync14(a, b) { cp14(a, b); }
+void cps14;
+
+test('C12: mutmut setup finds a top-level package when there is no src/ or lib/', async () => {
+  const { MUTATION_TOOLS } = await import('../lib/mutate.mjs');
+  const row = MUTATION_TOOLS.find((r) => r.id === 'mutmut');
+  const d = mk10(join(td10(), 'ac-setup-'));
+  md10(join(d, 'mypkg'), { recursive: true }); wf10(join(d, 'mypkg', '__init__.py'), '');
+  md10(join(d, 'tests'), { recursive: true }); wf10(join(d, 'tests', '__init__.py'), '');
+  assert.match(row.setup(d, { major: 3 }).content, /^\[mutmut\]\nsource_paths=mypkg\/\npytest_add_cli_args_test_selection=tests\/\n$/);
+  assert.match(row.setup(mk10(join(td10(), 'ac-setup-')), { major: 3 }).content, /source_paths=src\//);
+});
+
+// ---- Phase 48 remediate-c1: C6 tested count, C13 no-scope with the tool installed ----
+import { addPhase as ap48, findPhase as fp48 } from '../lib/roadmap.mjs';
+
+test('C6 a Gremlins cap counts only the mutants it tested, never SKIPPED or NOT COVERED', async () => {
+  const { stepScanner, MUTATION_TOOLS } = await import('../lib/mutate.mjs');
+  const sc = stepScanner(MUTATION_TOOLS.find((r) => r.id === 'gremlins'));
+  sc.feed(['SKIPPED CONDITIONALS_BOUNDARY at a.go:3', 'SKIPPED ARITHMETIC_BASE at b.go:9', 'NOT COVERED INCREMENT_DECREMENT at a.go:7',
+    'KILLED CONDITIONALS_NEGATION at a.go:5', 'TIMED OUT ARITHMETIC_BASE at a.go:6', 'LIVED INVERT_NEGATIVES at a.go:8', ''].join('\n'));
+  assert.equal(sc.state.tested, 3);
+});
+
+test('C13 a tests-only phase with the tool installed is no-scope that licenses no AI mutants, and is never a pass', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const { recordVerdict } = await import('../lib/verdict.mjs');
+  const p = await rig('js', { report: 'stryker-mutation.json' });
+  try {
+    await ap48(p.dir, { number: 3, name: 'Tests only' });
+    writeFileSync(join(p.dir, 'tests', 'a.test.mjs'), '// stronger test\n');
+    commit(p.dir, 'test: pin a (phase 3 t1)');
+    const slug = fp48(p.dir, '3').slug;
+    const r = await runMutate(p.dir, slug, { env: p.env });
+    assert.equal(r.outcome, 'no-scope');
+    assert.equal(r.tool_installed, true);
+    assert.match(r.fallback.reason, /the tool is installed, so no AI mutants/);
+    assert.doesNotMatch(r.fallback.reason, /AI mutants used/);
+    assert.match(r.fallback.reason, /mutation\.files/);
+    // a tagged criterion recorded as passed on that fallback is refused
+    const crit = join(p.dir, '.astrocode', 'phases', slug, 'CRITERIA.md');
+    mkdirSync(join(p.dir, '.astrocode', 'phases', slug), { recursive: true });
+    writeFileSync(crit, '### C1 [mutation] — strong\n');
+    const m = { outcome: 'no-scope', tool: 'stryker', head: r.head, capped: false, complete: false, counts: r.counts, survivors: [], fallback: { reason: r.fallback.reason } };
+    const out = await recordVerdict(p.dir, slug, { mode: 'full', criteria: [{ id: 'C1', passed: true, mutation: m }] });
+    assert.equal(out.passed, false);
+    assert.match(out.refused[0].reason, /tool is installed, so a no-scope run is not a pass/);
+  } finally { done(p); }
+});
+
+test('C4 mutmut 3: a scope decided by mutation.files and mutation.exclude names both settings', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('py', { report: 'mutmut3-results.txt', version: 'mutmut, version 3.8.0' });
+  try {
+    writeFileSync(join(p.dir, 'src', 'extra.py'), 'def g():\n    return 1\n');
+    commit(p.dir, 'chore: extra (no phase)');
+    sh(p.dir, 'config', 'user.name', 't');
+    const cfgFile = join(p.dir, '.astrocode', 'config.json');
+    const cfg = JSON.parse(readFileSync(cfgFile, 'utf8'));
+    cfg.mutation = { ...(cfg.mutation ?? {}), files: ['src/extra.py'], exclude: ['src/a.py'] };
+    writeFileSync(cfgFile, JSON.stringify(cfg, null, 2));
+    commit(p.dir, 'chore: mutation settings');
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.match(r.scope_detail.why, /mutation\.files decides the scope: 1 whole file/);
+    assert.match(r.scope_detail.why, /left out by mutation\.exclude/);
+    assert.doesNotMatch(r.scope_detail.why, /functions holding changed lines/);
   } finally { done(p); }
 });

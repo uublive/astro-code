@@ -1,0 +1,23 @@
+Starting...
+Gathering files diff...
+Gathering coverage... go: no module dependencies to download
+done in 20.427322217s
+     SKIPPED INVERT_NEGATIVES at p2/p2.go:7:11
+     SKIPPED ARITHMETIC_BASE at p1/p1.go:5:12
+     SKIPPED ARITHMETIC_BASE at p2/p2.go:5:12
+     SKIPPED INVERT_NEGATIVES at p2/p2.go:5:12
+     SKIPPED ARITHMETIC_BASE at p2/p2.go:7:11
+      KILLED CONDITIONALS_NEGATION at p2/p2.go:4:7
+      KILLED CONDITIONALS_NEGATION at p1/p1.go:4:7
+       LIVED CONDITIONALS_BOUNDARY at p2/p2.go:4:7
+       LIVED CONDITIONALS_BOUNDARY at p1/p1.go:4:7
+
+Mutation testing completed in 2 seconds 354 milliseconds
+Killed: 2, Lived: 2, Not covered: 0
+Timed out: 0, Not viable: 0, Skipped: 5
+Test efficacy: 50.00%
+Mutator coverage: 100.00%
+
+real	0m22.822s
+user	1m9.246s
+sys	0m32.990s

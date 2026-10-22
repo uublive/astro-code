@@ -312,7 +312,14 @@ const mut = (o = {}) => ({
 test('testStrengthIds finds the [mutation] tag in headings only, in file order', async () => {
   const { testStrengthIds } = await import('../lib/verdict.mjs');
   const t = '### C4 [mutation] — x\nbody [mutation]\n## C2 [Mutation]\n### C3 — plain\n### C1 — mentions [mutation]?\n';
-  assert.deepEqual(testStrengthIds(t), ['C4', 'C2', 'C1']);
+  assert.deepEqual(testStrengthIds(t), ['C4', 'C2']);
+  // a heading that only talks about the tag is not tagged (phase 48's own C13 tripped on this)
+  assert.deepEqual(testStrengthIds('### C13 — only `[mutation]`-tagged criteria get the code pass bar\n'), []);
+  // the tag never reaches across a line break into the body
+  for (const t of ['### C6\n[mutation] appears on the next line\n', '#\nC9 [mutation] in prose\n', '### C6 \n\n  [mutation] two lines down\n']) {
+    assert.deepEqual(testStrengthIds(t), [], JSON.stringify(t));
+  }
+  assert.deepEqual(testStrengthIds('###\tC7\t[mutation] — tabs are fine\n'), ['C7']);
   assert.deepEqual(testStrengthIds('### C3 — plain\nC9 [mutation] in prose\n'), []);
   assert.deepEqual(testStrengthIds(undefined), []);
 });
@@ -424,4 +431,39 @@ test('recordVerdict binds evidence to the kept ac mutate run: no run, or an edit
     await refused(ev(tool, { head: 'fff0000' }), /last `ac mutate` run graded abc1234/);
     await refused(ev([], { outcome: 'tool-missing', fallback: { reason: 'mutation tool not installed — AI mutants used' }, counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 } }), /outcome "tool-missing" but the `ac mutate` run says "survivors"/);
   } finally { done(s); }
+});
+
+// ---- Phase 48 t8 — run-file paths, the not-configured outcome ----
+import { mkdtempSync as mk48, existsSync as ex48, readFileSync as rf48 } from 'node:fs';
+import { tmpdir as td48 } from 'node:os';
+import { join as j48 } from 'node:path';
+import { spawnSync as sp48 } from 'node:child_process';
+
+test('phase 48: mutateRunPaths names every file one run leaves beside the kept run', async () => {
+  const { mutateRunPaths } = await import('../lib/verdict.mjs');
+  const d = '/proj';
+  const p = mutateRunPaths(d, '48-x');
+  const dir = j48(d, '.astrocode', '.local', 'mutate-runs');
+  assert.deepEqual(p, {
+    dir, run: j48(dir, '48-x.json'), log: j48(dir, '48-x.log'), list: j48(dir, '48-x.mutants.jsonl'),
+    strykerConfig: j48(dir, '48-x.stryker.config.mjs'), gremlinsReport: j48(dir, '48-x.gremlins.json'),
+  });
+});
+
+test('phase 48: ensureLocalDir creates the directory and a gitignore that covers a log there', async () => {
+  const { ensureLocalDir, mutateRunPaths } = await import('../lib/verdict.mjs');
+  const d = mk48(j48(td48(), 'ac-vlocal-'));
+  sp48('git', ['init', '-q'], { cwd: d });
+  ensureLocalDir(d);
+  const p = mutateRunPaths(d, '1-a');
+  assert.ok(ex48(p.dir));
+  assert.equal(rf48(j48(d, '.astrocode', '.local', '.gitignore'), 'utf8'), '*\n');
+  ensureLocalDir(d); // idempotent
+  assert.equal(sp48('git', ['check-ignore', '-q', p.log], { cwd: d }).status, 0);
+});
+
+test('phase 48: not-configured is a mutation outcome and not a fallback outcome', async () => {
+  const { MUTATION_OUTCOMES, FALLBACK_OUTCOMES } = await import('../lib/verdict.mjs');
+  assert.ok(MUTATION_OUTCOMES.includes('not-configured'));
+  assert.deepEqual(FALLBACK_OUTCOMES, ['tool-missing', 'no-tool', 'no-scope']);
 });

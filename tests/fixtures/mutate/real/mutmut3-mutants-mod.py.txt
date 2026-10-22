@@ -1,0 +1,128 @@
+
+
+from mutmut.mutation.trampoline import wrap_in_trampoline as _mutmut_mutated, MutantDict
+mutants_x_a__mutmut: MutantDict = {}  # type: ignore
+@_mutmut_mutated(mutants_x_a__mutmut)
+def a(x):
+    return x + 1
+def x_a__mutmut_orig(x):
+    return x + 1
+def x_a__mutmut_1(x):
+    return x - 1
+def x_a__mutmut_2(x):
+    return x + 2
+
+mutants_x_a__mutmut['_mutmut_orig'] = x_a__mutmut_orig # type: ignore # mutmut generated
+mutants_x_a__mutmut['x_a__mutmut_1'] = x_a__mutmut_1 # type: ignore # mutmut generated
+mutants_x_a__mutmut['x_a__mutmut_2'] = x_a__mutmut_2 # type: ignore # mutmut generated
+mutants_x_b__mutmut: MutantDict = {}  # type: ignore
+
+
+@_mutmut_mutated(mutants_x_b__mutmut)
+def b(x):
+    if x > 10:
+        return x - 10
+    return x * 2
+
+
+def x_b__mutmut_orig(x):
+    if x > 10:
+        return x - 10
+    return x * 2
+
+
+def x_b__mutmut_1(x):
+    if x >= 10:
+        return x - 10
+    return x * 2
+
+
+def x_b__mutmut_2(x):
+    if x > 11:
+        return x - 10
+    return x * 2
+
+
+def x_b__mutmut_3(x):
+    if x > 10:
+        return x + 10
+    return x * 2
+
+
+def x_b__mutmut_4(x):
+    if x > 10:
+        return x - 11
+    return x * 2
+
+
+def x_b__mutmut_5(x):
+    if x > 10:
+        return x - 10
+    return x / 2
+
+
+def x_b__mutmut_6(x):
+    if x > 10:
+        return x - 10
+    return x * 3
+
+mutants_x_b__mutmut['_mutmut_orig'] = x_b__mutmut_orig # type: ignore # mutmut generated
+mutants_x_b__mutmut['x_b__mutmut_1'] = x_b__mutmut_1 # type: ignore # mutmut generated
+mutants_x_b__mutmut['x_b__mutmut_2'] = x_b__mutmut_2 # type: ignore # mutmut generated
+mutants_x_b__mutmut['x_b__mutmut_3'] = x_b__mutmut_3 # type: ignore # mutmut generated
+mutants_x_b__mutmut['x_b__mutmut_4'] = x_b__mutmut_4 # type: ignore # mutmut generated
+mutants_x_b__mutmut['x_b__mutmut_5'] = x_b__mutmut_5 # type: ignore # mutmut generated
+mutants_x_b__mutmut['x_b__mutmut_6'] = x_b__mutmut_6 # type: ignore # mutmut generated
+mutants_x_c__mutmut: MutantDict = {}  # type: ignore
+
+
+@_mutmut_mutated(mutants_x_c__mutmut)
+def c(x):
+    return x // 2
+
+
+def x_c__mutmut_orig(x):
+    return x // 2
+
+
+def x_c__mutmut_1(x):
+    return x / 2
+
+
+def x_c__mutmut_2(x):
+    return x // 3
+
+mutants_x_c__mutmut['_mutmut_orig'] = x_c__mutmut_orig # type: ignore # mutmut generated
+mutants_x_c__mutmut['x_c__mutmut_1'] = x_c__mutmut_1 # type: ignore # mutmut generated
+mutants_x_c__mutmut['x_c__mutmut_2'] = x_c__mutmut_2 # type: ignore # mutmut generated
+mutants_xǁKǁ__init____mutmut: MutantDict = {}  # type: ignore
+mutants_xǁKǁm__mutmut: MutantDict = {}  # type: ignore
+
+
+class K:
+    @_mutmut_mutated(mutants_xǁKǁ__init____mutmut)
+    def __init__(self):
+        self.v = 0
+    def xǁKǁ__init____mutmut_orig(self):
+        self.v = 0
+    def xǁKǁ__init____mutmut_1(self):
+        self.v = None
+    def xǁKǁ__init____mutmut_2(self):
+        self.v = 1
+
+    @_mutmut_mutated(mutants_xǁKǁm__mutmut)
+    def m(self, x):
+        return x + self.v
+
+    def xǁKǁm__mutmut_orig(self, x):
+        return x + self.v
+
+    def xǁKǁm__mutmut_1(self, x):
+        return x - self.v
+
+mutants_xǁKǁ__init____mutmut['_mutmut_orig'] = K.xǁKǁ__init____mutmut_orig # type: ignore # mutmut generated
+mutants_xǁKǁ__init____mutmut['xǁKǁ__init____mutmut_1'] = K.xǁKǁ__init____mutmut_1 # type: ignore # mutmut generated
+mutants_xǁKǁ__init____mutmut['xǁKǁ__init____mutmut_2'] = K.xǁKǁ__init____mutmut_2 # type: ignore # mutmut generated
+
+mutants_xǁKǁm__mutmut['_mutmut_orig'] = K.xǁKǁm__mutmut_orig # type: ignore # mutmut generated
+mutants_xǁKǁm__mutmut['xǁKǁm__mutmut_1'] = K.xǁKǁm__mutmut_1 # type: ignore # mutmut generated

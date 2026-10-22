@@ -38,7 +38,8 @@ for (const c of CASES) {
     assert.equal(r.ignored.length, c.ignored);
     for (const m of r.mutants) {
       assert.ok(MUTANT_STATUSES.includes(m.status));
-      assert.ok(m.file && m.mutator && Number.isInteger(m.line), JSON.stringify(m));
+      // mutmut 3 names carry no line (phase 48: null, never 0); every other tool has an integer line
+      assert.ok(m.file && m.mutator && (Number.isInteger(m.line) || (c.fn === 'parseMutmutResults' && m.line === null)), JSON.stringify(m));
     }
     assert.deepEqual(r, mp[c.fn](fx(c.file), { scope: c.scope }), 'deterministic');
     const keys = r.mutants.map((m) => `${m.file}\0${String(m.line).padStart(6, '0')}\0${m.mutator}`);
@@ -122,4 +123,98 @@ test('mutmut 3: a package __init__.py mutant (pkg.x_f__mutmut_N) maps to pkg/__i
   // a real module pkg.py still wins over pkg/__init__.py
   const m = parseMutmutResults('    pkg.x_f__mutmut_1: killed\n', { scope: ['src/pkg.py'] });
   assert.equal(m.mutants[0].file, 'src/pkg.py');
+});
+
+// ---- Phase 48 t9 — range/function filtering, per-file counts, mutmut 3 line mapping ----
+const REAL = join(FX, 'real');
+const real = (n) => readFileSync(join(REAL, n), 'utf8');
+
+test('phase 48: normalize keeps in-range lines, puts the rest in outside, and a whole-file entry keeps everything', async () => {
+  const { parseStryker } = await import('../lib/mutparse.mjs');
+  const rep = { files: {
+    'src/a.mjs': { mutants: [44, 50].map((line, i) => ({ id: String(i), mutatorName: 'X', location: { start: { line } }, status: 'Survived' })) },
+    'src/b.mjs': { mutants: [{ id: '9', mutatorName: 'X', location: { start: { line: 1 } }, status: 'Killed' }] },
+    'src/z.mjs': { mutants: [{ id: '8', mutatorName: 'X', location: { start: { line: 1 } }, status: 'Killed' }] },
+  } };
+  const r = parseStryker(JSON.stringify(rep), { scope: ['src/a.mjs', 'src/b.mjs'], ranges: { 'src/a.mjs': [[40, 45]] } });
+  assert.deepEqual(r.mutants.map((m) => `${m.file}:${m.line}`), ['src/a.mjs:44', 'src/b.mjs:1']);
+  assert.deepEqual(r.outside.map((m) => `${m.file}:${m.line}`).sort(), ['src/a.mjs:50', 'src/z.mjs:1']);
+  assert.equal(parseStryker(JSON.stringify(rep), { scope: ['src/a.mjs'] }).outside.length, 2, 'files the scope excludes are counted too');
+});
+
+test('phase 48: mutmut funcs keep the named functions and methods and move the rest to outside', async () => {
+  const { parseMutmutResults } = await import('../lib/mutparse.mjs');
+  const r = parseMutmutResults(real('mutmut3-results-methods.txt'), { scope: ['pkg/mod.py'], funcs: { 'pkg/mod.py': ['b', 'K.m'] } });
+  assert.deepEqual([...new Set(r.mutants.map((m) => m.func))].sort(), ['K.m', 'b']);
+  assert.deepEqual([...new Set(r.outside.map((m) => m.func))].sort(), ['K.__init__', 'a', 'c']);
+  assert.equal(r.mutants.length + r.outside.length, 13);
+  for (const m of r.mutants) assert.ok(m.func);
+});
+
+test('phase 48: mutmut lines come from the lines map; an unmapped mutant is null (never 0) and sorts last', async () => {
+  const { parseMutmutResults } = await import('../lib/mutparse.mjs');
+  const r = parseMutmutResults(real('mutmut3-results-methods.txt'), {
+    scope: ['pkg/mod.py'], lines: { 'pkg.mod.x_b__mutmut_1': 6, 'pkg.mod.x_a__mutmut_1': 2 },
+  });
+  const lines = r.mutants.map((m) => m.line);
+  assert.deepEqual(lines.slice(0, 2), [2, 6]);
+  assert.ok(lines.slice(2).every((l) => l === null));
+  assert.ok(!lines.includes(0));
+});
+
+test('phase 48: mutmutShowLine finds the real line for the first and a later mutant of b and for K.m', async () => {
+  const { mutmutShowLine } = await import('../lib/mutparse.mjs');
+  const { pythonFunctions } = await import('../lib/pyscan.mjs');
+  const src = real('mutmut3-src-mod.py.txt');
+  const fns = Object.fromEntries(pythonFunctions(src).map((f) => [f.qual, f]));
+  const at = (n) => src.split('\n')[n - 1];
+  const l1 = mutmutShowLine(real('mutmut3-show-b-1.txt'), src, fns.b);
+  const lN = mutmutShowLine(real('mutmut3-show-b-N.txt'), src, fns.b);
+  const lK = mutmutShowLine(real('mutmut3-show-Km.txt'), src, fns['K.m']);
+  assert.match(at(l1), /if x > 10/);
+  assert.match(at(lN), /return x - 10/);
+  assert.notEqual(l1, lN);
+  assert.notEqual(lN, fns.b.def);
+  assert.match(at(lK), /return x \+ self\.v/);
+  assert.equal(mutmutShowLine('no diff here', src, fns.b), null);
+});
+
+test('phase 48: two identical expressions in one function resolve by the hunk offset; a shifted guess falls back to the text', async () => {
+  const { mutmutShowLine } = await import('../lib/mutparse.mjs');
+  const { pythonFunctions } = await import('../lib/pyscan.mjs');
+  const src = 'def f(x):\n    y = x + 1\n    z = 0\n    w = x + 1\n    return y + w\n';
+  const f = pythonFunctions(src)[0];
+  const diff = '# n: survived\n--- m.py\n+++ m.py\n@@ -1,5 +1,5 @@\n def f(x):\n     y = x + 1\n     z = 0\n-    w = x + 1\n+    w = x - 1\n     return y + w\n';
+  assert.equal(mutmutShowLine(diff, src, f), 4);
+  // a decorator shifts the def line: the offset guess misses, the text search inside the span finds it
+  const dsrc = '@deco\ndef f(x):\n    y = x + 1\n    return y\n';
+  const df = pythonFunctions(dsrc)[0];
+  const d2 = '@@ -1,3 +1,3 @@\n def f(x):\n-    y = x + 1\n+    y = x - 1\n     return y\n';
+  assert.equal(mutmutShowLine(d2, dsrc, df), 3);
+});
+
+test('phase 48: mutantsFileOffsets + the source def line give the same lines as show for the captured mutants', async () => {
+  const { mutantsFileOffsets, mutmutShowLine } = await import('../lib/mutparse.mjs');
+  const { pythonFunctions } = await import('../lib/pyscan.mjs');
+  const src = real('mutmut3-src-mod.py.txt');
+  const fns = Object.fromEntries(pythonFunctions(src).map((f) => [f.qual, f]));
+  const off = mutantsFileOffsets(real('mutmut3-mutants-mod.py.txt'));
+  assert.equal(Object.keys(off).length, 13);
+  assert.equal(fns.b.def + off.x_b__mutmut_1, mutmutShowLine(real('mutmut3-show-b-1.txt'), src, fns.b));
+  assert.equal(fns.b.def + off.x_b__mutmut_4, mutmutShowLine(real('mutmut3-show-b-N.txt'), src, fns.b));
+  assert.equal(fns['K.m'].def + off['xǁKǁm__mutmut_1'], mutmutShowLine(real('mutmut3-show-Km.txt'), src, fns['K.m']));
+  assert.equal(fns.a.def + off.x_a__mutmut_1, 2);
+});
+
+test('phase 48: perFileCounts is zero-filled and its grand total equals the input lists', async () => {
+  const { parseMutmutResults, perFileCounts } = await import('../lib/mutparse.mjs');
+  const r = parseMutmutResults(`${real('mutmut3-results-methods.txt')}    pkg.mod.x_a__mutmut_9: not checked\n    pkg.mod.x_a__mutmut_10: skipped\n`, { scope: ['pkg/mod.py'] });
+  const pf = perFileCounts(r);
+  assert.deepEqual(Object.keys(pf), ['pkg/mod.py']);
+  const row = pf['pkg/mod.py'];
+  assert.deepEqual(Object.keys(row), ['killed', 'survived', 'timeout', 'no-coverage', 'error', 'not_run', 'ignored']);
+  assert.equal(Object.values(row).reduce((a, b) => a + b, 0), r.mutants.length + r.not_run.length + r.ignored.length);
+  assert.equal(row.not_run, 1);
+  assert.equal(row.ignored, 1);
+  assert.deepEqual(perFileCounts({ mutants: [], not_run: [], ignored: [] }), {});
 });

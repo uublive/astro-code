@@ -44,7 +44,8 @@ Number them C1, C2, … Keep to the handful that actually prove the goal is met.
 
 ## Test-strength criteria — only when the goal asks for them
 When the goal asks for test strength ("the tests would catch a regression", "every behavior is
-pinned"), write that criterion with the `[mutation]` tag in its heading, exactly:
+pinned"), write that criterion with the `[mutation]` tag right after its id, exactly (anywhere else in the
+heading it is not recognised):
 
 ```
 ### C4 [mutation] — <claim about how strongly the tests pin the changed code>
@@ -53,7 +54,9 @@ pinned"), write that criterion with the `[mutation]` tag in its heading, exactly
 ```
 
 The verifier and `ac mutate` look for that exact tag. **Never tag a criterion that does not ask
-for test strength** — the tag is what makes the verifier run a mutation tool (D2).
+for test strength** — the tag is what puts a criterion behind the hard pass bar in code (D3,
+ADR-084). It is not what makes the verifier run a tool: with a tool installed the verifier runs
+`ac mutate` for any criterion where it would otherwise hand-make mutants.
 
 ## Rules for good criteria
 - **Goal-level and behavioral.** State an *outcome* a user or the system can observe. A

@@ -210,3 +210,36 @@ test('phase 47 C9: breaches are saved failed with refused; the justified control
     assert.notEqual(bad.status, 0);
   } finally { done(p); }
 });
+
+// ---- Phase 48 t8 — only the [mutation] tag is a code gate (ADR-084) ----
+test('phase 48: untagged criteria keep mutation evidence verbatim and are never gated by it', async () => {
+  const p = await project(1);
+  try {
+    writeFileSync(p.crit, '### C1 — plain claim\n- **Observe:** y\n');
+    // a capped, incomplete run with an untriaged survivor would fail a tagged criterion; here it is supporting evidence
+    const weak = mut47({ capped: true, complete: false, outcome: 'incomplete', survivors: [surv47({ triage: undefined })] });
+    let out = JSON.parse(rec47(p, weak).stdout);
+    assert.equal(out.passed, true);
+    assert.deepEqual(JSON.parse(readFileSync(p.vfile, 'utf8')).criteria[0].mutation, JSON.parse(JSON.stringify(weak)));
+    // no evidence at all passes too
+    assert.equal(JSON.parse(rec47(p, null).stdout).passed, true);
+    // structural junk is still refused outright
+    const bad = rec47(p, mut47({ counts: { killed: 'x', survived: 0, timeout: 0, 'no-coverage': 0, error: 0 } }));
+    assert.notEqual(bad.status, 0);
+  } finally { done(p); }
+});
+
+test('phase 48: a tagged criterion is still gated, and not-configured evidence is refused rather than crashing', async () => {
+  const p = await project(1);
+  try {
+    writeFileSync(p.crit, '### C1 [mutation] — strong tests\n- **Observe:** y\n');
+    const nc = mut47({ outcome: 'not-configured', complete: true, survivors: [], counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 } });
+    keep47(p, nc);
+    const r = rec47(p, nc);
+    assert.equal(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.equal(out.passed, false);
+    assert.match(out.refused[0].reason, /not-configured/);
+    assert.equal(JSON.parse(rec47(p, null).stdout).passed, false, 'marked without evidence still fails');
+  } finally { done(p); }
+});

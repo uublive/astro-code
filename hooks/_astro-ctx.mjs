@@ -10,6 +10,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { renderLogo } from './_astro-brand.mjs';
+import { teamPhases } from './_astro-team.mjs';
 
 // A live activity verb older than this is treated as stale and ignored, so a
 // command that crashed before clearing can never pin a verb on the line forever.
@@ -291,6 +292,10 @@ export function readContext(root, nowSeconds) {
   // An in-flight bugfix. A fix INTERRUPTS a phase rather than replacing it, so
   // both are carried: the status line must be able to say "you are on a fix,
   // and P15 is still where you were".
+  // Teammates' phases (local registry ref only, cached — never a fetch). Fails soft to none.
+  let team = { owners: {}, extra: [] };
+  try { team = teamPhases(root, roadmap.milestone ?? null, new Set(phases.map((p) => p.number)), nowSeconds); } catch { /* none */ }
+
   const fixesDb = readJson(join(root, '.astrocode', 'fixes.json')) || {};
   const allFixes = Array.isArray(fixesDb.fixes) ? fixesDb.fixes : [];
   const openFixes = allFixes.filter((f) => f && f.status !== 'accepted');
@@ -305,10 +310,13 @@ export function readContext(root, nowSeconds) {
     status: state.status || null,
     milestone: roadmap.milestone ?? null,
     phase: phase ? { number: phase.number, slug: phase.slug, name: phase.name, status: phase.status } : null,
-    // Ordered phase list, for the statusline's "what comes next" track.
-    phases: phases
-      .map((p) => ({ number: p.number, status: p.status }))
-      .sort((a, b) => a.number - b.number),
+    // Ordered phase list, for the statusline's "what comes next" track. A phase a teammate
+    // claimed carries `owner` (their tag, e.g. `a`); one that is only in the shared registry so
+    // far (not merged into this roadmap yet) is added with `remote: true` (_astro-team.mjs).
+    phases: [
+      ...phases.map((p) => ({ number: p.number, status: p.status, ...(team.owners[p.number] ? { owner: team.owners[p.number] } : {}) })),
+      ...team.extra.map((p) => ({ number: p.number, status: p.status, owner: p.owner, remote: true })),
+    ].sort((a, b) => a.number - b.number),
     planned: phase ? existsSync(join(root, '.astrocode', 'phases', phase.slug, 'PLAN.md')) : false,
     discussed: phase ? phaseDiscussed(root, phase.slug) : false,
     done, verified, total: phases.length, blockers, activity, activityUntil,
@@ -396,7 +404,8 @@ export function phaseTrack(ctx, lookahead = 2) {
   parts.push(current);
   const after = all.slice(idx + 1);
   const shown = lookahead > 0 ? after.slice(0, lookahead) : [];
-  for (const p of shown) parts.push(paint(`P${p.number}`, statusColor(p.status)));
+  // `P84(a)`: a phase a teammate claimed, tagged with who (_astro-team.mjs).
+  for (const p of shown) parts.push(paint(`P${p.number}${p.owner ? `(${p.owner})` : ''}`, p.remote ? ANSI.dim : statusColor(p.status)));
   const rest = after.length - shown.length;
   if (rest > 0) parts.push(paint(`+${rest}`, ANSI.dim));
   return parts.join(' ');

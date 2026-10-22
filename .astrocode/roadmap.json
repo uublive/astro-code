@@ -8,6 +8,13 @@
       "slug": "47-deterministic-mutation-testing-in-the",
       "status": "verified",
       "milestone": 13
+    },
+    {
+      "number": 48,
+      "name": "Mutation testing that scales to real projects",
+      "slug": "48-mutation-testing-that-scales-to-real",
+      "status": "verified",
+      "milestone": 13
     }
   ]
 }

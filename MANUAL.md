@@ -381,6 +381,14 @@ keeps the rest. It does so only when the `phase-band` switch is on *and* the ast
 installed in that Claude profile, so a band that cannot draw never takes the facts with it.
 `ac statusline dedupe off` keeps everything on the line; `ac statusline dedupe on` is the default.
 
+**Teammates' phases.** The phase track and the band also show the phases a teammate claimed in
+the current milestone, tagged with who: `P84(a)` / `○84(a)` is a phase `alex@…` claimed. The tag
+is the first letter of the owner's email, longer only when two teammates would share it (`al`,
+`an`). Phases you claimed stay plain. One that is not merged into your roadmap yet is shown dimmed
+and is never offered as a next step. They come from your **local copy** of the shared registry
+(the `astro-registry` branch of `origin` as of the last fetch, cached in `.astrocode/.local/`), never from the
+network, so the bar stays fast and offline; any `ac` claim or a `git fetch` brings in new ones.
+
 ### Windows / PowerShell
 
 `ac` is shadowed by PowerShell's built-in `Add-Content` alias (aliases beat external
@@ -588,47 +596,62 @@ verdict (`--force` is the escape).
 ## Mutation testing (test-strength criteria)
 
 When a goal asks for test strength ("the tests would catch a regression"), the criteria author
-writes that criterion with the `[mutation]` tag in its heading: `### C4 [mutation] — <claim>`.
-Only tagged criteria trigger mutation testing; a phase without one pays nothing.
+writes that criterion with the `[mutation]` tag right after its id: `### C4 [mutation] — <claim>`. A heading that only mentions the tag elsewhere is not tagged.
+The tag is the only **code** gate: `ac verdict record` refuses a tagged pass without clean evidence.
 
-For a tagged criterion the verifier runs `ac mutate <phase> --json` instead of inventing broken
-versions by hand. `ac mutate` is mechanical: it picks the tool, scopes, runs under a time cap and
-parses the report into one fixed list (file, line, mutator, status). The verifier then judges only
-the survivors.
+Whenever a mutation tool is installed, the verifier uses it wherever it would otherwise hand-make
+mutants: for any criterion, tagged or not, it runs `ac mutate <phase> --json` and triages the
+survivors. Hand-made mutants remain only as the no-tool fallback. On an untagged criterion the
+evidence is supporting evidence with no code gate. `ac mutate` is mechanical: it picks the tool,
+scopes to the changed lines, runs the phase's own tests under a time cap and parses the report.
 
-| Language | Tool | Install (astro-code never installs it) |
+| Language | Tool | Install, as your project manages it (astro-code never installs it) |
 |---|---|---|
-| JS / TS (`package.json`) | Stryker | `npm i -D @stryker-mutator/core` |
+| JS / TS (`package.json`) | Stryker | `npm i -D @stryker-mutator/core` · `pnpm add -D @stryker-mutator/core` (`pnpm-lock.yaml`) · `yarn add -D @stryker-mutator/core` (`yarn.lock`) |
 | Go (`go.mod`) | Gremlins | `go install github.com/go-gremlins/gremlins/cmd/gremlins@latest` |
-| Python (`pyproject.toml`, `setup.py`, `requirements.txt`) | mutmut | `pip install mutmut` |
+| Python (`pyproject.toml`, `setup.py`, `requirements.txt`) | mutmut | `pip install mutmut` · `uv pip install --python .venv/bin/python mutmut` (a `.venv` without pip) |
 
-- **Scope.** Only the files the phase's own `(phase NN tK)` and `(phase NN remediate-cK)` commits changed, minus tests, deleted
-  files and `.astrocode/`. The list is passed to the tool explicitly, and every other phase's
-  files are left alone. Nothing changed means `no-scope`, never a pass.
+A pinned package (`requirements*.txt`, `pyproject.toml`, `package.json`, a lock file) or a
+lock-managed Python environment adds a warning that an install may change nothing.
+
+- **Scope: the changed lines.** The lines the phase's own `(phase NN tK)` / `(phase NN remediate-cK)`
+  commits wrote, from `git blame` at HEAD, minus tests and `.astrocode/`. Stryker gets line ranges
+  (`--mutate file:40-45`); Gremlins its own `--diff` against the commit before the phase; mutmut 3
+  the functions holding those lines (mutant-name globs; a changed line outside any function is
+  counted and warned about); mutmut 2 whole files, with the reason, and results filtered to the
+  changed lines. Nothing changed means `no-scope`. The result says which scope applied and why.
+  `ac config set mutation.files '["src/x.js"]'` adds whole files and `mutation.exclude` skips paths
+  (a trailing `/` is a directory); Gremlins falls back to excluding other files when files are added.
+- **Tests: the phase's own.** The test files the phase's commits wrote; with none the full suite runs
+  and the result says so. `mutation.tests` (project) or `mutation.phases.<n>.tests` (one phase) names
+  others. Each tool is handed them its own way (a generated Stryker config, Gremlins `GOFLAGS -run`,
+  mutmut `PYTEST_ADDOPTS`); a runner that cannot be narrowed (Stryker with vitest) is reported as
+  not narrowed.
 - **Tool choice.** Detected from the manifests; `ac config set mutation.tool stryker|gremlins|mutmut`
-  overrides detection. Every result says which tool applied and why.
-- **Cap.** 10 minutes by default; `ac config set mutation.cap_seconds 1200` changes it. At the cap the
-  whole process group is killed, the result lists what did not run, and a capped run is never
-  "all killed".
+  overrides it. Every result says which tool applied and why.
+- **Cap.** 10 minutes by default; `mutation.cap_seconds` changes it for the project and
+  `ac config set mutation.phases.<n>.cap_seconds 1800` for one phase. At the cap the whole process
+  group is killed and the result names the step it was in, how many mutants were tested and the key
+  to raise. A capped run is never "all killed".
 - **Outcomes.** `clean`, `survivors`, `incomplete` (capped or not every mutant ran), `no-scope`,
-  `tool-missing`, `no-tool`, `error`. Timeouts count as killed. A dirty scope is an `error`: the
-  result must grade HEAD. A tool's fatal exit (mutmut 2: exit bit 1, e.g. the tests already fail)
-  is an `error` too, because its report would be an old cache; a mutant the tool never tested is
-  not run, and one a `pre_mutation` hook skipped is ignored, never killed.
+  `tool-missing`, `no-tool`, `not-configured` (mutmut 3 installed but without configuration: run
+  `ac mutate setup`), `error`. Timeouts count as killed. A dirty scope is an `error`: the result
+  must grade HEAD. A mutant the tool never tested is not run, and one a hook skipped is ignored.
+- **Output.** Survivors are listed in full (file, line, mutator; mutmut 3 at the real source line).
+  Everything else is per-file counts. The log and the complete mutant list (one JSON line each) sit
+  in `.astrocode/.local/mutate-runs/`, beside the kept run, named in the result, replaced by the next
+  run of the phase, never committed.
 - **Triage.** A survivor that is a real test gap fails the criterion; an equivalent mutant passes
-  with a one-line justification, kept in `VERDICT.json`. `ac verdict record` enforces this in code,
-  and binds the evidence to the last `ac mutate` run for the phase on this machine (kept, never
-  committed, in `.astrocode/.local/mutate-runs/`): its commit, counts and survivors must match, so
-  an edited survivor list cannot hide one nobody triaged.
+  with a one-line justification kept in `VERDICT.json`. `ac verdict record` enforces this for tagged
+  criteria and binds the evidence to the last `ac mutate` run on this machine: its commit, counts and
+  survivors must match, so an edited survivor list cannot hide one nobody triaged.
 - **No tool.** Verification falls back to AI-invented mutants and says why. The full install
-  suggestion shows once per project per tool, then one line (`mutation tool not installed — AI
-  mutants used`). The memory is **local, never committed**: `.astrocode/.local/mutate-notices.json`,
-  because "has this developer been told" is per machine (a fresh clone shows it once more).
-  `ac mutate dismiss [<tool>]` silences it; `ac mutate --check` always shows it, because you asked.
-- **`ac mutate setup`.** Writes a minimal config for the detected tool (`stryker.config.json`,
-  `.gremlins.yaml`, or a `[mutmut]` section in `setup.cfg`) only when none exists. It is the one
-  writer; a run or a check never changes your project, and astro-code never installs a tool or edits
-  your dependency list.
+  suggestion shows once per project per tool, then one line. The memory is **local, never committed**: `.astrocode/.local/mutate-notices.json`. `ac mutate dismiss [<tool>]` silences it;
+  `ac mutate --check` always shows it.
+- **`ac mutate setup`.** Writes a minimal config for the detected tool only when none exists: the
+  mutmut keys follow the installed major (`source_paths` / `pytest_add_cli_args_test_selection` for
+  3.x, `paths_to_mutate` / `tests_dir` for 2.x). An existing file is never rewritten; deprecated keys
+  are named. It is the one writer; a run or a check never changes your project.
 - **Trust.** The tool runs your project's own tests, the same trust level as `npm test`.
 
 ---
@@ -1192,7 +1215,7 @@ ac phase show <n> [--json]     # one phase's record, incl. accepted_kind / accep
 ac phase reject <n> --reason … [--agent name]  # UAT failed → rejected + a blocker (--agent: machine-signed)
 ac phase surprise <n> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]  # execute records a run surprise
 ac phase context <n> [--author]  # discuss-gate status, or who captured it: human | agent <name> | none
-ac mutate <n> [--json]         # mutation-test the phase's changed files (Stryker / Gremlins / mutmut)
+ac mutate <n> [--json]         # mutation-test the phase's changed lines (Stryker / Gremlins / mutmut)
 ac mutate --check [<n>] [--json]  # which tool applies, is it installed, how to install it (read-only)
 ac mutate setup                # write a minimal tool config if absent (the only writer; installs nothing)
 ac mutate dismiss [<tool>]     # stop the full install suggestion for this project
