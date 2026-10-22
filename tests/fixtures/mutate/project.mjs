@@ -1,6 +1,6 @@
 // Shared scaffolding for the phase-47 mutate tests: a real tmp git project with ac phases and
 // ADR-017-stamped commits, plus the stub tool and a PATH that can never reach a real tool (C11).
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,22 @@ export const layout = (kind) => LAYOUT[kind];
 
 const put = (dir, f, body) => { mkdirSync(dirname(join(dir, f)), { recursive: true }); writeFileSync(join(dir, f), body); };
 export const commit = (dir, msg) => { sh(dir, 'add', '-A'); sh(dir, 'commit', '-q', '-m', msg); };
+
+/** Same as `commit`, named for the phase-48 repos that build stamped history step by step. */
+export const phaseCommit = (dir, msg) => commit(dir, msg);
+
+/**
+ * Write an `n`-line file (`line 1`, `line 2`, …) — or, when it exists, keep its lines and rewrite
+ * the given inclusive 1-based ranges `[start, end, tag]` to `line <i> <tag>`. Lets a test shape
+ * "an unstamped commit edits 200-210, the phase edits 40-45" exactly.
+ */
+export function writeLines(dir, file, n, edits = []) {
+  let lines;
+  try { lines = readFileSync(join(dir, file), 'utf8').replace(/\n$/, '').split('\n'); } catch { lines = []; }
+  if (lines.length !== n) lines = Array.from({ length: n }, (_, i) => `line ${i + 1}`);
+  for (const [a, b, tag = 'edited'] of edits) for (let i = a; i <= b; i++) lines[i - 1] = `line ${i} ${tag}`;
+  put(dir, file, `${lines.join('\n')}\n`);
+}
 
 /** Phase 1 changed a (+ a test file), phase 2 changed b, c belongs to no phase. */
 export async function makeProject(kind = 'js') {
