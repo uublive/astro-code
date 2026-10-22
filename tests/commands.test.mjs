@@ -1066,10 +1066,10 @@ test('phase 48: /astro-mutate names the per-phase settings commands and bounds t
   assert.match(src, /ac config set mutation\.phases\.<n>\.cap_seconds/);
   assert.match(src, /mutation\.tests/);
   const slot = src.slice(src.indexOf('Reporting bounds:'), src.indexOf('- When the tool is missing'));
-  assert.match(slot, /at most\s+10/);
+  assert.match(slot, /at most 20 open groups/);
   assert.match(slot, /full-list and log paths/);
   assert.match(slot, /scope and tests lines/);
-  assert.match(readFileSync(join(COMMANDS, 'astro-verify.md'), 'utf8'), /gated in code only for a\s+`\[mutation\]` criterion/);
+  assert.match(readFileSync(join(COMMANDS, 'astro-verify.md'), 'utf8'), /`"test_strength": true` on every criterion the verifier used the tool for/);
 });
 
 test('phase 47: verify, execute and help surface the mutation evidence', () => {
@@ -1077,6 +1077,7 @@ test('phase 47: verify, execute and help surface the mutation evidence', () => {
   assert.match(verify, /"mutation": \{…\}/);
   assert.ok(verify.includes('\\u0027'), 'the verify JSON explains the quote encoding');
   assert.match(verify, /at most one\s+line/);
+  assert.match(verify, /`fallback\.report`/);
   assert.match(readFileSync(EXECUTE_MD, 'utf8'), /`mutation` blocks\s+through unchanged/);
   assert.match(readFileSync(join(COMMANDS, 'astro-help.md'), 'utf8'), /\/astro-mutate/);
   assert.ok(verify.includes('3. Clear the live status first') && verify.includes('3b. **On PASS only'));

@@ -54,9 +54,13 @@ heading it is not recognised):
 ```
 
 The verifier and `ac mutate` look for that exact tag. **Never tag a criterion that does not ask
-for test strength** — the tag is what puts a criterion behind the hard pass bar in code (D3,
-ADR-084). It is not what makes the verifier run a tool: with a tool installed the verifier runs
-`ac mutate` for any criterion where it would otherwise hand-make mutants.
+for test strength.** The tag pre-commits a criterion to the hard pass bar in code (D3, ADR-084), but it
+is no longer the only way in: an untagged test-strength criterion gets the same bar once the verifier
+marks it `test_strength` in the verdict (ADR-085), and the mark then sticks for the phase. So write
+the tag when the goal plainly asks for test strength, and do not worry about wording an older or
+untagged criterion differently. With a tool installed the verifier runs `ac mutate` for any criterion
+where it would otherwise hand-make mutants. Where survivors are judged, and how, is
+`lib/survivors.mjs` and the verifier's own text — not a criterion's business.
 
 ## Rules for good criteria
 - **Goal-level and behavioral.** State an *outcome* a user or the system can observe. A

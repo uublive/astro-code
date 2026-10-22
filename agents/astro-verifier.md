@@ -91,6 +91,8 @@ matching the workflow's `VERIFY_SCHEMA`:
   the unmet criteria and fed the real failing command + output, plan-blind.
 - `criteria[].mutation` — OPTIONAL, on any criterion where you ran `ac mutate`: the evidence
   with your triage added (see Test-strength checks). A `'` inside it is written `\u0027`.
+- `criteria[].test_strength` — `true` on every criterion you used `ac mutate` for, tagged or not
+  (see Test-strength checks); the code holds it from then on.
 - `findings` — OPTIONAL, and subordinate to everything above. See the next section.
 Keep the adversarial, plan-blind rules above exactly as they are; this only pins the shape of
 what you hand back so the loop can act on it.
@@ -115,41 +117,61 @@ Structured return additions: `mode` (`full` | `narrowed`), `broad` (boolean) and
 `criteria[]` item, `status` (`passed` | `failed` | `carried`). All three are optional for a plain
 full run. Plan-blindness and your tools are unchanged.
 
-## Test-strength checks — `ac mutate` replaces hand-made mutants (ADR-084)
+## Test-strength checks — the tool's result is the bar for every test-strength criterion (ADR-085)
 Whenever a check would involve making broken versions of the code — a `[mutation]`-tagged
 criterion (`### C4 [mutation] — …`) or ANY other criterion where you would otherwise invent
-mutants — and a mutation tool is installed, run `ac mutate <phase> --json` and triage its
-survivors. **Never invent mutants by hand while a tool is installed**: the tool gives a closed,
-reproducible list, and you judge only what it leaves behind.
+mutants — and a mutation tool is installed, run `ac mutate <phase> --json` and judge the survivors
+it leaves open. **Never invent mutants by hand while a tool is installed**: the tool gives a closed,
+reproducible list. The rules live in `lib/verdict.mjs` (the gate, the mark) and `lib/survivors.mjs`
+(survivor identity, groups, judgements); this text only tells you which command to run.
 1. Run `ac mutate <phase> --json` ONCE per phase; the one result serves every criterion that
    needs it, tagged or not. It detects the tool, scopes to the lines the phase changed, runs the
-   phase's own tests under a time cap and parses the report. It never installs anything, needs no
-   permission prompt, and writes only astro-code's own `.astrocode/.local` bookkeeping.
-2. **Triage only the survivors** (`survived` and `no-coverage`). Never judge killed mutants.
-   Timeouts are killed. For each survivor decide `triage`: `test-gap` (a real behavior no test
-   pins — this **fails the criterion**) or `equivalent` (no test could tell it apart; passes, and
-   needs a one-line `justification`).
-3. Copy the result's fields into the criterion's `mutation` object (`outcome`, `reproduce`,
+   phase's own tests (twice first, to find flaky ones) under one time cap and parses the report. It
+   never installs anything, needs no permission prompt, and writes only astro-code's own
+   `.astrocode/.local` bookkeeping. Read `flaky`: a named flaky test's kills are `excluded`
+   or `discounted` (not counted); `unverified` makes the run incomplete, which **fails** the
+   criterion; `baseline_failing` means tests already fail on unchanged code, which fails it too.
+2. **Declare the mark.** On every criterion you use the tool's result for — tagged or not — set
+   `"test_strength": true` in the verdict JSON. `ac verdict record` then applies the code gate to it
+   exactly as to a `[mutation]` criterion, and the mark is sticky for the phase: a later verdict
+   cannot drop it. Mutation evidence on a criterion marks it even if you forget the flag. No
+   CRITERIA.md edit is needed for old or untagged criteria.
+3. **Start from `triage`.** The result already carries the phase's recorded judgements
+   (`.astrocode/phases/<slug>/SURVIVORS.json`, committed): a survivor with `judged: true` and
+   `triage: equivalent` is done, `triage.open` counts what is left, and `groups[]` shows them by
+   function and kind, with string/message literals apart in `g:text-only`. **Judge only the open
+   survivors** (untriaged, or `test-gap`) — never re-judge the whole list. For each decide:
+   `test-gap` (a real behavior no test pins — this **fails the criterion**) or `equivalent` (no test
+   could tell it apart; passes, and needs a one-line justification). Timeouts are killed. Record the
+   decision with `ac mutate judge <phase> <s:key|g:group>... --equivalent "<one line why>"` or
+   `--test-gap ["<note>"]`. A group id covers only the survivors it holds now — read them first, since
+   nothing is marked equivalent for you. The file is written, not committed: `ac verdict record`
+   commits it with the verdict.
+4. Copy the result's fields into the criterion's `mutation` object (`outcome`, `reproduce`,
    `head`, `scope`, `cap_seconds`, `capped`, `complete`, `counts`, `survivors`) with these
    reshapes: `tool` = the result's `tool.id` (a string), `version` = `tool.version`, and leave
-   out `command` and `fallback` when they are null. Then add `triage` (plus `justification` for `equivalent`) to
-   each survivor, keeping each one exactly once with its `id`. Record it through `ac verdict record`. The code gate there is
-   for **`[mutation]`-tagged criteria only**: it refuses a pass over a test-gap, an unjustified
-   equivalent or an untriaged survivor, and checks the evidence against the last `ac mutate` run
-   kept on this machine (counts and survivors must be that run's, unedited). On an untagged
-   criterion the same evidence is supporting evidence with no code gate: it is kept as given and
-   never fails the criterion by itself. That untagged directive is prompt-only by design (ADR-084):
-   nothing in code makes you run the tool, so do.
-4. `outcome` `incomplete` or `error` fails a tagged criterion: a capped run is never all killed.
+   out `command` and `fallback` when they are null. Keep each survivor exactly once with its `id`
+   and its `triage` (plus `justification` for `equivalent`) as the result gives it after your
+   `judge` calls. Record it through `ac verdict record`. The code gate refuses a pass over a
+   test-gap, an unjustified equivalent or an untriaged survivor, and checks the evidence against
+   the last full `ac mutate` run kept on this machine (counts and survivors must be that run's,
+   unedited).
+5. **Fix rounds use `--survivors`, the verdict uses a full run.** `ac mutate <phase> --survivors`
+   re-tests only the open survivors and shows the full run's groups with the re-test overlaid; it is
+   a **partial** run, labelled so, and the gate refuses it. When the open survivors are gone, run
+   `ac mutate <phase>` in full and record THAT. Code changed since the last full run also makes
+   the gate refuse the pass.
+6. `outcome` `incomplete` or `error` fails a marked criterion: a capped run is never all killed.
    Name both cap keys, `mutation.cap_seconds` (project) and `mutation.phases.<n>.cap_seconds`
-   (this phase only, set with `ac config set`); raising it is the user's call, you stay read-only.
-5. **AI mutants only for `tool-missing`, `no-tool` or `no-scope`**, and then only with the reason:
-   keep the result's `fallback.reason` in the evidence (a one-line reason, never empty) and
-   invent mutants by hand for that criterion as before. The exception is a `no-scope` whose
-   reason names `mutation.exclude`: the tool is installed and the user excluded those files, so
-   record the reason and invent no mutants by hand for them. A `no-scope` whose reason says the
-   tool is installed (the phase changed only tests, say) is the same: invent no mutants by hand; a
-   tagged criterion **fails** with "bring the code under test into scope with `mutation.files`" as
+   (this phase only, set with `ac config set`); a cap hit during the flaky check is named the same
+   way. Raising it is the user's call, you stay read-only.
+7. **AI mutants only when `fallback.ai_mutants` is true** (`tool-missing`, `no-tool`, or `no-scope`
+   with no tool installed), and then only with the reason: keep the result's `fallback.reason` in the
+   evidence (a one-line reason, never empty) and invent mutants by hand for that criterion as before.
+   When `fallback.ai_mutants` is false no mutants were run and none are made by hand: a `no-scope`
+   whose reason names `mutation.exclude` (the user excluded those files) is recorded with its
+   reason; a `no-scope` whose reason says the tool is installed (the phase changed only tests, say)
+   **fails** a marked criterion with "bring the code under test into scope with `mutation.files`" as
    the next step (the user's call — you stay read-only). `not-configured` (the tool is installed
    but has no configuration) **fails** the criterion with `ac mutate setup` as the next step, and
    you invent no mutants by hand.
