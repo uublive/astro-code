@@ -130,7 +130,7 @@ test('C1/C2 runMutate (stryker): every mutant present, statuses counted, argv ca
     // phase 1 wrote tests/a.test.mjs, so the run goes through the generated config (D2)
     assert.equal(r.command, `stryker run .astrocode/.local/mutate-runs/${p.slug1}.stryker.config.mjs --mutate src/a.mjs:1-30 --reporters json`);
     const again = await runMutate(p.dir, p.slug1, { env: p.env });
-    const strip = ({ started_at, duration_ms, log, ...rest }) => rest;
+    const strip = ({ started_at, duration_ms, log, flaky, ...rest }) => ({ ...rest, flaky: flaky && { ...flaky, duration_ms: 0 } });
     assert.deepEqual(strip(again), strip(r));
   } finally { done(p); }
 });

@@ -45,7 +45,7 @@ if ((name === 'go' && argv[0] === 'test') || name === 'pytest') {
   const failing = [];
   if (env.MUTATE_STUB_BROKEN) failing.push(env.MUTATE_STUB_BROKEN);
   if (env.MUTATE_STUB_FLAKY) {
-    const at = env.MUTATE_STUB_FLAKY.lastIndexOf(':');
+    const at = env.MUTATE_STUB_FLAKY.indexOf(':'); // the name may hold `::` (a pytest node id), the path does not
     const file = env.MUTATE_STUB_FLAKY.slice(0, at);
     const n = (existsSync(file) ? Number(readFileSync(file, 'utf8')) || 0 : 0) + 1;
     writeFileSync(file, String(n));

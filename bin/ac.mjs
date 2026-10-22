@@ -2670,6 +2670,18 @@ async function main() {
           const shown = t.files.length ? `${t.files.slice(0, 5).join(', ')}${t.files.length > 5 ? `, +${t.files.length - 5}` : ''}` : 'all tests';
           console.log(`tests: ${t.source} — ${shown} (${t.mechanism})${t.note ? ` — ${t.note}` : ''}`);
         }
+        if (res.flaky) {
+          // One line, bounded (e618): names capped at 5; the full list is in --json (`flaky`).
+          const f = res.flaky;
+          const nm = (t) => (typeof t === 'string' ? t : `(unnamed failure: ${t.command})`);
+          const list = (a) => `${a.slice(0, 5).map(nm).join(', ')}${a.length > 5 ? `, +${a.length - 5}` : ''}`;
+          if (!f.checked) console.log(`• flaky check not run: ${f.reason ?? 'no reason given'}`);
+          else if (f.tests.length) {
+            const how = { excluded: 'excluded from the mutation run', discounted: 'discounted by the report\'s attribution', unverified: 'unverified: run marked incomplete' }[f.kills] ?? f.kills;
+            console.log(`⚠ flaky: ${list(f.tests)} — kills ${how}`);
+          } else console.log(`• flaky check: stable (${f.runs} runs, ${(f.duration_ms / 1000).toFixed(1)}s)`);
+          if (f.checked && f.baseline_failing.length) console.log(`• tests already fail before mutating: ${list(f.baseline_failing)}`);
+        }
         if (res.error) console.log(`⚠ ${res.error}`);
         for (const m of res.survivors) console.log(`⚠ ${m.file}:${m.line ?? '?'} ${m.mutator} ${m.status}`);
         const look = Object.entries(res.per_file).filter(([, k]) => k.survived || k['no-coverage'] || k.timeout || k.error || k.not_run || k.ignored);
