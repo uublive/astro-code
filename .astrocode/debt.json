@@ -559,22 +559,26 @@
     {
       "id": "2026-10-22-astro-verify-fallback-line-glosses",
       "title": "astro-verify fallback line glosses every fallback as (AI mutants stood in)",
-      "status": "open",
+      "status": "dropped",
       "cost": "small",
       "found_at": "2026-10-22T12:13:00.426Z",
       "why": "commands/astro-verify.md step 3 tells the orchestrator a fallback line means AI mutants stood in, but the mutation.exclude no-scope and the tool-installed no-scope reasons both say no AI mutants were used; the report gloss is now wrong for those cases (the verifier role itself is correct)",
       "phase": "48",
-      "file": "commands/astro-verify.md"
+      "file": "commands/astro-verify.md",
+      "dropped_at": "2026-10-22T21:25:27.227Z",
+      "drop_reason": "phase 49 t4/t13: worded from fallback.report"
     },
     {
       "id": "2026-10-22-gremlins-installed-via-go-install",
       "title": "Gremlins installed via go install reports version null in ac mutate evidence",
-      "status": "open",
+      "status": "dropped",
       "cost": "small",
       "found_at": "2026-10-22T12:54:46.703Z",
       "why": "A Gremlins v0.6.0 built with go install (the exact install hint ac prints) answers --version with gremlins version dev, so ac mutate records tool.version null; the evidence never carries a version for the hinted install path (go version -m on the binary gives the module version).",
       "phase": "48",
-      "file": "lib/mutate.mjs"
+      "file": "lib/mutate.mjs",
+      "dropped_at": "2026-10-22T21:25:27.053Z",
+      "drop_reason": "phase 49 t4: version read from the binary's build info"
     }
   ]
 }

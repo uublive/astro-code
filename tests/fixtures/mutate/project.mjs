@@ -1,6 +1,6 @@
 // Shared scaffolding for the phase-47 mutate tests: a real tmp git project with ac phases and
 // ADR-017-stamped commits, plus the stub tool and a PATH that can never reach a real tool (C11).
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +11,7 @@ import { addPhase, findPhase } from '../../../lib/roadmap.mjs';
 export const FX = dirname(fileURLToPath(import.meta.url));
 export const STUB = join(FX, 'stub.mjs');
 export const sh = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
-const GIT_DIR = dirname(spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim());
+const GIT_BIN = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
 
 const LAYOUT = {
   js: { manifest: ['package.json', '{"name":"p"}\n'], a: 'src/a.mjs', b: 'src/b.mjs', c: 'src/c.mjs', test: 'tests/a.test.mjs' },
@@ -113,9 +113,17 @@ export async function jsFlakyProject({ flaky = true } = {}) {
   return p;
 }
 
-/** An env where only the given bin dirs, node and git are reachable; no GOBIN/GOPATH. */
+/**
+ * An env where only the given bin dirs, node and git are reachable; no GOBIN/GOPATH. Node and git sit
+ * in a directory of their own holding just those two symlinks: their real directories (/usr/bin,
+ * node's prefix) also hold npm, pytest or go, which the flaky pre-check would otherwise find and run
+ * (phase 49), making the suites slow and machine-dependent.
+ */
 export function restrictedEnv(binDirs, extra = {}) {
-  const env = { ...process.env, PATH: [...binDirs, dirname(process.execPath), GIT_DIR].join(delimiter), HOME: mkdtempSync(join(tmpdir(), 'ac-mutate-home-')) };
+  const only = mkdtempSync(join(tmpdir(), 'ac-mutate-only-'));
+  symlinkSync(process.execPath, join(only, 'node'));
+  symlinkSync(GIT_BIN, join(only, 'git'));
+  const env = { ...process.env, PATH: [...binDirs, only].join(delimiter), HOME: mkdtempSync(join(tmpdir(), 'ac-mutate-home-')) };
   delete env.GOBIN; delete env.GOPATH;
   return { ...env, ...extra };
 }
