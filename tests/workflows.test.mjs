@@ -4217,3 +4217,16 @@ test('phase 45: an absent record clerk answer logs a warning and leaves the veri
   assert.equal(result.verdict.passed, true)
   assert.ok(logs.some((l) => l.startsWith('⚠ verdict not saved')), logs.join('\n'))
 })
+
+test('t4 (phase 47): VERIFY_SCHEMA lets mutation evidence through; the record call maps it and encodes single quotes', () => {
+  const wfSrc = readFileSync(WF_FILE, 'utf8')
+  const schemaMatch = wfSrc.match(/const VERIFY_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)
+  const schema = runInNewContext(`(${schemaMatch[1]})`)
+  const m = schema.properties.criteria.items.properties.mutation
+  assert.ok(m, 'criteria item must allow a mutation block')
+  assert.strictEqual(m.type, 'object')
+  assert.strictEqual(m.additionalProperties, true, 'the code gate in lib/verdict.mjs validates; the schema only lets it through')
+  assert.ok(wfSrc.includes('...(c.mutation ? { mutation: c.mutation } : {})'), 'the record payload maps mutation through')
+  assert.ok(wfSrc.includes(".replace(/'/g, '\\\\u0027')"), "the --result JSON must encode every ' so it cannot break the single quotes")
+  assert.ok(wfSrc.includes('c.mutation.fallback.reason'), 'a fallback reason is logged once from the evidence')
+})

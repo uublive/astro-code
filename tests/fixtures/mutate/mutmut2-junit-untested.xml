@@ -1,0 +1,10 @@
+<?xml version="1.0" ?>
+<testsuites disabled="0" errors="0" failures="4" tests="5" time="0.0">
+	<testsuite disabled="0" errors="0" failures="4" name="mutmut" skipped="0" tests="5" time="0">
+		<testcase classname="" file="src/a.py" line="1" name="Mutant #1"><system-out>    return a + b</system-out></testcase>
+		<testcase classname="" file="src/a.py" line="2" name="Mutant #2"><failure type="failure" message="bad_survived">--- diff</failure><system-out>x = 1</system-out></testcase>
+		<testcase classname="" file="src/a.py" line="3" name="Mutant #3"><failure type="failure" message="untested"/><system-out>y = 2</system-out></testcase>
+		<testcase classname="" file="src/a.py" line="4" name="Mutant #4"><failure type="failure" message="untested"/><system-out>z = 3</system-out></testcase>
+		<testcase classname="" file="src/a.py" line="5" name="Mutant #5"><failure type="failure" message="ok_suspicious"/><system-out>w = 4</system-out></testcase>
+	</testsuite>
+</testsuites>

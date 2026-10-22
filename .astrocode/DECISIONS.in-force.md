@@ -539,6 +539,11 @@ _2026-10-15 · at c98cbd1_
 
 **Rejected:** Removing git-guard (loses the guard against the bare stash that destroyed a completed plan); keeping ask with fewer false alarms (any ask still stalls an unattended run); denying unreadable calls too (an agent cannot rephrase a refusal it cannot understand).
 
+## ADR-083 — Test-strength evidence comes from a deterministic mutation tool (ac mutate), scoped to the phase's changed files under a time cap; the verifier only triages survivors, and falls back to AI-invented mutants only when no tool is installed
+_2026-10-21 · at 00220f3_
+
+**Why:** A verifier inventing mutants by hand has no closed list and no natural end (Waupaca phase 23 C11 took hours, every round found new survivors); a tool's list is reproducible and bounded (phase 47, Matteo)
+
 ## Not in force
 
 These decisions no longer apply — follow the decision each one names. They are listed so a citation still resolves; the full text is in DECISIONS.md.

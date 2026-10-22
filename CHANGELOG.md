@@ -4,6 +4,10 @@ Release notes in full live on the [GitHub releases page](https://github.com/uubl
 
 ## Unreleased
 
+## v0.48.0
+
+- `ac mutate <phase>` runs the project's own mutation tool (Stryker, Gremlins or mutmut) on the files a phase's commits changed, under a time cap (`mutation.cap_seconds`, default 10 minutes), and the verifier triages only the survivors for criteria tagged `[mutation]`. `ac verdict record` keeps the evidence and refuses a pass over a test gap, an unjustified equivalent or a capped run. A missing tool is suggested once per project (`ac mutate dismiss` silences it, `ac mutate --check` always shows it), never installed. The evidence is bound to the last `ac mutate` run kept on the machine (`.astrocode/.local/mutate-runs/`), so an edited survivor list cannot hide one nobody triaged. New: `/astro-mutate`, `ac mutate setup` (ADR-083)
+
 ## v0.47.0
 
 - Licensed under Apache-2.0 (`LICENSE`, `NOTICE`); `package.json` said MIT with no licence file. The licence does not cover the astro-code/Astrolize names or logo

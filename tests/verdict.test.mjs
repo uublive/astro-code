@@ -301,3 +301,127 @@ test('verifiedGate passes when CRITERIA.md is absent (self-derived bar)', async 
     assert.equal(verifiedGate(s.root, SLUG).ok, true);
   } finally { done(s); }
 });
+
+// ---- Phase 47 t1 — mutation evidence: marker, contract, C9 gate (ADR-083) ----
+const surv = (o = {}) => ({ file: 'src/a.mjs', line: 3, mutator: 'ArithmeticOperator', status: 'survived', triage: 'equivalent', justification: 'dead branch', ...o });
+const mut = (o = {}) => ({
+  outcome: 'survivors', tool: 'stryker', version: '8.0.0', command: 'stryker run', head: 'abc1234', capped: false, complete: true,
+  counts: { killed: 4, survived: 1, timeout: 0, 'no-coverage': 0, error: 0 }, survivors: [surv()], fallback: null, ...o,
+});
+
+test('testStrengthIds finds the [mutation] tag in headings only, in file order', async () => {
+  const { testStrengthIds } = await import('../lib/verdict.mjs');
+  const t = '### C4 [mutation] — x\nbody [mutation]\n## C2 [Mutation]\n### C3 — plain\n### C1 — mentions [mutation]?\n';
+  assert.deepEqual(testStrengthIds(t), ['C4', 'C2', 'C1']);
+  assert.deepEqual(testStrengthIds('### C3 — plain\nC9 [mutation] in prose\n'), []);
+  assert.deepEqual(testStrengthIds(undefined), []);
+});
+
+test('mutationGate: control passes; each breach is refused with a reason', async () => {
+  const { mutationGate } = await import('../lib/verdict.mjs');
+  const g = (mutation, marked = true) => mutationGate({ marked, mutation });
+  assert.equal(g(mut()).ok, true);
+  assert.equal(g(mut({ outcome: 'clean', survivors: [], counts: { killed: 5, survived: 0, timeout: 1, 'no-coverage': 0, error: 0 } })).ok, true);
+  const refuse = (m, re) => { const r = g(m); assert.equal(r.ok, false); assert.match(r.reason, re); };
+  refuse(undefined, /no mutation evidence/);
+  refuse(mut({ survivors: [surv({ triage: 'test-gap' })] }), /src\/a\.mjs:3 ArithmeticOperator.*test-gap/);
+  refuse(mut({ survivors: [surv({ justification: '' })] }), /justification/);
+  refuse(mut({ survivors: [surv({ justification: 'a\nb' })] }), /justification/);
+  refuse(mut({ survivors: [surv({ triage: undefined })] }), /untriaged/);
+  refuse(mut({ survivors: [] }), /survivors listed but counts say 1/);
+  refuse(mut({ capped: true, complete: false }), /capped/);
+  refuse(mut({ complete: false }), /not complete/);
+  refuse(mut({ outcome: 'error' }), /outcome/);
+  refuse(mut({ counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 }, survivors: [] }), /zero mutants/);
+});
+
+test('mutationGate: a padded survivor list cannot hide an untriaged survivor (C9)', async () => {
+  const { mutationGate } = await import('../lib/verdict.mjs');
+  const g = (mutation) => mutationGate({ marked: true, mutation });
+  const counts = { killed: 4, survived: 2, timeout: 0, 'no-coverage': 1, error: 0 };
+  // the same survivor three times, the no-coverage one never triaged
+  const padded = [surv({ id: '7' }), surv({ id: '7' }), surv({ id: '7' })];
+  let r = g(mut({ counts, survivors: padded }));
+  assert.equal(r.ok, false); assert.match(r.reason, /3 "survived" survivors listed but counts say 2/);
+  // statuses add up, but one survivor is listed twice in place of another
+  r = g(mut({ counts, survivors: [surv({ id: '7' }), surv({ id: '7' }), surv({ id: '9', status: 'no-coverage' })] }));
+  assert.equal(r.ok, false); assert.match(r.reason, /#7 is listed twice/);
+  // distinct mutants at the same file, line and mutator are fine: the tool id tells them apart
+  r = g(mut({ counts, survivors: [surv({ id: '7' }), surv({ id: '8' }), surv({ id: '9', status: 'no-coverage' })] }));
+  assert.equal(r.ok, true);
+});
+
+test('parsed mutants keep the tool mutant id, so survivors can be told apart', async () => {
+  const { parseStryker } = await import('../lib/mutparse.mjs');
+  const r = parseStryker(JSON.stringify({ files: { 'src/a.mjs': { mutants: [
+    { id: '11', mutatorName: 'StringLiteral', status: 'Survived', location: { start: { line: 5, column: 1 } } },
+    { id: '12', mutatorName: 'StringLiteral', status: 'Survived', location: { start: { line: 5, column: 9 } } },
+  ] } } }), { scope: ['src/a.mjs'] });
+  assert.deepEqual(r.mutants.map((m) => m.id), ['11', '12']);
+});
+
+test('mutationGate: fallback only for tool-missing/no-tool/no-scope with a one-line reason; unmarked bare is untouched', async () => {
+  const { mutationGate } = await import('../lib/verdict.mjs');
+  const fb = (outcome, reason) => mutationGate({ marked: true, mutation: mut({ outcome, fallback: { reason }, counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 }, survivors: [] }) });
+  for (const o of ['tool-missing', 'no-tool', 'no-scope']) assert.equal(fb(o, 'mutation tool not installed — AI mutants used').ok, true);
+  assert.equal(fb('survivors', 'because').ok, false);
+  assert.equal(fb('tool-missing', '').ok, false);
+  assert.equal(fb('tool-missing', 'a\nb').ok, false);
+  assert.equal(mutationGate({ marked: false, mutation: undefined }).ok, true);
+});
+
+test('recordVerdict keeps evidence, fails a breaching pass with refused, and carries prior evidence', async () => {
+  const { recordVerdict, saveMutateRun } = await import('../lib/verdict.mjs');
+  const s = sandbox(2);
+  try {
+    writeFileSync(s.crit, '### C1 [mutation] — strong\n### C2 — plain\n');
+    saveMutateRun(s.root, SLUG, { ...mut(), tool: { id: 'stryker' } });
+    const r = (m, passed = true) => ({ mode: 'full', criteria: [{ id: 'C1', passed, ...(m ? { mutation: m } : {}) }, { id: 'C2', passed: true }] });
+    let out = await recordVerdict(s.root, SLUG, r(mut()));
+    assert.equal(out.passed, true);
+    assert.deepEqual(JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[0].mutation, mut());
+    out = await recordVerdict(s.root, SLUG, r(mut({ survivors: [surv({ triage: 'test-gap' })] })));
+    assert.equal(out.passed, false); assert.equal(out.refused[0].id, 'C1');
+    assert.match(JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[0].refused, /test-gap/);
+    out = await recordVerdict(s.root, SLUG, r(null));
+    assert.equal(out.passed, false);
+    await assert.rejects(recordVerdict(s.root, SLUG, r(mut({ counts: { ...mut().counts, killed: 'x' } }))), /counts\.killed/);
+    await recordVerdict(s.root, SLUG, r(mut()));
+    await recordVerdict(s.root, SLUG, { mode: 'narrowed', criteria: [{ id: 'C2', passed: true }] });
+    assert.deepEqual(JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[0].mutation, mut());
+  } finally { done(s); }
+});
+
+test('mutationGate: a fallback beside real run counts or survivors is refused', async () => {
+  const { mutationGate } = await import('../lib/verdict.mjs');
+  const zero = { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 };
+  const fb = { reason: 'mutation tool not installed — AI mutants used' };
+  assert.equal(mutationGate({ marked: true, mutation: mut({ outcome: 'tool-missing', fallback: fb, counts: { ...zero, survived: 2 }, survivors: [surv({ triage: 'equivalent', justification: 'x' })] }) }).ok, false);
+  assert.equal(mutationGate({ marked: true, mutation: mut({ outcome: 'tool-missing', fallback: fb, counts: zero, survivors: [] }) }).ok, true);
+});
+
+test('recordVerdict binds evidence to the kept ac mutate run: no run, or an edited survivor list, is refused (C9)', async () => {
+  const { recordVerdict, saveMutateRun } = await import('../lib/verdict.mjs');
+  const s = sandbox(2);
+  try {
+    writeFileSync(s.crit, '### C1 [mutation] — strong\n### C2 — plain\n');
+    const r = (m) => ({ mode: 'full', criteria: [{ id: 'C1', passed: true, mutation: m }, { id: 'C2', passed: true }] });
+    const counts = { killed: 4, survived: 2, timeout: 0, 'no-coverage': 1, error: 0 };
+    const tool = [surv({ id: '2' }), surv({ id: '3' }), surv({ id: '5', line: 7, mutator: 'EqualityOperator', status: 'no-coverage' })];
+    const ev = (survivors, o = {}) => mut({ counts, survivors, ...o });
+    const refused = async (m, re) => { const out = await recordVerdict(s.root, SLUG, r(m)); assert.equal(out.passed, false); assert.match(out.refused[0].reason, re); };
+    // no run kept on this machine
+    await refused(ev(tool), /no `ac mutate` run on record/);
+    saveMutateRun(s.root, SLUG, { ...ev(tool), tool: { id: 'stryker' } });
+    assert.equal((await recordVerdict(s.root, SLUG, r(ev(tool)))).passed, true);
+    // #3 replaced by #2 with its id dropped; by a respelled path; by an invented survivor
+    const { id: _drop, ...noId } = surv({ id: '2' });
+    await refused(ev([tool[0], noId, tool[2]]), /#3 from the `ac mutate` run is not triaged/);
+    await refused(ev([tool[0], surv({ id: '2', file: './src/a.mjs' }), tool[2]]), /#3 .*not triaged/);
+    await refused(ev([tool[0], surv({ id: '99' }), tool[2]]), /#3 .*not triaged/);
+    // counts lowered to hide #3; another commit; another outcome
+    await refused(ev([tool[0], tool[2]], { counts: { ...counts, survived: 1 } }), /counts 1 "survived"/);
+    await refused(ev(tool, { head: 'fff0000' }), /last `ac mutate` run graded abc1234/);
+    await refused(ev([], { outcome: 'tool-missing', fallback: { reason: 'mutation tool not installed — AI mutants used' }, counts: { killed: 0, survived: 0, timeout: 0, 'no-coverage': 0, error: 0 } }), /outcome "tool-missing" but the `ac mutate` run says "survivors"/);
+  } finally { done(s); }
+});

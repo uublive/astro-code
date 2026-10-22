@@ -1,0 +1,10 @@
+Running mutation testing
+    src.a.x_add__mutmut_1: killed
+    src.a.x_add__mutmut_2: survived
+    src.a.x_add__mutmut_3: timeout
+    src.a.x_sub__mutmut_1: no tests
+    src.a.x_sub__mutmut_2: suspicious
+    src.a.x_sub__mutmut_3: segfault
+    src.a.x_mul__mutmut_1: not checked
+    src.a.x_mul__mutmut_2: skipped
+    src.other.x_noop__mutmut_1: survived

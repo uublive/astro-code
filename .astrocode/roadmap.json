@@ -1,5 +1,13 @@
 {
   "version": 1,
-  "milestone": 5,
-  "phases": []
+  "milestone": 13,
+  "phases": [
+    {
+      "number": 47,
+      "name": "Deterministic mutation testing in the verifier",
+      "slug": "47-deterministic-mutation-testing-in-the",
+      "status": "verified",
+      "milestone": 13
+    }
+  ]
 }

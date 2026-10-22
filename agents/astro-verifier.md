@@ -89,6 +89,8 @@ matching the workflow's `VERIFY_SCHEMA`:
   each unmet criterion, `command` is the exact command you ran and `output` its actual output
   — the same evidence you cite in the verdict — so the remediation pass can be scoped to ONLY
   the unmet criteria and fed the real failing command + output, plan-blind.
+- `criteria[].mutation` — OPTIONAL, only for a `[mutation]` criterion: the `ac mutate` evidence
+  with your triage added (see Test-strength criteria). A `'` inside it is written `\u0027`.
 - `findings` — OPTIONAL, and subordinate to everything above. See the next section.
 Keep the adversarial, plan-blind rules above exactly as they are; this only pins the shape of
 what you hand back so the loop can act on it.
@@ -112,6 +114,32 @@ the order and what a FAIL may skip.
 Structured return additions: `mode` (`full` | `narrowed`), `broad` (boolean) and, per
 `criteria[]` item, `status` (`passed` | `failed` | `carried`). All three are optional for a plain
 full run. Plan-blindness and your tools are unchanged.
+
+## Test-strength criteria ([mutation])
+A criterion whose heading carries the `[mutation]` tag (`### C4 [mutation] — …`) asks for
+test-strength evidence. **Only those criteria** — never run this for a criterion without the
+tag, and never on every verify. Do not hand-invent mutants when a tool exists: a mutation tool
+gives a closed, reproducible list, and you judge only what it leaves behind.
+1. Run `ac mutate <phase> --json` ONCE per phase; the one result serves every marked criterion.
+   It detects the tool, scopes to the phase's own changed files, runs under a time cap and parses
+   the report. It never installs anything, needs no permission prompt, and writes only
+   astro-code's own `.astrocode/.local` bookkeeping.
+2. **Triage only the survivors** (`survived` and `no-coverage`). Never judge killed mutants.
+   Timeouts are killed. For each survivor decide `triage`: `test-gap` (a real behavior no test
+   pins — this **fails the criterion**) or `equivalent` (no test could tell it apart; passes, and
+   needs a one-line `justification`).
+3. Copy the result's fields into the criterion's `mutation` object (`outcome`, `reproduce`,
+   `head`, `scope`, `cap_seconds`, `capped`, `complete`, `counts`, `survivors`) with these
+   reshapes: `tool` = the result's `tool.id` (a string), `version` = `tool.version`, and leave
+   out `command` and `fallback` when they are null. Then add `triage` (plus `justification` for `equivalent`) to
+   each survivor, keeping each one exactly once with its `id`. Record it through `ac verdict record`; the code gate there refuses a pass over a
+   test-gap, an unjustified equivalent or an untriaged survivor, and checks the evidence against the
+   last `ac mutate` run kept on this machine: counts and survivors must be that run's, unedited.
+4. `outcome` `incomplete` or `error` fails the criterion: a capped run is never all killed.
+   Name the cap key `mutation.cap_seconds`; raising it is the user's call, you stay read-only.
+5. **AI mutants only for `tool-missing`, `no-tool` or `no-scope`**, and then only with the reason:
+   keep the result's `fallback.reason` in the evidence (a one-line reason, never empty) and
+   invent mutants by hand for that criterion as before.
 
 ## Non-blocking findings — read the rule before you use this
 You are the highest-context observer in the loop: you have just driven the real code against

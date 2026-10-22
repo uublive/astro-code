@@ -1,0 +1,74 @@
+{
+  "go_module": "example.com/fx",
+  "test_efficacy": 50.0,
+  "mutations_coverage": 80.0,
+  "mutants_total": 8,
+  "mutants_killed": 1,
+  "mutants_lived": 2,
+  "mutants_not_viable": 1,
+  "mutants_not_covered": 1,
+  "elapsed_time": {
+    "mutation": 1.5,
+    "total": 2.0
+  },
+  "files": [
+    {
+      "file_name": "a.go",
+      "mutations": [
+        {
+          "line": 4,
+          "column": 7,
+          "type": "CONDITIONALS_BOUNDARY",
+          "status": "KILLED"
+        },
+        {
+          "line": 9,
+          "column": 3,
+          "type": "ARITHMETIC_BASE",
+          "status": "LIVED"
+        },
+        {
+          "line": 11,
+          "column": 5,
+          "type": "CONDITIONALS_NEGATION",
+          "status": "TIMED OUT"
+        },
+        {
+          "line": 14,
+          "column": 2,
+          "type": "INCREMENT_DECREMENT",
+          "status": "NOT COVERED"
+        },
+        {
+          "line": 16,
+          "column": 8,
+          "type": "INVERT_NEGATIVES",
+          "status": "NOT VIABLE"
+        },
+        {
+          "line": 19,
+          "column": 1,
+          "type": "ARITHMETIC_BASE",
+          "status": "SKIPPED"
+        },
+        {
+          "line": 21,
+          "column": 6,
+          "type": "CONDITIONALS_BOUNDARY",
+          "status": "RUNNABLE"
+        }
+      ]
+    },
+    {
+      "file_name": "other.go",
+      "mutations": [
+        {
+          "line": 3,
+          "column": 3,
+          "type": "ARITHMETIC_BASE",
+          "status": "LIVED"
+        }
+      ]
+    }
+  ]
+}

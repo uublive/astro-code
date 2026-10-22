@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites><testsuite name="mutmut" tests="7" errors="1" failures="1" skipped="2" time="0">
+<testcase classname="src/a.py" file="src/a.py" line="3" name="mutmut 1" time="0"/>
+<testcase classname="src/a.py" file="src/a.py" line="8" name="mutmut 2" time="0"><failure message="bad_survived"/></testcase>
+<testcase classname="src/a.py" file="src/a.py" line="12" name="mutmut 3" time="0"><error message="bad_timeout"/></testcase>
+<testcase classname="src/a.py" file="src/a.py" line="15" name="mutmut 4" time="0"><skipped message="suspicious"/></testcase>
+<testcase classname="src/a.py" file="src/a.py" line="18" name="mutmut 5" time="0"><skipped message="skipped"/></testcase>
+<testcase classname="src/a.py" file="src/a.py" line="21" name="mutmut 6" time="0"><skipped message="untested"/></testcase>
+<testcase classname="src/other.py" file="src/other.py" line="2" name="mutmut 7" time="0"><failure message="bad_survived"/></testcase>
+</testsuite></testsuites>
