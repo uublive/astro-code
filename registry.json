@@ -679,6 +679,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-22T13:02:49.535Z",
       "status": "complete"
+    },
+    {
+      "type": "fix",
+      "id": "2026-10-23-ac-install-uses-symlinksync-with-no",
+      "name": "ac install uses symlinkSync with no copy fallback, so a standard Windows user gets EPERM",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-23T05:06:31.798Z",
+      "status": "active"
     }
   ]
 }
