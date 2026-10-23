@@ -4,6 +4,15 @@ Release notes in full live on the [GitHub releases page](https://github.com/uubl
 
 ## Unreleased
 
+## v0.50.2
+
+- `ac stats` counts each API response once (it counted one per transcript line, ~1.7-2x) and includes `<session>/subagents/` and workflow transcripts (#152, #153)
+- `ac status` offers the next phase in milestone order: the active milestone first, later ones in order, earlier never (#142)
+- `ac canon pull` names and saves (`.astrocode/.local/decisions-discarded-<time>.md`) a hand-written paragraph above the first ADR that the registry's preamble replaces, instead of dropping it silently
+- A same-id decision collision names the ways out (`ac canon check`, `ac decision add`, `ac decision amend`) instead of an empty "Fix: ."
+- `ac backlog list` sorts by capture time, so same-day ideas list oldest first
+- The statusline hook exits quietly when its reader closes early, instead of an EPIPE stack trace
+
 ## v0.50.1
 
 - The astro-mods plugin manifest now carries astro-code's version. It sat at 0.41.0, and Claude Code keys its plugin cache by that version, so `ac update` refreshed nothing: band and mod changes since v0.41 (the version in the band title, teammates' phase tags) never reached an installed plugin. A test keeps the two versions equal
