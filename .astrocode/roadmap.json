@@ -6,8 +6,12 @@
       "number": 50,
       "name": "ac doctor: one read-only report on whether the install and its hooks are consistent (GitHub #159)",
       "slug": "50-ac-doctor-one-read-only-report-on",
-      "status": "verified",
-      "milestone": 14
+      "status": "complete",
+      "milestone": 14,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-10-23T13:20:19.508Z",
+      "accepted_evidence": "composer"
     },
     {
       "number": 51,
