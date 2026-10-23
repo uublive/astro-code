@@ -114,7 +114,7 @@ import {
   addBacklog, openBacklog, loadBacklog, findBacklog, backlogAgeDays, linkBacklog,
   closeBacklogFor, reopenBacklogFor, markPromoted, archiveBacklog, declinedMatches,
   promotionContext, ARCHIVE_KINDS, BACKLOG_STALE_DAYS,
-  setBacklogNote,
+  setBacklogNote, byCapture,
 } from '../lib/backlog.mjs';
 import { runFixturesCheck } from '../lib/fixtures.mjs';
 import { loadConfig, updateConfig, withUserRoleDefaults, setUserRoleDefaults } from '../lib/config.mjs';
@@ -990,7 +990,7 @@ async function main() {
       if (!sub || sub === 'list') {
         const db = loadBacklog(r);
         const items = flags.all
-          ? [...db.backlog].sort((a, b) => String(a.id).localeCompare(String(b.id)))
+          ? [...db.backlog].sort(byCapture)
           : openBacklog(r);
         if (flags.json) { json(items); return; }
         if (!items.length) { console.log('• no open ideas'); return; }
