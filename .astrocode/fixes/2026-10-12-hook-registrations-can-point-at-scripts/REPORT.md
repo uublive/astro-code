@@ -1,0 +1,1 @@
+Hook registrations can point at scripts the installed copy doesn't have: settings.json lists astro-principles.mjs 2/4..4/4 while ~/.astro/code is still 0.38.0, so every session start logs 3 'SessionStart:startup hook error' (MODULE_NOT_FOUND)

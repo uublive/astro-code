@@ -114,7 +114,7 @@ import {
   addBacklog, openBacklog, loadBacklog, findBacklog, backlogAgeDays, linkBacklog,
   closeBacklogFor, reopenBacklogFor, markPromoted, archiveBacklog, declinedMatches,
   promotionContext, ARCHIVE_KINDS, BACKLOG_STALE_DAYS,
-  setBacklogNote,
+  setBacklogNote, byCapture,
 } from '../lib/backlog.mjs';
 import { runFixturesCheck } from '../lib/fixtures.mjs';
 import { loadConfig, updateConfig, withUserRoleDefaults, setUserRoleDefaults } from '../lib/config.mjs';
@@ -990,7 +990,7 @@ async function main() {
       if (!sub || sub === 'list') {
         const db = loadBacklog(r);
         const items = flags.all
-          ? [...db.backlog].sort((a, b) => String(a.id).localeCompare(String(b.id)))
+          ? [...db.backlog].sort(byCapture)
           : openBacklog(r);
         if (flags.json) { json(items); return; }
         if (!items.length) { console.log('• no open ideas'); return; }
@@ -2959,7 +2959,7 @@ async function main() {
           }
           for (const ref of res.refused) {
             console.error(
-              `⚠ ${ref.file} was NOT overwritten — ${ref.reason}. Fix: ${ref.fixes.join(', ')}.`,
+              `⚠ ${ref.file} was NOT overwritten — ${ref.reason}.${ref.fixes.length ? ` Fix: ${ref.fixes.join(', ')}.` : ''}`,
             );
           }
           // ADR-034: a preserved entry means the local file diverged from the registry.
@@ -2968,6 +2968,15 @@ async function main() {
             console.error(
               `⚠ kept ${res.preserved.length} local-only decision(s) the registry has never seen: ${res.preserved.join(', ')} — ` +
                 `re-add them via \`ac decision add\` so they reach the team (DECISIONS.md is never bulk-pushed).`,
+            );
+          }
+          // A local paragraph before the first ADR is replaced by the registry's preamble: named
+          // here and saved, never dropped silently (fix 2026-10-23-canon-pull-silently-deletes-hand).
+          if (res.discarded && res.discarded.length) {
+            const first = res.discarded[0].split('\n')[0];
+            console.error(
+              `⚠ removed ${res.discarded.length} paragraph(s) before the first ADR in DECISIONS.md (the registry's preamble wins): "${first.length > 80 ? `${first.slice(0, 79)}…` : first}"` +
+                (res.discardedFile ? ` — saved to ${relative(r, res.discardedFile)}` : ''),
             );
           }
           // ADR-053 (D5) — a genuine same-id collision refuses and names BOTH sides;

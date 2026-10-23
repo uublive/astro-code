@@ -97,6 +97,83 @@
         "slug": "46-witness-cite-proof-of-a-human-choice"
       },
       "promoted_at": "2026-10-15T05:47:06.912Z"
+    },
+    {
+      "id": "2026-10-23-ac-canon-brief-a-title-index-of-the",
+      "title": "`ac canon brief` (a title index of the decisions in force) and `ac decision show <id>`",
+      "note": "GitHub #156 (@luigi-lauro): https://github.com/uublive/astro-code/issues/156",
+      "status": "open",
+      "captured_at": "2026-10-23T08:46:54.202Z"
+    },
+    {
+      "id": "2026-10-23-ac-canon-usage-which-decisions-in-force",
+      "title": "`ac canon usage`: which decisions in force are ever cited (read-only, no state)",
+      "note": "GitHub #158 (@luigi-lauro): https://github.com/uublive/astro-code/issues/158",
+      "status": "open",
+      "captured_at": "2026-10-23T08:46:53.571Z"
+    },
+    {
+      "id": "2026-10-23-ac-phase-context-report-the-challenge",
+      "title": "`ac phase context`: report the challenge marker and an optional cited skip reason",
+      "note": "GitHub #149 (@luigi-lauro): https://github.com/uublive/astro-code/issues/149",
+      "status": "open",
+      "captured_at": "2026-10-23T08:46:57.495Z"
+    },
+    {
+      "id": "2026-10-23-ac-stats-by-role-phase-spend-by-agent",
+      "title": "`ac stats --by role|phase`: spend by agent role and phase, with a printed per-model weight table",
+      "note": "GitHub #154 (@luigi-lauro): https://github.com/uublive/astro-code/issues/154",
+      "status": "open",
+      "captured_at": "2026-10-23T08:46:55.601Z"
+    },
+    {
+      "id": "2026-10-23-ac-undo-phase-a-forward-revert-of-a",
+      "title": "`ac undo <phase>`: a forward revert of a phase's stamped commits, with a preview that lists the unstamped ones",
+      "note": "GitHub #155 (@luigi-lauro): https://github.com/uublive/astro-code/issues/155",
+      "status": "open",
+      "captured_at": "2026-10-23T08:46:54.781Z"
+    },
+    {
+      "id": "2026-10-23-backlog-a-way-to-close-an-item-that-was",
+      "title": "Backlog: a way to close an item that was done outside a phase (`done` archive kind, or `link --fix`)",
+      "note": "GitHub #151 (@luigi-lauro): https://github.com/uublive/astro-code/issues/151",
+      "status": "open",
+      "captured_at": "2026-10-23T08:46:56.303Z"
+    },
+    {
+      "id": "2026-10-23-flag-open-debt-whose-file-no-longer",
+      "title": "Flag open debt whose `file` no longer exists (`ac debt list --stale`, `ac status`)",
+      "note": "GitHub #150 (@luigi-lauro): https://github.com/uublive/astro-code/issues/150",
+      "status": "open",
+      "captured_at": "2026-10-23T08:46:56.891Z"
+    },
+    {
+      "id": "2026-10-23-how-should-an-unattended-run-leave-a",
+      "title": "How should an unattended run leave a question it could not ask? A `question` kind on `state.blockers`",
+      "note": "GitHub #160 (@luigi-lauro): https://github.com/uublive/astro-code/issues/160",
+      "status": "open",
+      "captured_at": "2026-10-23T08:46:52.936Z"
+    },
+    {
+      "id": "2026-10-23-slim-the-command-bodies-and-the",
+      "title": "Slim the command bodies and the generated CLAUDE.md block: they are re-sent on every turn or after every compaction",
+      "note": "GitHub #144 (@luigi-lauro): https://github.com/uublive/astro-code/issues/144",
+      "status": "open",
+      "captured_at": "2026-10-23T08:46:58.170Z"
+    },
+    {
+      "id": "2026-10-23-verdict-history-ac-verdict-history",
+      "title": "Verdict history: `ac verdict history <phase>` and an append-only `VERDICTS.jsonl` beside `VERDICT.json`",
+      "note": "GitHub #161 (@luigi-lauro): https://github.com/uublive/astro-code/issues/161",
+      "status": "open",
+      "captured_at": "2026-10-23T08:46:52.232Z"
+    },
+    {
+      "id": "2026-10-23-verifier-reuse-a-recorded-passing-suite",
+      "title": "Verifier: reuse a recorded passing suite result for an identical clean tree",
+      "note": "GitHub #141 (@luigi-lauro): https://github.com/uublive/astro-code/issues/141",
+      "status": "open",
+      "captured_at": "2026-10-23T08:46:58.771Z"
     }
   ]
 }

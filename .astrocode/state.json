@@ -1,11 +1,11 @@
 {
   "version": 1,
   "project": "astro-code",
-  "active_milestone": 13,
+  "active_milestone": 14,
   "active_phase": null,
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-10-23T04:45:05.486Z",
+  "updated_at": "2026-10-23T08:47:11.828Z",
   "activity": null
 }

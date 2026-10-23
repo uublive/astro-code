@@ -1,37 +1,27 @@
 {
   "version": 1,
-  "milestone": 13,
+  "milestone": 14,
   "phases": [
     {
-      "number": 47,
-      "name": "Deterministic mutation testing in the verifier",
-      "slug": "47-deterministic-mutation-testing-in-the",
-      "status": "complete",
-      "milestone": 13,
-      "accepted_by": "claude",
-      "accepted_kind": "agent",
-      "accepted_at": "2026-10-22T13:48:24.408Z"
+      "number": 50,
+      "name": "ac doctor: one read-only report on whether the install and its hooks are consistent (GitHub #159)",
+      "slug": "50-ac-doctor-one-read-only-report-on",
+      "status": "pending",
+      "milestone": 14
     },
     {
-      "number": 48,
-      "name": "Mutation testing that scales to real projects",
-      "slug": "48-mutation-testing-that-scales-to-real",
-      "status": "complete",
-      "milestone": 13,
-      "accepted_by": "claude",
-      "accepted_kind": "agent",
-      "accepted_at": "2026-10-22T13:48:24.589Z"
+      "number": 51,
+      "name": "Verifier calibration: plant ac mutate mutants in accepted phases and report the verifier's false-PASS rate (GitHub #157)",
+      "slug": "51-verifier-calibration-plant-ac-mutate",
+      "status": "pending",
+      "milestone": 14
     },
     {
-      "number": 49,
-      "name": "Survivor triage support",
-      "slug": "49-survivor-triage-support",
-      "status": "complete",
-      "milestone": 13,
-      "accepted_by": "matteo.alvazzi@gmail.com",
-      "accepted_kind": "human",
-      "accepted_at": "2026-10-23T04:45:05.474Z",
-      "accepted_evidence": "composer"
+      "number": 52,
+      "name": "Targeted verify: check only the criteria and suites a change can affect (GitHub #140)",
+      "slug": "52-targeted-verify-check-only-the-criteria",
+      "status": "pending",
+      "milestone": 14
     }
   ]
 }

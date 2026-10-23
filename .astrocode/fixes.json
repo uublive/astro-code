@@ -60,6 +60,64 @@
       "title": "Questions put to the user (discuss, accept, challenge…) start from a low-level detail with no context, so the user can't tell what part of the system they're about or why the choice matters",
       "status": "verified",
       "opened_at": "2026-10-12T09:51:14.944Z"
+    },
+    {
+      "id": "2026-10-23-a-decisions-collision-refusal-prints-a",
+      "title": "a decisions-collision refusal prints a malformed empty fix list: 'Fix: .'",
+      "status": "accepted",
+      "opened_at": "2026-10-23T05:06:34.284Z",
+      "accepted_at": "2026-10-23T07:49:15.175Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude"
+    },
+    {
+      "id": "2026-10-23-ac-backlog-list-says-oldest-first-but",
+      "title": "ac backlog list says \"oldest first\" but sorts by id, so same-day captures list out of capture order",
+      "status": "accepted",
+      "opened_at": "2026-10-23T05:06:42.351Z",
+      "accepted_at": "2026-10-23T07:49:23.477Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude"
+    },
+    {
+      "id": "2026-10-23-ac-install-uses-symlinksync-with-no",
+      "title": "ac install uses symlinkSync with no copy fallback, so a standard Windows user gets EPERM",
+      "status": "accepted",
+      "opened_at": "2026-10-23T05:06:30.809Z",
+      "accepted_at": "2026-10-23T08:21:53.605Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude",
+      "cited_evidence": "295c457"
+    },
+    {
+      "id": "2026-10-23-ac-stats-double-counts-one-api-response",
+      "title": "ac stats double-counts one API response per transcript line and skips subagent transcripts (GitHub #152, #153)",
+      "status": "verified",
+      "opened_at": "2026-10-23T08:47:39.313Z"
+    },
+    {
+      "id": "2026-10-23-ac-status-suggests-discussing-a-phase",
+      "title": "ac status suggests discussing a phase from a later milestone ahead of one in the active milestone (GitHub #142)",
+      "status": "verified",
+      "opened_at": "2026-10-23T08:48:53.140Z"
+    },
+    {
+      "id": "2026-10-23-canon-pull-silently-deletes-hand",
+      "title": "canon pull silently deletes hand-written non-ADR prose from DECISIONS.md and reports plain success",
+      "status": "accepted",
+      "opened_at": "2026-10-23T05:06:38.219Z",
+      "accepted_at": "2026-10-23T05:33:04.555Z",
+      "accepted_kind": "human",
+      "accepted_by": "matteo.alvazzi@gmail.com"
+    },
+    {
+      "id": "2026-10-23-the-statusline-hook-crashes-with-an",
+      "title": "The statusline hook crashes with an unhandled EPIPE when its stdout reader closes early",
+      "status": "accepted",
+      "opened_at": "2026-10-23T05:06:46.326Z",
+      "accepted_at": "2026-10-23T07:49:12.525Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude"
     }
   ]
 }

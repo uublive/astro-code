@@ -36,11 +36,17 @@
     {
       "id": "2026-09-17-ac-install-uses-symlinksync-with-no",
       "title": "ac install uses symlinkSync with no copy fallback, so a standard Windows user gets EPERM",
-      "status": "open",
+      "status": "paid",
       "cost": "medium",
       "found_at": "2026-09-17T10:11:25.815Z",
       "why": "lib/install.mjs:81 symlinks unconditionally; on Windows symlinks need Developer Mode or an elevated shell, so a normal install fails. A copy fallback must keep REQ-008 reversibility — uninstall has to recognise copies too. Flagged 2026-06-12 by the first external install attempt; item 1 of that report (the PowerShell 'ac' alias) was fixed, this one never was.",
-      "file": "lib/install.mjs"
+      "file": "lib/install.mjs",
+      "paid_by": {
+        "kind": "fix",
+        "ref": "2026-10-23-ac-install-uses-symlinksync-with-no"
+      },
+      "paying_since": "2026-10-23T05:06:33.841Z",
+      "paid_at": "2026-10-23T08:21:56.243Z"
     },
     {
       "id": "2026-09-17-ac-phase-add-and-ac-phase-note-strip",
@@ -96,12 +102,14 @@
     {
       "id": "2026-09-19-two-leaked-git-worktrees-and-worktree",
       "title": "Two leaked git worktrees and worktree-* branches survive in the repo; one holds a superseded duplicate of the t9 planner commit",
-      "status": "open",
+      "status": "dropped",
       "cost": "small",
       "found_at": "2026-09-19T22:09:38.661Z",
       "why": "`git worktree list` shows .claude/worktrees/wf_7e0f9d53-f43-10 and wf_e41e92cd-a11-5 still registered, with branches worktree-wf_7e0f9d53-f43-10 and worktree-wf_e41e92cd-a11-5. The latter's `git rev-list HEAD..` is non-empty (commit 0385673, phase 17 t9); diff confirms HEAD's astro-planner.md is a strict superset of it, so nothing is lost — but the ADR-038 leak sweep (astro-execute step 4c) is meant to leave none of these behind, and a stale ref that looks un-integrated costs every future verifier the same investigation.",
       "phase": "17",
-      "file": ".claude/worktrees/"
+      "file": ".claude/worktrees/",
+      "dropped_at": "2026-10-23T05:06:50.068Z",
+      "drop_reason": "the last leaked worktree and its branch were removed on 2026-10-22; none remain"
     },
     {
       "id": "2026-09-20-a-canon-sync-that-finds-same-id",
@@ -117,12 +125,18 @@
     {
       "id": "2026-09-20-a-decisions-collision-refusal-prints-a",
       "title": "a decisions-collision refusal prints a malformed empty fix list: 'Fix: .'",
-      "status": "open",
+      "status": "paid",
       "cost": "small",
       "found_at": "2026-09-20T07:50:40.752Z",
       "why": "lib/canon.mjs:356 builds the DECISIONS.md refusal with `fixes: []`, so every same-id collision — pull and decision add alike — prints the dangling sentence '⚠ DECISIONS.md was NOT overwritten — a same-id decision collision was found. Fix: .' The CONVENTIONS.md refusal a few lines down does carry a real list and reads correctly, which is what makes the empty one look like a bug to a reader. No criterion is harmed: the following line names both colliding decisions and states supersession. Fix is to populate the list with the supported route (record a superseding decision) or omit the sentence when there are no fixes.",
       "phase": "18",
-      "file": "lib/canon.mjs"
+      "file": "lib/canon.mjs",
+      "paid_by": {
+        "kind": "fix",
+        "ref": "2026-10-23-a-decisions-collision-refusal-prints-a"
+      },
+      "paying_since": "2026-10-23T05:06:37.724Z",
+      "paid_at": "2026-10-23T07:49:23.248Z"
     },
     {
       "id": "2026-09-20-ac-canon-push-publishes-conventions-md",
@@ -138,12 +152,18 @@
     {
       "id": "2026-09-20-canon-pull-silently-deletes-hand",
       "title": "canon pull silently deletes hand-written non-ADR prose from DECISIONS.md and reports plain success",
-      "status": "open",
+      "status": "paid",
       "cost": "medium",
       "found_at": "2026-09-20T07:50:40.808Z",
       "why": "Observed directly: appending a hand-written non-ADR paragraph to DECISIONS.md and running `ac canon pull` left grep -c = 0, with the pull printing only '✓ DECISIONS.md: updated from astro-registry'. mergeDecisions rebuilds the file as remoteText plus entries recognised by the ^##\\s+(ADR-\\d+) heading scan, so anything outside a heading block is dropped. Outside all ten criteria — they identify a decision by its heading throughout — and partly inherent, since the local preamble is replaced by the registry's on every pull, which is the mirror semantics convergence requires. Filed because the phase goal's 'never silently destroy local canon' extends past ADR blocks, and free prose is indistinguishable from the preamble to the merge. A warning naming the discarded text would be enough.",
       "phase": "18",
-      "file": "lib/canon.mjs"
+      "file": "lib/canon.mjs",
+      "paid_by": {
+        "kind": "fix",
+        "ref": "2026-10-23-canon-pull-silently-deletes-hand"
+      },
+      "paying_since": "2026-10-23T05:06:41.844Z",
+      "paid_at": "2026-10-23T05:33:07.233Z"
     },
     {
       "id": "2026-09-20-nothing-publishes-conventions-md-when-a",
@@ -159,22 +179,34 @@
     {
       "id": "2026-09-21-ac-backlog-list-says-oldest-first-but",
       "title": "ac backlog list says \"oldest first\" but sorts by id, so same-day captures list out of capture order",
-      "status": "open",
+      "status": "paid",
       "cost": "small",
       "found_at": "2026-09-21T13:45:31.552Z",
       "why": "The sort is lexicographic on the date-prefixed id, so within a single day it is slug order, not age order. Observed in a scratch project: an item captured at 13:36:58.851 listed after one captured at 13:36:58.900. The --help line 'open ideas (oldest first)' is inaccurate for the common case of several ideas captured in one session, and the 0d age column makes the ordering look authoritative. Either sort on captured_at or soften the help text.",
       "phase": "20",
-      "file": "bin/ac.mjs"
+      "file": "bin/ac.mjs",
+      "paid_by": {
+        "kind": "fix",
+        "ref": "2026-10-23-ac-backlog-list-says-oldest-first-but"
+      },
+      "paying_since": "2026-10-23T05:06:45.711Z",
+      "paid_at": "2026-10-23T07:49:26.054Z"
     },
     {
       "id": "2026-09-22-the-statusline-hook-crashes-with-an",
       "title": "The statusline hook crashes with an unhandled EPIPE when its stdout reader closes early",
-      "status": "open",
+      "status": "paid",
       "cost": "small",
       "found_at": "2026-09-22T12:57:47.332Z",
       "why": "Piping the hook into a short consumer (node hooks/astro-statusline.mjs < payload | head -3) makes the final process.stdout.write throw an uncaught 'Error: write EPIPE', printing a Node stack trace to stderr and exiting non-zero. Claude Code captures stdout in full so this is not a live-user path, which is why no criterion touches it — but it makes the hook unpleasant to debug by hand, and any future caller that pipes it sees a stack trace instead of a truncated line. A try/catch or an EPIPE listener around the final write would close it.",
       "phase": "21",
-      "file": "hooks/astro-statusline.mjs"
+      "file": "hooks/astro-statusline.mjs",
+      "paid_by": {
+        "kind": "fix",
+        "ref": "2026-10-23-the-statusline-hook-crashes-with-an"
+      },
+      "paying_since": "2026-10-23T05:06:49.616Z",
+      "paid_at": "2026-10-23T07:49:15.022Z"
     },
     {
       "id": "2026-09-24-a-convention-promoted-and-awaiting-ac",
