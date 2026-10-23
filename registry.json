@@ -724,6 +724,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-23T05:06:47.572Z",
       "status": "complete"
+    },
+    {
+      "type": "milestone",
+      "number": 14,
+      "name": "Trust and cost",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-23T08:47:09.411Z",
+      "status": "active"
     }
   ]
 }
