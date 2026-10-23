@@ -4,6 +4,11 @@ Release notes in full live on the [GitHub releases page](https://github.com/uubl
 
 ## Unreleased
 
+- `ac doctor [--json]` and `/astro-doctor`: one read-only report on whether the install is consistent. It names version and update-cache drift (#40), dead or non-running hook interpreters (#126), hook registrations that disagree with the `ac mods` switches, registered hook scripts missing from the home (fix `2026-10-12-hook-registrations-can-point-at-scripts`), missing, dangling and stale command/agent links on every installed host, a missing `additionalDirectories` grant (#15), registry drift and a stale astro-mods plugin version, each with its fix command (#159)
+- `ac --version` prints astro-code's version
+- `ac update` ends by running the doctor and prints only its failures; its exit code is unchanged
+- `ac install`/`ac update` write the `additionalDirectories` grant for `ac path` into every Claude config dir (`ac uninstall` removes it) and record each config dir they publish into in `~/.astro/code/published.json`, so a fresh install is clean and the doctor finds stale entries in a dir install no longer targets
+
 ## v0.50.2
 
 - `ac stats` counts each API response once (it counted one per transcript line, ~1.7-2x) and includes `<session>/subagents/` and workflow transcripts (#152, #153)

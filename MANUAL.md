@@ -48,20 +48,59 @@ It's idempotent; `ac uninstall` reverses it everywhere.
 
 **Updating** is one command: `/astro-update` (or `ac update`) — it pulls the latest,
 refreshes the global CLI, and re-links across every profile. The first time, if it
-can't find your clone, run `ac update <path-to-clone>` once and it remembers it.
+can't find your clone, run `ac update <path-to-clone>` once and it remembers it. It ends by
+running `ac doctor` and printing only what is wrong, nothing when the install is consistent.
+`ac --version` prints the version you are running, for a bug report.
+
+### Is the install consistent? `ac doctor`
+
+`ac doctor` (or `/astro-doctor`) reads the install and names every known drift, one line per
+problem, each ending with the exact command that fixes it:
+
+```
+⚠ claude /home/me/.claude: additionalDirectories does not grant /home/me/.astro/code → ac install  # grants /home/me/.astro/code
+```
+
+A consistent install prints one `✓` line and exits 0; any problem exits 1. It never writes
+and never repairs: it reads files, spawns no package manager and does not run `claude`.
+Only hosts that are installed are reported. The ten checks, by the `id` each row carries:
+
+| id | looks at |
+|---|---|
+| `version` | the installed version against the clone it came from |
+| `update-cache` | the update-check cache: older than 30 days is stale; a missing one is fine |
+| `settings` | a `settings.json` (or Cursor `hooks.json`) that is not valid JSON, so its hooks could not be checked |
+| `hook-interpreter` | every astro hook command's interpreter exists and runs, per config dir (#126) |
+| `hook-registration` | a guard's `ac mods` switch against its registration (switch on but not registered, or registered while off) |
+| `hook-script` | every hook script a registration names exists |
+| `links` | each host's commands and agents: missing, dangling, or stale `astro-*` entries, including in a Claude dir install no longer targets |
+| `grant` | `permissions.additionalDirectories` holds the resolved `ac path` (#15) |
+| `registry` | `ac canon check`'s verdict, inside an astro-code project; skipped elsewhere and when the registry is unreachable |
+| `plugin` | the astro-mods plugin version Claude Code recorded against astro-code's |
+
+`ac doctor --json` prints the same report as one object per row, `{ id, host, dir, ok, detail,
+fix }` (`fix` is set on every failing row): attach it to a bug report. A skipped check is an
+`ok: true` row whose `detail` starts `skipped —`. `ac install` records every config dir it
+publishes into in `~/.astro/code/published.json`; that is how the doctor finds stale entries in a
+dir install no longer targets, so dirs last published into by an earlier version are not seen.
 
 ### Letting Claude Code run the shipped workflows
 
 `/astro-plan`, `/astro-execute` and `/astro-fast` run workflow scripts that live in
 `~/.astro/code/workflows`, outside your project. Claude Code only reads a `scriptPath`
-outside the project when that directory is granted, so add it once — per project in
-`.claude/settings.local.json`, or for every project in `~/.claude/settings.json`:
+outside the project when that directory is granted. `ac install` and `ac update` grant it for
+you: they add the resolved `ac path` to `permissions.additionalDirectories` in every Claude
+config dir's `settings.json`, keeping your own entries, and `ac uninstall` removes exactly that
+entry. `ac doctor` flags a profile where it is missing.
+
+To grant it for one project only, put the same entry in that project's
+`.claude/settings.local.json`:
 
 ```json
 { "permissions": { "additionalDirectories": ["<output of: ac path>"] } }
 ```
 
-Paste what `ac path` prints, not a hand-typed `~/.astro/code`: it resolves symlinks, and
+Use what `ac path` prints, not a hand-typed `~/.astro/code`: it resolves symlinks, and
 on systems where `/home` is a link (`/var/home` on Fedora Silverblue, Bazzite and other
 ostree distros) only the resolved form matches. Don't copy the scripts into the project
 instead — a local copy silently goes stale after `ac update`.
@@ -1233,6 +1272,7 @@ astro-code itself captures (ADR-065). A forge server reads the store back read-o
 /astro-decision           record an architectural decision into the canon
 /astro-config             pick the model tier + reasoning depth per role
 /astro-status             where am I, and what's next?
+/astro-doctor             is the install consistent? one line per problem, each ending with its fix
 /astro-statusline         set a rich Claude Code statusline (milestone/phase track, context bar)
 /astro-fleet [status|connect …|pause|resume|color <hex>|disconnect]  report sessions to an Astro Fleet
 /astro-update             pull the latest astro-code and re-link it everywhere
@@ -1319,6 +1359,8 @@ ac preflight                   # warn if HEAD diverged from upstream
 ac tune                        # apply recommended Claude settings (additive, `--undo`able)
 ac fleet connect <url> --token <t>  # report sessions to an Astro Fleet (see Astro Fleet)
 ac install | uninstall | update
+ac doctor [--json]             # is the install consistent? exit 1 on any problem
+ac --version                   # astro-code's version
 ```
 
 ---
