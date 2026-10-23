@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 13,
-  "active_phase": "49-survivor-triage-support",
+  "active_phase": null,
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-10-23T01:18:48.164Z",
+  "updated_at": "2026-10-23T04:45:05.486Z",
   "activity": null
 }

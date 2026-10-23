@@ -26,8 +26,12 @@
       "number": 49,
       "name": "Survivor triage support",
       "slug": "49-survivor-triage-support",
-      "status": "verified",
-      "milestone": 13
+      "status": "complete",
+      "milestone": 13,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-10-23T04:45:05.474Z",
+      "accepted_evidence": "composer"
     }
   ]
 }
