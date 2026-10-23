@@ -150,7 +150,7 @@
     {
       "id": "2026-09-20-canon-pull-silently-deletes-hand",
       "title": "canon pull silently deletes hand-written non-ADR prose from DECISIONS.md and reports plain success",
-      "status": "paying",
+      "status": "paid",
       "cost": "medium",
       "found_at": "2026-09-20T07:50:40.808Z",
       "why": "Observed directly: appending a hand-written non-ADR paragraph to DECISIONS.md and running `ac canon pull` left grep -c = 0, with the pull printing only '✓ DECISIONS.md: updated from astro-registry'. mergeDecisions rebuilds the file as remoteText plus entries recognised by the ^##\\s+(ADR-\\d+) heading scan, so anything outside a heading block is dropped. Outside all ten criteria — they identify a decision by its heading throughout — and partly inherent, since the local preamble is replaced by the registry's on every pull, which is the mirror semantics convergence requires. Filed because the phase goal's 'never silently destroy local canon' extends past ADR blocks, and free prose is indistinguishable from the preamble to the merge. A warning naming the discarded text would be enough.",
@@ -160,7 +160,8 @@
         "kind": "fix",
         "ref": "2026-10-23-canon-pull-silently-deletes-hand"
       },
-      "paying_since": "2026-10-23T05:06:41.844Z"
+      "paying_since": "2026-10-23T05:06:41.844Z",
+      "paid_at": "2026-10-23T05:33:07.233Z"
     },
     {
       "id": "2026-09-20-nothing-publishes-conventions-md-when-a",
