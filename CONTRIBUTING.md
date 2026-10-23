@@ -9,7 +9,7 @@ lands on `develop` first.
 |---|---|---|---|
 | `feature/<name>` | `develop` | `develop` | new behaviour, docs, refactors |
 | `fix/<name>` | `develop` | `develop` | a bug in unreleased or released code that can wait for the next release |
-| `release/x.y.z` | `develop` | `main` | version bump + changelog; maintainers only |
+| `release/x.y.z` | `develop` | `main` | version bump (`package.json` and `mods/astro-mods/.claude-plugin/plugin.json`, kept equal by a test) + changelog; maintainers only |
 | `hotfix/<name>` | `main` | `main` **and** `develop` | an urgent fix to the released version; maintainers only |
 
 **Open your PR against `develop`.** GitHub pre-selects `main` because it is the default
