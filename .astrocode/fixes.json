@@ -64,7 +64,7 @@
     {
       "id": "2026-10-23-a-decisions-collision-refusal-prints-a",
       "title": "a decisions-collision refusal prints a malformed empty fix list: 'Fix: .'",
-      "status": "open",
+      "status": "verified",
       "opened_at": "2026-10-23T05:06:34.284Z"
     },
     {
