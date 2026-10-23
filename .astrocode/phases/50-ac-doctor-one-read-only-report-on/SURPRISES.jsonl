@@ -1,0 +1,1 @@
+{"at":"2026-10-23T13:00:00.938Z","phase":"50-ac-doctor-one-read-only-report-on","signals":["remediation"],"note":"doctor could not be clean on a fresh install without install writing the grant and a published-dirs ledger (resolved in planning, ADR-086)"}

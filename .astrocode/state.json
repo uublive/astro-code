@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 14,
-  "active_phase": null,
+  "active_phase": "50-ac-doctor-one-read-only-report-on",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-10-23T10:46:50.192Z",
+  "updated_at": "2026-10-23T12:59:45.048Z",
   "activity": null
 }
