@@ -743,6 +743,16 @@
       "branch": "develop",
       "claimed_at": "2026-10-23T08:47:15.949Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 51,
+      "milestone": 14,
+      "name": "Verifier calibration: plant ac mutate mutants in accepted phases and report the verifier's false-PASS rate (GitHub #157)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-23T08:47:19.509Z",
+      "status": "active"
     }
   ]
 }
