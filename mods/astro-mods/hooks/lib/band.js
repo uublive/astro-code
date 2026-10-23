@@ -191,7 +191,8 @@ export function bandView(status, live, { unavailable, runs = [] } = {}) {
 
 function view(parts, buttons, meter, hint, status) {
   const title = status && status.milestone != null ? `M${status.milestone}` : null
-  return { lines: parts.map(p => p.map(t => t.text).join('')), parts, buttons, meter, hint, title }
+  const version = status && typeof status.version === 'string' && status.version ? status.version : null
+  return { lines: parts.map(p => p.map(t => t.text).join('')), parts, buttons, meter, hint, title, version }
 }
 
 function stateOf(status) {
