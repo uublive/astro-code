@@ -688,6 +688,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-23T05:06:31.798Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-10-23-a-decisions-collision-refusal-prints-a",
+      "name": "a decisions-collision refusal prints a malformed empty fix list: 'Fix: .'",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-23T05:06:35.367Z",
+      "status": "active"
     }
   ]
 }
