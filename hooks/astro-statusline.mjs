@@ -279,6 +279,9 @@ const lines = packStatus({
   width: rowWidth,
 });
 
+// A reader that closed early (`| head`, `| true`) turns this write into an async EPIPE error
+// event; unheard, Node crashes with a stack trace. Nobody is reading: exit quietly.
+process.stdout.on('error', (e) => { if (e && e.code === 'EPIPE') process.exit(0); throw e; });
 process.stdout.write(
   lines.length
     ? lines.map((l, i) => (i === 0 ? dot + l : pad + l)).join('\n')
