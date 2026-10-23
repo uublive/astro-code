@@ -763,6 +763,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-23T08:47:24.233Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-10-23-ac-stats-double-counts-one-api-response",
+      "name": "ac stats double-counts one API response per transcript line and skips subagent transcripts (GitHub #152, #153)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-23T08:47:41.028Z",
+      "status": "active"
     }
   ]
 }
