@@ -70,7 +70,7 @@
     {
       "id": "2026-10-23-ac-backlog-list-says-oldest-first-but",
       "title": "ac backlog list says \"oldest first\" but sorts by id, so same-day captures list out of capture order",
-      "status": "open",
+      "status": "verified",
       "opened_at": "2026-10-23T05:06:42.351Z"
     },
     {
