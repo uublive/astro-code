@@ -2959,7 +2959,7 @@ async function main() {
           }
           for (const ref of res.refused) {
             console.error(
-              `⚠ ${ref.file} was NOT overwritten — ${ref.reason}. Fix: ${ref.fixes.join(', ')}.`,
+              `⚠ ${ref.file} was NOT overwritten — ${ref.reason}.${ref.fixes.length ? ` Fix: ${ref.fixes.join(', ')}.` : ''}`,
             );
           }
           // ADR-034: a preserved entry means the local file diverged from the registry.
