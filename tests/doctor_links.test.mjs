@@ -170,3 +170,15 @@ test('a host that is not installed produces no rows', async () => {
     assert.deepEqual([...hosts].sort(), ['claude', 'codex', 'opencode']);
   });
 });
+
+test('a dangling copy-host link and a skill dir missing its rendered file are named broken', async () => {
+  await sandbox(({ run, codexDir, ocDir }) => {
+    const oc = join(ocDir, 'commands', 'astro-plan.md');
+    rmSync(oc);
+    symlinkSync('/nonexistent/astro-plan.md', oc);
+    rmSync(join(codexDir, 'skills', 'astro-status', 'SKILL.md'));
+    const rows = bad(run());
+    assert.ok(rows.some((r) => r.host === 'opencode' && /^broken command astro-plan/.test(r.detail) && r.fix === 'ac install'), JSON.stringify(rows));
+    assert.ok(rows.some((r) => r.host === 'codex' && /^broken command astro-status/.test(r.detail)), JSON.stringify(rows));
+  });
+});

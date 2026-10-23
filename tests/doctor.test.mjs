@@ -194,7 +194,7 @@ test('registry drift is reported exactly when canonCheck reports it', async () =
     assert.equal(rows.length, 1);
     assert.equal(rows[0].id, 'registry');
     assert.match(rows[0].detail, /local canon differs from .* \(CONVENTIONS\.md\)/);
-    assert.equal(rows[0].fix, 'ac canon pull');
+    assert.match(rows[0].fix, /ac canon push.*ac canon pull --force/);
   });
 });
 
