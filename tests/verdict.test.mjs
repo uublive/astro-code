@@ -447,6 +447,7 @@ test('phase 48: mutateRunPaths names every file one run leaves beside the kept r
   assert.deepEqual(p, {
     dir, run: j48(dir, '48-x.json'), log: j48(dir, '48-x.log'), list: j48(dir, '48-x.mutants.jsonl'),
     strykerConfig: j48(dir, '48-x.stryker.config.mjs'), gremlinsReport: j48(dir, '48-x.gremlins.json'),
+    strykerReport: j48(dir, '48-x.stryker-report.json'), strykerIncremental: j48(dir, '48-x.stryker-incremental.json'),
     partial: j48(dir, '48-x.survivors.json'),
   });
 });

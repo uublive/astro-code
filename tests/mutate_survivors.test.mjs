@@ -53,7 +53,7 @@ const rerunReport = (p, keepIds, killIds) => {
   return rep(r, p);
 };
 
-test('C5 Stryker: --mutate holds exactly the open survivors\' spans; the rest of the report is not re-run and extra_executed is reported', async () => {
+test('C5 Stryker: --mutate holds the open survivors\' spans and a crafted incremental file reuses every other result, so exactly the open ones run', async () => {
   const { runMutate } = await import('../lib/mutate.mjs');
   const { p } = await judgedStryker();
   try {
@@ -65,18 +65,19 @@ test('C5 Stryker: --mutate holds exactly the open survivors\' spans; the rest of
     assert.deepEqual(call[call.indexOf('--mutate') + 1].split(',').sort(), ['src/a.mjs:10:16-10:29', 'src/a.mjs:2:6-2:12', 'src/a.mjs:5:21-5:40', 'src/a.mjs:9:6-9:14']);
     assert.equal(r.partial, true);
     assert.equal(r.rerun.open, 4);
-    assert.equal(r.rerun.executed, 5);
+    assert.deepEqual(call.slice(call.indexOf('--incremental')), ['--incremental', '--incrementalFile', `.astrocode/.local/mutate-runs/${p.slug1}.stryker-incremental.json`]);
+    assert.equal(r.rerun.executed, 4, 'the equivalent mutant sharing a span is a reused result, not executed');
     assert.ok(r.rerun.executed < fullCount, 'fewer mutant executions than the full run');
     assert.equal(r.rerun.killed_now, 1);
     assert.equal(r.rerun.still_open, 3);
-    assert.equal(r.rerun.extra_executed, 1, 'the equivalent mutant sharing a span re-ran, and it is said');
-    assert.equal(r.rerun.narrowing.narrowed, 'mutant spans');
-    assert.ok(r.rerun.narrowing.why);
+    assert.equal(r.rerun.extra_executed, 0);
+    assert.equal(r.rerun.narrowing.narrowed, 'mutants');
+    assert.match(r.rerun.narrowing.why, /exactly the open survivors/);
     // the display is the full run's groups with the re-test overlaid: the killed survivor is gone
     assert.equal(r.survivors.length, 4);
     assert.equal(r.triage.judged, 1);
     assert.ok(r.survivors.some((s) => s.retest === 'survived'));
-    assert.ok(readFileSync(join(p.dir, r.full_list), 'utf8').trim().split('\n').length === 5, 'the per-mutant list of what ran');
+    assert.ok(readFileSync(join(p.dir, r.full_list), 'utf8').trim().split('\n').length === 4, 'the per-mutant list of what ran');
   } finally { done(p); }
 });
 
@@ -94,8 +95,8 @@ test('C6: the kept full run is byte-identical after --survivors; the human outpu
     const h = ac(p, ['mutate', '1', '--survivors']).stdout;
     const sha = j.head.slice(0, 7);
     assert.match(h.split('\n')[0], new RegExp(`^partial re-run on top of the full run ${sha} \\(.+\\) — not a recordable verdict; final: ac mutate 1$`));
-    assert.match(h, /^re-ran 4 open survivor\(s\): 1 killed now · 3 still open — the tool ran 5 mutants \(1 beyond the open ones\)$/m);
-    assert.match(h, /^narrowed: mutant spans — /m);
+    assert.match(h, /^re-ran 4 open survivor\(s\): 1 killed now · 3 still open — the tool ran 4 mutants$/m);
+    assert.match(h, /^narrowed: mutants — exactly the open survivors/m);
 
     // the partial output as evidence on a test-strength criterion is refused
     writeFileSync(join(p.dir, '.astrocode', 'phases', p.slug1, 'CRITERIA.md'), '### C1 [mutation] — strong\n');
@@ -242,7 +243,7 @@ test('C5 Gremlins: narrowed by files and kinds (a dangling --diff base is not ho
     assert.ok(argv.includes('--conditionals-negation=false') && argv.includes('--invert-negatives=false'), 'kinds with no open survivor are off');
     assert.ok(!argv.some((a) => a === '--arithmetic-base=false' || a === '--increment-decrement=false' || a === '--conditionals-boundary=false'));
     assert.equal(r.rerun.narrowing.narrowed, 'files+kinds');
-    assert.match(r.rerun.narrowing.why, /killed mutants .* re-ran too/);
+    assert.match(r.rerun.narrowing.why, /killed and equivalent-judged mutants .* re-ran too/);
     assert.deepEqual([r.rerun.open, r.rerun.executed, r.rerun.killed_now, r.rerun.still_open, r.rerun.extra_executed], [3, 4, 1, 2, 1]);
     assert.ok(r.rerun.executed < Object.values(full.counts).reduce((a, b) => a + b, 0));
   } finally { done(p); }

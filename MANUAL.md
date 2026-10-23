@@ -672,9 +672,13 @@ justification is ignored and counted.
 
 ### Fix rounds: `--survivors`
 `ac mutate <n> --survivors` re-tests only the open survivors (untriaged or `test-gap`) of the last
-full run. mutmut 3 runs the exact mutants and Stryker the exact spans; mutmut 2 re-runs whole files and
-Gremlins files plus mutant kinds (its `--diff` takes only an ancestor commit), and says so, with the
-extra mutants it ran. The output shows the full run's groups with the re-test overlaid under a
+full run. mutmut 3 runs the exact mutants by name. Stryker runs exactly the open survivors too: a
+`--mutate` span each, plus an incremental file `ac mutate` writes from the last full run's own report
+minus the open survivors, so every other result (killed, equivalent-judged) is reused, not re-run
+(without a kept full report it says it is narrower-than-ideal). mutmut 2 re-runs whole files and
+Gremlins files plus mutant kinds (its `--diff` takes only an ancestor commit), so killed and
+equivalent-judged mutants there re-run too; both say so, count the extra mutants and discard
+their results. The output shows the full run's groups with the re-test overlaid under a
 leading line, and it is **not a recordable verdict**: `ac verdict record` refuses it. Finish with a
 full `ac mutate <n>` and record that.
 

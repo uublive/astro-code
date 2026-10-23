@@ -97,6 +97,16 @@ if (name === 'stryker') {
   if (env.MUTATE_STUB_REPORT) {
     mkdirSync('reports/mutation', { recursive: true });
     writeFileSync('reports/mutation/mutation.json', report());
+    // `--incremental --incrementalFile f`: like Stryker 10, every reported mutant also in f (same
+    // file, mutator, replacement, start) is a reused result; the log line says how many.
+    const inc = argv.indexOf('--incrementalFile');
+    if (argv.includes('--incremental') && inc > -1 && existsSync(argv[inc + 1])) {
+      const sig = (file, m) => [file, m.mutatorName, m.replacement, m.location?.start?.line, m.location?.start?.column].join('|');
+      const all = (r) => Object.entries(r.files ?? {}).flatMap(([f, x]) => (x.mutants ?? []).map((m) => sig(f, m)));
+      const prior = new Set(all(JSON.parse(readFileSync(argv[inc + 1], 'utf8'))));
+      const now = all(JSON.parse(report()));
+      process.stdout.write(`\tResult:\t\t${now.filter((k) => prior.has(k)).length} of ${now.length} mutant result(s) are reused.\n`);
+    }
   }
   hang();
 } else if (name === 'gremlins') {
