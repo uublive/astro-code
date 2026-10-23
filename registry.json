@@ -706,6 +706,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-23T05:06:39.548Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-10-23-ac-backlog-list-says-oldest-first-but",
+      "name": "ac backlog list says \"oldest first\" but sorts by id, so same-day captures list out of capture order",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-23T05:06:43.586Z",
+      "status": "active"
     }
   ]
 }
