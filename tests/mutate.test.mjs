@@ -130,7 +130,7 @@ test('C1/C2 runMutate (stryker): every mutant present, statuses counted, argv ca
     // phase 1 wrote tests/a.test.mjs, so the run goes through the generated config (D2)
     assert.equal(r.command, `stryker run .astrocode/.local/mutate-runs/${p.slug1}.stryker.config.mjs --mutate src/a.mjs:1-30 --reporters json`);
     const again = await runMutate(p.dir, p.slug1, { env: p.env });
-    const strip = ({ started_at, duration_ms, log, ...rest }) => rest;
+    const strip = ({ started_at, duration_ms, log, flaky, ...rest }) => ({ ...rest, flaky: flaky && { ...flaky, duration_ms: 0 } });
     assert.deepEqual(strip(again), strip(r));
   } finally { done(p); }
 });
@@ -687,5 +687,107 @@ test('C4 mutmut 3: a scope decided by mutation.files and mutation.exclude names 
     assert.match(r.scope_detail.why, /mutation\.files decides the scope: 1 whole file/);
     assert.match(r.scope_detail.why, /left out by mutation\.exclude/);
     assert.doesNotMatch(r.scope_detail.why, /functions holding changed lines/);
+  } finally { done(p); }
+});
+
+// ---- Phase 49 t4 — Gremlins version from the binary, fallback wording from the reason ----
+import { writeFileSync as wf49, appendFileSync as af49, mkdtempSync as mk49, rmSync as rm49 } from 'node:fs';
+import { tmpdir as td49 } from 'node:os';
+import { join as j49 } from 'node:path';
+
+test('phase 49 goBuildInfoVersion reads the mod line only: dep lines, (devel) and a missing file give no version', async () => {
+  const { goBuildInfoVersion } = await import('../lib/mutate.mjs');
+  const d = mk49(j49(td49(), 'ac-bi-'));
+  try {
+    const f = j49(d, 'bin');
+    wf49(f, 'ELF\0\0path\tgithub.com/go-gremlins/gremlins/cmd/gremlins\nmod\tgithub.com/go-gremlins/gremlins\tv0.6.0\th1:abc=\ndep\tgithub.com/x/gremlins\tv9.9.9\th1:z=\n');
+    assert.equal(goBuildInfoVersion(f), 'v0.6.0');
+    wf49(f, '\tpath\tx\n\tmod\tgithub.com/go-gremlins/gremlins\t(devel)\t\n');
+    assert.equal(goBuildInfoVersion(f), null);
+    wf49(f, '\tdep\tgithub.com/x/gremlins\tv9.9.9\th1:z=\n');
+    assert.equal(goBuildInfoVersion(f), null);
+    assert.equal(goBuildInfoVersion(j49(d, 'absent')), null);
+    const heard = [];
+    assert.equal(goBuildInfoVersion(d, (w) => heard.push(w)), null);
+    assert.equal(heard.length, 1, 'a read error warns and gives null');
+  } finally { rm49(d, { recursive: true, force: true }); }
+});
+
+test('phase 49 C12 a Gremlins that prints "dev" gets its module version from the binary; a real version is kept', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  let p = await rig('go', { report: 'gremlins.json', version: 'gremlins version dev linux/arm64' });
+  try {
+    af49(j49(p.dir, 'stubbin', 'gremlins'), '\n// \tmod\tgithub.com/go-gremlins/gremlins\tv0.6.0\th1:xyz=\n');
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(r.tool.version, 'v0.6.0');
+  } finally { done(p); }
+  p = await rig('go', { report: 'gremlins.json', version: 'gremlins version 0.5.0' });
+  try {
+    af49(j49(p.dir, 'stubbin', 'gremlins'), '\n// \tmod\tgithub.com/go-gremlins/gremlins\tv0.6.0\th1:xyz=\n');
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(r.tool.version, '0.5.0', 'a binary that reports a number keeps it');
+  } finally { done(p); }
+  p = await rig('go', { report: 'gremlins.json', version: 'gremlins version dev linux/arm64' });
+  try {
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(r.tool.version, null, 'no build info: null, no crash');
+  } finally { done(p); }
+});
+
+test('phase 49 C13 each fallback site words itself from its reason', async () => {
+  const { runMutate, FALLBACK_REPORTS } = await import('../lib/mutate.mjs');
+  assert.ok(FALLBACK_REPORTS['no-scope-excluded']);
+  // no tool installed
+  let p = await makeProject('js');
+  try {
+    const r = await runMutate(p.dir, p.slug1, { env: restrictedEnv([]) });
+    assert.equal(r.outcome, 'tool-missing');
+    assert.equal(r.fallback.reason, 'mutation tool not installed — AI mutants used');
+    assert.equal(r.fallback.ai_mutants, true);
+    assert.match(r.fallback.report, /AI mutants stood in/);
+  } finally { done(p); }
+  // no supported language
+  p = await makeProject('js');
+  try {
+    rmSync(join(p.dir, 'package.json')); commit(p.dir, 'chore: drop manifest (no phase)');
+    const r = await runMutate(p.dir, p.slug1, { env: restrictedEnv([]) });
+    assert.equal(r.outcome, 'no-tool');
+    assert.equal(r.fallback.ai_mutants, true); assert.match(r.fallback.report, /AI mutants stood in/);
+  } finally { done(p); }
+  // mutation.exclude took every file out
+  p = await rig('js', { report: 'stryker-mutation.json' });
+  try {
+    const cfgFile = join(p.dir, '.astrocode', 'config.json');
+    const cfg = JSON.parse(readFileSync(cfgFile, 'utf8'));
+    cfg.mutation = { ...(cfg.mutation ?? {}), exclude: ['src/a.mjs'] };
+    writeFileSync(cfgFile, JSON.stringify(cfg, null, 2));
+    commit(p.dir, 'chore: mutation settings');
+    const r = await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.equal(r.outcome, 'no-scope');
+    assert.equal(r.fallback.ai_mutants, false);
+    assert.match(r.fallback.report, /^no mutants were run: mutation\.exclude leaves none/);
+    assert.doesNotMatch(r.fallback.report, /stood in/);
+  } finally { done(p); }
+  // tool installed, nothing of the phase's own to mutate
+  p = await rig('js', { report: 'stryker-mutation.json' });
+  try {
+    const { addPhase: ap, findPhase: fp } = await import('../lib/roadmap.mjs');
+    await ap(p.dir, { number: 3, name: 'Tests only' });
+    writeFileSync(join(p.dir, 'tests', 'a.test.mjs'), '// stronger\n');
+    commit(p.dir, 'test: pin (phase 3 t1)');
+    const r = await runMutate(p.dir, fp(p.dir, '3').slug, { env: p.env });
+    assert.equal(r.outcome, 'no-scope');
+    assert.equal(r.fallback.ai_mutants, false); assert.match(r.fallback.report, /^no mutants were run: /);
+  } finally { done(p); }
+  // no-scope, no tool installed
+  p = await makeProject('js');
+  try {
+    const { addPhase: ap, findPhase: fp } = await import('../lib/roadmap.mjs');
+    await ap(p.dir, { number: 3, name: 'Tests only' });
+    writeFileSync(join(p.dir, 'tests', 'a.test.mjs'), '// stronger\n');
+    commit(p.dir, 'test: pin (phase 3 t1)');
+    const r = await runMutate(p.dir, fp(p.dir, '3').slug, { env: restrictedEnv([]) });
+    assert.equal(r.outcome, 'no-scope');
+    assert.equal(r.fallback.ai_mutants, true); assert.match(r.fallback.report, /AI mutants stood in/);
   } finally { done(p); }
 });

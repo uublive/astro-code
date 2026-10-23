@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 13,
-  "active_phase": "48-mutation-testing-that-scales-to-real",
+  "active_phase": null,
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-10-22T12:54:38.466Z",
+  "updated_at": "2026-10-23T04:45:05.486Z",
   "activity": null
 }

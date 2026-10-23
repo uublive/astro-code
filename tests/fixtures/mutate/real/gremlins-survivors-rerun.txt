@@ -1,0 +1,56 @@
+Gremlins 0.6 (gremlins version dev linux/arm64) — re-running only what is still open (phase 49 t6).
+Scratch module example.com/fx: a.go has Cmp (line 4 `if a > b`, the lone survivor of a full run) and Inc
+(lines 10-14); a_test.go has TestCmp and TestInc. Captured in the astro-forge container, no network.
+
+$ gremlins unleash -o full.json            (the full run)
+       LIVED CONDITIONALS_BOUNDARY at a.go:4:7
+      KILLED CONDITIONALS_NEGATION at a.go:4:7
+      KILLED ARITHMETIC_BASE at a.go:14:11
+      KILLED CONDITIONALS_BOUNDARY at a.go:11:7
+      KILLED INVERT_NEGATIVES at a.go:5:12
+      KILLED INCREMENT_DECREMENT at a.go:12:4
+      KILLED CONDITIONALS_NEGATION at a.go:11:7
+      KILLED ARITHMETIC_BASE at a.go:5:12
+    Killed: 7, Lived: 1, Not covered: 0     (Test efficacy: 87.50%)
+
+FINDING 1 — `--diff` cannot select lines from a DANGLING commit: the dangling-commit route is NOT viable.
+  Gremlins runs a three-dot `git diff <base>...HEAD`, so the base must share history with HEAD.
+  (a) A dangling commit built with plumbing only (hash-object -w, a temp GIT_INDEX_FILE, write-tree,
+      commit-tree), tree = HEAD with line 4 blanked, PARENT = HEAD:
+        $ gremlins unleash --diff <dangling-sha> -o d.json
+      ran ALL 8 mutants (the merge base is HEAD, the diff is empty, Gremlins then mutates every line) — it did
+      NOT narrow to line 4. `git diff <sha> HEAD` itself showed the one line; Gremlins did not honour it.
+  (b) The same tree with NO parent:
+        ERROR: an error occured while calling git diff: exit status 128
+        fatal: no merge base found
+  (c) A dangling base inside an isolated GIT_DIR (alternates onto the real object store, HEAD = c0 -> c1 where
+      c0 has line 4 blanked), run with GIT_DIR and GIT_WORK_TREE set:
+        SKIPPED all 8 mutants, line 4 included — Gremlins does not take its diff from the git directory the
+        environment names.
+  (d) Control, a REAL ancestor (HEAD~1 changed line 14 only):
+        $ gremlins unleash --diff HEAD~1 --timeout-coefficient 20
+             SKIPPED CONDITIONALS_BOUNDARY at a.go:11:7     SKIPPED INCREMENT_DECREMENT at a.go:12:4
+             SKIPPED ARITHMETIC_BASE at a.go:5:12           SKIPPED CONDITIONALS_NEGATION at a.go:4:7
+             SKIPPED CONDITIONALS_BOUNDARY at a.go:4:7      SKIPPED CONDITIONALS_NEGATION at a.go:11:7
+             SKIPPED INVERT_NEGATIVES at a.go:5:12           KILLED ARITHMETIC_BASE at a.go:14:11
+        Killed: 1, Skipped: 7
+      So `--diff <ancestor>` narrows to the LINES that commit changed — but only an ancestor of HEAD works,
+      and making one needs a ref or a history rewrite, which ac mutate never does.
+  => ac mutate --survivors on Gremlins narrows by FILES + KINDS (narrowed: 'files+kinds'), keeping the full
+     run's own --diff base, and says that killed mutants of those kinds in those files re-ran too.
+
+FINDING 2 — `--<type>=false` narrows the mutant kinds; `-E <regexp>` excludes files.
+$ gremlins unleash --arithmetic-base=false --conditionals-negation=false --increment-decrement=false --invert-negatives=false --timeout-coefficient 20
+       LIVED CONDITIONALS_BOUNDARY at a.go:4:7
+      KILLED CONDITIONALS_BOUNDARY at a.go:11:7
+    Killed: 1, Lived: 1, Not covered: 0       (only CONDITIONALS_BOUNDARY mutants were generated)
+$ gremlins unleash -E '^a\.go$'
+    No results to report.
+  A non-default type (INVERT_ASSIGNMENTS, INVERT_BITWISE, INVERT_BWASSIGN, INVERT_LOGICAL, INVERT_LOOPCTRL,
+  REMOVE_SELF_ASSIGNMENTS) is off unless `--<type>` is passed, so a survivor of one of those needs
+  `--<type>=true`; the default-on types are ARITHMETIC_BASE, CONDITIONALS_BOUNDARY, CONDITIONALS_NEGATION,
+  INCREMENT_DECREMENT and INVERT_NEGATIVES (`gremlins unleash --help`).
+
+NOTE — a cached coverage run takes 60-300 ms and Gremlins derives each mutant's timeout from it, so
+  back-to-back runs read TIMED OUT for mutants a first, 4 s coverage run killed. `--timeout-coefficient`
+  raises the allowance. Observed here; not a property of --diff.

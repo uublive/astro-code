@@ -1,0 +1,173 @@
+{
+  "schemaVersion": "1",
+  "thresholds": {
+    "high": 80,
+    "low": 60
+  },
+  "testFiles": {
+    "tests/a.test.mjs": {
+      "tests": [
+        {
+          "id": "t1",
+          "name": "add subtracts"
+        },
+        {
+          "id": "t2",
+          "name": "log increments"
+        }
+      ]
+    }
+  },
+  "files": {
+    "src/a.mjs": {
+      "language": "javascript",
+      "source": "export function add(a, b) {\n  if (a > b) {\n    return a - b;\n  }\n  throw new Error('negative result');\n}\n\nexport function log(x) {\n  if (x === 0) {\n    console.log('zero value');\n  }\n  return x + 1;\n}\n",
+      "mutants": [
+        {
+          "id": "1",
+          "mutatorName": "EqualityOperator",
+          "replacement": "a >= b",
+          "location": {
+            "start": {
+              "line": 2,
+              "column": 7
+            },
+            "end": {
+              "line": 2,
+              "column": 12
+            }
+          },
+          "status": "Survived",
+          "coveredBy": [
+            "t1",
+            "t2"
+          ]
+        },
+        {
+          "id": "2",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "a + b",
+          "location": {
+            "start": {
+              "line": 3,
+              "column": 12
+            },
+            "end": {
+              "line": 3,
+              "column": 17
+            }
+          },
+          "status": "Killed",
+          "killedBy": [
+            "t1"
+          ],
+          "coveredBy": [
+            "t1"
+          ]
+        },
+        {
+          "id": "3",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "location": {
+            "start": {
+              "line": 5,
+              "column": 22
+            },
+            "end": {
+              "line": 5,
+              "column": 40
+            }
+          },
+          "status": "Survived",
+          "coveredBy": [
+            "t1",
+            "t2"
+          ]
+        },
+        {
+          "id": "4",
+          "mutatorName": "EqualityOperator",
+          "replacement": "x !== 0",
+          "location": {
+            "start": {
+              "line": 9,
+              "column": 7
+            },
+            "end": {
+              "line": 9,
+              "column": 14
+            }
+          },
+          "status": "Survived",
+          "coveredBy": [
+            "t1",
+            "t2"
+          ]
+        },
+        {
+          "id": "5",
+          "mutatorName": "StringLiteral",
+          "replacement": "\"\"",
+          "location": {
+            "start": {
+              "line": 10,
+              "column": 17
+            },
+            "end": {
+              "line": 10,
+              "column": 29
+            }
+          },
+          "status": "Survived",
+          "coveredBy": [
+            "t1",
+            "t2"
+          ]
+        },
+        {
+          "id": "6",
+          "mutatorName": "ArithmeticOperator",
+          "replacement": "x - 1",
+          "location": {
+            "start": {
+              "line": 12,
+              "column": 10
+            },
+            "end": {
+              "line": 12,
+              "column": 15
+            }
+          },
+          "status": "Killed",
+          "killedBy": [
+            "t2"
+          ],
+          "coveredBy": [
+            "t2"
+          ]
+        },
+        {
+          "id": "7",
+          "mutatorName": "ConditionalExpression",
+          "replacement": "true",
+          "location": {
+            "start": {
+              "line": 9,
+              "column": 7
+            },
+            "end": {
+              "line": 9,
+              "column": 14
+            }
+          },
+          "status": "Survived",
+          "coveredBy": [
+            "t1",
+            "t2"
+          ]
+        }
+      ]
+    }
+  }
+}

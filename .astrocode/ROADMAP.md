@@ -2,7 +2,8 @@
 
 **Milestone 13**
 
-- [ ] Phase 47 — Deterministic mutation testing in the verifier `verified` · planned
-- [ ] Phase 48 — Mutation testing that scales to real projects `verified` · planned
+- [x] Phase 47 — Deterministic mutation testing in the verifier `complete` · planned
+- [x] Phase 48 — Mutation testing that scales to real projects `complete` · planned
+- [x] Phase 49 — Survivor triage support `complete` · planned
 
 <!-- generated from roadmap.json — edits here are overwritten; use `ac phase note <phase> "<text>"` -->

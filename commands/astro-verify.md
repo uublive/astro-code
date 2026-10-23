@@ -32,8 +32,10 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    - **Ask the verifier to end with a fenced JSON block**
      `{"mode": "full"|"narrowed", "broad": <bool>, "criteria": [{"id": "C1", "passed": <bool>, "mutation": {…}}]}`
      listing only the criteria it actually checked this run (omit carried ones). `mutation` is
-     optional per criterion: the `ac mutate <slug> --json` evidence (gated in code only for a
-     `[mutation]` criterion; supporting evidence otherwise), with `triage` added per survivor. A `'` inside it is written `\u0027` so the single-quoted
+     optional per criterion: the `ac mutate <slug> --json` evidence with `triage` added per survivor,
+     and `"test_strength": true` on every criterion the verifier used the tool for, tagged or not
+     (gated in code once marked, and the mark is sticky; the survivors file and the rules are
+     `lib/survivors.mjs` and `lib/verdict.mjs`). A `'` inside it is written `\u0027` so the single-quoted
      `--result '<json>'` survives.
 3. Clear the live status first (`ac activity clear`). **Record the verdict** whenever the plan's
    `ids` is non-empty: `ac verdict record <slug> --result '<that JSON>'` (it saves and commits
@@ -49,7 +51,8 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    then one line pointing to the verifier's full
    per-criterion report for the reproduction detail, then stop. Do not mark it verified.
    On PASS or FAIL, when a criterion's `mutation` evidence has a `fallback`, add **at most one
-   line** with its reason (AI mutants stood in); say nothing about mutation otherwise.
+   line**: the evidence's `fallback.report`, verbatim (it is worded from the reason, so it says AI
+   mutants stood in only when they did); say nothing about mutation otherwise.
 3b. **On PASS only, file the verifier's non-blocking findings as debt.** If the agent
    returned `findings[]`, file each item whose `outsideCriteria` is **explicitly `true`**:
 

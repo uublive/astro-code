@@ -1,0 +1,1 @@
+{"at":"2026-10-23T01:19:01.752Z","phase":"49-survivor-triage-support","signals":["remediation","max-cycles"],"note":"mutmut show inside a time cap made survivor identity timing-dependent; Stryker's own --incremental reuses open survivors under the command runner, so the incremental file is crafted"}

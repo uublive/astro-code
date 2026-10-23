@@ -7,13 +7,13 @@ import { readFileSync, writeFileSync, existsSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { makeProject, installStub, restrictedEnv, FX } from './fixtures/mutate/project.mjs';
+import { makeProject, installStub, installRunner, restrictedEnv, FX } from './fixtures/mutate/project.mjs';
 
 const AC = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ac.mjs');
 const ac = (p, args, o = {}) => spawnSync(process.execPath, [AC, ...args], { cwd: p.dir, encoding: 'utf8', env: p.env, input: '', timeout: 60000, ...o });
 const logLines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const done = (p) => rmSync(p.dir, { recursive: true, force: true });
-const strip = ({ started_at, duration_ms, log, ...rest }) => rest;
+const strip = ({ started_at, duration_ms, log, flaky, ...rest }) => ({ ...rest, flaky: flaky && { ...flaky, duration_ms: 0 } });
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 async function rig(kind, { report, version, extra = {}, nodeModules = false } = {}) {
@@ -46,8 +46,11 @@ test('C1: --json twice is identical and complete; human output shows the same co
     assert.equal(h.status, 0, h.stderr);
     assert.match(h.stdout, /^⚠ Stryker \(package\.json → stryker\) · 7 mutants: 2 killed · 1 timeout · 1 survived · 1 no-coverage · 2 error \(\+ 1 ignored by the tool\)$/m);
     assert.match(h.stdout, /^scope: changed-lines — 1 files, 1 line ranges \(line ranges the phase wrote/m);
-    assert.match(h.stdout, /^⚠ src\/a\.mjs:10 ArithmeticOperator survived$/m);
-    assert.match(h.stdout, /^⚠ src\/a\.mjs:15 ConditionalExpression no-coverage$/m);
+    // phase 49: survivors are grouped by function and kind, not listed flat
+    assert.match(h.stdout, /^survivors: 2 in 2 groups — 0 judged, 2 open$/m);
+    assert.match(h.stdout, /^⚠ src\/a\.mjs · \(outside any function\) · ArithmeticOperator — 1 open \[g:[0-9a-f]{12}\]$/m);
+    assert.match(h.stdout, /^    10 s:[0-9a-f]{12}$/m);
+    assert.match(h.stdout, /^⚠ src\/a\.mjs · \(outside any function\) · ConditionalExpression — 1 open \[g:/m);
   } finally { done(p); }
 });
 
@@ -301,8 +304,8 @@ test('C8: 5,200 in-scope mutants give a small JSON with every survivor whole, pe
     assert.ok(list.every((m) => m.status && m.file));
     assert.equal(list.filter((m) => m.scope === 'out').length, 25);
     const h = ac(p, ['mutate', slug]);
-    const survLines = h.stdout.split('\n').filter((l) => /^⚠ src\/\S+:\d+ ArithmeticOperator survived$/.test(l));
-    assert.equal(survLines.length, 4);
+    assert.match(h.stdout, /^survivors: 4 in \d+ groups — 0 judged, 4 open$/m);
+    assert.equal(h.stdout.split('\n').filter((l) => /^⚠ src\/\S+ · .* · ArithmeticOperator — \d+ open \[g:/.test(l)).length, 3, 'one group per file');
     assert.match(h.stdout, /^  src\/f1\.mjs — /m);
     assert.doesNotMatch(h.stdout, /killed$/m, 'no per-mutant killed line');
     assert.match(h.stdout, /^full list: \.astrocode\/\.local\/mutate-runs\/05-big\.mutants\.jsonl$/m);
@@ -312,5 +315,20 @@ test('C8: 5,200 in-scope mutants give a small JSON with every survivor whole, pe
     const run = JSON.parse(readFileSync(join(p.dir, '.astrocode', '.local', 'mutate-runs', `${slug}.json`), 'utf8'));
     assert.equal(run.survivors.length, 4);
     assert.deepEqual(run.counts, j.counts);
+  } finally { done(p); }
+});
+
+test('phase 49: the flaky check prints one line after tests: stable, or flaky with the kills\' fate', async () => {
+  const p = await rig('go', { report: 'gremlins.json' });
+  try {
+    installRunner(p.dir, 'go', 'stubbin');
+    let h = ac(p, ['mutate', '1']);
+    assert.match(h.stdout, /^• flaky check: stable \(2 runs, \d+\.\ds\)$/m);
+    assert.ok(h.stdout.indexOf('tests:') < h.stdout.indexOf('flaky check'));
+    p.env.MUTATE_STUB_FLAKY = `${p.dir}/counter:TestFlaky`;
+    h = ac(p, ['mutate', '1']);
+    assert.match(h.stdout, /^⚠ flaky: TestFlaky — kills excluded from the mutation run$/m);
+    const j = JSON.parse(ac(p, ['mutate', '1', '--json']).stdout);
+    assert.equal(j.flaky.checked, true);
   } finally { done(p); }
 });

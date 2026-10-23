@@ -1,0 +1,114 @@
+mutmut 3.8.0 — re-running named mutants, and what a show diff looks like (phase 49 t6).
+Scratch project: src/mod.py (functions b and msg), tests/test_mod.py, setup.cfg
+  [mutmut] source_paths=src/ , pytest_add_cli_args_test_selection=tests/
+
+$ mutmut run                                   (the full run: 13 mutants, 6 killed, 7 survived)
+$ mutmut results --all true
+  mod.x_b__mutmut_1: survived
+  mod.x_b__mutmut_2: survived
+  mod.x_b__mutmut_3: killed
+  mod.x_b__mutmut_4: killed
+  mod.x_b__mutmut_5: killed
+  mod.x_b__mutmut_6: killed
+  mod.x_msg__mutmut_1: survived
+  mod.x_msg__mutmut_2: survived
+  mod.x_msg__mutmut_3: survived
+  mod.x_msg__mutmut_4: survived
+  mod.x_msg__mutmut_5: survived
+  mod.x_msg__mutmut_6: killed
+  mod.x_msg__mutmut_7: killed
+
+$ rm -rf mutants .mutmut-cache; mutmut run mod.x_b__mutmut_1 mod.x_msg__mutmut_5     (exact names, exit 0)
+  progress line: "2/13  🎉 0 🫥 0  ⏰ 0  🤔 0  🙁 2" — exactly the two named mutants were tested
+$ mutmut results --all true
+  mod.x_b__mutmut_1: survived
+  mod.x_b__mutmut_2: not checked
+  mod.x_b__mutmut_3: not checked
+  mod.x_b__mutmut_4: not checked
+  mod.x_b__mutmut_5: not checked
+  mod.x_b__mutmut_6: not checked
+  mod.x_msg__mutmut_1: not checked
+  mod.x_msg__mutmut_2: not checked
+  mod.x_msg__mutmut_3: not checked
+  mod.x_msg__mutmut_4: not checked
+  mod.x_msg__mutmut_5: survived
+  mod.x_msg__mutmut_6: not checked
+  mod.x_msg__mutmut_7: not checked
+
+With the previous results kept (no rm), the same command leaves every other mutant at its earlier status:
+  (observed: results --all true still lists the earlier killed/survived statuses; the counter showed 13/13 from the cache,
+   so only the cleared-cache run above proves that exactly the named mutants executed)
+
+FINDING — `mutmut run <exact name>...` selects mutants by name; results --all true lists them with their status.
+A mutant not run reads "not checked" when the cache was cleared, never "killed".
+
+---- what `mutmut show` prints (the diff is relative to the FUNCTION; its def line is line 1) ----
+$ mutmut show mod.x_b__mutmut_1
+# mod.x_b__mutmut_1: survived
+--- src/mod.py
++++ src/mod.py
+@@ -1,4 +1,4 @@
+ def b(x):
+-    if x > 10:
++    if x >= 10:
+         return x - 10
+     return x * 2
+$ mutmut show mod.x_msg__mutmut_1
+# mod.x_msg__mutmut_1: survived
+--- src/mod.py
++++ src/mod.py
+@@ -1,4 +1,4 @@
+ def msg(x):
+-    if x < 0:
++    if x <= 0:
+         raise ValueError("negative value")
+     return "ok"
+$ mutmut show mod.x_msg__mutmut_3
+# mod.x_msg__mutmut_3: survived
+--- src/mod.py
++++ src/mod.py
+@@ -1,4 +1,4 @@
+ def msg(x):
+     if x < 0:
+-        raise ValueError("negative value")
++        raise ValueError(None)
+     return "ok"
+$ mutmut show mod.x_msg__mutmut_5
+# mod.x_msg__mutmut_5: survived
+--- src/mod.py
++++ src/mod.py
+@@ -1,4 +1,4 @@
+ def msg(x):
+     if x < 0:
+-        raise ValueError("negative value")
++        raise ValueError("NEGATIVE VALUE")
+     return "ok"
+$ mutmut show mod.x_msg__mutmut_2
+ def msg(x):
+-    if x < 0:
++    if x < 1:
+         raise ValueError("negative value")
+     return "ok"
+$ mutmut show mod.x_msg__mutmut_4
+ def msg(x):
+     if x < 0:
+-        raise ValueError("negative value")
++        raise ValueError("XXnegative valueXX")
+     return "ok"
+$ mutmut show mod.x_msg__mutmut_6
+ def msg(x):
+     if x < 0:
+         raise ValueError("negative value")
+-    return "ok"
++    return "XXokXX"
+$ mutmut show mod.x_msg__mutmut_7
+ def msg(x):
+     if x < 0:
+         raise ValueError("negative value")
+-    return "ok"
++    return "OK"
+
+FINDING — a string mutant is either a literal replaced wholesale (`None`), wrapped (`"XXnegative valueXX"`),
+or case-changed (`"NEGATIVE VALUE"`, `"OK"`); an operator mutant changes a token (`>` -> `>=`, `0` -> `1`).
+A text-only change is therefore detectable by text alone: the lines differ only INSIDE a string literal
+(`"XXokXX"`, `"OK"`), but `ValueError(None)` replaces the literal by code and is NOT text-only.

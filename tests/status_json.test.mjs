@@ -39,7 +39,7 @@ const asJson = (dir) => {
   return JSON.parse(res.stdout);
 };
 
-const KEYS = ['activity', 'activityUntil', 'milestone', 'next', 'phase', 'phases', 'project', 'root', 'siblings'];
+const KEYS = ['activity', 'activityUntil', 'milestone', 'next', 'phase', 'phases', 'project', 'root', 'siblings', 'version'];
 
 test('ac status --json prints exactly the contract keys and next is nextAction verbatim', async () => {
   const dir = mkProject();

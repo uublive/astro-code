@@ -6,7 +6,7 @@
       "source": "captured"
     },
     "gremlins": {
-      "version": "dev linux/arm64 (0.6 line)",
+      "version": "v0.6.0 (from build info; --version prints dev)",
       "source": "captured"
     },
     "stryker": {
@@ -33,7 +33,12 @@
     "gremlins-run-output.txt": "`gremlins unleash --diff <sha> -o out.json` on a two-package module",
     "stryker-cli-documented.txt": "transcribed Stryker 10 CLI and log markers",
     "mutmut3-help.txt": "`mutmut --help`, `run --help`, `results --help`, `show --help` (run from a configured project)",
-    "mutmut2-cli-documented.txt": "transcribed mutmut 2.4 CLI"
+    "mutmut2-cli-documented.txt": "transcribed mutmut 2.4 CLI",
+    "gremlins-survivors-rerun.txt": "phase 49: `--diff` with a dangling commit does not select lines; `--<type>=false` and `-E` do narrow",
+    "mutmut3-names-rerun.txt": "phase 49: `mutmut run <exact names>` runs only those; show diffs for string and operator mutants",
+    "go-test-fail.txt": "phase 49: `go test -count=1 -v` with one failing test, and GOFLAGS `-skip` dropping it",
+    "pytest-fail.txt": "phase 49: `pytest -p no:cacheprovider -rf -q` with one failure, and PYTEST_ADDOPTS `--deselect` dropping it",
+    "gremlins-buildinfo.txt": "phase 49: `gremlins --version` (dev) beside `go version -m` (module v0.6.0)"
   },
   "markers": {
     "mutmut3": {
@@ -78,7 +83,13 @@
     "GOFLAGS='-run=^(TestSub)$' reaches gremlins' go test calls: with it a package whose tests do not match reported its mutants NOT COVERED. It narrows, but unmatched mutants read as not covered (survivor status no-coverage), so the filter must be the phase's tests for the phase's package.",
     "gremlins prints no progress count; the step is inferred from `Gathering files diff...` / `Gathering coverage...` and the per-mutant status lines.",
     "Stryker is not installed here and no network installs are allowed: its CLI is transcribed, marked as such, and C14 compares flags against the transcription.",
-    "gremlins --version prints `gremlins version dev linux/arm64` here (no numeric 0.x): ac's version regex finds nothing, version is null, and gremlins has no supportedMajors, so the run proceeds."
+    "gremlins --version prints `gremlins version dev linux/arm64` here (no numeric 0.x): ac's version regex finds nothing, version is null, and gremlins has no supportedMajors, so the run proceeds.",
+    "phase 49 t6 gremlins: `--diff <dangling commit>` does NOT narrow to lines (three-dot diff against the merge base; a child of HEAD gives an empty diff and Gremlins mutates everything, a parentless commit errors). Only a real ancestor works. --survivors therefore narrows Gremlins by files (-E) + kinds (--<type>=false), narrowed: 'files+kinds'.",
+    "phase 49 t6 gremlins: `--<type>=false` removes that mutant kind and `-E <regexp>` removes a file; non-default kinds need `--<type>` to be re-run.",
+    "phase 49 t6 gremlins: the module version is in the binary's build info (`mod github.com/go-gremlins/gremlins v0.6.0`), readable without spawning go; `--version` prints `dev`.",
+    "phase 49 t6 mutmut 3.8: `mutmut run <exact mutant name>...` runs exactly those (cleared cache: 2/13 tested). `mutmut show` prints a function-relative diff; string mutants are `XX..XX` wrap, case change or `None`.",
+    "phase 49 t6 runners: `go test -count=1 -v` prints `--- FAIL: <name>`; `GOFLAGS=-skip=^(TestX)$` drops it. `pytest -p no:cacheprovider -rf -q` prints `FAILED <nodeid> - ...`; `PYTEST_ADDOPTS=--deselect <nodeid>` drops it.",
+    "phase 49 t6 stryker: transcribed — the `file:L:C-L:C` --mutate form, killedBy/testFiles fields, and that the `command` runner gives no per-test attribution."
   ],
   "real_runs": {
     "date": "2026-10-22",
@@ -94,7 +105,23 @@
       "note": "--diff <phase base> and GOFLAGS -run accepted; scope narrowed to the diff; log and full list written."
     },
     "stryker": "not run: not installed",
-    "mutmut2": "not run: not installed"
+    "mutmut2": "not run: not installed",
+    "phase_49": {
+      "date": "2026-10-22",
+      "command": "AC_MUTATE_REAL=1 node --test tests/mutate_real.test.mjs",
+      "mutmut": {
+        "version": "3.8.0",
+        "result": "pass",
+        "note": "groups with a g:text-only group; a group note carried over and survived 5 lines inserted above; --survivors ran `mutmut run <open names>` and the tool's own counter showed exactly the open mutants tested (extra_executed 0); a toggling pytest test was named flaky and deselected through PYTEST_ADDOPTS (kills: excluded)."
+      },
+      "gremlins": {
+        "version": "v0.6.0 (from build info; --version prints dev)",
+        "result": "pass",
+        "note": "tool.version equalled the module version `go version -m` prints; survivors carried keys and groups; a judgement carried over; --survivors narrowed by files+kinds and its why says killed mutants re-ran too."
+      },
+      "stryker": "not run: not installed",
+      "mutmut2": "not run: not installed"
+    }
   },
   "mutmut3_config_keys": [
     "source_paths",

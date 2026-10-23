@@ -1,0 +1,21 @@
+$ go test -count=1 -v ./...
+=== RUN   TestCmp
+--- PASS: TestCmp (0.00s)
+=== RUN   TestInc
+--- PASS: TestInc (0.00s)
+=== RUN   TestFlaky
+    a_test.go:21: flaky boom
+--- FAIL: TestFlaky (0.00s)
+FAIL
+FAIL	example.com/fx	0.001s
+FAIL
+exit 1
+
+$ GOFLAGS=-skip=^(TestFlaky)$ go test -count=1 -v ./...
+=== RUN   TestCmp
+--- PASS: TestCmp (0.00s)
+=== RUN   TestInc
+--- PASS: TestInc (0.00s)
+PASS
+ok  	example.com/fx	0.001s
+exit 0

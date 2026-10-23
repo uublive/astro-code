@@ -218,3 +218,38 @@ test('phase 48: perFileCounts is zero-filled and its grand total equals the inpu
   assert.equal(row.ignored, 1);
   assert.deepEqual(perFileCounts({ mutants: [], not_run: [], ignored: [] }), {});
 });
+
+// ---- phase 49 t2: replacement, location, column and killedBy ----
+test('parseStryker(stryker-triage.json): replacement, loc, col and killedBy names', async () => {
+  const { parseStryker } = await import('../lib/mutparse.mjs');
+  const r = parseStryker(fx('stryker-triage.json'), { scope: ['src/a.mjs'] });
+  assert.equal(r.mutants.length, 7);
+  const byId = Object.fromEntries(r.mutants.map((m) => [m.id, m]));
+  assert.equal(byId['1'].replacement, 'a >= b');
+  assert.deepEqual(byId['1'].loc, { start: { line: 2, column: 7 }, end: { line: 2, column: 12 } });
+  assert.equal(byId['1'].col, 7);
+  assert.equal(byId['1'].killedBy, undefined);
+  assert.deepEqual(byId['2'].killedBy, ['add subtracts']);
+  assert.deepEqual(byId['6'].killedBy, ['log increments']);
+  const strings = r.mutants.filter((m) => m.mutator === 'StringLiteral' && m.status === 'survived');
+  assert.equal(strings.length, 2);
+});
+
+test('parseGremlins(gremlins-triage.json): carries col', async () => {
+  const { parseGremlins } = await import('../lib/mutparse.mjs');
+  const r = parseGremlins(fx('gremlins-triage.json'), { scope: ['a.go'] });
+  assert.deepEqual(r.mutants.map((m) => [m.line, m.col]), [[4, 5], [5, 12], [10, 5], [11, 3], [13, 11]]);
+});
+
+test('existing fixtures: old fields unchanged; new fields appear only when the tool gave them', async () => {
+  const { parseGremlins, parseMutmutResults, normalize } = await import('../lib/mutparse.mjs');
+  const g = parseGremlins(fx('gremlins.json'), { scope: ['a.go'] });
+  assert.ok(g.mutants.every((m) => m.replacement === undefined && m.killedBy === undefined));
+  const m3 = parseMutmutResults(fx('mutmut3-results.txt'), { scope: ['src/a.py'] });
+  assert.ok(m3.mutants.every((m) => m.col === undefined && m.loc === undefined && m.replacement === undefined));
+  const n = normalize([{ file: 'a', line: 1, mutator: 'x', status: 'survived', id: '1', col: 3, replacement: 'r' }]);
+  assert.equal(n.mutants[0].col, 3);
+  assert.equal(n.mutants[0].replacement, 'r');
+  const bare = normalize([{ file: 'a', line: 1, mutator: 'x', status: 'survived', id: '1' }]);
+  assert.deepEqual(Object.keys(bare.mutants[0]).sort(), ['file', 'id', 'line', 'mutator', 'status']);
+});

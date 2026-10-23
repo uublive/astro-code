@@ -211,21 +211,32 @@ test('phase 47 C9: breaches are saved failed with refused; the justified control
   } finally { done(p); }
 });
 
-// ---- Phase 48 t8 — only the [mutation] tag is a code gate (ADR-084) ----
-test('phase 48: untagged criteria keep mutation evidence verbatim and are never gated by it', async () => {
+// ---- Phase 48 t8 / phase 49 t3 — untagged criteria: evidence marks them test-strength (ADR-085) ----
+test('phase 49: an untagged criterion with mutation evidence is gated like a tagged one; without evidence it passes', async () => {
   const p = await project(1);
   try {
     writeFileSync(p.crit, '### C1 — plain claim\n- **Observe:** y\n');
-    // a capped, incomplete run with an untriaged survivor would fail a tagged criterion; here it is supporting evidence
+    // a capped, incomplete run with an untriaged survivor fails: using the tool's result marks the criterion
     const weak = mut47({ capped: true, complete: false, outcome: 'incomplete', survivors: [surv47({ triage: undefined })] });
+    keep47(p, weak);
     let out = JSON.parse(rec47(p, weak).stdout);
-    assert.equal(out.passed, true);
+    assert.equal(out.passed, false);
+    assert.deepEqual(out.test_strength, ['C1']);
     assert.deepEqual(JSON.parse(readFileSync(p.vfile, 'utf8')).criteria[0].mutation, JSON.parse(JSON.stringify(weak)));
-    // no evidence at all passes too
-    assert.equal(JSON.parse(rec47(p, null).stdout).passed, true);
+    assert.equal(JSON.parse(readFileSync(p.vfile, 'utf8')).criteria[0].test_strength, true);
+    // the mark is sticky: no evidence now fails too
+    assert.equal(JSON.parse(rec47(p, null).stdout).passed, false);
     // structural junk is still refused outright
     const bad = rec47(p, mut47({ counts: { killed: 'x', survived: 0, timeout: 0, 'no-coverage': 0, error: 0 } }));
     assert.notEqual(bad.status, 0);
+  } finally { done(p); }
+});
+
+test('phase 49: an untagged criterion with no evidence and no mark passes as before', async () => {
+  const p = await project(1);
+  try {
+    writeFileSync(p.crit, '### C1 — plain claim\n- **Observe:** y\n');
+    assert.equal(JSON.parse(rec47(p, null).stdout).passed, true);
   } finally { done(p); }
 });
 

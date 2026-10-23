@@ -1,6 +1,6 @@
 // Shared scaffolding for the phase-47 mutate tests: a real tmp git project with ac phases and
 // ADR-017-stamped commits, plus the stub tool and a PATH that can never reach a real tool (C11).
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, chmodSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +11,7 @@ import { addPhase, findPhase } from '../../../lib/roadmap.mjs';
 export const FX = dirname(fileURLToPath(import.meta.url));
 export const STUB = join(FX, 'stub.mjs');
 export const sh = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
-const GIT_DIR = dirname(spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim());
+const GIT_BIN = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
 
 const LAYOUT = {
   js: { manifest: ['package.json', '{"name":"p"}\n'], a: 'src/a.mjs', b: 'src/b.mjs', c: 'src/c.mjs', test: 'tests/a.test.mjs' },
@@ -81,9 +81,49 @@ export function installStub(dir, name, sub = 'stubbin') {
   return bin;
 }
 
-/** An env where only the given bin dirs, node and git are reachable; no GOBIN/GOPATH. */
+/** Copy the stub in as the project's test runner (`go` or `pytest`) for the flaky pre-check. */
+export const installRunner = (dir, name, sub = 'runnerbin') => installStub(dir, name, sub);
+
+/**
+ * A JS project whose phase-1 tests run through a Stryker `command` runner (`node --test`), one
+ * stable test and — unless `flaky: false` — one that fails on every other run, toggling a counter
+ * file under the project's `.astrocode/.local/`.
+ */
+export async function jsFlakyProject({ flaky = true } = {}) {
+  const p = await makeProject('js');
+  put(p.dir, 'stryker.config.json', JSON.stringify({ testRunner: 'command', commandRunner: { command: 'node --test' } }) + '\n');
+  put(p.dir, p.L.test, [
+    "import test from 'node:test';",
+    "import assert from 'node:assert/strict';",
+    "import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';",
+    "test('stable', () => assert.ok(true));",
+    ...(flaky ? [
+      "test('flaky toggles', () => {",
+      "  const f = '.astrocode/.local/flaky-counter';",
+      "  mkdirSync('.astrocode/.local', { recursive: true });",
+      "  let n = 0;",
+      "  try { n = Number(readFileSync(f, 'utf8')); } catch { /* first run */ }",
+      "  writeFileSync(f, String(n + 1));",
+      "  assert.equal(n % 2, 1);",
+      "});",
+    ] : []),
+    '',
+  ].join('\n'));
+  commit(p.dir, 'test: a (phase 1 t2)');
+  return p;
+}
+
+/**
+ * An env where only the given bin dirs, node and git are reachable; no GOBIN/GOPATH. Node and git sit
+ * in a directory of their own holding just those two symlinks: their real directories (/usr/bin,
+ * node's prefix) also hold npm, pytest or go, which the flaky pre-check would otherwise find and run
+ * (phase 49), making the suites slow and machine-dependent.
+ */
 export function restrictedEnv(binDirs, extra = {}) {
-  const env = { ...process.env, PATH: [...binDirs, dirname(process.execPath), GIT_DIR].join(delimiter), HOME: mkdtempSync(join(tmpdir(), 'ac-mutate-home-')) };
+  const only = mkdtempSync(join(tmpdir(), 'ac-mutate-only-'));
+  symlinkSync(process.execPath, join(only, 'node'));
+  symlinkSync(GIT_BIN, join(only, 'git'));
+  const env = { ...process.env, PATH: [...binDirs, only].join(delimiter), HOME: mkdtempSync(join(tmpdir(), 'ac-mutate-home-')) };
   delete env.GOBIN; delete env.GOPATH;
   return { ...env, ...extra };
 }

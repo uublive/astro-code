@@ -447,6 +447,8 @@ test('phase 48: mutateRunPaths names every file one run leaves beside the kept r
   assert.deepEqual(p, {
     dir, run: j48(dir, '48-x.json'), log: j48(dir, '48-x.log'), list: j48(dir, '48-x.mutants.jsonl'),
     strykerConfig: j48(dir, '48-x.stryker.config.mjs'), gremlinsReport: j48(dir, '48-x.gremlins.json'),
+    strykerReport: j48(dir, '48-x.stryker-report.json'), strykerIncremental: j48(dir, '48-x.stryker-incremental.json'),
+    partial: j48(dir, '48-x.survivors.json'),
   });
 });
 
@@ -466,4 +468,202 @@ test('phase 48: not-configured is a mutation outcome and not a fallback outcome'
   const { MUTATION_OUTCOMES, FALLBACK_OUTCOMES } = await import('../lib/verdict.mjs');
   assert.ok(MUTATION_OUTCOMES.includes('not-configured'));
   assert.deepEqual(FALLBACK_OUTCOMES, ['tool-missing', 'no-tool', 'no-scope']);
+});
+
+// ---- Phase 49 t3 — the sticky test-strength mark, partial runs, code-moved refusal (ADR-085) ----
+const counts49 = { killed: 4, survived: 2, timeout: 0, 'no-coverage': 0, error: 0 };
+const tool49 = (head) => [surv({ id: '2', triage: undefined, justification: undefined }), surv({ id: '3', triage: undefined, justification: undefined })];
+const ev49 = (head, survivors, o = {}) => mut({ head, counts: counts49, survivors, ...o });
+const judged = (sv, t = 'equivalent') => sv.map((x) => ({ ...x, triage: t, justification: 'dead branch' }));
+const rec49 = (s, crit, o = {}) => ({ mode: 'full', criteria: crit.map((c) => ({ passed: true, ...c })), ...o });
+
+test('phase 49 C9: an untagged criterion declared test_strength gets the same gate as a tagged one', async () => {
+  const { recordVerdict, saveMutateRun } = await import('../lib/verdict.mjs');
+  const s = sandbox(2);
+  try {
+    writeFileSync(s.crit, '### C1 — plain claim\n### C2 — other\n');
+    const h = head(s.root);
+    const tool = tool49();
+    saveMutateRun(s.root, SLUG, { ...ev49(h, tool), tool: { id: 'stryker' } });
+    const go = (m, extra = {}) => recordVerdict(s.root, SLUG, rec49(s, [{ id: 'C1', test_strength: true, mutation: m, ...extra }, { id: 'C2' }]));
+    // (a) open survivors: untriaged, then test-gap
+    let out = await go(ev49(h, tool));
+    assert.equal(out.passed, false); assert.match(out.refused[0].reason, /untriaged/);
+    out = await go(ev49(h, judged(tool, 'test-gap')));
+    assert.equal(out.passed, false); assert.match(out.refused[0].reason, /test-gap/);
+    // (b) evidence bound to some other run
+    out = await go(ev49('fff0000', judged(tool)));
+    assert.equal(out.passed, false); assert.match(out.refused[0].reason, /last `ac mutate` run graded/);
+    // (c) all justified
+    out = await go(ev49(h, judged(tool)));
+    assert.equal(out.passed, true);
+    assert.deepEqual(out.test_strength, ['C1']);
+    assert.equal(JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[0].test_strength, true);
+    assert.equal(JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[1].test_strength, undefined);
+  } finally { done(s); }
+});
+
+test('phase 49: mutation evidence alone marks the criterion; no evidence on a declared one says test-strength', async () => {
+  const { recordVerdict, saveMutateRun } = await import('../lib/verdict.mjs');
+  const s = sandbox(1);
+  try {
+    writeFileSync(s.crit, '### C1 — plain claim\n');
+    const h = head(s.root);
+    const tool = tool49();
+    saveMutateRun(s.root, SLUG, { ...ev49(h, tool), tool: { id: 'stryker' } });
+    let out = await recordVerdict(s.root, SLUG, rec49(s, [{ id: 'C1', mutation: ev49(h, tool) }]));
+    assert.equal(out.passed, false, 'evidence without the flag still marks it');
+    assert.deepEqual(out.test_strength, ['C1']);
+    out = await recordVerdict(s.root, SLUG, rec49(s, [{ id: 'C1', test_strength: true }]));
+    assert.equal(out.passed, false); assert.match(out.refused[0].reason, /marked test-strength but no mutation evidence/);
+    // an untagged criterion with neither stays ungated
+    writeFileSync(s.crit, '### C1 — plain claim\n');
+  } finally { done(s); }
+  const t = sandbox(1);
+  try {
+    assert.equal((await recordVerdict(t.root, SLUG, rec49(t, [{ id: 'C1' }]))).passed, true);
+    await assert.rejects(recordVerdict(t.root, SLUG, rec49(t, [{ id: 'C1', test_strength: 'yes' }])), /test_strength/);
+  } finally { done(t); }
+});
+
+test('phase 49 C10: the mark is sticky across verdicts, CRITERIA edits and carried entries, and per phase', async () => {
+  const { recordVerdict, saveMutateRun } = await import('../lib/verdict.mjs');
+  const s = sandbox(2);
+  try {
+    writeFileSync(s.crit, '### C1 — plain claim\n### C2 — other\n');
+    const roadmap = join(s.root, '.astrocode', 'roadmap.json');
+    writeFileSync(roadmap, '{"a":1}\n');
+    const h = head(s.root);
+    const tool = tool49();
+    saveMutateRun(s.root, SLUG, { ...ev49(h, tool), tool: { id: 'stryker' } });
+    let out = await recordVerdict(s.root, SLUG, rec49(s, [{ id: 'C1', test_strength: true, mutation: ev49(h, judged(tool)) }, { id: 'C2' }]));
+    assert.equal(out.passed, true);
+    // the same id, no flag, an open survivor: refused, and the kept mark is named
+    out = await recordVerdict(s.root, SLUG, rec49(s, [{ id: 'C1', mutation: ev49(h, tool) }, { id: 'C2' }]));
+    assert.equal(out.passed, false); assert.deepEqual(out.mark_kept, ['C1']);
+    // no evidence at all: refused
+    out = await recordVerdict(s.root, SLUG, rec49(s, [{ id: 'C1' }, { id: 'C2' }]));
+    assert.equal(out.passed, false); assert.match(out.refused[0].reason, /no mutation evidence/);
+    // a passing record, then a narrowed run that omits C1 carries the mark
+    await recordVerdict(s.root, SLUG, rec49(s, [{ id: 'C1', test_strength: true, mutation: ev49(h, judged(tool)) }, { id: 'C2' }]));
+    await recordVerdict(s.root, SLUG, { mode: 'narrowed', criteria: [{ id: 'C2', passed: true }] });
+    const c1 = JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[0];
+    assert.equal(c1.status, 'carried'); assert.equal(c1.test_strength, true);
+    // survives a CRITERIA.md edit
+    writeFileSync(s.crit, '### C1 — plain claim, reworded\n### C2 — other\n');
+    out = await recordVerdict(s.root, SLUG, rec49(s, [{ id: 'C1' }, { id: 'C2' }]));
+    assert.equal(out.passed, false);
+    // a full run omitting the id defaults it to failed, still marked
+    await recordVerdict(s.root, SLUG, rec49(s, [{ id: 'C2' }]));
+    assert.equal(JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[0].test_strength, true);
+    assert.equal(readFileSync(roadmap, 'utf8'), '{"a":1}\n');
+  } finally { done(s); }
+  // another phase's C1 is unaffected
+  const o = sandbox(1);
+  try {
+    assert.equal((await recordVerdict(o.root, SLUG, rec49(o, [{ id: 'C1' }]))).passed, true);
+  } finally { done(o); }
+});
+
+test('phase 49 C6: partial evidence is refused; code moved since the full run is refused, .astrocode-only is not', async () => {
+  const { recordVerdict, saveMutateRun, mutationGate } = await import('../lib/verdict.mjs');
+  const s = sandbox(1);
+  try {
+    writeFileSync(s.crit, '### C1 [mutation] — strong\n');
+    const a = head(s.root);
+    const tool = judged(tool49());
+    saveMutateRun(s.root, SLUG, { ...ev49(a, tool), tool: { id: 'stryker' } });
+    const r = () => recordVerdict(s.root, SLUG, rec49(s, [{ id: 'C1', mutation: ev49(a, tool) }]));
+    assert.equal(mutationGate({ marked: true, mutation: ev49(a, tool, { partial: true }) }).ok, false);
+    assert.match(mutationGate({ marked: true, mutation: ev49(a, tool, { partial: true }) }).reason, /ac mutate <n>/);
+    let out = await recordVerdict(s.root, SLUG, rec49(s, [{ id: 'C1', mutation: ev49(a, tool, { partial: true }) }]));
+    assert.equal(out.passed, false); assert.match(out.refused[0].reason, /partial re-test/);
+    // an .astrocode-only commit after the run is fine
+    mkdirSync(join(s.root, '.astrocode'), { recursive: true });
+    commitFile(s.root, '.astrocode/note.txt');
+    assert.equal((await r()).passed, true);
+    // a source commit is not
+    commitFile(s.root, 'src.txt');
+    out = await r();
+    assert.equal(out.passed, false); assert.match(out.refused[0].reason, /code changed since the last full `ac mutate` run/);
+  } finally { done(s); }
+});
+
+test('phase 49: saveMutateRun keeps started_at and the optional survivor fields; partial runs live beside it', async () => {
+  const { saveMutateRun, readMutateRun, savePartialRun, readPartialRun, mutateRunPaths, oneLine } = await import('../lib/verdict.mjs');
+  const s = sandbox(1);
+  try {
+    const sv = { ...surv({ id: '4' }), key: 's:abc', fn: 'f', kind: 'k', text_only: false, group: 'g:1', name: 'n', loc: { start: { line: 3, column: 1 }, end: { line: 3, column: 4 } }, col: 1, line_text: 'a > b', replacement: 'a >= b', replacement_line: 'x' };
+    saveMutateRun(s.root, SLUG, { head: 'h1', tool: { id: 'stryker' }, outcome: 'survivors', counts: counts49, started_at: '2026-01-01T00:00:00.000Z', survivors: [sv, surv({ id: '5' })] });
+    const run = readMutateRun(s.root, SLUG);
+    assert.equal(run.started_at, '2026-01-01T00:00:00.000Z');
+    assert.deepEqual(run.survivors[0], { file: sv.file, line: sv.line, mutator: sv.mutator, status: sv.status, id: '4', key: 's:abc', fn: 'f', kind: 'k', text_only: false, group: 'g:1', name: 'n', loc: sv.loc, col: 1, line_text: 'a > b', replacement: 'a >= b', replacement_line: 'x' });
+    assert.deepEqual(Object.keys(run.survivors[1]), ['file', 'line', 'mutator', 'status', 'id']);
+    const before = readFileSync(mutateRunPaths(s.root, SLUG).run, 'utf8');
+    assert.equal(readPartialRun(s.root, SLUG), null);
+    savePartialRun(s.root, SLUG, { head: 'h1', tool: { id: 'stryker' }, outcome: 'survivors', counts: counts49, survivors: [sv], base_run: { head: 'h1', started_at: 'x' } });
+    const part = readPartialRun(s.root, SLUG);
+    assert.equal(part.partial, true); assert.deepEqual(part.base_run, { head: 'h1', started_at: 'x' });
+    assert.equal(readFileSync(mutateRunPaths(s.root, SLUG).run, 'utf8'), before);
+    assert.ok(mutateRunPaths(s.root, SLUG).partial.endsWith(`${SLUG}.survivors.json`));
+    assert.equal(oneLine('a'), true); assert.equal(oneLine('a\nb'), false);
+  } finally { done(s); }
+});
+
+// ---- Phase 49 t9 — judgements reach the gate; the verdict commit carries SURVIVORS.json ----
+const key49 = (n) => `s:00000000000${n}`;
+const ksurv = (n, o = {}) => ({ file: 'src/a.mjs', line: n, mutator: 'ArithmeticOperator', status: 'survived', id: String(n), key: key49(n), fn: 'f', kind: 'ArithmeticOperator', line_text: `x${n}`, group: 'g:a', ...o });
+const bare = (sv) => { const { key, fn, kind, line_text, group, ...rest } = sv; return rest; };
+
+async function judgedRig(n = 3) {
+  const { saveMutateRun } = await import('../lib/verdict.mjs');
+  const s = sandbox(1);
+  writeFileSync(s.crit, '### C1 — plain claim\n');
+  const h = head(s.root);
+  const kept = Array.from({ length: n }, (_, i) => ksurv(i + 1));
+  saveMutateRun(s.root, SLUG, { head: h, tool: { id: 'stryker' }, outcome: 'survivors', complete: true, counts: { killed: 4, survived: n, timeout: 0, 'no-coverage': 0, error: 0 }, survivors: kept });
+  const ev = (survivors, o = {}) => mut({ head: h, counts: { killed: 4, survived: n, timeout: 0, 'no-coverage': 0, error: 0 }, survivors, ...o });
+  return { s, h, kept, ev };
+}
+
+test('phase 49: a triage missing from the evidence is filled from SURVIVORS.json; an explicit triage wins; none is refused', async () => {
+  const { recordVerdict } = await import('../lib/verdict.mjs');
+  const { recordJudgements } = await import('../lib/survivors.mjs');
+  const { s, kept, ev } = await judgedRig(3);
+  try {
+    await recordJudgements(s.root, SLUG, { ids: [key49(1)], triage: 'equivalent', justification: 'dead branch' });
+    const claim = (sv) => recordVerdict(s.root, SLUG, { mode: 'full', criteria: [{ id: 'C1', passed: true, mutation: ev(sv) }] });
+    const explicit = (n) => ({ ...bare(kept[n - 1]), triage: 'equivalent', justification: 'dead branch' });
+    // survivor 1 has no triage in the evidence: SURVIVORS.json supplies it; 2 and 3 are explicit
+    let out = await claim([bare(kept[0]), explicit(2), explicit(3)]);
+    assert.equal(out.passed, true, JSON.stringify(out.refused));
+    const saved = JSON.parse(readFileSync(s.vfile, 'utf8')).criteria[0].mutation.survivors[0];
+    assert.equal(saved.triage, 'equivalent'); assert.equal(saved.justification, 'dead branch');
+    // an explicit test-gap beats the file's equivalent
+    out = await claim([{ ...bare(kept[0]), triage: 'test-gap' }, explicit(2), explicit(3)]);
+    assert.equal(out.passed, false); assert.match(out.refused[0].reason, /test-gap/);
+    // no judgement and no evidence triage: untriaged
+    out = await claim([bare(kept[0]), bare(kept[1]), explicit(3)]);
+    assert.equal(out.passed, false); assert.match(out.refused[0].reason, /untriaged/);
+  } finally { done(s); }
+});
+
+test('phase 49: the verdict commit lists VERDICT.json and SURVIVORS.json, unstamped; with no judgements it holds VERDICT.json alone', async () => {
+  const { recordVerdict } = await import('../lib/verdict.mjs');
+  const { recordJudgements } = await import('../lib/survivors.mjs');
+  const { s, kept, ev } = await judgedRig(1);
+  try {
+    const rec = () => recordVerdict(s.root, SLUG, { mode: 'full', criteria: [{ id: 'C1', passed: true, mutation: ev([bare(kept[0])]) }] });
+    let out = await rec();
+    assert.equal(out.committed, true);
+    let stat = sh(s.root, 'show', '--stat', '--format=%s', 'HEAD').stdout;
+    assert.match(stat, /VERDICT\.json/); assert.doesNotMatch(stat, /SURVIVORS\.json/);
+    await recordJudgements(s.root, SLUG, { ids: [key49(1)], triage: 'equivalent', justification: 'dead branch' });
+    out = await rec();
+    assert.equal(out.passed, true); assert.equal(out.committed, true);
+    stat = sh(s.root, 'show', '--stat', '--format=%s', 'HEAD').stdout;
+    assert.match(stat, /VERDICT\.json/); assert.match(stat, /SURVIVORS\.json/);
+    assert.doesNotMatch(stat.split('\n')[0], /\(phase \d+ t\d+\)/);
+    assert.equal(sh(s.root, 'status', '--porcelain', '--', s.vfile, join(s.dir, 'SURVIVORS.json')).stdout.trim(), '');
+  } finally { done(s); }
 });

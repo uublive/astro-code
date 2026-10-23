@@ -597,13 +597,13 @@ verdict (`--force` is the escape).
 
 When a goal asks for test strength ("the tests would catch a regression"), the criteria author
 writes that criterion with the `[mutation]` tag right after its id: `### C4 [mutation] — <claim>`. A heading that only mentions the tag elsewhere is not tagged.
-The tag is the only **code** gate: `ac verdict record` refuses a tagged pass without clean evidence.
+The tag pre-commits a criterion to the **code** gate: `ac verdict record` refuses a pass without clean evidence.
 
 Whenever a mutation tool is installed, the verifier uses it wherever it would otherwise hand-make
-mutants: for any criterion, tagged or not, it runs `ac mutate <phase> --json` and triages the
-survivors. Hand-made mutants remain only as the no-tool fallback. On an untagged criterion the
-evidence is supporting evidence with no code gate. `ac mutate` is mechanical: it picks the tool,
-scopes to the changed lines, runs the phase's own tests under a time cap and parses the report.
+mutants: for any criterion, tagged or not, it runs `ac mutate <phase> --json` and judges the open
+survivors. Hand-made mutants remain only as the no-tool fallback. `ac mutate` is mechanical: it
+picks the tool, scopes to the changed lines, runs the phase's own tests under a time cap and parses
+the report.
 
 | Language | Tool | Install, as your project manages it (astro-code never installs it) |
 |---|---|---|
@@ -642,9 +642,10 @@ lock-managed Python environment adds a warning that an install may change nothin
   in `.astrocode/.local/mutate-runs/`, beside the kept run, named in the result, replaced by the next
   run of the phase, never committed.
 - **Triage.** A survivor that is a real test gap fails the criterion; an equivalent mutant passes
-  with a one-line justification kept in `VERDICT.json`. `ac verdict record` enforces this for tagged
-  criteria and binds the evidence to the last `ac mutate` run on this machine: its commit, counts and
-  survivors must match, so an edited survivor list cannot hide one nobody triaged.
+  with a one-line justification kept in `VERDICT.json`. `ac verdict record` enforces this for every
+  test-strength criterion (see "Which criteria get the bar") and binds the evidence to the last full
+  `ac mutate` run on this machine: its commit, counts and survivors must match, so an edited survivor
+  list cannot hide one nobody triaged.
 - **No tool.** Verification falls back to AI-invented mutants and says why. The full install
   suggestion shows once per project per tool, then one line. The memory is **local, never committed**: `.astrocode/.local/mutate-notices.json`. `ac mutate dismiss [<tool>]` silences it;
   `ac mutate --check` always shows it.
@@ -653,6 +654,49 @@ lock-managed Python environment adds a warning that an install may change nothin
   3.x, `paths_to_mutate` / `tests_dir` for 2.x). An existing file is never rewritten; deprecated keys
   are named. It is the one writer; a run or a check never changes your project.
 - **Trust.** The tool runs your project's own tests, the same trust level as `npm test`.
+
+### Judging survivors
+`ac mutate` groups survivors by function and mutation kind, with string/message literals in their
+own `g:text-only` group, and prints only the open groups (20 at most, the rest is `--json`).
+Judgements live in `.astrocode/phases/<slug>/SURVIVORS.json`, beside `VERDICT.json`: committed, so a
+teammate's clone and a reviewer see every justification.
+`ac mutate judge <n> <s:key|g:group>... --equivalent "<one line why>"` (or `--test-gap ["<note>"]`)
+writes it; the file is not committed until `ac verdict record` does. Nothing is ever marked
+equivalent for you. A group note is expanded into one entry per survivor it holds **now**, so a
+survivor that appears later stays open. A judgement follows its mutant, not its line number: the key
+is built from the file, function, mutation kind, the mutated line's text, the replacement and the
+column. Lines inserted above keep it; **editing the mutated line, or moving it to another function,
+re-opens it** (the old entry stays in the file, unused). Gremlins has no string mutator, so it never
+has a text-only group. A hand-edited entry with an unknown triage or an `equivalent` without a
+justification is ignored and counted.
+
+### Fix rounds: `--survivors`
+`ac mutate <n> --survivors` re-tests only the open survivors (untriaged or `test-gap`) of the last
+full run. mutmut 3 runs the exact mutants by name. Stryker runs exactly the open survivors too: a
+`--mutate` span each, plus an incremental file `ac mutate` writes from the last full run's own report
+minus the open survivors, so every other result (killed, equivalent-judged) is reused, not re-run
+(without a kept full report it says it is narrower-than-ideal). mutmut 2 re-runs whole files and
+Gremlins files plus mutant kinds (its `--diff` takes only an ancestor commit), so killed and
+equivalent-judged mutants there re-run too; both say so, count the extra mutants and discard
+their results. The output shows the full run's groups with the re-test overlaid under a
+leading line, and it is **not a recordable verdict**: `ac verdict record` refuses it. Finish with a
+full `ac mutate <n>` and record that.
+
+### Flaky tests
+Before mutating, `ac mutate` runs the phase's tests twice on the unchanged code (`go test -count=1`,
+`pytest`, or the Stryker test command). A test that fails once is named under `flaky`, and its kills
+are not counted: excluded from the mutation run (Go, Python), discounted by the report's attribution
+(Stryker runners that attribute kills), or, when neither is possible, the run is marked incomplete.
+A test failing both times is `baseline_failing`. The check shares the one cap, and a cap hit there is
+named "flaky check (tests run twice)". When no runner can be found it says why and goes on.
+
+### Which criteria get the bar
+The tool's result is the code-checked bar for every test-strength criterion, tagged or not. The
+verifier sets `test_strength: true` on each criterion it uses the tool for, and
+`ac verdict record` then applies the same gate and the same full-run binding as for `[mutation]`.
+The mark is sticky for the phase: it lives in `VERDICT.json`, a later verdict or a fresh clone cannot
+drop it, and mutation evidence on a criterion marks it even if the flag is forgotten. Old criteria
+need no edit. A pass is also refused when code changed since the last full run.
 
 ---
 
@@ -1216,6 +1260,8 @@ ac phase reject <n> --reason … [--agent name]  # UAT failed → rejected + a b
 ac phase surprise <n> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]  # execute records a run surprise
 ac phase context <n> [--author]  # discuss-gate status, or who captured it: human | agent <name> | none
 ac mutate <n> [--json]         # mutation-test the phase's changed lines (Stryker / Gremlins / mutmut)
+ac mutate <n> --survivors      # re-test only the open survivors (partial; not a recordable verdict)
+ac mutate judge <n> <id>... --equivalent "<why>" | --test-gap   # record a survivor judgement (SURVIVORS.json)
 ac mutate --check [<n>] [--json]  # which tool applies, is it installed, how to install it (read-only)
 ac mutate setup                # write a minimal tool config if absent (the only writer; installs nothing)
 ac mutate dismiss [<tool>]     # stop the full install suggestion for this project

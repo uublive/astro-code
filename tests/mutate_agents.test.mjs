@@ -27,9 +27,9 @@ test('the verifier instructions state the mutation workflow and its limits', () 
   const sec = v.slice(v.indexOf('## Test-strength checks'), v.indexOf('## Non-blocking findings'));
   assert.ok(sec.length > 200, 'section exists');
   for (const re of [
-    /`ac mutate <phase> --json`/, /Triage only the survivors/, /`test-gap`[^.]*\*\*fails the criterion\*\*/,
-    /one-line `justification`/, /Timeouts are killed/, /capped run is never all killed/, /`ac verdict record`/,
-    /AI mutants only for `tool-missing`, `no-tool` or `no-scope`/, /with the reason/,
+    /`ac mutate <phase> --json`/, /Judge only the open\s+survivors/, /`test-gap`[^.]*\*\*fails the criterion\*\*/,
+    /one-line justification/, /Timeouts are killed/, /capped run is never all killed/, /`ac verdict record`/,
+    /AI mutants only when `fallback\.ai_mutants` is true/, /with the reason/,
     /`mutation\.cap_seconds`/, /`mutation\.phases\.<n>\.cap_seconds`/,
   ]) assert.match(sec, re);
   assert.match(v, /`criteria\[\]\.mutation`/);
@@ -46,14 +46,72 @@ test('phase 48 D3: with a tool installed the verifier runs ac mutate for ANY cri
   const sec = v.slice(v.indexOf('## Test-strength checks'), v.indexOf('## Non-blocking findings'));
   assert.match(sec, /ANY other criterion where you would otherwise invent\s+mutants/);
   assert.match(sec, /Never invent mutants by hand while a tool is installed/);
-  assert.match(sec, /\*\*AI mutants only for `tool-missing`, `no-tool` or `no-scope`\*\*/);
   assert.match(sec, /`not-configured`[^]*\*\*fails\*\*[^]*`ac mutate setup`[^]*no mutants by hand/);
-  assert.match(sec, /supporting evidence with no code gate/);
-  assert.match(sec, /prompt-only by design/);
   for (const src of [v, read('astro-criteria-author.md')]) {
     assert.doesNotMatch(src, /Only those criteria/);
     assert.doesNotMatch(src, /never run this for a criterion without\s+the\s+tag/);
   }
   assert.doesNotMatch(read('astro-criteria-author.md'), /the tag is what makes the verifier run a mutation tool/);
-  assert.match(read('astro-criteria-author.md'), /hard pass bar in code/);
+});
+
+// ---- Phase 49 t13 (ADR-085, C11, C13): the tool's result is the bar for every test-strength criterion ----
+const COMMANDS = join(AGENTS, '..', 'commands');
+
+test('phase 49 C11: the verifier declares the mark, starts from recorded judgements, uses --survivors for fix rounds and reads flaky', () => {
+  const v = read('astro-verifier.md');
+  const sec = v.slice(v.indexOf('## Test-strength checks'), v.indexOf('## Non-blocking findings'));
+  assert.match(sec, /set\s+`"test_strength": true` in the verdict JSON/);
+  assert.match(sec, /tagged or not/);
+  assert.match(sec, /sticky for the phase/);
+  assert.match(sec, /Start from `triage`/);
+  assert.match(sec, /SURVIVORS\.json/);
+  assert.match(sec, /Judge only the open\s+survivors/);
+  assert.match(sec, /never re-judge the whole list/);
+  assert.match(sec, /`ac mutate judge <phase> <s:key\|g:group>\.\.\. --equivalent "<one line why>"`/);
+  assert.match(sec, /`ac mutate <phase> --survivors`/);
+  assert.match(sec, /a \*\*partial\*\* run/);
+  assert.match(sec, /record THAT/);
+  assert.match(sec, /Read `flaky`/);
+  assert.match(sec, /`unverified` makes the run incomplete/);
+  assert.match(v, /`criteria\[\]\.test_strength`/);
+  // the rules' home is named, never restated
+  assert.match(sec, /`lib\/verdict\.mjs`/);
+  assert.match(sec, /`lib\/survivors\.mjs`/);
+  assert.doesNotMatch(sec, /sha1|ordinal|line number/i, 'the key rule is not restated');
+});
+
+test('phase 49 C11: no instruction says only [mutation]-tagged criteria get the code bar', () => {
+  for (const f of ['agents/astro-verifier.md', 'agents/astro-criteria-author.md', 'commands/astro-verify.md', 'commands/astro-mutate.md']) {
+    const src = readFileSync(join(AGENTS, '..', f), 'utf8');
+    assert.doesNotMatch(src, /for \*\*`\[mutation\]`-tagged criteria only\*\*/, f);
+    assert.doesNotMatch(src, /gated in code only for a\s+`\[mutation\]`/, f);
+    assert.doesNotMatch(src, /supporting evidence with no code gate/, f);
+    assert.doesNotMatch(src, /prompt-only by design/, f);
+    assert.doesNotMatch(src, /tag is what puts a criterion behind the hard pass bar/, f);
+  }
+  const author = read('astro-criteria-author.md');
+  assert.match(author, /untagged test-strength criterion gets the same bar once the\s+verifier\s+marks it `test_strength`/);
+  assert.match(author, /Never tag a criterion that does not ask/);
+});
+
+test('phase 49 C13: /astro-verify prints fallback.report verbatim and has no fixed "(AI mutants stood in)"', () => {
+  const verify = readFileSync(join(COMMANDS, 'astro-verify.md'), 'utf8');
+  assert.match(verify, /`fallback\.report`, verbatim/);
+  assert.doesNotMatch(verify, /\(AI mutants stood in\)/);
+  assert.match(verify, /"test_strength": true/);
+});
+
+test('phase 49: /astro-mutate names judge and --survivors', () => {
+  const src = readFileSync(join(COMMANDS, 'astro-mutate.md'), 'utf8');
+  assert.match(src, /ac mutate <phase> --survivors/);
+  assert.match(src, /ac mutate judge/);
+  assert.match(src, /never a recordable verdict/);
+  assert.match(src, /at most 20 open groups/);
+});
+
+test('execute-phase: VERIFY_SCHEMA carries test_strength through to the verdict record', async () => {
+  const { readFileSync } = await import('node:fs');
+  const w = readFileSync(new URL('../workflows/execute-phase.mjs', import.meta.url), 'utf8');
+  assert.match(w, /test_strength: \{ type: 'boolean' \}/);
+  assert.match(w, /c\.test_strength === true \? \{ test_strength: true \}/);
 });
