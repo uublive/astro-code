@@ -90,6 +90,18 @@
       "cited_evidence": "295c457"
     },
     {
+      "id": "2026-10-23-ac-stats-double-counts-one-api-response",
+      "title": "ac stats double-counts one API response per transcript line and skips subagent transcripts (GitHub #152, #153)",
+      "status": "verified",
+      "opened_at": "2026-10-23T08:47:39.313Z"
+    },
+    {
+      "id": "2026-10-23-ac-status-suggests-discussing-a-phase",
+      "title": "ac status suggests discussing a phase from a later milestone ahead of one in the active milestone (GitHub #142)",
+      "status": "verified",
+      "opened_at": "2026-10-23T08:48:53.140Z"
+    },
+    {
       "id": "2026-10-23-canon-pull-silently-deletes-hand",
       "title": "canon pull silently deletes hand-written non-ADR prose from DECISIONS.md and reports plain success",
       "status": "accepted",
