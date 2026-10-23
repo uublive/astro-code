@@ -11,3 +11,7 @@
 - Left open. Candidate hardening if it recurs: register the brief parts through a script every
   version ships (astro-update.mjs with an arg), or have the SessionStart hook detect a registered
   script missing from the home and say "run ac update" instead of a MODULE_NOT_FOUND per part.
+
+# Closed through phase 50 (2026-10-23)
+
+`ac doctor` names this state exactly ("registered hook script missing: <path> → ac install"), per CONTEXT D1 check 7, verified as phase 50 C5. Matteo chose at the phase 50 discussion that the fix closes when the phase is accepted.

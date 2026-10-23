@@ -554,6 +554,11 @@ _2026-10-22 · at 8c4b061_
 
 **Why:** Untagged criteria (Waupaca phase 26) left the verifier to decide test strength alone, the loop that never closed; the verifier declaring and code holding it needs no edits to old criteria (phase 49, Matteo)
 
+## ADR-086 — ac install writes the additionalDirectories grant for the astro-code folder into each Claude config dir it targets (uninstall removes it) and records the config dirs it published into in ~/.astro/code/published.json, so ac doctor reports only real drift
+_2026-10-23 · at 2bdd61b_
+
+**Why:** A doctor that warns on every fresh install is noise, and stale links in dirs install no longer targets cannot be found without a record of where it published (phase 50 planning, Matteo)
+
 ## Not in force
 
 These decisions no longer apply — follow the decision each one names. They are listed so a citation still resolves; the full text is in DECISIONS.md.

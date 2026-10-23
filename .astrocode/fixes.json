@@ -52,8 +52,12 @@
     {
       "id": "2026-10-12-hook-registrations-can-point-at-scripts",
       "title": "Hook registrations can point at scripts the installed copy doesn't have: settings.json lists astro-principles.mjs 2/4..4/4 while ~/.astro/code is still 0.38.0, so every session start logs 3 'SessionStart:startup hook error' (MODULE_NOT_FOUND)",
-      "status": "open",
-      "opened_at": "2026-10-12T07:38:15.693Z"
+      "status": "accepted",
+      "opened_at": "2026-10-12T07:38:15.693Z",
+      "accepted_at": "2026-10-23T13:20:33.795Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude",
+      "cited_evidence": "phase 50 (ac doctor check: registered hook script missing), accepted 2026-10-23"
     },
     {
       "id": "2026-10-12-questions-put-to-the-user-discuss",

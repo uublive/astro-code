@@ -1,6 +1,6 @@
 {
   "name": "astro-mods",
-  "version": "0.50.2",
+  "version": "0.51.0",
   "description": "Optional, off-by-default enforcement of rules the astro-code canon already states. Reads its switches through `ac mods`; fails open.",
   "author": { "name": "astro-code" }
 }

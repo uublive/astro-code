@@ -160,7 +160,8 @@ import {
   setColor as fleetSetColor, status as fleetStatus,
 } from '../lib/fleet.mjs';
 import { reportOutcome } from '../hooks/_astro-fleet.mjs';
-import { configTargets } from '../lib/hosts/claude.mjs';
+import { configTargets, grantPath } from '../lib/hosts/claude.mjs';
+import { runDoctor, renderDoctor } from '../lib/doctor.mjs';
 import { briefSectionFeed } from '../lib/modfeed.mjs';
 import { FEATURES, MOD_FLOOR, readMods, modsStatus, enableMod, disableMod, claudeVersion, compareVersions, ensurePlugin, updatePlugin, removePlugin } from '../lib/mods.mjs';
 
@@ -205,6 +206,8 @@ const die = (msg) => {
 // read-only verb (`ac status --verbose`) stays harmless, so it stays permitted —
 // blanket enforcement would break existing invocations for no safety gain.
 const ALLOWED_FLAGS = {
+  // Phase 50 — read-only report; a typo'd flag must not silently print the human form.
+  doctor: ['json'],
   // ADR-053 (D1) — `--force` is the only way past a refused pull other than
   // publishing first (`ac canon push`); a typo'd flag must not silently degrade
   // into "took the registry's copy" (ADR-029).
@@ -650,6 +653,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac install | uninstall              (un)install commands + agents into ~/.claude
   ac update [clone-path]              git pull + refresh the global CLI and commands
   ac path [sub]                       print the framework dir, symlinks resolved (e.g. ac path workflows)
+  ac doctor [--json]                  is the install consistent? one ⚠ line per problem, ending with its fix; exit 1 on any
+  ac --version                        print astro-code's version
   ac help                             this help
   ac logo                             the astro-code mark (colour on a terminal or with FORCE_COLOR=1; NO_COLOR wins)
 
@@ -699,6 +704,13 @@ async function main() {
       // the full help leads with the mark — in colour on a real terminal (NO_COLOR respected)
       process.stdout.write(renderLogo({ lines: [TAGLINE], color: wantColor() }) + '\n\n' + HELP.replace(/^[^\n]*\n\n?/, ''));
       return;
+
+    case '--version':
+    case '-v': {
+      const v = (JSON.parse(readFileSync(join(FRAMEWORK_ROOT, 'package.json'), 'utf8')) || {}).version;
+      console.log(`astro-code ${v}`);
+      return;
+    }
 
     case 'logo':
       // the mark alone — /astro-help shows this (plain: its output is relayed by the model)
@@ -3583,6 +3595,20 @@ async function main() {
       let version = '?';
       try { version = (JSON.parse(readFileSync(join(clone, 'package.json'), 'utf8')) || {}).version || '?'; } catch { /* ignore */ }
       console.log(`✓ astro-code is now at v${version} — restart Claude Code if the command list doesn't refresh`);
+      // Phase 50 D4 — end with the doctor, failures only: nothing when clean. The update did
+      // succeed, so its exit code stays its own and the doctor can never fail it (P3).
+      try {
+        for (const l of renderDoctor(runDoctor({ astroHome: ASTRO_HOME, clone }), { failuresOnly: true })) console.log(l);
+      } catch { /* the doctor never fails an update */ }
+      return;
+    }
+
+    case 'doctor': {
+      checkFlags('doctor', flags);
+      const rows = runDoctor({ astroHome: ASTRO_HOME });
+      if (flags.json) json(rows);
+      else for (const l of renderDoctor(rows)) console.log(l);
+      process.exitCode = rows.some((r) => !r.ok) ? 1 : 0;
       return;
     }
 
@@ -3592,8 +3618,8 @@ async function main() {
       // `permissions.additionalDirectories` to grant, so a grant copied from here
       // silently failed. A sub-path that doesn't exist yet is joined onto the
       // resolved home instead.
-      let home = HOME_ROOT;
-      try { home = realpathSync(HOME_ROOT); } catch { /* not installed yet — print as-is */ }
+      // The same rule as the doctor's grant check (claude.grantPath).
+      const home = grantPath(HOME_ROOT);
       const target = pos[0] ? join(home, pos[0]) : home;
       let out = target;
       try { out = realpathSync(target); } catch { /* sub-path absent — keep the joined form */ }

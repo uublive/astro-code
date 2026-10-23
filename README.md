@@ -35,8 +35,9 @@ ac install           # publishes commands to every agent harness it finds
 
 Idempotent. `ac uninstall` reverses it, `/astro-update` keeps it current.
 
-One-time Claude Code permission so the workflows can run from `~/.astro/code`: add the
-output of `ac path` to `permissions.additionalDirectories` — see
+`ac install` also grants Claude Code the permission to run the workflows from `~/.astro/code`
+(the output of `ac path`, added to `permissions.additionalDirectories`), and `ac doctor` checks
+the install is consistent — see
 [`MANUAL.md`](./MANUAL.md#letting-claude-code-run-the-shipped-workflows).
 
 > **Windows:** use `astrocode install` — PowerShell's built-in `ac` alias shadows the CLI.
