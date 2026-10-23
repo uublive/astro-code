@@ -82,8 +82,12 @@
     {
       "id": "2026-10-23-ac-install-uses-symlinksync-with-no",
       "title": "ac install uses symlinkSync with no copy fallback, so a standard Windows user gets EPERM",
-      "status": "open",
-      "opened_at": "2026-10-23T05:06:30.809Z"
+      "status": "accepted",
+      "opened_at": "2026-10-23T05:06:30.809Z",
+      "accepted_at": "2026-10-23T08:21:53.605Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude",
+      "cited_evidence": "295c457"
     },
     {
       "id": "2026-10-23-canon-pull-silently-deletes-hand",

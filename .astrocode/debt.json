@@ -36,7 +36,7 @@
     {
       "id": "2026-09-17-ac-install-uses-symlinksync-with-no",
       "title": "ac install uses symlinkSync with no copy fallback, so a standard Windows user gets EPERM",
-      "status": "paying",
+      "status": "paid",
       "cost": "medium",
       "found_at": "2026-09-17T10:11:25.815Z",
       "why": "lib/install.mjs:81 symlinks unconditionally; on Windows symlinks need Developer Mode or an elevated shell, so a normal install fails. A copy fallback must keep REQ-008 reversibility — uninstall has to recognise copies too. Flagged 2026-06-12 by the first external install attempt; item 1 of that report (the PowerShell 'ac' alias) was fixed, this one never was.",
@@ -45,7 +45,8 @@
         "kind": "fix",
         "ref": "2026-10-23-ac-install-uses-symlinksync-with-no"
       },
-      "paying_since": "2026-10-23T05:06:33.841Z"
+      "paying_since": "2026-10-23T05:06:33.841Z",
+      "paid_at": "2026-10-23T08:21:56.243Z"
     },
     {
       "id": "2026-09-17-ac-phase-add-and-ac-phase-note-strip",
