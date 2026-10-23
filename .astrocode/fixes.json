@@ -64,14 +64,20 @@
     {
       "id": "2026-10-23-a-decisions-collision-refusal-prints-a",
       "title": "a decisions-collision refusal prints a malformed empty fix list: 'Fix: .'",
-      "status": "verified",
-      "opened_at": "2026-10-23T05:06:34.284Z"
+      "status": "accepted",
+      "opened_at": "2026-10-23T05:06:34.284Z",
+      "accepted_at": "2026-10-23T07:49:15.175Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude"
     },
     {
       "id": "2026-10-23-ac-backlog-list-says-oldest-first-but",
       "title": "ac backlog list says \"oldest first\" but sorts by id, so same-day captures list out of capture order",
-      "status": "verified",
-      "opened_at": "2026-10-23T05:06:42.351Z"
+      "status": "accepted",
+      "opened_at": "2026-10-23T05:06:42.351Z",
+      "accepted_at": "2026-10-23T07:49:23.477Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude"
     },
     {
       "id": "2026-10-23-ac-install-uses-symlinksync-with-no",
@@ -91,8 +97,11 @@
     {
       "id": "2026-10-23-the-statusline-hook-crashes-with-an",
       "title": "The statusline hook crashes with an unhandled EPIPE when its stdout reader closes early",
-      "status": "verified",
-      "opened_at": "2026-10-23T05:06:46.326Z"
+      "status": "accepted",
+      "opened_at": "2026-10-23T05:06:46.326Z",
+      "accepted_at": "2026-10-23T07:49:12.525Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude"
     }
   ]
 }
