@@ -4,6 +4,8 @@ Release notes in full live on the [GitHub releases page](https://github.com/uubl
 
 ## Unreleased
 
+## v0.50.1
+
 - The astro-mods plugin manifest now carries astro-code's version. It sat at 0.41.0, and Claude Code keys its plugin cache by that version, so `ac update` refreshed nothing: band and mod changes since v0.41 (the version in the band title, teammates' phase tags) never reached an installed plugin. A test keeps the two versions equal
 ## v0.50.0
 
