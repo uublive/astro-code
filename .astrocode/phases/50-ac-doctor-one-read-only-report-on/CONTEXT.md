@@ -54,7 +54,15 @@ cost (no banner check).
 
 ## Out
 - Any repair (`--fix`), session-start checks, project-health checks beyond registry drift.
-- New installer behaviour (doctor only reads).
+- Other new installer behaviour (doctor only reads) — except the two below.
+
+## Amendment after planning (Matteo, 2026-10-23)
+D5 — **`ac install` writes the `additionalDirectories` grant** for the astro-code folder into each
+Claude config dir it targets, and uninstall removes it — so a fresh install is clean and check 5
+flags real drift only (PLAN P1, task t3).
+D6 — **`ac install` records the config dirs it published into** in `~/.astro/code/published.json`,
+rewritten on every install, so check 4 can find stale links in dirs install no longer targets
+(PLAN P2, task t4).
 
 ## Open / for the planner
 - Where each host keeps commands/agents and which have hooks: read from lib/hosts/*.mjs (placement,
