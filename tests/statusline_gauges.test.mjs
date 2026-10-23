@@ -115,7 +115,7 @@ test('phaseBandDrawn: the switch on, the plugin in this profile, and dedupe not 
   assert.equal(phaseBandDrawn({ home: h, configDir }), false, 'unreadable config: keep everything');
 });
 
-test('renderSegmentParts with band drops milestone, track, state, verb and counts; keeps fix, blockers, debt', () => {
+test('renderSegmentParts with band drops version, milestone, track, state, verb and counts; keeps fix, blockers, debt', () => {
   const ctx = {
     version: '0.41.0', milestone: 27, phase: { number: 110, status: 'pending' },
     phases: [{ number: 110, status: 'pending' }, { number: 111, status: 'pending' }],
@@ -124,9 +124,10 @@ test('renderSegmentParts with band drops milestone, track, state, verb and count
   };
   const full = renderSegmentParts(ctx);
   assert.match(full.identity, /M27/);
+  assert.match(full.identity, /v0\.41\.0/);
   assert.match(full.state, /⚙ executing/);
   const lean = renderSegmentParts(ctx, { band: true });
-  assert.equal(lean.identity, '⊡ v0.41.0');
+  assert.equal(lean.identity, '⊡', 'the band title carries the version');
   assert.doesNotMatch(lean.state, /executing|pending|0▸|0✓/);
   assert.match(lean.state, /⚑ some-bug/);
   assert.match(lean.state, /⚠1/);

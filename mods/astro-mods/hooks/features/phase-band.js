@@ -314,7 +314,8 @@ export async function phaseBandRender($, e, next) {
   return h(Box, { flexDirection: 'column', marginTop: 1 }, titleRule(Text, view, width), ...rows, ...actions)
 }
 
-// `── ✦ astro-code ─────────── M27 ▰▰▱▱▱ 2/5 ──`, `width` cells wide: the band's banner
+// `── ✦ astro-code v0.50.0 ─────── M27 ▰▰▱▱▱ 2/5 ──`, `width` cells wide: the band's banner. The
+// version is here, so the statusline drops its own while the band draws (renderSegmentParts).
 function titleRule(Text, view, width) {
   const rule = { color: 'claude' }
   const tail = [
@@ -322,7 +323,8 @@ function titleRule(Text, view, width) {
     ...(view.meter ? [[` ${view.meter.bar}`, { color: 'success' }], [` ${view.meter.done}/${view.meter.total}`, { dimColor: true }]] : []),
     [' ──', rule],
   ]
-  const head = [['── ', rule], ['✦', { color: 'claude', bold: true }], [' astro-code ', { bold: true }]]
+  const head = [['── ', rule], ['✦', { color: 'claude', bold: true }], [' astro-code ', { bold: true }],
+    ...(view.version ? [[`v${view.version} `, { dimColor: true }]] : [])]
   const used = [...head, ...tail].reduce((n, [t]) => n + t.length, 0)
   const pieces = [...head, ['─'.repeat(Math.max(1, width - used)), rule], ...tail]
   return h(Text, { wrap: 'truncate' }, ...pieces.map(([t, props]) => h(Text, props, t)))

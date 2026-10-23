@@ -428,7 +428,8 @@ export function renderSegmentParts(ctx, { lookahead = 2, band = false } = {}) {
   // columns of redundancy on the most width-pressured line, funding the
   // always-visible rate-limit bars (D1/D8).
   const glyph = paint('⊡', col);
-  const hasVersion = Boolean(ctx.version);
+  // The band's title carries the version too (`✦ astro-code v0.50.0`), so a drawing band takes it.
+  const hasVersion = Boolean(ctx.version) && !band;
   const head = hasVersion ? `${glyph} ${paint(`v${ctx.version}`, ANSI.dim)}` : glyph;
 
   // `band`: the phase-band mod draws the milestone, every phase, the live run and the progress

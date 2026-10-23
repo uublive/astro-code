@@ -209,3 +209,9 @@ test('bandView: a teammate\'s phase chip carries their tag, e.g. ○84(a)', asyn
   const v = bandView({ ...STATUS, phases }, null, {});
   assert.match(v.lines[0], /○84\(a\)$/);
 });
+
+test('bandView: carries astro-code\'s version for the title', async () => {
+  const { bandView } = await band();
+  assert.equal(bandView({ ...STATUS, version: '0.50.0' }, null, {}).version, '0.50.0');
+  assert.equal(bandView(STATUS, null, {}).version, null);
+});
