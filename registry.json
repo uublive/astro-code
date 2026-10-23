@@ -753,6 +753,16 @@
       "branch": "develop",
       "claimed_at": "2026-10-23T08:47:19.509Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 52,
+      "milestone": 14,
+      "name": "Targeted verify: check only the criteria and suites a change can affect (GitHub #140)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-23T08:47:24.233Z",
+      "status": "active"
     }
   ]
 }
