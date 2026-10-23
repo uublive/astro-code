@@ -2970,6 +2970,15 @@ async function main() {
                 `re-add them via \`ac decision add\` so they reach the team (DECISIONS.md is never bulk-pushed).`,
             );
           }
+          // A local paragraph before the first ADR is replaced by the registry's preamble: named
+          // here and saved, never dropped silently (fix 2026-10-23-canon-pull-silently-deletes-hand).
+          if (res.discarded && res.discarded.length) {
+            const first = res.discarded[0].split('\n')[0];
+            console.error(
+              `⚠ removed ${res.discarded.length} paragraph(s) before the first ADR in DECISIONS.md (the registry's preamble wins): "${first.length > 80 ? `${first.slice(0, 79)}…` : first}"` +
+                (res.discardedFile ? ` — saved to ${relative(r, res.discardedFile)}` : ''),
+            );
+          }
           // ADR-053 (D5) — a genuine same-id collision refuses and names BOTH sides;
           // nothing is ever renumbered or moved.
           for (const c of res.collisions) {
