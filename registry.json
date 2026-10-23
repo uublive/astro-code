@@ -697,6 +697,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-23T05:06:35.367Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-10-23-canon-pull-silently-deletes-hand",
+      "name": "canon pull silently deletes hand-written non-ADR prose from DECISIONS.md and reports plain success",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-23T05:06:39.548Z",
+      "status": "active"
     }
   ]
 }
