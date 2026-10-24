@@ -124,6 +124,8 @@ import {
   appendConvention,
 } from '../lib/canon.mjs';
 import { inForceText } from '../lib/decisions.mjs';
+import { backfillAdr } from '../lib/adrbackfill.mjs';
+import { renumberDecision } from '../lib/adrrenumber.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate } from '../lib/verdict.mjs';
@@ -195,6 +197,27 @@ const die = (msg) => {
   process.exit(1);
 };
 
+// Every refusal `addDecision` can return, as one die — shared by `decision add` and `principles promote`.
+// ADR-053 (D4/D5) — a genuine collision refuses the add outright; nothing is renumbered. ADR-087 — in a
+// project with an ADR folder an unreachable registry or an ambiguous folder refuses too: a number guessed
+// locally is the collision this prevents.
+function dieOnRefusedAdd(res) {
+  if (res.ok !== false) return;
+  if (res.refused === 'registry-unreachable') die(res.error);
+  if (res.refused === 'adr-ambiguous') die(`${res.error}. Fix: ${res.fix}`);
+  if (res.refused === 'decision-collision') {
+    const lines = res.collisions.map((c) =>
+      c.kind === 'edited-published'
+        ? `${c.id} was edited locally after publishing — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
+          `Record a NEW decision that supersedes it instead of editing the published one.`
+        : `${c.id} collides — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
+          `Nothing was changed; record a new decision that supersedes one of them.`,
+    );
+    die(`refused — ${lines.join(' ')}`);
+  }
+}
+const adrLine = (adr) => `✓ wrote ${adr.file} (ADR folder ${adr.dir}, ${adr.source})`;
+
 // Unknown flags used to parse into `flags` and then be silently discarded, so a typo
 // — or an invented flag like `--dry-run` — degraded to the DEFAULT behavior with no
 // warning at all. For verbs that publish to the shared registry branch or close out a
@@ -222,6 +245,9 @@ const ALLOWED_FLAGS = {
   'canon push': ['dry-run'],
   'canon dedupe': [],
   'decision add': ['why', 'rejected'],
+  // ADR-087 — backfill is a dry run unless `--apply`; renumber writes unless `--dry-run`
+  'decision backfill': ['apply'],
+  'decision renumber': ['dry-run'],
   // #36/#35 — these revise a published decision on the shared branch; a typo must not
   // degrade into the wrong revision
   'decision supersede': ['by', 'reason'],
@@ -631,6 +657,9 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac canon [pull [--force] | push [--dry-run] | dedupe]  print canon; pull/push shares it on the
                                        orphan branch; dedupe collapses exact-duplicate decisions
   ac decision add "<t>" [--why …] [--rejected …]   append an ADR-lite decision (shared)
+  ac decision backfill [--apply]      one-time upgrade for a project with an ADR folder: claim existing numbers, relabel the
+                                       old log series to D-NNN (dry run unless --apply)
+  ac decision renumber <file|id> <N|next> [--dry-run]  move ONE decision to a fresh claimed number, rewriting its own branch's references
   ac decision list [--all]            decisions in force (stubs for retired ones); --all = the full log
   ac decision supersede <id> --by <id> [--reason …]  mark a decision replaced by another (kept for audit)
   ac decision retire <id> --reason …  mark a decision no longer in force (kept for audit)
@@ -1466,19 +1495,11 @@ async function main() {
           // Reuse `ac decision add`'s own refusal/⚠ reporting rather than a thinner copy —
           // see the `case 'decision'` block above for why each of these matters.
           const res = await addDecision(r, { title: target.statement, why: target.why || '' });
-          if (res.ok === false && res.refused === 'decision-collision') {
-            const lines = res.collisions.map((c) =>
-              c.kind === 'edited-published'
-                ? `${c.id} was edited locally after publishing — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
-                  `Record a NEW decision that supersedes it instead of editing the published one.`
-                : `${c.id} collides — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
-                  `Nothing was changed; record a new decision that supersedes one of them.`,
-            );
-            die(`refused — ${lines.join(' ')}`);
-          }
+          dieOnRefusedAdd(res);
           ref = res.id;
           const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
           console.log(`✓ promoted ${target.id} → ${res.id} ${tag}${res.existing ? ' · already recorded, nothing added' : ''}`);
+          if (res.adr) console.log(adrLine(res.adr));
           if (res.publishedConventions) console.log(`✓ published CONVENTIONS.md to ${res.branch}`);
           if (res.conventionsRefused) {
             const c = res.conventionsRefused;
@@ -2927,12 +2948,21 @@ async function main() {
         // #35 — the gate projects built by hand: is the committed mirror the registry's copy?
         checkFlags('canon check', flags);
         const res = canonCheck(r);
-        if (res.error) die(res.error);
-        if (!res.available) { console.log(`• no shared registry in use (${res.reason}) — nothing to compare`); return; }
-        if (res.ok) { console.log(`✓ local canon matches ${res.branch}`); return; }
+        // ADR-087 — one row per ADR finding, each with its fix; silent when the project is clean.
+        const adr = res.adr || [];
+        for (const f of adr) console.error(`✖ ${f.subject}: ${f.detail} → ${f.fix}`);
+        const adrTail = adr.length ? `${adr.length} ADR problem(s)` : '';
+        if (res.error) die(adr.length ? `${res.error} · ${adrTail}` : res.error);
+        if (!res.available) {
+          if (adr.length) die(adrTail);
+          console.log(`• no shared registry in use (${res.reason}) — nothing to compare`);
+          return;
+        }
+        if (res.ok && !adr.length) { console.log(`✓ local canon matches ${res.branch}`); return; }
+        if (res.ok) die(adrTail);
         for (const d of res.drift) console.error(`✖ ${d.id}: ${d.kind}`);
         if (res.conventions !== 'same') console.error(`✖ CONVENTIONS.md: ${res.conventions}`);
-        die(`local canon differs from ${res.branch} (${res.drift.length} decision(s)${res.conventions !== 'same' ? ', CONVENTIONS.md' : ''})`);
+        die(`local canon differs from ${res.branch} (${res.drift.length} decision(s)${res.conventions !== 'same' ? ', CONVENTIONS.md' : ''})${adrTail ? ` · ${adrTail}` : ''}`);
       }
       if (pos[0] === 'stats') {
         checkFlags('canon stats', flags);
@@ -3053,26 +3083,17 @@ async function main() {
           why: typeof flags.why === 'string' ? flags.why : '',
           rejected: typeof flags.rejected === 'string' ? flags.rejected : '',
         });
-        // ADR-053 (D4/D5) — a genuine collision (an independent decision, or an edit to
-        // an already-published one) refuses the add outright; nothing is renumbered.
-        if (res.ok === false && res.refused === 'decision-collision') {
-          const lines = res.collisions.map((c) =>
-            c.kind === 'edited-published'
-              ? `${c.id} was edited locally after publishing — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
-                `Record a NEW decision that supersedes it instead of editing the published one.`
-              : `${c.id} collides — local: "${c.localTitle}", registry: "${c.remoteTitle}". ` +
-                `Nothing was changed; record a new decision that supersedes one of them.`,
-          );
-          die(`refused — ${lines.join(' ')}`);
-        }
+        dieOnRefusedAdd(res);
         const tag = res.source === 'remote' ? `[shared: ${res.branch}]` : '[local]';
         // #77 — the identical decision is already in force: nothing is added, and the
         // existing id is what a retry (or a caller citing the decision) needs.
         if (res.existing) {
           console.log(`• already recorded as ${res.id} — ${res.title} ${tag} · in force, nothing added`);
+          if (res.adr) console.log(adrLine(res.adr));
           return;
         }
         console.log(`✓ ${res.id} — ${res.title} (${res.date}) ${tag}`);
+        if (res.adr) console.log(adrLine(res.adr));
         if (res.publishedConventions) console.log(`✓ published CONVENTIONS.md to ${res.branch}`);
         // ADR-053 (D3) — the implicit publish REFUSED because it would have overwritten a
         // teammate's newer published copy. Loud on stderr: the decision still landed, so a
@@ -3106,7 +3127,7 @@ async function main() {
       } else if (pos[0] === 'supersede' || pos[0] === 'retire' || pos[0] === 'amend') {
         const sub = pos[0];
         const id = String(pos[1] || '').toUpperCase();
-        if (!/^ADR-\d+$/.test(id)) die(`usage: ac decision ${sub} <ADR-NNN> …  (see \`ac help decision\`)`);
+        if (!/^(?:ADR|D)-\d+$/.test(id)) die(`usage: ac decision ${sub} <ADR-NNN|D-NNN> …  (see \`ac help decision\`)`);
         checkFlags(`decision ${sub}`, flags);
         const str = (k) => (typeof flags[k] === 'string' ? flags[k] : undefined);
         let res;
@@ -3125,8 +3146,38 @@ async function main() {
         const what = sub === 'supersede' ? `superseded by ${String(str('by')).toUpperCase()}` : sub === 'retire' ? 'retired' : 'amended';
         console.log(`✓ ${id} ${what} ${where}`);
         if (sub !== 'amend') console.log('  agents now see it as a one-line stub — its full text stays in DECISIONS.md');
+      } else if (pos[0] === 'backfill') {
+        checkFlags('decision backfill', flags);
+        const res = backfillAdr(r, { apply: flags.apply === true });
+        if (res.refused) die(res.fix ? `${res.error}. Fix: ${res.fix}` : res.error);
+        if (!res.active) { console.log('• no ADR folder in this project — nothing to backfill'); return; }
+        if (res.already) { console.log(`• already backfilled ${res.already} — nothing changed`); return; }
+        const map = Object.entries(res.relabel);
+        const shown = map.slice(0, 8).map(([from, to]) => `${from}→${to}`).join(', ');
+        const refs = res.rewrites.reduce((n, x) => n + x.count, 0);
+        console.log(
+          `${res.applied ? '✓ claimed' : '• would claim'} ${res.claims.length} existing number(s), ` +
+            `relabel ${map.length} log entr(ies)${map.length ? ` (${shown}${map.length > 8 ? `, +${map.length - 8} more` : ''})` : ''}, ` +
+            `rewrite ${refs} reference line(s) in ${res.rewrites.length} file(s)` +
+            (res.applied ? '' : ' — run again with --apply'),
+        );
+        for (const w of res.rewrites) console.log(`  ${res.applied ? 'rewrote' : 'rewrite'} ${w.file} (${w.count} line(s))`);
+        for (const a of res.ambiguous) console.log(`⚠ ${a.file}:${a.line} — a log id that is also a folder number; check by hand`);
+        for (const f of res.findings) console.log(`✖ ${f.subject}: ${f.detail} → ${f.fix}`);
+      } else if (pos[0] === 'renumber') {
+        checkFlags('decision renumber', flags);
+        if (!pos[1] || !pos[2]) die('usage: ac decision renumber <file|id> <N|next> [--dry-run]');
+        const res = await renumberDecision(r, pos[1], pos[2], { dryRun: flags['dry-run'] === true });
+        if (!res.ok) die(res.error);
+        for (const c of res.changed) console.log(`${res.dryRun ? '•' : '✓'} ${res.dryRun ? 'would change' : 'changed'} ${c}`);
+        for (const u of res.unattributed) console.log(`⚠ ${u.file}:${u.line} cites ${res.fromId} — not added by this decision's branch, left unchanged`);
+        console.log(
+          `• ${res.fromId} → ${res.toId}: ${res.changed.length} file(s) ${res.dryRun ? 'would change' : 'changed'}, ` +
+            `${res.unattributed.length} left for you, ${res.otherSide} other-side citation(s) left alone` +
+            (res.dryRun ? ' (dry run — nothing written)' : ''),
+        );
       } else {
-        die('usage: ac decision <add|list|supersede|retire|amend>');
+        die('usage: ac decision <add|list|supersede|retire|amend|backfill|renumber>');
       }
       return;
     }
