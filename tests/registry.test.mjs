@@ -395,3 +395,96 @@ test('a fix records locally when the registry is unreachable (ADR-013 offline pa
   assert.equal(res.source, 'local', 'offline is NOT an error for a fix — the push detects collisions');
   assert.deepEqual(res.matches, []);
 });
+
+// ── Phase 53 (ADR-087): the ADR-folder collision this phase removes, reproduced for real ──
+//
+// Astrobot's report: agents on separate branches each took "highest + 1" in docs/adr and collided.
+// Two working copies, each on its OWN feature branch off a shared default branch that carries
+// docs/adr/0001…0010, add a decision at the same moment through the real CLI. Test-after: it
+// extends this contract suite over the finished claim.
+import { spawn } from 'node:child_process';
+import { readdirSync, existsSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const AC_BIN = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ac.mjs');
+const runAc = (args, cwd) =>
+  new Promise((resolve) => {
+    const child = spawn(process.execPath, [AC_BIN, ...args], { cwd });
+    let out = '';
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (out += d));
+    child.on('close', (code) => resolve({ code, out }));
+  });
+
+test('two working copies on separate branches add concurrently and never collide on an ADR number', async () => {
+  const bare = mkBareRemote();
+  const seed = mkWorkdir(bare, 'alice');
+  git(['checkout', '--quiet', '-b', 'main'], { cwd: seed });
+  mkdirSync(join(seed, 'docs/adr'), { recursive: true });
+  for (let i = 1; i <= 10; i++) {
+    const n = String(i).padStart(4, '0');
+    writeFileSync(join(seed, 'docs/adr', `${n}-old-${i}.md`), `# ADR-${n} — old ${i}\n`);
+  }
+  git(['add', '-A'], { cwd: seed });
+  git(['commit', '--quiet', '-m', 'base'], { cwd: seed });
+  assert.equal(git(['push', '--quiet', 'origin', 'main'], { cwd: seed }).status, 0);
+  assert.equal(initRegistry({ root: seed }).ok, true);
+
+  const bob = mkdtempSync(join(tmpdir(), 'ac-work-bob-'));
+  assert.equal(git(['clone', '--quiet', '-b', 'main', bare, bob]).status, 0);
+  git(['config', 'user.email', 'bob@example.com'], { cwd: bob });
+  git(['config', 'user.name', 'bob'], { cwd: bob });
+  git(['checkout', '--quiet', '-b', 'feature/alice'], { cwd: seed });
+  git(['checkout', '--quiet', '-b', 'feature/bob'], { cwd: bob });
+
+  const [a, b] = await Promise.all([
+    runAc(['decision', 'add', 'Alice choice', '--why', 'a'], seed),
+    runAc(['decision', 'add', 'Bob choice', '--why', 'b'], bob),
+  ]);
+  assert.equal(a.code, 0, a.out);
+  assert.equal(b.code, 0, b.out);
+
+  const added = (w) => readdirSync(join(w, 'docs/adr')).filter((f) => !/-old-\d+\.md$/.test(f));
+  const headings = (w) => [...readFileSync(paths(w).decisions, 'utf8').matchAll(/^## ADR-(\d+) — (.*)$/gm)];
+  const na = added(seed);
+  const nb = added(bob);
+  assert.equal(na.length, 1);
+  assert.equal(nb.length, 1);
+  const numA = Number(na[0].slice(0, 4));
+  const numB = Number(nb[0].slice(0, 4));
+  assert.ok(numA > 10 && numB > 10, 'both are above 0010');
+  assert.notEqual(numA, numB);
+  assert.equal(headings(seed).filter((h) => h[2] === 'Alice choice').length, 1);
+  assert.equal(headings(seed).find((h) => h[2] === 'Alice choice')[1], String(numA).padStart(4, '0'));
+  assert.equal(headings(bob).find((h) => h[2] === 'Bob choice')[1], String(numB).padStart(4, '0'));
+
+  // the registry lists both claims
+  git(['fetch', '--quiet', 'origin', 'astro-registry'], { cwd: seed });
+  const claims = JSON.parse(git(['show', 'FETCH_HEAD:adr-claims.json'], { cwd: seed }).stdout);
+  assert.deepEqual(claims.claims.map((c) => c.number).sort((x, y) => x - y), [numA, numB].sort((x, y) => x - y));
+
+  // merging both branches into the default branch leaves no number with two decisions in either store
+  for (const [w, br] of [[seed, 'feature/alice'], [bob, 'feature/bob']]) {
+    git(['add', '-A'], { cwd: w });
+    git(['commit', '--quiet', '-m', `add ${br}`], { cwd: w });
+    const pushed = git(['push', '--quiet', 'origin', br], { cwd: w });
+    assert.equal(pushed.status, 0, pushed.stderr);
+  }
+  const merged = mkdtempSync(join(tmpdir(), 'ac-work-merge-'));
+  git(['clone', '--quiet', '-b', 'main', bare, merged]);
+  git(['config', 'user.email', 'm@example.com'], { cwd: merged });
+  git(['config', 'user.name', 'm'], { cwd: merged });
+  writeFileSync(join(merged, '.git/info/attributes'), '.astrocode/DECISIONS.md merge=union\n.astrocode/DECISIONS.in-force.md merge=union\n');
+  for (const br of ['feature/alice', 'feature/bob']) {
+    // both branches append to DECISIONS.md, so a textual union is the merge a human would make
+    const m = git(['merge', '--quiet', '--no-edit', `origin/${br}`], { cwd: merged });
+    assert.equal(m.status, 0, m.stdout + m.stderr);
+  }
+  const files = readdirSync(join(merged, 'docs/adr')).filter((f) => /^\d{4}-/.test(f));
+  const nums = files.map((f) => f.slice(0, 4));
+  assert.equal(new Set(nums).size, nums.length, 'no file number is used twice');
+  const hs = headings(merged).map((h) => h[1]);
+  assert.equal(new Set(hs).size, hs.length, 'no DECISIONS heading number is used twice');
+  assert.ok(existsSync(join(merged, 'docs/adr', na[0])) && existsSync(join(merged, 'docs/adr', nb[0])));
+});
