@@ -123,7 +123,7 @@ test('every changed file is listed', async () => {
   for (const f of dirty) {
     // a renamed file shows as its old and new path
     const plain = f.includes(' -> ') ? f.split(' -> ') : [f];
-    for (const x of plain) assert.ok(listed.includes(x) || x === '.astrocode/DECISIONS.in-force.md', `${x} changed but is not listed: ${JSON.stringify(r.changed)}`);
+    for (const x of plain) assert.ok(listed.includes(x), `${x} changed but is not listed: ${JSON.stringify(r.changed)}`);
   }
   assert.ok(r.changed.includes('docs/adr/0042-bob-thing.md → docs/adr/0043-bob-thing.md'));
   assert.ok(r.changed.includes('docs/bob.md'));
