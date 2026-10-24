@@ -559,6 +559,11 @@ _2026-10-23 · at 2bdd61b_
 
 **Why:** A doctor that warns on every fresh install is noise, and stale links in dirs install no longer targets cannot be found without a record of where it published (phase 50 planning, Matteo)
 
+## ADR-087 — In a project with an ADR folder, ADR numbers form one registry-claimed series across DECISIONS.md and the folder: ac decision add claims the number and writes both; canon-guard refuses unclaimed numbers, ac doctor and canon check report them, and the old decision-log series is relabelled D-NNN once
+_2026-10-24 · at 0fd3f92_
+
+**Why:** Agents picking max+1 on their own branch collided five times in three days in Astrobot, and two overlapping series made ADR-103 ambiguous (phase 53, Matteo)
+
 ## Not in force
 
 These decisions no longer apply — follow the decision each one names. They are listed so a citation still resolves; the full text is in DECISIONS.md.
