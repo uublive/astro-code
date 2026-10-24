@@ -1,0 +1,1 @@
+{"at":"2026-10-24T06:59:41.325Z","phase":"53-registry-claimed-adr-numbers-for-a","signals":["remediation"],"note":"renumber's changed-file list missed the generated DECISIONS.in-force.md; verifier sandbox mods probes still reach the real CLAUDE_CONFIG_DIR"}
