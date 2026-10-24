@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 14,
-  "active_phase": "53-registry-claimed-adr-numbers-for-a",
+  "active_phase": null,
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-10-24T06:59:31.264Z",
+  "updated_at": "2026-10-24T07:49:18.979Z",
   "activity": null
 }

@@ -31,8 +31,12 @@
       "number": 53,
       "name": "Registry-claimed ADR numbers for a project's own ADR store (docs/adr), with a guard and a backfill",
       "slug": "53-registry-claimed-adr-numbers-for-a",
-      "status": "verified",
-      "milestone": 14
+      "status": "complete",
+      "milestone": 14,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-10-24T07:49:18.973Z",
+      "accepted_evidence": "composer"
     }
   ]
 }
