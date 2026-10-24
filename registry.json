@@ -781,6 +781,16 @@
       "branch": "develop",
       "claimed_at": "2026-10-23T08:48:54.271Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 53,
+      "milestone": 14,
+      "name": "Registry-claimed ADR numbers for a project's own ADR store (docs/adr), with a guard and a backfill",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-24T05:05:16.305Z",
+      "status": "active"
     }
   ]
 }
