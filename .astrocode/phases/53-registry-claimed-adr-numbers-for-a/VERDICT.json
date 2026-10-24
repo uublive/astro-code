@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "run": 2,
+  "mode": "full",
+  "broad": false,
+  "commit": "bfb92f50d80536e6731c2c0def3f0211e3ff4b12",
+  "criteria_sha": "sha256:512d721a77e74ee05f2397be6668c95eecafe6d113d87fb2a1503c86590c68f5",
+  "at": "2026-10-24T06:58:55.221Z",
+  "criteria": [
+    {
+      "id": "C1",
+      "status": "passed"
+    },
+    {
+      "id": "C2",
+      "status": "passed"
+    },
+    {
+      "id": "C3",
+      "status": "passed"
+    },
+    {
+      "id": "C4",
+      "status": "passed"
+    },
+    {
+      "id": "C5",
+      "status": "passed"
+    },
+    {
+      "id": "C6",
+      "status": "passed"
+    },
+    {
+      "id": "C7",
+      "status": "passed"
+    },
+    {
+      "id": "C8",
+      "status": "passed"
+    },
+    {
+      "id": "C9",
+      "status": "passed"
+    }
+  ]
+}

@@ -31,6 +31,7 @@ Constraints:
   (dynamic-import pattern) — do NOT implement the missing export; that is the impl
   task's job (ADR-018; static import of a missing symbol crashes the whole test file
   at module load, the phase-04 t5 trap).
+- To record a decision, run `ac decision add "<title>" --why …` (it claims the ADR number — see the AGENTS.md rule); never pick a number or write an ADR file yourself.
 - If you are blocked (ambiguous spec, missing dependency), stop and report the
   blocker clearly rather than guessing.
 

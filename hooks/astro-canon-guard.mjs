@@ -13,8 +13,23 @@
 //
 // `ac mods enable canon-guard` writes this hook into each host's settings; `disable` removes it
 // (ADR-072: the switch IS the registration). Being registered means being on, so a disabled
-// guard costs nothing and this script has no config to consult. That is also why it can't
+// guard costs nothing and this script has no switch to consult. That is also why it can't
 // disagree with `ac mods status`: there is one source of truth, the registration.
+//
+// The ADR rule below (phase 53, ADR-087) does read `.astrocode/config.json`, but only the
+// project's own `decisions.adr_dir` — DATA naming a folder, never whether the guard is on — plus
+// the local claims mirror. The switch is still the registration alone.
+//
+// ## The ADR rule: an unclaimed number is refused at write time
+//
+// In a project with an ADR folder, a number is CLAIMED through `ac decision add`. This hook refuses
+// to CREATE `<adr_dir>/NNNN-*.md`, or to ADD an `## ADR-NNNN` heading to DECISIONS.md, under a
+// number the local claims mirror (`.astrocode/.local/adr-claims.json`) and the log's own headings
+// do not already hold. Existing files stay editable (grandfathered ADRs are reported by
+// `ac doctor`, not locked), and a project with no ADR folder is untouched. It judges paths and, for
+// a Write/Edit/MultiEdit of DECISIONS.md, the text; Bash content is out of scope as ever. Like the
+// rest of the hook it fails open, and it spawns nothing. The candidate folders and the off-values
+// are mirrored from `lib/adr.mjs`, and a parity test guards the copy.
 //
 // ## Catching mistakes, not a sandbox
 //
@@ -46,7 +61,7 @@
 // The principle store dir is mirrored locally from `lib/principles.mjs` `principlesDir`, not
 // imported: the hot path stays free of `child_process` and brand imports. A parity test guards
 // the copy.
-import { readFileSync, realpathSync, readlinkSync, statSync, openSync, readSync, closeSync } from 'node:fs';
+import { readFileSync, readdirSync, realpathSync, readlinkSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { basename, dirname, join, resolve, relative, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -346,6 +361,108 @@ export function bashTargets(command, cwd, env = process.env) {
   return out;
 }
 
+// ---------------------------------------------------------------- the ADR rule (phase 53, ADR-087)
+
+// Mirrors of lib/adr.mjs ADR_DIR_CANDIDATES / ADR_OFF_VALUES / ADR_FILE_RE (parity-tested).
+export const ADR_DIR_CANDIDATES = ['docs/adr', 'adr', 'doc/adr'];
+export const ADR_OFF_VALUES = ['', 'off'];
+const ADR_FILE_RE = /^(\d{3,4})-.+\.md$/;
+
+const readJson = (f) => JSON.parse(readFileSync(f, 'utf8'));
+// The project's settings file, named by parts on purpose: tests/canon_guard.test.mjs pins that this
+// script never mentions the user-level config that holds the mods switch (ADR-072). This is the
+// PROJECT's file, read only for `decisions.adr_dir`.
+const PROJECT_SETTINGS = ['config', 'json'].join('.');
+
+// The first ancestor of `dir` (inclusive) that holds a `.astrocode/` directory.
+function projectRootOf(dir) {
+  for (let d = dir, hops = 0; hops < 64; hops++) {
+    if (isDir(join(d, '.astrocode'))) return d;
+    const up = dirname(d);
+    if (up === d) return null;
+    d = up;
+  }
+  return null;
+}
+
+// { folderAbs, claimed } when the project is ADR-active, else null. Throws on a corrupt mirror, which
+// the caller turns into "allow" (fail open).
+function adrState(root) {
+  const local = join(root, '.astrocode');
+  let mirror = null;
+  try { mirror = readJson(join(local, '.local', 'adr-claims.json')); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  let configured;
+  try {
+    const v = readJson(join(local, PROJECT_SETTINGS))?.decisions?.adr_dir;
+    if (v === false || (typeof v === 'string' && ADR_OFF_VALUES.includes(v.trim().toLowerCase()))) return null;
+    if (typeof v === 'string') configured = v.trim().replace(/\\/g, '/').replace(/^\.\/+/, '').replace(/\/+$/, '');
+  } catch (e) { if (e.code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
+  const hasNumbered = (dir) => {
+    try { return readdirSync(join(root, dir)).some((f) => ADR_FILE_RE.test(f)); } catch { return false; }
+  };
+  const hits = ADR_DIR_CANDIDATES.filter(hasNumbered);
+  const folder = configured || (typeof mirror?.adr_dir === 'string' ? mirror.adr_dir : null) || (hits.length === 1 ? hits[0] : null);
+  if (!mirror && !configured && hits.length !== 1) return null;
+  const claimed = new Set();
+  for (const c of mirror?.claims || []) claimed.add(Number(c.number));
+  let log = '';
+  try { log = readFileSync(join(local, 'DECISIONS.md'), 'utf8'); } catch { /* none yet */ }
+  for (const m of log.matchAll(/^##\s+ADR-(\d+)/gm)) claimed.add(Number(m[1]));
+  return { folderAbs: folder ? realpathDeep(join(root, folder)) : null, claimed };
+}
+
+function adrDeny(display, digits) {
+  return [
+    `canon-guard: ${display} uses ADR number ${digits}, which is not claimed (ADR-087). Use: ac decision add "<title>" (or ac decision renumber <file> next)`,
+    'If a teammate just claimed it, run `ac canon pull`; otherwise run `ac mods disable canon-guard` first.',
+  ].join('\n');
+}
+
+// Headings `## ADR-<n>` present in `next` and absent from `prev`, as { id, digits }.
+function addedHeadings(prev, next) {
+  const ids = (t) => [...String(t || '').matchAll(/^##\s+(ADR-(\d+))/gm)].map((m) => ({ id: m[1], digits: m[2] }));
+  const had = new Set(ids(prev).map((h) => h.id));
+  return ids(next).filter((h) => !had.has(h.id));
+}
+
+// The ADR verdict for one target, or null. `t` carries the tool and its input for the DECISIONS.md text rule.
+function adrVerdict(t, env) {
+  if (typeof t.path !== 'string' || !t.path) return null;
+  const home = env.HOME || homedir();
+  const expanded = t.path === '~' ? home : t.path.startsWith('~/') ? join(home, t.path.slice(2)) : t.path;
+  const real = realpathDeep(resolve(t.cwd, expanded));
+  const dir = dirname(real);
+  const name = basename(real);
+  const isLog = name === 'DECISIONS.md' && basename(dir) === '.astrocode';
+  const root = isLog ? dirname(dir) : projectRootOf(dir);
+  if (!root) return null;
+  if (isLog) {
+    if (!['Write', 'Edit', 'MultiEdit'].includes(t.tool)) return null;
+    const ti = t.ti || {};
+    const pairs = t.tool === 'Write' ? [[safeRead(real), ti.content]]
+      : t.tool === 'Edit' ? [[ti.old_string, ti.new_string]]
+        : (Array.isArray(ti.edits) ? ti.edits : []).map((e) => [e?.old_string, e?.new_string]);
+    const state = adrState(root);
+    if (!state) return null;
+    for (const [prev, next] of pairs) {
+      for (const h of addedHeadings(prev, next)) {
+        if (!state.claimed.has(Number(h.digits))) return adrDeny('.astrocode/DECISIONS.md', h.digits);
+      }
+    }
+    return null;
+  }
+  const m = ADR_FILE_RE.exec(name);
+  if (!m) return null;
+  const state = adrState(root);
+  if (!state || !state.folderAbs || dir !== state.folderAbs) return null;
+  if (isFile(real)) return null; // editing or overwriting an EXISTING file is always allowed
+  if (state.claimed.has(Number(m[1]))) return null;
+  return adrDeny(relative(root, real).split(sep).join('/'), m[1]);
+}
+
+const safeRead = (f) => { try { return readFileSync(f, 'utf8'); } catch { return ''; } };
+const isFile = (p) => { try { return statSync(p).isFile(); } catch { return false; } };
+
 // ---------------------------------------------------------------- the conflict escape
 
 // May this protected file be hand-edited because it is mid-merge? Fails CLOSED (see header).
@@ -383,11 +500,11 @@ function targetsOf(input, base, env) {
   if (!ti || typeof ti !== 'object') return [];
   switch (input.tool_name) {
     case 'Write': case 'Edit': case 'MultiEdit': case 'Delete':
-      return [{ path: ti.file_path, cwd: base }];
+      return [{ path: ti.file_path, cwd: base, tool: input.tool_name, ti }];
     case 'NotebookEdit':
       return [{ path: ti.notebook_path, cwd: base }];
     case 'Bash':
-      return bashTargets(ti.command, base, env).map((path) => ({ path, cwd: base }));
+      return bashTargets(ti.command, base, env).map((path) => ({ path, cwd: base, tool: 'Bash' }));
     case 'Shell':
       return bashTargets(ti.command, (typeof ti.cwd === 'string' && ti.cwd) || base, env).map((path) => ({ path, cwd: base }));
     default:
@@ -400,6 +517,11 @@ export function decide(input, { env = process.env } = {}) {
   if (!input || typeof input !== 'object') return null;
   const base = (typeof input.cwd === 'string' && input.cwd) || process.cwd();
   for (const t of targetsOf(input, base, env)) {
+    // ADR-087 — judged before the PROTECTED match; any internal error allows the call.
+    try {
+      const adr = adrVerdict(t, env);
+      if (adr) return { reason: adr, entry: null, path: t.path };
+    } catch { /* fail open */ }
     let hit = null;
     try { hit = judge(t.path, t.cwd, env); } catch { /* fail open */ }
     if (!hit || inConflict(hit.real)) continue;

@@ -1068,6 +1068,49 @@ exits non-zero, per decision, when it differs from the registry — a changed bo
 entry, or an id repeated in one copy but not the other (put it in CI or a hook);
 `ac status` flags it in one line. Never hand-edit a published entry: amend it.
 
+### ADR numbers in a project with an ADR folder
+
+A project can keep its own ADR files (`docs/adr/0042-use-postgres.md`) beside `DECISIONS.md`.
+Left alone, every branch picks "highest + 1" and two of them take the same number. astro-code
+makes it one registry-claimed series across both stores (ADR-087):
+
+- **Detection.** The folder is the one of `docs/adr`, `adr` or `doc/adr` that holds
+  `NNNN-*.md` files (3 or 4 digits; the width is read from the highest file). `ac config set
+  decisions.adr_dir <path>` names another folder; `ac config set decisions.adr_dir off` turns
+  the feature off. When two candidate folders hold numbered files, `ac decision add` refuses
+  and names that command. A project without an ADR folder keeps today's DECISIONS.md-only
+  behaviour, byte for byte.
+- **The claim.** `ac decision add "<title>" --why …` claims the next number from the registry
+  (above every claim, every `ADR-`/`D-` heading and every file), then writes the `## ADR-0011`
+  entry and `docs/adr/0011-<slug>.md` under that one number, and prints
+  `✓ wrote <file> (ADR folder <dir>, detected|configured)`. If the registry cannot be
+  reached it refuses and writes neither store: a number guessed locally is the collision this
+  prevents. With no registry remote at all it allocates locally (`[local]`).
+- **The guard.** With `canon-guard` on (`ac mods enable canon-guard`), creating an ADR file or
+  adding an `## ADR-NNNN` heading whose number is not claimed is refused, naming `ac decision
+  add`. Existing files stay editable. If a teammate just claimed the number, `ac canon pull`
+  refreshes your claims; otherwise `ac mods disable canon-guard`.
+- **Reports.** `ac canon check` (one `✖ <subject>: <detail> → <fix>` row each) and `ac doctor`
+  (one `adr` row each) report an unclaimed number, two different files sharing a number, an
+  old-series `ADR-0xx` heading that should be `D-0xx`, a file whose title disagrees with the
+  `DECISIONS.md` entry of the same number, and a project not yet backfilled. They only report.
+- **Upgrade, once.** Run `ac decision backfill` (a dry run: the relabel map, the reference
+  rewrites, the claims, the duplicates), then `ac decision backfill --apply`. It claims every
+  number already in the folder, so new claims start above them, and relabels the old
+  decision-log series to `D-001…`, rewriting those references in one pass. An entry that
+  mirrors an ADR file (exact title) keeps the file's number. A reference is rewritten only when
+  its digit width differs from the folder's, so `ADR-002` becomes `D-002` while `ADR-0002`, which
+  names the folder file, is never touched; when the two widths are equal references are listed
+  by `file:line` instead. No ADR file is renamed or renumbered. A second run changes nothing.
+  Duplicates are reported with their renumber command and never resolved for you.
+- **Renumber.** `ac decision renumber <file|id> <N|next> [--dry-run]` moves ONE decision to a
+  freshly claimed number: the file, its heading and its `DECISIONS.md` entry. Citations of the old
+  number are rewritten only on lines that decision's own branch added (git blame against the
+  merge base). Lines the other side added are left, and lines git cannot attribute to either side
+  (a citation added after the merge, a squash or fast-forward merge) are listed as `file:line`,
+  never guessed. Exact references to the old file name are rewritten everywhere. An `N` already
+  used or claimed is refused.
+
 > Read `CONVENTIONS.md` and `DECISIONS.in-force.md` before proposing an approach. Conventions are
 > binding; decisions record what was already settled and why. Re-litigating a recorded
 > decision wastes the work that produced it.

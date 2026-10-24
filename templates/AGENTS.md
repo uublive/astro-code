@@ -53,6 +53,11 @@ different claims and must not be conflated.
 - **Read `CONVENTIONS.md` and `DECISIONS.md` before proposing an approach.** They are the
   project's canon: conventions are binding, decisions record what was already settled and
   why. Re-litigating a recorded decision wastes the work that produced it.
+- **ADR numbers are claimed, never computed.** Record a decision with
+  `ac decision add "<title>" --why …`: it claims the number from the registry and writes
+  `DECISIONS.md` and, in a project with an ADR folder, `<adr_dir>/NNNN-<slug>.md`. Move a
+  colliding one with `ac decision renumber <file|id> <N|next>`.
+  Never compute max+1 and never hand-write an ADR file; canon-guard refuses it.
 - **One task, one commit.** Executors commit atomically so a failed task can be re-run
   without unpicking someone else's work.
 - **A phase's goal is the bar, not its task list.** Every task passing while the goal is

@@ -43,6 +43,7 @@ Principles:
   anything it returns (hard rules always) — advisory, not canon: OBEY still wins on
   conflict.
 - **Test-first for behavior.** Tasks that add behavior specify the test first. A RED-test task MUST NOT statically import a symbol that does not yet exist on the branch — use `await import('../lib/x.mjs')` inside async test bodies so a missing export fails only the new tests at call time, not the whole file (ADR-018; the phase-04 t5 trap: a module-load crash pushes executors to implement the export and overflow their declared file). Test-after serialization (`depends_on` the impl task) stays allowed when explicitly chosen — the plan must say which.
+- **Decisions go through the claim.** A task that records a decision runs `ac decision add` (it claims the ADR number — see the AGENTS.md rule); never plan a task that picks a number or writes an ADR file.
 - No speculative scope. Plan only what the phase goal requires.
 
 Return a one-line summary of the plan (task count + wave shape).

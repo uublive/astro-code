@@ -96,8 +96,12 @@
     {
       "id": "2026-10-23-ac-stats-double-counts-one-api-response",
       "title": "ac stats double-counts one API response per transcript line and skips subagent transcripts (GitHub #152, #153)",
-      "status": "verified",
-      "opened_at": "2026-10-23T08:47:39.313Z"
+      "status": "accepted",
+      "opened_at": "2026-10-23T08:47:39.313Z",
+      "accepted_at": "2026-10-23T20:02:50.023Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude",
+      "cited_evidence": "https://github.com/uublive/astro-code/issues/152#issuecomment-6372915144 https://github.com/uublive/astro-code/issues/153#issuecomment-6372915461"
     },
     {
       "id": "2026-10-23-ac-status-suggests-discussing-a-phase",
