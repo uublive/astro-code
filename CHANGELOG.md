@@ -4,6 +4,10 @@ Release notes in full live on the [GitHub releases page](https://github.com/uubl
 
 ## Unreleased
 
+- ADR numbers in a project's own ADR folder (`docs/adr`, `adr`, `doc/adr`) are one registry-claimed series with `DECISIONS.md` (ADR-087): `ac decision add` claims the number and writes both the log entry and `<adr_dir>/NNNN-<slug>.md`, and refuses when the registry is unreachable; the folder and width are detected from the project's files and `decisions.adr_dir` overrides or turns it off
+- `ac decision backfill [--apply]` claims every existing number and relabels the old decision-log series to `D-NNN` once; `ac decision renumber <file|id> <N|next>` moves one decision and rewrites only the references its own branch added, listing what it could not attribute
+- `canon-guard` refuses to create an ADR file or add an `ADR-NNNN` heading under an unclaimed number; `ac canon check` and `ac doctor` report unclaimed, duplicate, old-series and mismatched ADRs, each with its fix
+
 ## v0.51.0
 
 - `ac doctor [--json]` and `/astro-doctor`: one read-only report on whether the install is consistent. It names version and update-cache drift (#40), dead or non-running hook interpreters (#126), hook registrations that disagree with the `ac mods` switches, registered hook scripts missing from the home (fix `2026-10-12-hook-registrations-can-point-at-scripts`), missing, dangling and stale command/agent links on every installed host, a missing `additionalDirectories` grant (#15), registry drift and a stale astro-mods plugin version, each with its fix command (#159)
