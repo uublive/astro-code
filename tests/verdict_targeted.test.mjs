@@ -189,7 +189,7 @@ test('a latest FAIL after a full PASS still narrows exactly as ADR-079 (first = 
   } finally { s.done(); }
 });
 
-test('the base survives a FAIL, narrowed and targeted record in VERDICT.json and carries never cite a targeted run', async () => {
+test('the base survives a narrowed record, a full FAIL ends it, and carries never cite a targeted run and carries never cite a targeted run', async () => {
   const { recordVerdict, planReverify } = await import('../lib/verdict.mjs');
   const s = fixture(CRIT.replace('[mutation] ', ''));
   try {
@@ -203,10 +203,13 @@ test('the base survives a FAIL, narrowed and targeted record in VERDICT.json and
     put(s.root, 'src/a.mjs', 'changed');
     commit(s.root, 'fix: a');
     await recordVerdict(s.root, SLUG, res(['C2']));
-    assert.deepEqual(JSON.parse(readFileSync(s.vfile, 'utf8')).base, f1.base); // FAIL
+    assert.equal(JSON.parse(readFileSync(s.vfile, 'utf8')).base, null); // a full FAIL ends the base
     await recordVerdict(s.root, SLUG, res([], 'narrowed', ['C2']));
     const n = JSON.parse(readFileSync(s.vfile, 'utf8'));
-    assert.deepEqual(n.base, f1.base); // narrowed
+    assert.equal(n.base, null); // narrowed copies it forward
+    put(s.root, 'src/d.mjs', 'changed');
+    commit(s.root, 'fix: d');
+    assert.equal(planReverify(s.root, SLUG).mode, 'full'); // no carry across the FAIL
     assert.equal(n.criteria.find((c) => c.id === 'C1').evidence, 'carried');
     // a seeded targeted run does not become the base; a later record copies the base forward
     await seed(s, { mode: 'targeted', run: 4, base: f1.base });
@@ -216,7 +219,7 @@ test('the base survives a FAIL, narrowed and targeted record in VERDICT.json and
     assert.equal(p.mode, 'targeted');
     assert.ok(p.carry.every((c) => c.from.run === 1 && c.from.commit === r1.commit));
     await recordVerdict(s.root, SLUG, res(['C1']));
-    assert.deepEqual(JSON.parse(readFileSync(s.vfile, 'utf8')).base, f1.base); // FAIL after targeted
+    assert.equal(JSON.parse(readFileSync(s.vfile, 'utf8')).base, null); // full FAIL after targeted
     // a second full PASS becomes the base
     const r6 = await recordVerdict(s.root, SLUG, res());
     assert.deepEqual(JSON.parse(readFileSync(s.vfile, 'utf8')).base, { run: r6.run, commit: r6.commit });
