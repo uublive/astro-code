@@ -129,6 +129,7 @@ import { renumberDecision } from '../lib/adrrenumber.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate } from '../lib/verdict.mjs';
+import { runSuite, reusableReceipt } from '../lib/receipts.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
 import { planCalibration, runCalibration, renderSummary, renderBill, parseCalibrateFlags, publicDefect, CALIBRATE_USAGE } from '../lib/calibrate.mjs';
 import { recordJudgements } from '../lib/survivors.mjs';
@@ -269,6 +270,9 @@ const ALLOWED_FLAGS = {
   'verdict plan': ['full', 'json'],
   // `--result` is the verifier's checked criteria; a typo must not record an empty verdict.
   'verdict record': ['result'],
+  // Phase 52 (D6) — a typo'd `--command` must not run, or reuse a receipt for, the wrong command.
+  'suite run': ['command', 'json'],
+  'suite receipt': ['command', 'json'],
   // Phase 47 (ADR-083) — a typo'd flag must not degrade `--check` into a real run, or a
   // `setup` into a write the user did not ask for.
   // Phase 51 — spends money: a typo'd flag (`--run 5`) must not fall back to the default and bill it.
@@ -575,6 +579,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full recorded verdict)
   ac verdict plan <phase> [--full] [--json]  should the next verify narrow? (ADR-079)
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
+  ac suite run --command "<cmd>" [--json]   run the project's suite and write a local receipt (exits with the suite's status)
+  ac suite receipt --command "<cmd>" [--json]  is there a reusable receipt for this exact command on HEAD's clean tree? (read-only)
   ac mutate <phase> [--json]          run the project's mutation tool on the lines the phase changed (ADR-083, ADR-084)
   ac mutate <phase> --survivors [--json]  re-test only the open survivors of the last full run (partial; never a verdict)
   ac mutate --check [<phase>] [--json]  which tool applies, is it installed, how to install it (read-only)
@@ -2609,6 +2615,32 @@ async function main() {
       } else {
         die('usage: ac phase <add|check|context|show|verify|accept|reject|surprise|effort|note|milestone> …');
       }
+      return;
+    }
+
+    // Phase 52 (D6, #141). A thin dispatcher over lib/receipts.mjs: `run` is the one writer of a suite
+    // receipt, `receipt` is a read-only query (exit 0 either way). Never prompts (5116).
+    case 'suite': {
+      const sub = pos[0];
+      if (sub !== 'run' && sub !== 'receipt') die('usage: ac suite <run|receipt> --command "<cmd>" [--json]');
+      checkFlags(`suite ${sub}`, flags);
+      if (typeof flags.command !== 'string' || !flags.command.trim()) die(`usage: ac suite ${sub} --command "<cmd>" [--json]`);
+      const r = root();
+      const cmd = flags.command;
+      const short = (x) => String(x ?? '').slice(0, 7);
+      if (sub === 'run') {
+        const rc = runSuite(r, cmd, { json: !!flags.json });
+        const reuse = reusableReceipt(r, cmd);
+        if (flags.json) json({ ...rc, reusable: reuse.ok, reason: reuse.reason });
+        else if (reuse.ok) console.log(`✓ suite receipt ${rc.key.slice(0, 8)}: exit 0 on a clean tree at ${short(rc.commit)} (reusable)`);
+        else console.log(`⚠ suite receipt ${rc.key.slice(0, 8)}: not reusable — ${reuse.reason}`);
+        process.exitCode = rc.exit;
+        return;
+      }
+      const got = reusableReceipt(r, cmd);
+      if (flags.json) json({ reusable: got.ok, reason: got.reason, receipt: got.receipt });
+      else if (got.ok) console.log(`✓ reusable receipt ${got.receipt.key.slice(0, 8)} for "${cmd}" at ${short(got.receipt.commit)}`);
+      else console.log(`• no reusable receipt: ${got.reason}`);
       return;
     }
 
