@@ -262,3 +262,35 @@ test('dependencies are copied, not linked, and nothing in the copy or its enviro
     } finally { removeCopy(c); }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('a real venv copy names the project nowhere: pyvenv.cfg rewritten, __pycache__ dropped, and a binary naming it is refused', async () => {
+  const { makeCopy, removeCopy } = await import('../lib/plant.mjs');
+  const { realpathSync, readdirSync: rd, lstatSync: ls, writeFileSync: wf } = await import('node:fs');
+  const { spawnSync } = await import('node:child_process');
+  const root = project();
+  try {
+    const real = realpathSync(root);
+    wf(join(root, '.gitignore'), '.venv/\n');
+    sh(root, 'add', '.gitignore'); sh(root, 'commit', '-q', '-m', 'ignore venv');
+    const mk = spawnSync('python3', ['-m', 'venv', '--without-pip', join(root, '.venv')], { encoding: 'utf8' });
+    if (mk.status !== 0) return; // no python3 venv here: nothing to prove on this machine
+    const site = spawnSync(join(root, '.venv', 'bin', 'python'), ['-c', 'import sysconfig;print(sysconfig.get_paths()["purelib"])'], { encoding: 'utf8' }).stdout.trim();
+    wf(join(site, 'helper.py'), 'X = 1\n');
+    spawnSync(join(root, '.venv', 'bin', 'python'), ['-m', 'py_compile', join(site, 'helper.py')]); // a .pyc embedding the project path
+    const c = makeCopy(root, MUTMUT);
+    try {
+      const needle = Buffer.from(real);
+      const leaks = [];
+      const walk = (d) => { for (const e of rd(d)) { const p = join(d, e); const st = ls(p); if (st.isDirectory() && !st.isSymbolicLink()) walk(p); else if (st.isFile() && readFileSync(p).indexOf(needle) !== -1) leaks.push(p); } };
+      walk(join(c.repo, '.venv'));
+      assert.deepEqual(leaks, [], 'no file in the copied venv names the project');
+      const run = spawnSync(join(c.repo, '.venv', 'bin', 'python'), ['-c', 'import helper, sys; print(helper.X, sys.prefix)'], { encoding: 'utf8' });
+      assert.equal(run.status, 0, run.stderr);
+      assert.match(run.stdout, /^1 /);
+      assert.ok(!run.stdout.includes(real), 'the copied venv runs as itself');
+    } finally { removeCopy(c); }
+    // a binary file naming the project cannot be rewritten: the copy is refused, nothing left behind
+    wf(join(site, 'native.so'), Buffer.concat([Buffer.from([0, 1, 2]), Buffer.from(real), Buffer.from([0])]));
+    assert.throws(() => makeCopy(root, MUTMUT), /embeds the project path in a binary file/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
