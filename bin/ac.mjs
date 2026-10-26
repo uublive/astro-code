@@ -130,6 +130,7 @@ import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate } from '../lib/verdict.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
+import { planCalibration, runCalibration, renderSummary, renderBill, parseCalibrateFlags, publicDefect, CALIBRATE_USAGE } from '../lib/calibrate.mjs';
 import { recordJudgements } from '../lib/survivors.mjs';
 import { REMINDER as MUTATE_REMINDER } from '../lib/mutnotice.mjs';
 import { milestoneHarvest } from '../lib/harvest.mjs';
@@ -270,6 +271,8 @@ const ALLOWED_FLAGS = {
   'verdict record': ['result'],
   // Phase 47 (ADR-083) — a typo'd flag must not degrade `--check` into a real run, or a
   // `setup` into a write the user did not ask for.
+  // Phase 51 — spends money: a typo'd flag (`--run 5`) must not fall back to the default and bill it.
+  'verify calibrate': ['defects', 'runs', 'seed', 'budget', 'yes', 'json'],
   'mutate': ['check', 'json', 'survivors'],
   'mutate setup': ['json'],
   'mutate dismiss': ['json'],
@@ -577,6 +580,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac mutate --check [<phase>] [--json]  which tool applies, is it installed, how to install it (read-only)
   ac mutate setup                     write a minimal tool config if absent (the only writer; installs nothing)
   ac mutate dismiss [<tool>]          stop showing the full install suggestion for this project
+  ac verify calibrate [--defects N] [--runs K] [--seed S] [--budget USD] [--yes] [--json]  plant real mutants in accepted phases, measure the verifier's false-PASS rate (bill first; --yes to run)
   ac mutate judge <phase> <s:key|g:group>... --equivalent "<why>" | --test-gap ["<note>"]  record a survivor judgement (SURVIVORS.json)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase accept <p> --agent <name>  machine-signed sign-off (records accepted_kind=agent)
@@ -2631,6 +2635,41 @@ async function main() {
       if (out.ignored) console.error(`⚠ ${out.ignored} reported criterion id(s) are not in CRITERIA.md and were ignored`);
       for (const f of out.refused ?? []) console.error(`⚠ ${f.id} refused: ${f.reason}`);
       json(out);
+      return;
+    }
+
+    // Phase 51 (ADR-088). On demand only: nothing in the loop calls this. A thin dispatcher over
+    // lib/calibrate.mjs. Without --yes it prints the bill and stops, writing nothing; every flag is
+    // validated before any mutation data is read. Exit 0 for a bill, a finished run, a budget stop or
+    // zero usable defects; only a flag error or a missing .astrocode/ dies.
+    case 'verify': {
+      if (pos[0] !== 'calibrate') die(CALIBRATE_USAGE);
+      checkFlags('verify calibrate', flags);
+      const opts = parseCalibrateFlags(flags, pos.slice(1));
+      if (opts.error) die(opts.error);
+      const r = root();
+      const plan = planCalibration(r, opts);
+      const bill = { usd: plan.bill_usd, per_trial_usd: plan.per_trial_usd, basis: plan.cost_basis, planned_trials: plan.planned_trials };
+      const brief = { seed: plan.seed, seed_given: plan.seed_given, requested: plan.requested, selected: plan.selected, available: plan.available, defects: plan.defects.map(publicDefect), shortfall: plan.shortfall, unsupported: plan.unsupported, budget_usd: plan.budget_usd, budget_given: plan.budget_given, bill };
+      if (!opts.yes || !plan.defects.length) {
+        // Never implies consent: --json without --yes says it still needs one.
+        if (opts.json) json({ needs_yes: plan.defects.length > 0, ran: false, ...brief });
+        else for (const l of renderBill(plan, { needsYes: !opts.yes })) console.log(l);
+        return;
+      }
+      if (!opts.json) for (const l of renderBill(plan, { needsYes: false })) console.log(l);
+      // First Ctrl-C stops between trials (the copy of a running trial is still removed); a second leaves now.
+      const ctl = new AbortController();
+      const onSigint = () => { if (ctl.signal.aborted) process.exit(130); ctl.abort(); console.error('• interrupt: stopping after the running trial (Ctrl-C again to leave now)'); };
+      process.on('SIGINT', onSigint);
+      let res;
+      try { res = await runCalibration(r, plan, { signal: ctl.signal }); } finally { process.off('SIGINT', onSigint); }
+      if (opts.json) {
+        json({ ...res.record, bill, trials: res.trials.map(({ spawned, ...t }) => t), log: res.log, notes: res.notes });
+      } else {
+        for (const l of renderSummary(res)) console.log(l);
+        if (res.notes.blindness_reported.length) console.log(`⚠ blindness: project-sourced text the verifier can see (same as /astro-verify): ${res.notes.blindness_reported.join(', ')}`);
+      }
       return;
     }
 
