@@ -625,7 +625,45 @@ run continues over every other criterion, so a PASS always rests on a full run. 
 full run when many criteria are unmet, `CRITERIA.md` changed, the history does not line up, the
 fix is broad, or you pass `--full` (`ac verdict plan <phase>` shows the decision and the
 thresholds live in `lib/verdict.mjs`). `ac phase verify` refuses without a full all-passed
-verdict (`--force` is the escape).
+verdict or a valid targeted one (`--force` is the escape).
+
+**Targeted verify (ADR-089, amends ADR-079).** After a recorded full PASS, the next verify
+**targets** automatically: `ac verdict plan <phase>` computes, from the diff since that PASS, the
+**floor** of criteria the change can affect. A criterion is in the floor when the diff touches a file it
+names, when it names no file at all (an unmapped criterion is always observed), when its evidence is the
+full suite, or when it is a test-strength criterion and a file in the phase's mutate scope changed. The
+verifier observes the whole floor and may only **widen** it, never shorten it. Every other criterion is
+**carried** from that full PASS, and a carry is valid only while all of these hold: it cites the phase's
+**most recent full PASS** (run and commit) at an ancestor of HEAD; none of its files changed since; it is
+not a suite criterion (unless a suite receipt covers the exact clean tree) and not a test-strength
+criterion whose mutate scope changed; and it is **one hop** from that PASS, since a targeted run is never
+the base of the next one. `ac verdict record` and `ac phase verify` re-check every one of these in code,
+so a verifier that skips a floor criterion is refused by name, and the phase stays unverified.
+
+The first verify of a phase, a broad diff, a base that is no longer an ancestor of HEAD, a changed
+`CRITERIA.md` and `--full` each run **full**, and the plan always states the mode and why. A FAIL still
+re-verifies as before: the unmet criteria first, then the rest. `VERDICT.json` records the mode, its
+reason, the base, and for each criterion whether it was `observed` or `carried` (with the run and commit,
+or the receipt, it came from). `ac phase show <phase>` lists the carried criteria in a `carried` key
+(absent after a full PASS), and `/astro-accept` states them in one line before the walkthrough. The
+thresholds live in `lib/verdict.mjs`.
+
+**Writing criteria so a later verify can narrow.** Name every file, directory or command a criterion
+rests on in backticks on its `Observe:` line, and optionally add a `- **Files:**` line listing them. A
+criterion that names no file is always re-checked. Tag a criterion whose evidence is the full test suite
+`[suite]` right after its id (`### C5 [suite] — …`), as `[mutation]` is tagged; a suite criterion is never
+carried from an earlier PASS.
+
+### Suite receipts
+
+`ac suite run --command "<cmd>"` runs the project's suite, exits with its status and writes a receipt
+under `.astrocode/.local/suite-receipts/`: the command, commit, tree, whether the tree was clean before
+and after, the exit status, the node version and the time. `ac suite receipt --command "<cmd>"` asks
+whether a receipt can be reused (read-only, exit 0 either way). A receipt is local and never committed,
+and it is reused only on the **same commit**, the **same clean tree** (untracked files count as dirty,
+ignored files are not checked), the **exact command string** and exit 0; it is refused otherwise, each
+refusal with its own reason. A verifier on the identical clean tree cites a reusable receipt instead of
+running the suite again; the verdict records which receipt stood in. A full verdict never uses receipts.
 
 > **A phase's goal is the bar, not its task list.** Every task passing while the goal is
 > unmet is a failed phase.
