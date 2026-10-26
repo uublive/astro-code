@@ -284,3 +284,23 @@ test('runSuite accepts an injected spawn and records its exit', async () => {
     assert.equal(seen.o.cwd, r.root);
   } finally { r.done(); }
 });
+
+test('a project nested in a repo subdirectory is dirty when a tracked or untracked file outside it changes', async () => {
+  const { treeState } = await import('../lib/receipts.mjs');
+  const r = repo();
+  try {
+    put(r.root, 'shared/lib.js');
+    put(r.root, 'app/.astrocode/state.json', '{}');
+    commit(r.root);
+    const app = join(r.root, 'app');
+    assert.equal(treeState(app).clean, true);
+    put(r.root, 'shared/lib.js', 'changed');
+    assert.equal(treeState(app).clean, false);
+    sh(r.root, 'checkout', 'shared/lib.js');
+    put(r.root, 'shared/extra.js');
+    assert.equal(treeState(app).clean, false);
+    rmSync(join(r.root, 'shared/extra.js'));
+    put(r.root, 'app/.astrocode/.local/x.json');
+    assert.equal(treeState(app).clean, true);
+  } finally { r.done(); }
+});
