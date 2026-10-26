@@ -126,7 +126,7 @@ test('a leaky branch name is renamed main', async () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('an ignored node_modules is linked and an unignored one is not', async () => {
+test('an ignored node_modules is copied (never linked) and an unignored one is not', async () => {
   const { makeCopy, removeCopy } = await import('../lib/plant.mjs');
   for (const ignored of [true, false]) {
     const root = project({ ignoreNm: ignored });
@@ -136,7 +136,7 @@ test('an ignored node_modules is linked and an unignored one is not', async () =
       const c = makeCopy(root, MUTMUT);
       try {
         assert.equal(existsSync(join(c.repo, 'node_modules')), ignored);
-        if (ignored) assert.ok(lstatSync(join(c.repo, 'node_modules')).isSymbolicLink());
+        if (ignored) assert.ok(!lstatSync(join(c.repo, 'node_modules')).isSymbolicLink(), 'copied, so `..` cannot walk back into the project');
         assert.equal(sh(c.repo, 'status', '--porcelain').stdout, '', 'a linked dependency dir never shows as untracked');
       } finally { removeCopy(c); }
       assert.ok(existsSync(join(root, 'node_modules', 'dep', 'i.js')), 'removing the copy never follows the link');
@@ -227,6 +227,38 @@ test('the copy keeps no way back to the unplanted tree: no ORIG_HEAD, no remote 
       const fsck = sh(c.repo, 'fsck', '--unreachable', '--no-reflogs');
       assert.equal(fsck.status, 0, fsck.stderr);
       assert.equal(fsck.stdout.trim(), '', 'no unreachable commit or blob to recover');
+    } finally { removeCopy(c); }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('dependencies are copied, not linked, and nothing in the copy or its environment leads back to the project', async () => {
+  const { makeCopy, removeCopy, trialEnv } = await import('../lib/plant.mjs');
+  const { realpathSync, symlinkSync, lstatSync, readlinkSync, mkdirSync: md, writeFileSync: wf } = await import('node:fs');
+  const root = project();
+  try {
+    const real = realpathSync(root);
+    // an ignored node_modules with an absolute link into the project, and a venv whose script and
+    // editable-install .pth name the project
+    wf(join(root, '.gitignore'), 'node_modules/\n.venv/\n');
+    sh(root, 'add', '.gitignore'); sh(root, 'commit', '-q', '-m', 'ignore deps');
+    md(join(root, 'node_modules', 'pkg'), { recursive: true });
+    wf(join(root, 'node_modules', 'pkg', 'index.js'), 'module.exports = 1\n');
+    symlinkSync(join(real, 'src'), join(root, 'node_modules', 'self'));
+    md(join(root, '.venv', 'bin'), { recursive: true });
+    md(join(root, '.venv', 'lib', 'site-packages'), { recursive: true });
+    wf(join(root, '.venv', 'bin', 'pytest'), `#!${real}/.venv/bin/python\nimport pytest\n`);
+    wf(join(root, '.venv', 'lib', 'site-packages', 'proj.pth'), `${real}/src\n`);
+    const c = makeCopy(root, MUTMUT);
+    try {
+      assert.ok(!lstatSync(join(c.repo, 'node_modules')).isSymbolicLink(), 'node_modules is a copy');
+      assert.ok(!readlinkSync(join(c.repo, 'node_modules', 'self')).includes(real), 'absolute link repointed');
+      assert.ok(!readFileSync(join(c.repo, '.venv', 'bin', 'pytest'), 'utf8').includes(real), 'shebang repointed');
+      assert.ok(!readFileSync(join(c.repo, '.venv', 'lib', 'site-packages', 'proj.pth'), 'utf8').includes(real), '.pth repointed');
+      assert.ok(!realpathSync(join(c.repo, 'node_modules', '..')).startsWith(real), '.. stays in the copy');
+      const env = trialEnv({ PWD: real, INIT_CWD: real, PATH: `${real}/.venv/bin:/usr/bin`, HOME: '/h' }, { root, cwd: c.repo });
+      assert.equal(env.PWD, c.repo);
+      assert.ok(Object.values(env).every((v) => !String(v).includes(real)), 'no value names the project');
+      assert.equal(env.PATH, `${c.repo}/.venv/bin:/usr/bin`, 'an activated venv still resolves, in the copy');
     } finally { removeCopy(c); }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
