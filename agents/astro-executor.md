@@ -31,6 +31,9 @@ Constraints:
   (dynamic-import pattern) — do NOT implement the missing export; that is the impl
   task's job (ADR-018; static import of a missing symbol crashes the whole test file
   at module load, the phase-04 t5 trap).
+- When you run the project's full test suite after your commit on a clean tree, run it as
+  `ac suite run --command "<cmd>"`, so a later verifier on the same tree can reuse the receipt
+  instead of running it again (the receipt is local, never committed).
 - To record a decision, run `ac decision add "<title>" --why …` (it claims the ADR number — see the AGENTS.md rule); never pick a number or write an ADR file yourself.
 - If you are blocked (ambiguous spec, missing dependency), stop and report the
   blocker clearly rather than guessing.
