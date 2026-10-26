@@ -103,10 +103,10 @@ export function openMilestones(status) {
   for (const p of phases) {
     if (!p || p.milestone == null || p.milestone === m || p.remote) continue
     if (p.status === 'complete' || p.status === 'rejected') continue
-    const e = by.get(p.milestone) || { milestone: p.milestone, verified: 0, open: 0 }
-    if (p.status === 'verified') e.verified++
-    else e.open++
-    by.set(p.milestone, e)
+    const tally = by.get(p.milestone) || { milestone: p.milestone, verified: 0, open: 0 }
+    if (p.status === 'verified') tally.verified++
+    else tally.open++
+    by.set(p.milestone, tally)
   }
   return [...by.values()].sort((a, b) => a.milestone - b.milestone)
 }
