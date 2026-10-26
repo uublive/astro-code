@@ -1082,3 +1082,41 @@ test('phase 47: verify, execute and help surface the mutation evidence', () => {
   assert.match(readFileSync(join(COMMANDS, 'astro-help.md'), 'utf8'), /\/astro-mutate/);
   assert.ok(verify.includes('3. Clear the live status first') && verify.includes('3b. **On PASS only'));
 });
+
+// ── Phase 51: /astro-calibrate (GitHub #157) ─────────────────────────────────────────────────────
+
+test('phase 51: /astro-calibrate runs `ac verify calibrate` without --yes first, asks through AskUserQuestion, and passes --yes with the bill\'s --seed only after an explicit yes', () => {
+  const src = readFileSync(join(COMMANDS, 'astro-calibrate.md'), 'utf8');
+  const fm = src.split('---')[1];
+  assert.match(fm, /description:\s*\S/);
+  assert.match(fm, /argument-hint:\s*\[--defects N\] \[--runs K\] \[--seed S\] \[--budget USD\]/);
+  assert.match(fm, /allowed-tools:\s*Bash, AskUserQuestion/);
+  const step1 = src.slice(src.indexOf('1. Run'), src.indexOf('2. Ask'));
+  assert.match(step1, /ac verify calibrate \$ARGUMENTS` \*\*without\*\* `--yes`/);
+  const step2 = src.slice(src.indexOf('2. Ask'), src.indexOf('3. Only'));
+  assert.match(step2, /AskUserQuestion/);
+  assert.match(step2, /\$\(ac path templates\)\/asking\.md/);
+  const step3 = src.slice(src.indexOf('3. Only'), src.indexOf('4. Relay'));
+  assert.match(step3, /explicit yes/);
+  assert.match(step3, /--yes --seed <the seed the bill\s+printed>/);
+  assert.equal(src.indexOf('--yes --seed') > src.indexOf('AskUserQuestion'), true, '--yes only appears after the question');
+  assert.match(src, /never call anything but\s+`ac verify calibrate`/i);
+});
+
+test('phase 51: every reporting slot in astro-calibrate.md states a bound', () => {
+  const src = readFileSync(join(COMMANDS, 'astro-calibrate.md'), 'utf8');
+  assertSlotBound(src, 'astro-calibrate.md', 'the bill', '1. Run', '2. Ask');
+  assertSlotBound(src, 'astro-calibrate.md', 'not-run branch', '3. Only', '4. Relay');
+  assertSlotBound(src, 'astro-calibrate.md', 'the summary', '4. Relay', '**Never**');
+});
+
+test('phase 51: no loop command (discuss, plan, execute, verify, accept, status, debt) and no file in workflows/ mentions calibrate', () => {
+  const dirs = [COMMANDS, join(COMMANDS, '..', 'workflows')];
+  const loop = ['discuss', 'plan', 'execute', 'verify', 'accept', 'status', 'debt'].map((n) => join(COMMANDS, `astro-${n}.md`));
+  const files = [...loop, ...readdirSync(dirs[1]).map((f) => join(dirs[1], f))];
+  for (const f of files) assert.doesNotMatch(readFileSync(f, 'utf8'), /calibrat/i, `${f} must not start a calibration`);
+});
+
+test('phase 51: astro-help lists /astro-calibrate', () => {
+  assert.match(readFileSync(join(COMMANDS, 'astro-help.md'), 'utf8'), /`\/astro-calibrate`/);
+});
