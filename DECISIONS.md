@@ -580,3 +580,8 @@ _2026-10-26 · at b7a68ef_
 
 **Rejected:** Re-running the mutation tool inside calibrate (expensive, needs the tool, grades a different commit). A fresh-init copy with no history (no phase commits, so the verifier would FAIL structurally). A separate neutral plant commit (still points at the defect). Wald intervals (collapse to [0,0] on zero false PASSes). A pooled-trials headline rate (hides a defect caught only sometimes).
 
+## ADR-089 — A targeted verify may mark a phase verified when every carried criterion cites the phase's latest full PASS at an ancestor commit, none of its files changed, and it is not a suite criterion (unless a suite receipt covers the exact clean tree) or a test-strength criterion whose mutate scope changed; carries are one hop from a full PASS and named per criterion (amends ADR-079)
+_2026-10-26 · at d1ef95f_
+
+**Why:** Full re-verification after a one-line follow-up cost up to ~50 minutes; a deterministic floor the verifier may only widen keeps the gate honest while carrying untouched passes (phase 52, Matteo; GitHub #140, #141)
+
