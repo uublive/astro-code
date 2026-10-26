@@ -294,3 +294,30 @@ test('a real venv copy names the project nowhere: pyvenv.cfg rewritten, __pycach
     assert.throws(() => makeCopy(root, MUTMUT), /embeds the project path in a binary file/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('a venv built through a symlinked path is repointed too: every spelling of the project is covered', async () => {
+  const { makeCopy, removeCopy, trialEnv } = await import('../lib/plant.mjs');
+  const { realpathSync, readdirSync: rd, lstatSync: ls, writeFileSync: wf, symlinkSync: sl, mkdtempSync: mt } = await import('node:fs');
+  const { tmpdir: td } = await import('node:os');
+  const { spawnSync } = await import('node:child_process');
+  const root = project();
+  const linkDir = mt(join(td(), 'ac-link-'));
+  try {
+    const link = join(linkDir, 'proj');
+    sl(realpathSync(root), link);
+    wf(join(root, '.gitignore'), '.venv/\n');
+    sh(root, 'add', '.gitignore'); sh(root, 'commit', '-q', '-m', 'ignore venv');
+    const mk = spawnSync('python3', ['-m', 'venv', '--without-pip', join(link, '.venv')], { encoding: 'utf8' });
+    if (mk.status !== 0) return;
+    const c = makeCopy(link, MUTMUT);
+    try {
+      const needles = [realpathSync(root), link].map((x) => Buffer.from(x));
+      const leaks = [];
+      const walk = (d) => { for (const e of rd(d)) { const p = join(d, e); const st = ls(p); if (st.isDirectory() && !st.isSymbolicLink()) walk(p); else if (st.isFile() && needles.some((n) => readFileSync(p).indexOf(n) !== -1)) leaks.push(p); } };
+      walk(join(c.repo, '.venv'));
+      assert.deepEqual(leaks, [], 'neither the real path nor the symlinked one appears in the copied venv');
+      const env = trialEnv({ VIRTUAL_ENV: join(link, '.venv'), PATH: `${link}/.venv/bin:/usr/bin` }, { root: link, cwd: c.repo });
+      assert.ok(Object.values(env).every((v) => !String(v).includes(link) && !String(v).includes(realpathSync(root))));
+    } finally { removeCopy(c); }
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(linkDir, { recursive: true, force: true }); }
+});
