@@ -637,7 +637,8 @@ verifier observes the whole floor and may only **widen** it, never shorten it. E
 **most recent full PASS** (run and commit) at an ancestor of HEAD; none of its files changed since; it is
 not a suite criterion (unless a suite receipt covers the exact clean tree) and not a test-strength
 criterion whose mutate scope changed; and it is **one hop** from that PASS, since a targeted run is never
-the base of the next one. `ac verdict record` and `ac phase verify` re-check every one of these in code,
+the base of the next one. Any FAIL (full, targeted or narrowed) ends the base, so after a FAIL only a
+later full PASS can be carried from. `ac verdict record` and `ac phase verify` re-check every one of these in code,
 so a verifier that skips a floor criterion is refused by name, and the phase stays unverified.
 
 The first verify of a phase, a broad diff, a base that is no longer an ancestor of HEAD, a changed

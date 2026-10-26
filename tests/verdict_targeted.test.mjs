@@ -334,3 +334,27 @@ test('chooseMode keeps rule order: a FAIL beats targeting, and a missing diff or
   const rs = [t({ base: null }), t({ baseAncestor: false }), t({ changed: null }), t({ changed: undefined })].map((d) => { assert.equal(d.mode, 'full'); return d.reason; });
   assert.equal(new Set(rs).size, 3); // changed null and undefined share one reason
 });
+
+test('a targeted FAIL ends the base too: after it and a narrowed fix, the plan goes full and a targeted record cannot pass (C10)', async () => {
+  const { recordVerdict, planReverify } = await import('../lib/verdict.mjs');
+  const s = fixture(CRIT.replace('[mutation] ', '').replace('[suite] ', ''));
+  try {
+    // C2 names src/b.mjs; C4 names no file, so it is always in the floor and always observed
+    const targeted = (failC2) => ({ mode: 'targeted', criteria: ids6.map((id) => (id === 'C2' ? { id, passed: !failC2 } : id === 'C4' ? { id, passed: true } : { id, carried: true })) });
+    await recordVerdict(s.root, SLUG, { mode: 'full', criteria: ids6.map((id) => ({ id, passed: true })) });
+    put(s.root, 'src/b.mjs', 'v2');
+    commit(s.root, 'fix: b');
+    assert.deepEqual(planReverify(s.root, SLUG).floor, ['C2', 'C4']);
+    const t = await recordVerdict(s.root, SLUG, targeted(true));
+    assert.equal(t.passed, false);
+    assert.equal(t.base, null); // a targeted FAIL ends the base
+    put(s.root, 'src/b.mjs', 'v3');
+    commit(s.root, 'fix: b again');
+    const n = await recordVerdict(s.root, SLUG, { mode: 'narrowed', criteria: [{ id: 'C2', passed: true }] });
+    assert.equal(n.base, null);
+    const p = planReverify(s.root, SLUG);
+    assert.equal(p.mode, 'full'); // no carry reaches across the targeted FAIL
+    const again = await recordVerdict(s.root, SLUG, targeted(false));
+    assert.equal(again.passed, false);
+  } finally { s.done(); }
+});
