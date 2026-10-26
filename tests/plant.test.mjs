@@ -348,3 +348,28 @@ test('a dependency created through ANY other spelling of the project is repointe
     } finally { removeCopy(c); }
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(linkDir, { recursive: true, force: true }); }
 });
+
+test('history with several versions of a hidden record still plants; the defect hides inside the commit that last changed its file; one timestamp for all files', async () => {
+  const { makeCopy, removeCopy } = await import('../lib/plant.mjs');
+  const { writeFileSync: wf, statSync: st } = await import('node:fs');
+  const root = project();
+  try {
+    // a FAIL then PASS verify leaves two VERDICT.json versions in history (phase 51 C3)
+    wf(join(root, '.astrocode', 'phases', 'p1', 'VERDICT.json'), '{"run":2,"passed":true}\n');
+    sh(root, 'add', '-A'); sh(root, 'commit', '-q', '-m', 'chore(verdict): run 2');
+    // the tip only touches a hidden record: after the scrub its own diff is empty (phase 51 C4)
+    wf(join(root, '.astrocode', 'CALIBRATION.jsonl'), '{"run":9}\n');
+    sh(root, 'add', '-A'); sh(root, 'commit', '-q', '-m', 'chore(astro): verifier run log');
+    const lastTouch = sh(root, 'log', '-1', '--format=%s', '--', 'src/a.py').stdout.trim();
+    const c = makeCopy(root, MUTMUT);
+    try {
+      const tipFiles = sh(c.repo, 'show', '--name-only', '--format=', 'HEAD').stdout.trim();
+      assert.equal(tipFiles, '', 'the tip no longer shows the plant as its whole diff');
+      const touched = sh(c.repo, 'log', '-1', '--format=%s', '--', 'src/a.py').stdout.trim();
+      assert.equal(touched, lastTouch, 'the plant sits in the commit that last really changed the file');
+      assert.equal(sh(c.repo, 'status', '--porcelain').stdout, '');
+      const times = new Set(sh(c.repo, 'ls-files', '-z').stdout.split('\0').filter(Boolean).map((f) => Math.floor(st(join(c.repo, f)).mtimeMs / 1000)));
+      assert.equal(times.size, 1, 'every tracked file has the same timestamp');
+    } finally { removeCopy(c); }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
