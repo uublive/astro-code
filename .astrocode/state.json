@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 14,
-  "active_phase": null,
+  "active_phase": "51-verifier-calibration-plant-ac-mutate",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-10-26T11:23:11.213Z",
+  "updated_at": "2026-10-26T14:39:14.196Z",
   "activity": null
 }

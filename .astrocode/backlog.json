@@ -184,8 +184,13 @@
       "id": "2026-10-23-verifier-reuse-a-recorded-passing-suite",
       "title": "Verifier: reuse a recorded passing suite result for an identical clean tree",
       "note": "GitHub #141 (@luigi-lauro): https://github.com/uublive/astro-code/issues/141",
-      "status": "open",
-      "captured_at": "2026-10-23T08:46:58.771Z"
+      "status": "linked",
+      "captured_at": "2026-10-23T08:46:58.771Z",
+      "linked_by": {
+        "kind": "phase",
+        "ref": "52-targeted-verify-check-only-the-criteria"
+      },
+      "linked_at": "2026-10-26T14:39:14.404Z"
     }
   ]
 }
