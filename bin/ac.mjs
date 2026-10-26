@@ -128,7 +128,7 @@ import { backfillAdr } from '../lib/adrbackfill.mjs';
 import { renumberDecision } from '../lib/adrrenumber.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
-import { planReverify, recordVerdict, verifiedGate } from '../lib/verdict.mjs';
+import { planReverify, recordVerdict, verifiedGate, carriedOf } from '../lib/verdict.mjs';
 import { runSuite, reusableReceipt } from '../lib/receipts.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
 import { planCalibration, runCalibration, renderSummary, renderBill, parseCalibrateFlags, publicDefect, CALIBRATE_USAGE } from '../lib/calibrate.mjs';
@@ -576,8 +576,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase check "<name>"             see if a phase with a similar name exists
   ac phase context <phase>            discuss-gate status: missing | stub | ready
   ac phase context <phase> --author   who captured it: human | agent <name> | none
-  ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full recorded verdict)
-  ac verdict plan <phase> [--full] [--json]  should the next verify narrow? (ADR-079)
+  ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full or valid targeted verdict)
+  ac verdict plan <phase> [--full] [--json]  full, narrowed (after a FAIL) or targeted (after a full PASS)
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
   ac suite run --command "<cmd>" [--json]   run the project's suite and write a local receipt (exits with the suite's status)
   ac suite receipt --command "<cmd>" [--json]  is there a reusable receipt for this exact command on HEAD's clean tree? (read-only)
@@ -2388,8 +2388,9 @@ async function main() {
       } else if (sub === 'verify') {
         if (!ph) die('usage: ac phase verify <phase> [--force]');
         checkFlags('phase verify', flags);
-        // ADR-079 — a phase is verified only by a full run. Enforced here in code, so a
-        // carried or narrowed verdict cannot reach `verified` however the prose reads.
+        // ADR-079, amended by phase 52 — a phase is verified by a full run, or by a targeted run whose
+        // every carry still meets the conditions. Enforced here in code, so a narrowed verdict or a
+        // carry that breaks one cannot reach `verified` however the prose reads.
         const gate = verifiedGate(r, ph.slug);
         if (!gate.ok && !flags.force) {
           die(`phase ${ph.number}: ${gate.reason} — run /astro-verify ${ph.number} (or pass --force)`);
@@ -2403,7 +2404,10 @@ async function main() {
         // accepted_evidence side by side. `--json` is accepted and prints the same.
         if (!ph) die('usage: ac phase show <phase> [--json]');
         checkFlags('phase show', flags);
-        json(ph);
+        // Phase 52 (D7): name the criteria the latest verdict carried instead of observing, so the
+        // human sees which passes were not re-observed. Absent when nothing was carried (Voice).
+        const carried = carriedOf(r, ph.slug);
+        json(carried.length ? { ...ph, carried } : ph);
       } else if (sub === 'accept') {
         if (!ph) die('usage: ac phase accept <phase> [--by name | --agent name | --witnessed composer] [--evidence "<id or URL>"] [--force]');
         checkFlags('phase accept', flags);
@@ -2656,6 +2660,8 @@ async function main() {
         if (flags.json) json(plan);
         else if (plan.mode === 'narrowed') {
           console.log(`• narrowed: re-check ${plan.first.join(', ')} first (run ${plan.saved.run} @ ${String(plan.saved.commit).slice(0, 7)})`);
+        } else if (plan.mode === 'targeted') {
+          console.log(`• targeted: ${plan.reason}: re-check ${plan.floor.join(', ') || 'none'}; carry ${plan.carry.length}`);
         } else console.log(`• full: ${plan.reason}`);
         return;
       }
