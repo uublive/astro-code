@@ -1,138 +1,79 @@
 {
   "version": 1,
-  "run": 2,
-  "mode": "narrowed",
-  "reason": "1 of 13 unmet",
+  "run": 3,
+  "mode": "full",
+  "reason": "verifier ran full (plan: narrowed: 1 of 13 unmet)",
   "broad": false,
-  "commit": "919250929d511f20e414054943d24b5b8913075e",
+  "commit": "caf44ea5c8020c9a611a14f62622217b49eed89c",
   "criteria_sha": "sha256:3d95bbfe120f4cdd5af1c753900281d8c3ec306bb8a72d5f200e947990ff0d4f",
-  "at": "2026-10-26T21:26:32.262Z",
+  "at": "2026-10-26T21:46:14.785Z",
   "base": null,
   "criteria": [
     {
       "id": "C1",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C2",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C3",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C4",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C5",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C6",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C7",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
-    },
-    {
-      "id": "C8",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
-    },
-    {
-      "id": "C9",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
-    },
-    {
-      "id": "C10",
       "status": "failed",
       "evidence": "observed"
     },
     {
+      "id": "C8",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C9",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C10",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
       "id": "C11",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C12",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C13",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "6411fd1a5d5e3e7cd2c525cb4b98a5be4c2f5f67"
-      }
+      "status": "failed",
+      "evidence": "observed",
+      "suite": true
     }
   ]
 }
