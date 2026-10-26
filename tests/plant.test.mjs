@@ -91,7 +91,9 @@ test('makeCopy clones HEAD outside root, removes origin and tags, plants one fil
       assert.ok(SCRUB.length >= 6);
       assert.ok(existsSync(join(c.repo, '.git', 'astrocode-scratch')));
       // the only difference from the original tree: the one planted file and the scrubbed ones
-      const names = sh(c.repo, 'diff', '--name-status', sh(root, 'rev-parse', 'HEAD').stdout.trim(), 'HEAD').stdout.trim().split('\n');
+      // compared from the original's side: the copy no longer holds the unplanted commit (C4)
+      sh(root, 'fetch', '-q', c.repo, 'HEAD');
+      const names = sh(root, 'diff', '--name-status', 'HEAD', 'FETCH_HEAD').stdout.trim().split('\n');
       assert.deepEqual(names.filter((l) => l.startsWith('M')), ['M\tsrc/a.py']);
       assert.equal(names.filter((l) => l.startsWith('D')).length, 4);
     } finally { removeCopy(c); }
@@ -208,6 +210,23 @@ test('no commit in the copy still carries a SCRUB path, so `git log --all -p` le
       const stat = sh(c.repo, 'show', '--stat', 'HEAD').stdout;
       assert.doesNotMatch(stat, /SURVIVORS|VERDICT|CALIBRATION/);
       assert.equal(sh(c.repo, 'log', '--format=%s').stdout, sh(root, 'log', '--format=%s').stdout);
+    } finally { removeCopy(c); }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('the copy keeps no way back to the unplanted tree: no ORIG_HEAD, no remote refs, no unreachable objects', async () => {
+  const { makeCopy, removeCopy } = await import('../lib/plant.mjs');
+  const root = project();
+  try {
+    const c = makeCopy(root, MUTMUT);
+    try {
+      // `git reset --hard` and `commit --amend` leave ORIG_HEAD at the original, unplanted tip:
+      // `git diff ORIG_HEAD HEAD` would show the plant and the scrubbed records (phase 51 C4).
+      assert.notEqual(sh(c.repo, 'rev-parse', '-q', '--verify', 'ORIG_HEAD').status, 0, 'no ORIG_HEAD');
+      assert.equal(sh(c.repo, 'for-each-ref', 'refs/remotes').stdout.trim(), '', 'no remote refs');
+      const fsck = sh(c.repo, 'fsck', '--unreachable', '--no-reflogs');
+      assert.equal(fsck.status, 0, fsck.stderr);
+      assert.equal(fsck.stdout.trim(), '', 'no unreachable commit or blob to recover');
     } finally { removeCopy(c); }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
