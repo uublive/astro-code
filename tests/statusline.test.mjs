@@ -1235,3 +1235,30 @@ test('width sweep: the cache segment never evicts the quota, and no row overflow
     for (const row of out.split('\n')) assert.ok(visibleWidth(row) <= columns, `row overflowed at ${columns}: ${row}`);
   }
 });
+
+test('phaseTrack: only the current milestone, rejected phases hidden (the current one kept)', async () => {
+  const { phaseTrack } = await import('../hooks/_astro-ctx.mjs');
+  const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
+  const phases = [{ number: 54, status: 'rejected', milestone: 2 }, { number: 84, status: 'pending', milestone: 2 },
+    { number: 103, status: 'rejected', milestone: 5 }, { number: 104, status: 'pending', milestone: 5 }, { number: 105, status: 'pending', milestone: 5 }];
+  assert.equal(strip(phaseTrack({ milestone: 5, phase: { number: 104, status: 'pending' }, phases })), '(P104) P105');
+  assert.equal(strip(phaseTrack({ milestone: 5, phase: { number: 103, status: 'rejected' }, phases })), '(P103) P104 P105');
+});
+
+test('readContext: with no active phase, the current milestone is where you are, not an old leftover', async () => {
+  const { readContext } = await import('../hooks/_astro-ctx.mjs');
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const root = mkdtempSync(join(tmpdir(), 'ac-cur-'));
+  try {
+    mkdirSync(join(root, '.astrocode'));
+    writeFileSync(join(root, '.astrocode', 'state.json'), '{}');
+    writeFileSync(join(root, '.astrocode', 'roadmap.json'), JSON.stringify({ milestone: 5, phases: [
+      { number: 54, slug: '54-a', status: 'rejected', milestone: 2 }, { number: 84, slug: '84-b', status: 'pending', milestone: 2 },
+      { number: 104, slug: '104-c', status: 'pending', milestone: 5 }] }));
+    const ctx = readContext(root, 1_700_000_000);
+    assert.equal(ctx.phase.number, 104);
+    assert.equal(ctx.phases.find((p) => p.number === 84).milestone, 2);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

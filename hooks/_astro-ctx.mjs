@@ -263,9 +263,12 @@ export function readContext(root, nowSeconds) {
     phase = phases.find((p) => p.slug === state.active_phase ||
       String(p.number) === String(state.active_phase)) || null;
   }
+  // Within the current milestone first, so an old milestone's leftover (a rejected or never-run
+  // phase) is not mistaken for where you are.
   if (!phase) {
-    phase = phases.filter((p) => p.status !== 'complete')
-      .sort((a, b) => a.number - b.number)[0] || null;
+    const open = phases.filter((p) => p.status !== 'complete').sort((a, b) => a.number - b.number);
+    const m = roadmap.milestone ?? null;
+    phase = open.find((p) => m != null && p.milestone === m) || open.find((p) => p.status !== 'rejected') || open[0] || null;
   }
 
   const done = phases.filter((p) => p.status === 'complete').length;
@@ -314,7 +317,7 @@ export function readContext(root, nowSeconds) {
     // claimed carries `owner` (their tag, e.g. `a`); one that is only in the shared registry so
     // far (not merged into this roadmap yet) is added with `remote: true` (_astro-team.mjs).
     phases: [
-      ...phases.map((p) => ({ number: p.number, status: p.status, ...(team.owners[p.number] ? { owner: team.owners[p.number] } : {}) })),
+      ...phases.map((p) => ({ number: p.number, status: p.status, ...(p.milestone != null ? { milestone: p.milestone } : {}), ...(team.owners[p.number] ? { owner: team.owners[p.number] } : {}) })),
       ...team.extra.map((p) => ({ number: p.number, status: p.status, owner: p.owner, remote: true })),
     ].sort((a, b) => a.number - b.number),
     planned: phase ? existsSync(join(root, '.astrocode', 'phases', phase.slug, 'PLAN.md')) : false,
@@ -380,7 +383,7 @@ export function nextAction(ctx) {
 }
 
 /**
- * The milestone's phases as a window around the current one:
+ * The current milestone's phases as a window around the current one (rejected ones hidden):
  *
  *   ‹4 (P15)              — 4 phases behind, on the last one, nothing queued
  *   ‹2 (P13) P14 P15      — 2 behind, two still to come
@@ -394,7 +397,11 @@ export function nextAction(ctx) {
 export function phaseTrack(ctx, lookahead = 2) {
   const phase = ctx?.phase;
   if (!phase) return '';
-  const all = Array.isArray(ctx.phases) ? ctx.phases : [];
+  // The current milestone's phases only, rejected ones dropped (the current phase always stays):
+  // the same set the phase band draws (band.js trackedPhases).
+  const m = ctx.milestone ?? null;
+  const all = (Array.isArray(ctx.phases) ? ctx.phases : []).filter((p) => p.number === phase.number ||
+    (p.status !== 'rejected' && (m == null || p.milestone == null || p.milestone === m)));
   const idx = all.findIndex((p) => p.number === phase.number);
   const current = paint(`(P${phase.number})`, statusColor(phase.status));
   if (idx < 0) return current;             // not in the list — show it alone

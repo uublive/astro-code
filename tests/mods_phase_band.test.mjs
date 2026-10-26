@@ -215,3 +215,24 @@ test('bandView: carries astro-code\'s version for the title', async () => {
   assert.equal(bandView({ ...STATUS, version: '0.50.0' }, null, {}).version, '0.50.0');
   assert.equal(bandView(STATUS, null, {}).version, null);
 });
+
+test('bandView: the roadmap row is the current milestone without rejected phases; other open milestones get one row', async () => {
+  const { bandView, meterOf } = await band();
+  const p = (number, milestone, status) => ({ number, name: 'n', slug: `${number}-n`, status, milestone, planned: false, discussed: false });
+  const status = {
+    ...STATUS, milestone: 5, phase: { number: 104, slug: '104-n', name: 'n', status: 'pending' }, next: null, siblings: [],
+    phases: [p(54, 2, 'rejected'), p(58, 2, 'complete'), p(84, 2, 'pending'), p(87, 2, 'pending'),
+      p(90, 4, 'verified'), p(91, 4, 'verified'), p(99, 4, 'pending'), p(76, 3, 'complete'),
+      p(103, 5, 'rejected'), p(104, 5, 'pending'), p(105, 5, 'pending')],
+  };
+  const v = bandView(status, null, {});
+  assert.equal(v.lines[0], 'ROADMAP  ○104  ○105');
+  assert.equal(v.lines[1], 'OTHER    M2 2 open · M4 2 to accept, 1 open');
+  assert.deepEqual([meterOf(status).done, meterOf(status).total], [0, 2]);
+  // a closed milestone (complete and rejected only) is not listed; no other row when none hold work
+  const closed = bandView({ ...status, phases: status.phases.filter((x) => x.milestone !== 2 && x.milestone !== 4) }, null, {});
+  assert.equal(closed.lines.length, 1);
+  // the current phase stays even when rejected; phases without a milestone (older roadmaps) stay
+  const cur = bandView({ ...status, phase: { number: 103, slug: '103-n', name: 'n', status: 'rejected' }, phases: [...status.phases, { number: 110, status: 'pending' }] }, null, {});
+  assert.equal(cur.lines[0], 'ROADMAP  ✗103  ○104  ○105  ○110');
+});
