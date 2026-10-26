@@ -188,7 +188,9 @@ const cp = require('child_process');
 const CFG = ${JSON.stringify(cfg)};
 const argv = process.argv.slice(2);
 if (argv[0] === '--version') { console.log(CFG.version + ' (Claude Code)'); process.exit(0); }
-const run = (cmd, args, cwd) => cp.spawnSync(cmd, args, { cwd, encoding: 'utf8' });
+// diff is looked up by absolute path first: a test may run the stub under a PATH with no /usr/bin.
+const BIN = (cmd) => (cmd === 'diff' ? ['/usr/bin/diff', '/bin/diff'].find((f) => fs.existsSync(f)) || 'diff' : cmd);
+const run = (cmd, args, cwd) => cp.spawnSync(BIN(cmd), args, { cwd, encoding: 'utf8' });
 const lines = (s) => s.split('\\n').filter(Boolean);
 let stdin = '';
 try { stdin = fs.readFileSync(0, 'utf8'); } catch (e) { stdin = ''; }
