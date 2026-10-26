@@ -373,3 +373,23 @@ test('history with several versions of a hidden record still plants; the defect 
     } finally { removeCopy(c); }
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('every file of the copy comes from one fresh checkout: birth times follow checkout order, the planted file has no special place', async () => {
+  const { makeCopy, removeCopy } = await import('../lib/plant.mjs');
+  const { statSync: st, existsSync: ex } = await import('node:fs');
+  const root = project();
+  try {
+    const c = makeCopy(root, MUTMUT);
+    try {
+      assert.ok(!ex(join(c.repo, '..', 'work')), 'the work copy is gone');
+      const files = sh(c.repo, 'ls-files', '-z').stdout.split('\0').filter(Boolean);
+      const births = files.map((f) => st(join(c.repo, f)).birthtimeMs);
+      if (births.every((b) => b > 0)) {
+        // a re-created file would be born after files that follow it in checkout order
+        const planted = files.indexOf('src/a.py');
+        assert.ok(births.slice(planted + 1).every((b) => b >= births[planted]), 'the planted file is born in checkout order');
+      }
+      assert.equal(sh(c.repo, 'for-each-ref', 'refs/remotes').stdout.trim(), '');
+    } finally { removeCopy(c); }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
