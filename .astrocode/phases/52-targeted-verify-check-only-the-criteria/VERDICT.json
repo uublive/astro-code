@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "run": 4,
+  "run": 5,
   "mode": "narrowed",
-  "reason": "2 of 13 unmet",
+  "reason": "1 of 13 unmet",
   "broad": false,
-  "commit": "1c5f54a6ee41f6af62a14b9eefe88ad37d5ed1f4",
+  "commit": "a8e0a5b574822da63843d2f490213e0fdb260755",
   "criteria_sha": "sha256:3d95bbfe120f4cdd5af1c753900281d8c3ec306bb8a72d5f200e947990ff0d4f",
-  "at": "2026-10-26T22:49:44.079Z",
+  "at": "2026-10-26T22:56:22.532Z",
   "base": null,
   "criteria": [
     {
@@ -126,8 +126,13 @@
     },
     {
       "id": "C13",
-      "status": "passed",
-      "evidence": "observed",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 4,
+        "commit": "1c5f54a6ee41f6af62a14b9eefe88ad37d5ed1f4"
+      },
       "suite": true
     }
   ]
