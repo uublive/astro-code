@@ -196,3 +196,18 @@ test('the original repo\'s tree, index and refs are byte-identical after makeCop
     assert.deepEqual({ tree: tree(root), refs: refs(root), status: sh(root, 'status', '--porcelain').stdout, idx: sh(root, 'ls-files', '-s').stdout, a: readFileSync(join(root, 'src/a.py'), 'utf8') }, before);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('no commit in the copy still carries a SCRUB path, so `git log --all -p` leaks nothing', async () => {
+  const { makeCopy, removeCopy } = await import('../lib/plant.mjs');
+  const root = project();
+  try {
+    const c = makeCopy(root, MUTMUT);
+    try {
+      const names = sh(c.repo, 'log', '--all', '--name-only', '--format=').stdout;
+      assert.doesNotMatch(names, /SURVIVORS|VERDICT|CALIBRATION/);
+      const stat = sh(c.repo, 'show', '--stat', 'HEAD').stdout;
+      assert.doesNotMatch(stat, /SURVIVORS|VERDICT|CALIBRATION/);
+      assert.equal(sh(c.repo, 'log', '--format=%s').stdout, sh(root, 'log', '--format=%s').stdout);
+    } finally { removeCopy(c); }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

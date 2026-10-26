@@ -80,7 +80,7 @@ test('with a fixed cost per trial and a budget below the bill, no trial starts o
     const r = await runCalibration(p.dir, plan, { run: runner(['pass'], { cost: 2, seen }) });
     assert.equal(seen.length, 2, 'spent 4 + expected 2 > 5, so the third never starts');
     assert.equal(r.record.stopped, 'budget');
-    assert.deepEqual(r.record.completed, { trials: 2, planned_trials: 12 });
+    assert.deepEqual(r.record.completed, { trials: 2, planned_trials: 12, defects: 2 });
     assert.equal(r.record.spent_usd, 4);
     assert.equal(r.record.cost_basis, 'measured');
     assert.deepEqual(r.record.defects.map((d) => d.trials), [1, 1, 0, 0]);
@@ -212,5 +212,16 @@ test('an abort signal stops between trials, removes the copy and records stopped
     assert.equal(r.record.stopped, 'interrupted');
     assert.equal(existsSync(seen[0].cwd), false);
     assert.equal(readLog(p.dir).at(-1).stopped, 'interrupted');
+  } finally { done(p); }
+});
+
+test('the summary reports the defects that ran, not only the ones selected', async () => {
+  const { planCalibration, runCalibration, renderSummary } = await import('../lib/calibrate.mjs');
+  const p = await makeCalibrationProject({ killed: 4 });
+  try {
+    const plan = planCalibration(p.dir, { defects: 4, runs: 2, seed: 5, budget: 5 });
+    const r = await runCalibration(p.dir, plan, { run: runner(['pass'], { cost: 5 }) });
+    assert.equal(r.record.completed.defects, 1);
+    assert.match(renderSummary(r).join ? renderSummary(r).join('\n') : String(renderSummary(r)), /on 1 of 4 defects/);
   } finally { done(p); }
 });

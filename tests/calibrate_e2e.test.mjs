@@ -168,7 +168,7 @@ test('C7: a --budget below the bill stops early with honest counts, in stdout, J
     const j = run(p, ['verify', 'calibrate', '--defects', '4', '--runs', '3', '--seed', '5', '--budget', '5', '--yes', '--json']);
     assert.equal(stub(p).length, 2);
     assert.equal(j.stopped, 'budget');
-    assert.deepEqual(j.completed, { trials: 2, planned_trials: 12 });
+    assert.deepEqual(j.completed, { trials: 2, planned_trials: 12, defects: 2 });
     assert.equal(j.spent_usd, 4);
     const h = run(p, ['verify', 'calibrate', '--defects', '4', '--runs', '3', '--seed', '5', '--budget', '5', '--yes']);
     assert.match(h, /stopped: budget/);
