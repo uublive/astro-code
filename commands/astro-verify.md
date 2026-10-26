@@ -29,9 +29,21 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
      `broad: true`; **check ALL** of the `first` ids before stopping; if any is still unmet, stop
      with a FAIL and report every other criterion as `carried` (never as passed); if they all now
      pass, **continue in the same run** over EVERY other criterion and return `mode: full`.
+   - **When the plan says `targeted`** (a verify after a recorded full PASS), still spawn **ONE**
+     verifier and restate the targeted contract the execute workflow sends: the plan's `floor` ids
+     (each with its `why`), the base (the full PASS's run and commit) and the `range`. The floor may
+     only be **widened**, never shortened: the verifier observes every floor id from scratch, widens
+     when `git diff <range>` reaches what another criterion rests on (a **broad** fix means a full
+     run with `broad: true`), reports every other criterion as `carried` (or leaves it out) and never
+     as passed, and returns `mode: targeted`. For a suite criterion in the floor it runs
+     `ac suite receipt --command "<cmd>" --json` first and cites a reusable receipt as
+     `receipt: <key>` with `carried: true`; otherwise it runs `ac suite run --command "<cmd>"` and
+     observes it. The rules are not restated here: `ac verdict record` and `ac phase verify` re-check
+     every carry in code.
    - **Ask the verifier to end with a fenced JSON block**
-     `{"mode": "full"|"narrowed", "broad": <bool>, "criteria": [{"id": "C1", "passed": <bool>, "mutation": {…}}]}`
-     listing only the criteria it actually checked this run (omit carried ones). `mutation` is
+     `{"mode": "full"|"narrowed"|"targeted", "broad": <bool>, "criteria": [{"id": "C1", "passed": <bool>, "suite": <bool>, "mutation": {…}}, {"id": "C2", "carried": true, "receipt": "<key>"}]}`
+     listing only the criteria it actually checked this run (omit carried ones; the `carried` form is
+     only for a suite criterion standing on a receipt, in a targeted run). `mutation` is
      optional per criterion: the `ac mutate <slug> --json` evidence with `triage` added per survivor,
      and `"test_strength": true` on every criterion the verifier used the tool for, tagged or not
      (gated in code once marked, and the mark is sticky; the survivors file and the rules are
@@ -42,7 +54,7 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    `VERDICT.json`, and derives `passed` itself). PASS requires the record's `passed: true`; if the
    record or the gate refuses, that is a FAIL line, not a PASS. On PASS: run
    `ac phase verify <slug>` (marks the phase **verified**, NOT complete — it refuses without a full
-   recorded verdict), then report **in one line**: verified, plus
+   recorded verdict or a valid targeted one), then report **in one line**: verified, plus
    the next command by number (`/astro-accept <number>`) for UAT sign-off. The `/clear`-before-
    `/astro-accept` nudge (state lives in `.astrocode/`, so context is safe to drop) is optional
    and, if given, stays to one line too. On FAIL: **one line per unmet criterion** — what is
@@ -50,6 +62,8 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    criteria: `carried, not re-checked: <n> (run <R> @ <sha7>)`, citing the saved run and commit;
    then one line pointing to the verifier's full
    per-criterion report for the reproduction detail, then stop. Do not mark it verified.
+   A targeted PASS says in that same one line what was not re-observed: `verified (targeted):
+   observed <n>, carried <k> from run <R> @ <sha7>`, citing the full PASS the record names.
    On PASS or FAIL, when a criterion's `mutation` evidence has a `fallback`, add **at most one
    line**: the evidence's `fallback.report`, verbatim (it is worded from the reason, so it says AI
    mutants stood in only when they did); say nothing about mutation otherwise.

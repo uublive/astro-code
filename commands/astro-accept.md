@@ -13,6 +13,11 @@ human accepts. This is the **human gate** after `/astro-verify` (the AI gate).
    skips the AI gate.
 2. Read `.astrocode/phases/<slug>/ACCEPTANCE.md` (the user-facing checklist written at
    plan time). If it's missing, derive a short checklist from the phase goal/PLAN.
+2b. **Name what was carried.** Run `ac phase show <slug> --json`. When the entry has a `carried`
+   key (the latest verdict was a targeted PASS), state it in **one line** before the walkthrough:
+   `carried, not re-observed: C3, C4 (run 4 @ abc1234); C5 (suite receipt @ def5678)`, naming each
+   criterion with the full PASS run and commit it came from, or the suite receipt's commit. Say
+   nothing when there is no `carried` key (a full PASS observed everything).
 3. Walk the user through it: for each criterion, state it plus **one line** on how to
    try it (the command to run, the URL to open, the thing to click) — not a
    re-explanation of what was built. Let them confirm each one. Use `AskUserQuestion`
