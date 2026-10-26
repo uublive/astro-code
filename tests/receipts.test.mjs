@@ -232,16 +232,43 @@ test('a changed tracked canon file under .astrocode/ makes the tree dirty, but l
   const r = repo();
   try {
     put(r.root, '.astrocode/CONVENTIONS.md', 'a');
-    put(r.root, '.astrocode/state.json', '{}');
+    put(r.root, '.astrocode/state.json', '{"project":"p"}');
     commit(r.root, 'canon');
     await run(r.root);
-    put(r.root, '.astrocode/state.json', '{"x":1}');
+    put(r.root, '.astrocode/state.json', '{"project":"p","active_phase":"01-x","activity":{"text":"⚙ verifying","at":1}}');
     assert.equal(treeState(r.root).clean, true);
     put(r.root, '.astrocode/CONVENTIONS.md', 'b');
     assert.equal(treeState(r.root).clean, false);
     const got = reusableReceipt(r.root, OK);
     assert.equal(got.ok, false);
     assert.match(got.reason, /CONVENTIONS\.md/);
+  } finally { r.done(); }
+});
+
+test('a phase artifact the suite can read (PROBE.md, CRITERIA.md), a new file under phases/ or a real state.json change makes the tree dirty (C7)', async () => {
+  const { reusableReceipt, treeState } = await import('../lib/receipts.mjs');
+  const r = repo();
+  try {
+    put(r.root, '.astrocode/phases/01-x/PROBE.md', 'probe');
+    put(r.root, '.astrocode/phases/01-x/CRITERIA.md', 'c');
+    put(r.root, '.astrocode/state.json', '{"project":"p"}');
+    commit(r.root, 'phase');
+    await run(r.root);
+    const dirtyWith = (rel, body) => {
+      const was = readFileSync(join(r.root, rel), 'utf8');
+      put(r.root, rel, body);
+      const st = treeState(r.root);
+      const got = reusableReceipt(r.root, OK);
+      put(r.root, rel, was);
+      return { clean: st.clean, ok: got.ok };
+    };
+    assert.deepEqual(dirtyWith('.astrocode/phases/01-x/PROBE.md', 'stale'), { clean: false, ok: false });
+    assert.deepEqual(dirtyWith('.astrocode/phases/01-x/CRITERIA.md', 'changed'), { clean: false, ok: false });
+    assert.deepEqual(dirtyWith('.astrocode/state.json', '{"project":"q"}'), { clean: false, ok: false });
+    assert.deepEqual(dirtyWith('.astrocode/state.json', 'not json'), { clean: false, ok: false });
+    put(r.root, '.astrocode/phases/02-y/PROBE.md', 'new');
+    assert.equal(treeState(r.root).clean, false);
+    assert.equal(reusableReceipt(r.root, OK).ok, false);
   } finally { r.done(); }
 });
 

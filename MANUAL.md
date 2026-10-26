@@ -662,7 +662,9 @@ under `.astrocode/.local/suite-receipts/`: the command, commit, tree, whether th
 and after, the exit status, the node version and the time. `ac suite receipt --command "<cmd>"` asks
 whether a receipt can be reused (read-only, exit 0 either way). A receipt is local and never committed,
 and it is reused only on the **same commit**, the **same clean tree** (untracked files count as dirty,
-ignored files are not checked), the **exact command string** and exit 0; it is refused otherwise, each
+ignored files are not checked; only what a verify itself writes is exempt: `.astrocode/.local/`, each phase's
+`VERDICT.json`, `SURVIVORS.json` and `SURPRISES.jsonl`, and `state.json` when only its live status changed),
+the **exact command string** and exit 0; it is refused otherwise, each
 refusal with its own reason. A verifier on the identical clean tree cites a reusable receipt instead of
 running the suite again; the verdict records which receipt stood in. The receipt's command must be
 that criterion's suite command (the command its Observe line names, any one under a `[suite]` tag, or
