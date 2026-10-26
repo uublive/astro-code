@@ -321,3 +321,30 @@ test('a venv built through a symlinked path is repointed too: every spelling of 
     } finally { removeCopy(c); }
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(linkDir, { recursive: true, force: true }); }
 });
+
+test('a dependency created through ANY other spelling of the project is repointed by its real path', async () => {
+  const { makeCopy, removeCopy, trialEnv } = await import('../lib/plant.mjs');
+  const { realpathSync, readdirSync: rd, lstatSync: ls, readlinkSync: rl, writeFileSync: wf, symlinkSync: sl, mkdtempSync: mt, mkdirSync: md } = await import('node:fs');
+  const { tmpdir: td } = await import('node:os');
+  const root = project();
+  const linkDir = mt(join(td(), 'ac-other-'));
+  try {
+    const real = realpathSync(root);
+    const other = join(linkDir, 'elsewhere');
+    sl(real, other); // a spelling the copy is never told about: not root, not $PWD, not a venv record
+    wf(join(root, '.gitignore'), 'node_modules/\n');
+    sh(root, 'add', '.gitignore'); sh(root, 'commit', '-q', '-m', 'ignore deps');
+    md(join(root, 'node_modules', '.cache'), { recursive: true });
+    sl(join(other, 'src'), join(root, 'node_modules', 'loc'));
+    wf(join(root, 'node_modules', '.cache', 'meta.json'), JSON.stringify({ root: other, src: `${other}/src/a.py` }));
+    const c = makeCopy(root, MUTMUT);
+    try {
+      const target = rl(join(c.repo, 'node_modules', 'loc'));
+      assert.ok(!target.startsWith(other) && !realpathSync(target).startsWith(real), `link repointed: ${target}`);
+      const meta = readFileSync(join(c.repo, 'node_modules', '.cache', 'meta.json'), 'utf8');
+      assert.ok(!meta.includes(other) && !meta.includes(real), `text repointed: ${meta}`);
+      const env = trialEnv({ X_DIR: `${other}/src`, PATH: `${other}/node_modules/.bin:/usr/bin` }, { root, cwd: c.repo });
+      assert.ok(Object.values(env).every((v) => !String(v).includes(other) && !String(v).includes(real)), JSON.stringify(env));
+    } finally { removeCopy(c); }
+  } finally { rmSync(root, { recursive: true, force: true }); rmSync(linkDir, { recursive: true, force: true }); }
+});

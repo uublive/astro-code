@@ -2669,6 +2669,7 @@ async function main() {
       } else {
         for (const l of renderSummary(res)) console.log(l);
         if (res.notes.blindness_reported.length) console.log(`⚠ blindness: project-sourced text the verifier can see (same as /astro-verify): ${res.notes.blindness_reported.join(', ')}`);
+        console.log('• limit: a dependency binary embedding the project path in an unrecognised spelling is not detected (MANUAL: Verifier calibration)');
       }
       return;
     }

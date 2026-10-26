@@ -63,6 +63,12 @@
   subjects, branch and tag names, and the copy's files — case-insensitively for
   `calibrat`, `plant`, `mutant`, `mutat`, `defect`, `mutmut`, `stryker`, and check
   for mutation-tool artefacts (e.g. a mutmut `mutants/` tree, a Stryker report).
+- **Bound (amended by Matteo after four fix rounds, 2026-10-26):** "where the verifier can see it"
+  means the copy's tracked tree, its git metadata, the verifier's prompt/args/stdin and environment,
+  and every absolute symlink or absolute path in a copied text file whose REAL path falls inside the
+  project (however spelled). A project path embedded in a third-party binary dependency in a spelling
+  that is not the project's own, `$PWD`'s or a venv's record of it is a stated limit (named in the
+  MANUAL and the run's output), not a C4 failure.
 - **Fails if:** the verifier gets a different or reduced prompt/contract from `/astro-verify`;
   any of those words or artefacts appears where the verifier can see it; or the plant is
   visible as an uncommitted modification in `git status` or under a commit/branch message

@@ -61,3 +61,4 @@ calibration runs in projects such as Waupaca or Astrobot).
 ## Amendment after planning (Matteo, 2026-10-26)
 D7 — C3 amended: the per-trial copy removes the mutation records C4 requires hidden (SURVIVORS.json, VERDICT.json mutation evidence, CALIBRATION.jsonl, tool artefacts), listed per trial in the JSON; blindness wins over a literal one-change diff.
 D8 — `--budget <usd>` caps a run (default 1.5x the printed bill; cost from what Claude reports per trial, stated fallback $3 per trial), satisfying D2/C7.
+D9 — C4 bounded after four fix rounds (Matteo, 2026-10-26): paths are matched by their REAL path (any spelling) in symlinks, text files and the environment; a third-party binary embedding an unrecognised spelling is a stated limit in the MANUAL and the output, not a C4 failure.

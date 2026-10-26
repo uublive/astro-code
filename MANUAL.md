@@ -772,8 +772,14 @@ ac verify calibrate --yes --json         # the same record, machine-readable
   Removed from the copy: every `SURVIVORS.json` and `VERDICT.json`, the calibration log and the tool's
   artefacts; each trial lists what was removed in `--json`. The verifier is the installed
   `astro-verifier` agent with the contract read from `commands/astro-verify.md`, and the code checks
-  blindness before every run. Known limit: older commits in history still hold the earlier
-  `SURVIVORS.json`, because the verifier checks the phase's commits are present.
+  blindness before every run. The copy's history is rebuilt without those records, and nothing in it
+  leads back to the real project: no `ORIG_HEAD`, remote refs or unreachable objects; dependency
+  folders (`node_modules`, `.venv`, `venv`) are copied, not linked, with `__pycache__` dropped and every
+  absolute symlink and every absolute path in a text file whose real path falls inside the project
+  repointed at the copy, however it is spelled; the verifier's environment names only the copy.
+  **Known limit:** a binary file in a dependency that embeds the project path makes that trial refuse
+  to run (reported as invalid) when the path is spelled as the project, `$PWD` or a venv records it;
+  a binary embedding some other spelling of it is not detected.
 - **The numbers.** The headline is the defect rate (defects PASSed on at least one run) and the trial
   rate, each with a Wilson 95% interval, plus per-defect pass^k (caught on all k runs). A crashed or
   unreadable trial is invalid and excluded, never a catch. A set under 5 defects is marked
