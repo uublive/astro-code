@@ -16,12 +16,12 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    full coverage, never a second spawn. Its bar is the pre-registered, goal-derived
    `.astrocode/phases/<slug>/CRITERIA.md` — it checks the result against **that**, not
    the plan. This command spawns the verifier directly (bypassing the execute-phase
-   prompt), so restate the contract when you spawn it: check goal + CRITERIA.md only;
+   prompt), so restate the contract when you spawn it: <!-- verifier-contract -->check goal + CRITERIA.md only;
    **do NOT read PLAN.md/SPEC.md or trust task/commit summaries**; per criterion, assume
    FAIL until you run its `Observe:` evidence yourself and cite the command output; run
    the full suite; PASS only if **every** criterion independently passes. If CRITERIA.md
    is absent, self-derive goal criteria and open the verdict with a provenance line — never
-   silently trust the plan.
+   silently trust the plan.<!-- /verifier-contract -->
    - **When the plan says `narrowed`**, restate the same narrowed contract the execute workflow
      sends: re-check the plan's `first` ids first (the saved run and commit are in the plan),
      from scratch against their own `Observe:` lines; inspect `git diff <range>` first, and a
