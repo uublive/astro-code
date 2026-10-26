@@ -739,6 +739,54 @@ need no edit. A pass is also refused when code changed since the last full run.
 
 ---
 
+## Verifier calibration
+
+The verifier's PASS gates every phase (ADR-021, ADR-022, ADR-079), so how often it passes broken
+code is worth a number. `ac verify calibrate` plants real defects into the project's accepted phases,
+runs the verifier on each exactly as `/astro-verify` would, several times, and reports its false-PASS
+rate, so "did the new prompt help?" is a diff between two records (ADR-088). It is on demand only
+(`/astro-calibrate`): no loop command or workflow runs it, and it never touches a phase's status,
+`VERDICT.json` or `SURVIVORS.json`.
+
+```bash
+ac verify calibrate                      # the bill only: cost, defects × runs, seed, budget
+ac verify calibrate --defects 10 --runs 3 --seed 7 --budget 40 --yes   # run it
+ac verify calibrate --yes --json         # the same record, machine-readable
+```
+
+- **Two sets, reported apart.** EASY defects are `ac mutate` mutants your tests already killed (a real
+  bug by construction). HARD defects are survivors you judged `test-gap` (a real bug no test catches),
+  so the hard rate shows whether the verifier looks beyond the suite. Equivalent and unjudged survivors,
+  and anything from a phase that is not `complete`, are never drawn.
+- **Where the defects come from.** This machine's kept `ac mutate` runs (`.astrocode/.local/mutate-runs/`)
+  of accepted phases, archived milestones included, never a re-run of the tool. A list kept before this
+  feature has no exact changes: run `ac mutate <n>` again. mutmut and Stryker plant exactly; Gremlins
+  reports no patch, so it is not supported and the command says so. A short set is run as it is: the
+  real counts are reported, nothing is repeated to fill the count.
+- **The bill.** Without `--yes` the command prints the estimate (the median cost per trial of your last
+  logged runs, else $3.00) and the seed, and stops: nothing runs, nothing is written. `--budget <usd>`
+  caps the run (default 1.5× the bill); trials go in rounds, one per defect at a time, and reaching the
+  budget stops cleanly with the counts that completed. `--seed` repeats the same plants.
+- **Blind.** Each trial gets a fresh throwaway clone under the temp directory with exactly one defect
+  planted, folded into the tip commit so `git status` is clean and no commit, branch or tag names it.
+  Removed from the copy: every `SURVIVORS.json` and `VERDICT.json`, the calibration log and the tool's
+  artefacts; each trial lists what was removed in `--json`. The verifier is the installed
+  `astro-verifier` agent with the contract read from `commands/astro-verify.md`, and the code checks
+  blindness before every run. Known limit: older commits in history still hold the earlier
+  `SURVIVORS.json`, because the verifier checks the phase's commits are present.
+- **The numbers.** The headline is the defect rate (defects PASSed on at least one run) and the trial
+  rate, each with a Wilson 95% interval, plus per-defect pass^k (caught on all k runs). A crashed or
+  unreadable trial is invalid and excluded, never a catch. A set under 5 defects is marked
+  "too few defects to rely on", and a set with none is unavailable, not 0%. The measure is the verifier's own
+  verdict: the ADR-085 code gate is not applied.
+- **The log.** Each `--yes` run appends one record to `.astrocode/CALIBRATION.jsonl` (committed, with a
+  neutral subject): date, verifier model and prompt hash, seed, both rates, pass^k, counts and the
+  defects by key only. Records with the same `defect_set_hash` are comparable.
+- **Not for astro-code itself:** its `node --test` suite has no supported mutation tool. Use it in a
+  project that has Stryker or mutmut.
+
+---
+
 ## Numbering and duplicate detection
 
 `ac phase add` / `ac milestone new` claim the next free number from `registry.json` on an
@@ -1297,6 +1345,7 @@ astro-code itself captures (ADR-065). A forge server reads the store back read-o
 /astro-execute <phase>    wave-based parallel execution, then verify
 /astro-verify <phase>     AI gate: confirm the phase goal is met (goal-backward)
 /astro-mutate <phase>     run the project's mutation tool on a phase's changed files; also `check`, `setup`, `dismiss`
+/astro-calibrate          measure the verifier's false-PASS rate on planted mutants (bill first, `--yes` only on your say-so)
 /astro-accept <phase>     human gate: UAT sign-off, then close the phase
 /astro-autonomous <phase> run a whole phase end-to-end (discuss→plan→execute→verify), then stop
 /astro-autonomous <phase> --challenge  same, with a challenge-mode discuss step
@@ -1348,6 +1397,7 @@ ac mutate judge <n> <id>... --equivalent "<why>" | --test-gap   # record a survi
 ac mutate --check [<n>] [--json]  # which tool applies, is it installed, how to install it (read-only)
 ac mutate setup                # write a minimal tool config if absent (the only writer; installs nothing)
 ac mutate dismiss [<tool>]     # stop the full install suggestion for this project
+ac verify calibrate [--defects N] [--runs K] [--seed S] [--budget USD] [--yes] [--json]  # verifier false-PASS rate (bill first)
 ac phase effort <n> deep       # per-phase verify→remediate budget (light|standard|deep)
 ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
 ac phase note <n> --append "…" # add a line to it; --replace overwrites (a plain write never drops a note)

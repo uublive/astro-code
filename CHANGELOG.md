@@ -4,6 +4,9 @@ Release notes in full live on the [GitHub releases page](https://github.com/uubl
 
 ## Unreleased
 
+- `ac verify calibrate` and `/astro-calibrate` (ADR-088, #157): plant real `ac mutate` mutants from accepted phases (mutmut and Stryker, exactly; killed mutants as the easy set, `test-gap` survivors as the hard set) into a blind throwaway clone, run the installed `astro-verifier` with `/astro-verify`'s own contract, and report the false-PASS rate per set with Wilson 95% intervals and per-defect pass^k. It prints the bill first and runs only with `--yes`; `--budget <usd>` caps the run; `--seed` repeats the plants; each run appends a record to the committed `.astrocode/CALIBRATION.jsonl`
+- `ac mutate` keeps each mutant's exact change in its full list (`<slug>.mutants.jsonl`), so a kept list from an older version needs one more `ac mutate <n>` before it can feed calibration
+
 ## v0.52.0
 
 - ADR numbers in a project's own ADR folder (`docs/adr`, `adr`, `doc/adr`) are one registry-claimed series with `DECISIONS.md` (ADR-087): `ac decision add` claims the number and writes both the log entry and `<adr_dir>/NNNN-<slug>.md`, and refuses when the registry is unreachable; the folder and width are detected from the project's files and `decisions.adr_dir` overrides or turns it off
