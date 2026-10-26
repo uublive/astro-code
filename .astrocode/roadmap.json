@@ -17,7 +17,7 @@
       "number": 51,
       "name": "Verifier calibration: plant ac mutate mutants in accepted phases and report the verifier's false-PASS rate (GitHub #157)",
       "slug": "51-verifier-calibration-plant-ac-mutate",
-      "status": "pending",
+      "status": "verified",
       "milestone": 14
     },
     {
