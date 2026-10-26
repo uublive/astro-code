@@ -664,7 +664,9 @@ whether a receipt can be reused (read-only, exit 0 either way). A receipt is loc
 and it is reused only on the **same commit**, the **same clean tree** (untracked files count as dirty,
 ignored files are not checked), the **exact command string** and exit 0; it is refused otherwise, each
 refusal with its own reason. A verifier on the identical clean tree cites a reusable receipt instead of
-running the suite again; the verdict records which receipt stood in. A full verdict never uses receipts.
+running the suite again; the verdict records which receipt stood in. The receipt's command must be
+that criterion's suite command (the command its Observe line names, any one under a `[suite]` tag, or
+a known suite command such as `npm test` when it names none), checked at record time and by the gate. A full verdict never uses receipts.
 
 > **A phase's goal is the bar, not its task list.** Every task passing while the goal is
 > unmet is a failed phase.

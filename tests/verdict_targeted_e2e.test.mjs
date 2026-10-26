@@ -22,7 +22,7 @@ const OK = 'node -e "process.exit(0)"';
 const FILE = { C1: 'src/a.mjs', C2: 'src/b.mjs', C3: 'src/c.mjs', C4: 'src/d.mjs', C5: 'src/e.mjs', C6: 'src/f.mjs', C8: 'src/m.mjs' };
 const IDS = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8'];
 const CRITERIA = IDS.map((id) => {
-  if (id === 'C7') return '### C7 [suite] — the suite passes\n- **Observe:** `npm test` exits 0\n';
+  if (id === 'C7') return '### C7 [suite] — the suite passes\n- **Observe:** `node -e "process.exit(0)"` exits 0\n';
   if (id === 'C8') return '### C8 [mutation] — the tests are strong\n- **Observe:** `ac mutate` on `src/m.mjs`\n';
   return `### ${id} — thing\n- **Observe:** read \`${FILE[id]}\`\n`;
 }).join('\n');

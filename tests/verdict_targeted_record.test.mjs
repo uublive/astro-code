@@ -21,7 +21,7 @@ const CRIT = (mutation = '') => [
   '### C1 — a', '- **Observe:** read `src/a.mjs`', '',
   '### C2 — b', '- **Observe:** read `src/b.mjs`', '',
   '### C3 — c', '- **Observe:** read `src/c.mjs`', '',
-  '### C4 [suite] — suite', '- **Observe:** the tests pass', '',
+  '### C4 [suite] — suite', '- **Observe:** `node -e "process.exit(0)"` exits 0', '',
   `### C5 ${mutation}— strength`, '- **Observe:** mutate `src/m.mjs`', '',
   '### C6 — d', '- **Observe:** read `src/d.mjs`', '',
 ].join('\n');
@@ -180,6 +180,32 @@ test('a suite criterion carried from the full PASS is refused; carried by a reus
     const bad = await recordVerdict(s.root, SLUG, { mode: 'targeted', criteria: [...obs(['C2', 'C4']), { id: 'C1', carried: true, receipt: rc.key }] });
     assert.equal(bad.passed, false);
     assert.match(bad.refused[0].reason, /only stand in for a suite criterion/);
+  } finally { s.done(); }
+});
+
+test('a receipt for another command than the criterion\'s suite command is refused at record time and by the gate (C7, D6)', async () => {
+  const { recordVerdict, verifiedGate, runSuite } = await mods();
+  const s = fixture();
+  try {
+    await fullPass(s);
+    change(s, 'src/b.mjs');
+    const fullFile = snap(s);
+    const cheap = runSuite(s.root, 'true', { json: true });
+    const out = await recordVerdict(s.root, SLUG, { mode: 'targeted', criteria: [...obs(['C2']), { id: 'C4', carried: true, receipt: cheap.key }] });
+    assert.equal(out.passed, false);
+    assert.match(out.refused[0].reason, /receipt is for `true`, not this criterion's suite command/);
+    // a verdict file claiming that receipt anyway is refused by the gate
+    restore(s, fullFile);
+    const good = runSuite(s.root, OK, { json: true });
+    const ok = await recordVerdict(s.root, SLUG, { mode: 'targeted', criteria: [...obs(['C2']), { id: 'C4', carried: true, receipt: good.key }] });
+    assert.equal(ok.passed, true, JSON.stringify(ok.refused));
+    const v = readV(s);
+    v.criteria.find((c) => c.id === 'C4').receipt.command = 'true';
+    writeFileSync(s.vfile, JSON.stringify(v, null, 2));
+    commit(s.root, 'tamper');
+    const g = verifiedGate(s.root, SLUG);
+    assert.equal(g.ok, false);
+    assert.match(g.reason, /receipt is for `true`/);
   } finally { s.done(); }
 });
 
