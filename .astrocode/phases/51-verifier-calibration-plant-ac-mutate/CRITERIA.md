@@ -44,7 +44,10 @@
   never the fixture's own working tree (nor under it), and the tree diff against the original
   project is exactly one mutant — for a mutmut defect it equals that mutant's generated
   source change; for a Stryker defect it equals the report's `replacement` applied at its
-  `location`, and nothing else differs. The fixture's own working tree is byte-identical
+  `location`, and nothing else differs — except the removal of the mutation records C4 requires
+  hidden (SURVIVORS.json, VERDICT.json mutation evidence, CALIBRATION.jsonl, tool artefacts),
+  each removal listed per trial in the JSON output (amended by Matteo after planning, 2026-10-26).
+  The fixture's own working tree is byte-identical
   (`git status --porcelain` and `git diff` empty) after the run, and no scratch copies remain.
   Run the fixture with a defect from each tool to cover both.
 - **Fails if:** the verifier runs in the real working tree; a copy carries zero, two or more

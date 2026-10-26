@@ -57,3 +57,7 @@ calibration runs in projects such as Waupaca or Astrobot).
 - The cost estimate's basis (recorded verifier spend, e.g. `ac stats` after #152/#153) and the
   budget unit.
 - How a planted defect maps to the criteria it should fail, if at all, for reporting.
+
+## Amendment after planning (Matteo, 2026-10-26)
+D7 — C3 amended: the per-trial copy removes the mutation records C4 requires hidden (SURVIVORS.json, VERDICT.json mutation evidence, CALIBRATION.jsonl, tool artefacts), listed per trial in the JSON; blindness wins over a literal one-change diff.
+D8 — `--budget <usd>` caps a run (default 1.5x the printed bill; cost from what Claude reports per trial, stated fallback $3 per trial), satisfying D2/C7.
