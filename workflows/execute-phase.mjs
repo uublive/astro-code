@@ -1839,7 +1839,8 @@ const VERIFY_SCHEMA = {
     // `mode` is what this run actually covered; `broad` declares the fix touched what many
     // criteria rest on (the run then covers everything); `status` marks a criterion this run
     // did NOT re-check ('carried') — never a pass.
-    mode: { type: 'string', enum: ['full', 'narrowed'] },
+    // Phase 52 — 'targeted' after a recorded full PASS: the floor is observed, the rest carried.
+    mode: { type: 'string', enum: ['full', 'narrowed', 'targeted'] },
     broad: { type: 'boolean' },
     criteria: {
       type: 'array',
@@ -1855,6 +1856,11 @@ const VERIFY_SCHEMA = {
           // Phase 49 (ADR-085) — `true` on a criterion the verifier used `ac mutate` for; the code
           // gate in lib/verdict.mjs applies it, so it must reach `ac verdict record`.
           test_strength: { type: 'boolean' },
+          // Phase 52 — `suite` marks a criterion whose evidence is the full suite (sticky in the
+          // verdict); `receipt` is the key from `ac suite receipt`, cited by a SUITE criterion
+          // reported as 'carried'. The code in lib/verdict.mjs checks both; this only lets them through.
+          suite: { type: 'boolean' },
+          receipt: { type: 'string' },
           // Phase 47 (ADR-083) — test-strength evidence from `ac mutate <phase> --json`, copied
           // across by the verifier with `triage` added per survivor. The code gate in
           // lib/verdict.mjs (`validateMutation` / `mutationGate`) is the validator; this schema
@@ -2048,11 +2054,28 @@ const VERDICT_PLAN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    mode: { type: 'string', enum: ['full', 'narrowed'] },
+    mode: { type: 'string', enum: ['full', 'narrowed', 'targeted'] },
     reason: { type: 'string' },
     first: { type: 'array', items: { type: 'string' } },
     ids: { type: 'array', items: { type: 'string' } },
     total: { type: 'integer' },
+    // Phase 52 — the targeted decision, verbatim from `ac verdict plan`. Never decided here.
+    floor: { type: 'array', items: { type: 'string' } },
+    carry: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'string' },
+          from: { type: 'object', additionalProperties: false, properties: { run: { type: 'integer' }, commit: { type: 'string' } } },
+        },
+      },
+    },
+    why: { type: 'object', additionalProperties: { type: 'string' } },
+    base: { type: 'object', additionalProperties: false, properties: { run: { type: 'integer' }, commit: { type: 'string' } } },
+    changed: { type: 'array', items: { type: 'string' } },
+    unmapped_files: { type: 'array', items: { type: 'string' } },
     saved: {
       type: 'object',
       additionalProperties: false,
@@ -2070,8 +2093,10 @@ const VERDICT_RECORD_SCHEMA = {
     recorded: { type: 'boolean' },
     run: { type: 'integer' },
     mode: { type: 'string' },
+    reason: { type: 'string' },
     passed: { type: 'boolean' },
     failing: { type: 'array', items: { type: 'string' } },
+    observed: { type: 'integer' },
     carried: { type: 'integer' },
     carriedFrom: {
       type: 'object',
@@ -2090,7 +2115,8 @@ const runVerdictPlan = () =>
       `anything. Run exactly this ONE command in ${root} and return its fields verbatim:\n` +
       `  ac verdict plan ${phaseSlug} --json${fullRun ? ' --full' : ''}\n` +
       `Return mode, reason, first, ids, total, saved (omit it when the output has saved: null) and range ` +
-      `(omit it when null). If the command fails or prints no JSON, return mode="full", first=[] and ` +
+      `(omit it when null), plus floor, carry, why, base (omit it when null), changed and unmapped_files. ` +
+      `If the command fails or prints no JSON, return mode="full", first=[] and ` +
       `put the first stderr line in reason.`,
     { label: 'verdict:plan', phase: 'Verify', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: VERDICT_PLAN_SCHEMA },
   )
@@ -2100,32 +2126,40 @@ const runVerdictRecord = (resultJson) =>
     `VERDICT RECORD for phase ${phaseSlug} in ${root}. Purely mechanical — do not fix, judge or edit ` +
       `anything. Run exactly this ONE command in ${root} and return its fields verbatim:\n` +
       `  ac verdict record ${phaseSlug} --result '${resultJson}'\n` +
-      `Return recorded=true plus run, mode, passed, failing, carried, carriedFrom (omit when null) and ` +
-      `committed from the JSON it prints. If the command exits non-zero, return recorded=false and put ` +
+      `Return recorded=true plus run, mode, reason, passed, failing, observed, carried, carriedFrom ` +
+      `(omit when null) and committed from the JSON it prints. If the command exits non-zero, return recorded=false and put ` +
       `the first stderr line in note.`,
     { label: 'verdict:record', phase: 'Verify', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: VERDICT_RECORD_SCHEMA },
   )
 
-const FULL_PLAN = (reason) => ({ mode: 'full', reason, first: [], ids: [], saved: null, range: null })
+const FULL_PLAN = (reason) => ({ mode: 'full', reason, first: [], ids: [], saved: null, range: null, floor: [], carry: [], why: {}, base: null })
 
 // Ask the clerk, validate, never throw. A narrowed plan must carry everything the narrowed
 // prompt cites (first ids, saved run + commit, range); otherwise it is not trusted.
 const getVerdictPlan = async () => {
   let r = null
   try { r = await runVerdictPlan() } catch (e) { r = null }
-  if (!r || (r.mode !== 'full' && r.mode !== 'narrowed') || !Array.isArray(r.first)) {
+  if (!r || (r.mode !== 'full' && r.mode !== 'narrowed' && r.mode !== 'targeted') || !Array.isArray(r.first)) {
     log('⚠ verdict plan unavailable — running a full verify')
     return FULL_PLAN('verdict plan unavailable')
   }
   const ids = Array.isArray(r.ids) ? r.ids : []
-  const plan = { mode: r.mode, reason: r.reason || '', first: r.first, ids, saved: r.saved || null, range: r.range || null }
+  const plan = {
+    mode: r.mode, reason: r.reason || '', first: r.first, ids, saved: r.saved || null, range: r.range || null,
+    floor: Array.isArray(r.floor) ? r.floor : [], carry: Array.isArray(r.carry) ? r.carry : [],
+    why: r.why && typeof r.why === 'object' ? r.why : {}, base: r.base || null,
+  }
+  if (plan.mode === 'targeted' && (!Array.isArray(r.floor) || !plan.base || !plan.range)) {
+    log('⚠ verdict plan incomplete — running a full verify')
+    return { ...plan, mode: 'full', first: [], floor: [], carry: [], reason: 'verdict plan incomplete' }
+  }
   if (plan.mode === 'narrowed' && (!plan.first.length || !plan.saved || !plan.range)) {
     log('⚠ verdict plan incomplete — running a full verify')
     return { ...plan, mode: 'full', first: [], reason: 'verdict plan incomplete' }
   }
   log(plan.mode === 'narrowed'
     ? `• verify plan: narrowed — re-check ${plan.first.join(', ')} first`
-    : `• verify plan: full — ${plan.reason}`)
+    : `• verify plan: ${plan.mode} — ${plan.reason}`)
   return plan
 }
 
@@ -2158,7 +2192,24 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
   agent(
     `Verify phase "${phaseSlug}" of the project at ${root}. The work is committed on the ` +
       `CURRENT branch — verify against HEAD/the working tree, NOT a fresh checkout of main.\n\n` +
-      (plan.mode === 'narrowed'
+      (plan.mode === 'targeted'
+        ? `THIS IS A TARGETED VERIFY (phase 52). The phase's most recent full PASS (run ${plan.base.run}, ` +
+          `commit ${plan.base.commit}) is the base; what changed since is \`git diff ${plan.range}\`. ac ` +
+          `computed the FLOOR, the criteria that change can affect: ` +
+          `${plan.floor.map((id) => `${id}${plan.why?.[id] ? ` (${plan.why[id]})` : ''}`).join('; ') || 'none'}.\n` +
+          `1. Observe EVERY floor criterion from scratch and plan-blind, against its own Observe: line. You may ` +
+          `WIDEN the floor: when the diff reaches what another criterion rests on (shared code, config, the ` +
+          `test harness) observe that one too. You may NEVER skip, or carry, a floor criterion.\n` +
+          `2. Report every criterion you did not re-check with status 'carried' (or leave it out). Never report ` +
+          `a carried criterion as passed: ac records it as carried from run ${plan.base.run}, not observed. If the ` +
+          `fix is BROAD, do not target: run a FULL verify and return broad=true, mode='full'.\n` +
+          `3. A SUITE criterion (its evidence is the full test suite) is in the floor: FIRST run ` +
+          `\`ac suite receipt --command "<the suite command>" --json\`. When it is reusable, report that ` +
+          `criterion with status 'carried' and receipt set to the printed key; otherwise run the suite through ` +
+          `\`ac suite run --command "<the suite command>"\` and observe it. Set suite=true on a criterion whose ` +
+          `evidence is the full suite. The same receipt may stand in for the structural full-suite run below.\n` +
+          `4. Return mode='targeted'.\n\n`
+        : plan.mode === 'narrowed'
         ? `THIS IS A NARROWED RE-VERIFY (ADR-079). The previous verdict (run ${plan.saved.run}, commit ` +
           `${plan.saved.commit}) left these criteria unmet: ${plan.first.join(', ')}.\n` +
           `1. FIRST inspect \`git diff ${plan.range}\` (the change since that verdict). If the fix is BROAD — ` +
@@ -2243,7 +2294,7 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
   for (const c of items) seenIds.add(c.id)
   // What this run actually covered. A narrowed plan whose verifier did not say otherwise was
   // narrowed — the safe reading, since only a declared full run can pass.
-  const mode = v.broad === true && v.mode !== 'narrowed' ? 'full' : (v.mode || (plan.mode === 'narrowed' ? 'narrowed' : 'full'))
+  const mode = v.broad === true && v.mode !== 'narrowed' ? 'full' : (v.mode || (plan.mode === 'narrowed' || plan.mode === 'targeted' ? plan.mode : 'full'))
   const known = plan.ids.length ? plan.ids : [...seenIds]
   const byId = new Map(items.map((c) => [c.id, c]))
   // CODE-SIDE COVERAGE GUARD (ADR-031/079): a PASS needs the verifier's word AND a full run AND
@@ -2252,20 +2303,34 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
     const c = byId.get(id)
     return c && c.passed === true && c.status !== 'carried'
   })
-  if (v.passed && (mode === 'narrowed' || items.some((c) => c.status === 'carried') || !covered)) {
+  // Phase 52: a TARGETED pass is covered when every floor id is observed and passed (a suite id may
+  // instead be carried by a receipt, which ac checks at record time). Carries are fine outside the floor.
+  const floorCovered = plan.mode === 'targeted' && plan.floor.every((id) => {
+    const c = byId.get(id)
+    return c && c.passed === true && (c.status !== 'carried' || (typeof c.receipt === 'string' && c.receipt !== ''))
+  })
+  if (v.passed && mode === 'targeted') {
+    if (!floorCovered) {
+      v.passed = false
+      log('⚠ verify PASS withdrawn — a floor criterion was not observed in the targeted run')
+    }
+  } else if (v.passed && (mode === 'narrowed' || items.some((c) => c.status === 'carried') || !covered)) {
     v.passed = false
     log('⚠ verify PASS withdrawn — not every criterion was independently checked in a full run')
   }
   v.mode = mode
   for (const c of items) {
-    if (c.status === 'carried') continue
+    if (c.status === 'carried') {
+      if (mode === 'targeted' && plan.floor.includes(c.id) && typeof c.receipt === 'string' && c.receipt) lastSeen.set(c.id, true)
+      continue
+    }
     lastSeen.set(c.id, c.passed === true)
     if (c.passed === true) evidence.delete(c.id)
     else evidence.set(c.id, { command: c.command, output: c.output })
   }
   // Absence of evidence is failure: a criterion this run should have covered but never reported
   // (and none ever has) stays unmet, so the comparison cannot shrink by omission.
-  for (const id of [...plan.first, ...(mode === 'full' ? known : [])]) {
+  for (const id of [...plan.first, ...(mode === 'full' ? known : []), ...(mode === 'targeted' ? plan.floor : [])]) {
     if (!lastSeen.has(id)) lastSeen.set(id, false)
   }
 
@@ -2278,7 +2343,14 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
   try {
     rec = await runVerdictRecord(JSON.stringify({
       mode, broad: v.broad === true,
-      criteria: checked.map((c) => ({ id: c.id, passed: c.passed === true, ...(c.test_strength === true ? { test_strength: true } : {}), ...(c.mutation ? { mutation: c.mutation } : {}) })),
+      criteria: [
+        ...checked.map((c) => ({ id: c.id, passed: c.passed === true, ...(c.test_strength === true ? { test_strength: true } : {}), ...(c.suite === true ? { suite: true } : {}), ...(c.mutation ? { mutation: c.mutation } : {}) })),
+        // A suite criterion carried by a receipt travels as a citation; every other carry is implicit.
+        ...(mode === 'targeted'
+          ? items.filter((c) => c.status === 'carried' && typeof c.receipt === 'string' && c.receipt && /^C\d+$/.test(c.id))
+            .map((c) => ({ id: c.id, carried: true, receipt: c.receipt }))
+          : []),
+      ],
     }).replace(/'/g, '\\u0027'))
   } catch (e) { rec = null }
   if (rec && rec.recorded === true) {
@@ -2289,6 +2361,13 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
     }
   } else {
     log(`⚠ verdict not saved — ${(rec && rec.note) || 'the record clerk returned nothing'}`)
+  }
+  if (mode === 'targeted' && rec && Array.isArray(rec.failing)) {
+    for (const id of rec.failing) lastSeen.set(id, false)
+  }
+  if (mode === 'targeted' && plan.base) {
+    const n = rec && Number.isInteger(rec.carried) ? rec.carried : Math.max(0, known.length - checked.length)
+    if (n > 0) v.summary = `${v.summary}\ncarried, not re-observed: ${n} criteria (run ${plan.base.run} @ ${String(plan.base.commit).slice(0, 7)})`
   }
   if (!v.passed && mode === 'narrowed') {
     const n = rec && Number.isInteger(rec.carried) ? rec.carried : Math.max(0, known.length - checked.length)

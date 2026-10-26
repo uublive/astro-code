@@ -4230,3 +4230,99 @@ test('t4 (phase 47): VERIFY_SCHEMA lets mutation evidence through; the record ca
   assert.ok(wfSrc.includes(".replace(/'/g, '\\\\u0027')"), "the --result JSON must encode every ' so it cannot break the single quotes")
   assert.ok(wfSrc.includes('c.mutation.fallback.reason'), 'a fallback reason is logged once from the evidence')
 })
+
+// ── Phase 52 (amends ADR-079): targeted verify after a recorded full PASS ─────────────────────────
+const FLOOR52 = ['C2', 'C4']
+const targetPlan = (over = {}) => ({
+  mode: 'targeted', reason: '2 of 9 criteria affected since full PASS at aaa1111 (run 1)', first: [], ids: IDS9, total: 9,
+  floor: FLOOR52, carry: IDS9.filter((id) => !FLOOR52.includes(id)).map((id) => ({ id, from: { run: 1, commit: 'aaa1111' } })),
+  why: { C2: 'named file changed: src/b.mjs', C4: 'suite criterion: observe it, or cite a receipt (ac suite receipt)' },
+  base: { run: 1, commit: 'aaa1111' }, saved: { run: 1, commit: 'aaa1111', mode: 'full' }, range: 'aaa1111..HEAD',
+  changed: ['src/b.mjs'], unmapped_files: [], ...over,
+})
+const stuck = { headBefore: 'h1', headAfter: 'h1', summary: '' }
+const recT = (extra = {}) => () => ({ recorded: true, run: 2, mode: 'targeted', passed: true, failing: [], ...extra })
+const rest52 = IDS9.filter((id) => !FLOOR52.includes(id))
+
+test('phase 52: VERDICT_PLAN_SCHEMA accepts targeted with floor, carry, why, base, changed and unmapped_files', () => {
+  const src = readFileSync(WF_FILE, 'utf8')
+  const plan = runInNewContext(`(${src.match(/const VERDICT_PLAN_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)[1]})`)
+  assert.ok(plan.properties.mode.enum.includes('targeted'))
+  for (const k of ['floor', 'carry', 'why', 'base', 'changed', 'unmapped_files']) assert.ok(plan.properties[k], `plan schema has ${k}`)
+  assert.strictEqual(plan.properties.why.type, 'object')
+  const rec = runInNewContext(`(${src.match(/const VERDICT_RECORD_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)[1]})`)
+  assert.ok(rec.properties.reason && rec.properties.observed)
+  const verify = runInNewContext(`(${src.match(/const VERIFY_SCHEMA\s*=\s*(\{[\s\S]*?\n\})/)[1]})`)
+  assert.ok(verify.properties.mode.enum.includes('targeted'))
+  const item = verify.properties.criteria.items.properties
+  assert.strictEqual(item.receipt.type, 'string')
+  assert.strictEqual(item.suite.type, 'boolean')
+})
+
+test('phase 52: a targeted plan missing floor or base degrades to a full verify with one log line', async () => {
+  for (const bad of [{ floor: undefined }, { base: undefined }, { range: undefined }]) {
+    const { calls, logs } = await runWorkflow(ARGS45, { discoverTasks: chainTasks(1), plan: targetPlan(bad), verify: vdict(IDS9, { mode: 'full' }) })
+    const p = verifierCalls(calls)[0].prompt
+    assert.doesNotMatch(p, /TARGETED VERIFY/)
+    assert.equal(logs.filter((l) => /verdict plan incomplete/.test(l)).length, 1, logs.join('\n'))
+  }
+})
+
+test('phase 52: a targeted plan logs `• verify plan: targeted — <reason>`', async () => {
+  const { logs } = await runWorkflow(ARGS45, { discoverTasks: chainTasks(1), plan: targetPlan(), verify: vdict(IDS9, { carried: rest52, mode: 'targeted', passed: true }), record: recT() })
+  assert.ok(logs.includes('• verify plan: targeted — 2 of 9 criteria affected since full PASS at aaa1111 (run 1)'), logs.join('\n'))
+})
+
+test('phase 52: the targeted preamble names the floor, the base run and commit and the range, lets the verifier widen but never skip a floor id, and tells it to check `ac suite receipt` before running the suite', async () => {
+  const { calls } = await runWorkflow(ARGS45, { discoverTasks: chainTasks(1), plan: targetPlan(), verify: vdict(IDS9, { carried: rest52, mode: 'targeted', passed: true }), record: recT() })
+  const p = verifierCalls(calls)[0].prompt
+  assert.match(p, /TARGETED VERIFY/)
+  assert.match(p, /C2 \(named file changed: src\/b\.mjs\); C4/)
+  assert.match(p, /run 1/)
+  assert.match(p, /aaa1111/)
+  assert.match(p, /git diff aaa1111\.\.HEAD/)
+  assert.match(p, /WIDEN/)
+  assert.match(p, /NEVER skip/)
+  assert.match(p, /ac suite receipt --command/)
+  assert.match(p, /ac suite run --command/)
+  assert.match(p, /mode='targeted'/)
+  assert.doesNotMatch(p, /NARROWED RE-VERIFY/)
+})
+
+test('phase 52: the coverage guard withdraws a targeted PASS that carried or failed a floor id and keeps one that carried only non-floor ids', async () => {
+  const keep = await runWorkflow(ARGS45, { discoverTasks: chainTasks(1), plan: targetPlan(), verify: vdict(IDS9, { carried: rest52, mode: 'targeted', passed: true }), record: recT() })
+  assert.equal(keep.result.verdict.passed, true)
+  assert.equal(keep.result.stoppedReason, 'passed')
+  assert.ok(keep.result.verdict.summary.includes('carried, not re-observed: 7 criteria (run 1 @ aaa1111)'), keep.result.verdict.summary)
+  for (const verify of [
+    vdict(IDS9, { carried: [...rest52, 'C2'], mode: 'targeted', passed: true }),
+    vdict(IDS9, { failed: ['C2'], carried: rest52, mode: 'targeted', passed: true }),
+    vdict(IDS9, { omit: ['C4'], carried: rest52, mode: 'targeted', passed: true }),
+  ]) {
+    const r = await runWorkflow(ARGS45, { discoverTasks: chainTasks(1), plan: [targetPlan(), narrowPlan(['C2'])], verify, record: recT({ passed: true }), remediate: stuck })
+    assert.equal(r.result.verdict.passed, false)
+    assert.notEqual(r.result.stoppedReason, 'passed')
+    assert.ok(r.logs.some((l) => /verify PASS withdrawn — a floor criterion was not observed/.test(l)), r.logs.join('\n'))
+  }
+  // a targeted claim on a plan that was not targeted is never a pass
+  const wrong = await runWorkflow(ARGS45, { discoverTasks: chainTasks(1), plan: fullPlan(), verify: vdict(IDS9, { carried: rest52, mode: 'targeted', passed: true }), record: recT(), remediate: stuck })
+  assert.equal(wrong.result.verdict.passed, false)
+})
+
+test('phase 52: the record payload sends carried:true with receipt for receipt-cited criteria and omits other carries', async () => {
+  const key = 'a'.repeat(64)
+  const v = vdict(IDS9, { carried: rest52, mode: 'targeted', passed: true })
+  v.criteria = v.criteria.map((c) => (c.id === 'C4' ? { id: 'C4', passed: true, status: 'carried', receipt: key, suite: true } : c))
+  const { calls, result } = await runWorkflow(ARGS45, { discoverTasks: chainTasks(1), plan: targetPlan(), verify: v, record: recT() })
+  assert.equal(result.verdict.passed, true)
+  const rec = clerkCalls(calls, 'verdict:record')[0].prompt
+  assert.match(rec, /"mode":"targeted"/)
+  assert.ok(rec.includes(`{"id":"C4","carried":true,"receipt":"${key}"}`), rec)
+  assert.match(rec, /\{"id":"C2","passed":true\}/)
+  assert.doesNotMatch(rec, /"id":"C1"/)
+  // a suite id the verifier observed rather than carried is marked, not cited
+  const o = vdict(IDS9, { carried: rest52, mode: 'targeted', passed: true })
+  o.criteria = o.criteria.map((c) => (c.id === 'C4' ? { ...c, suite: true } : c))
+  const obs = await runWorkflow(ARGS45, { discoverTasks: chainTasks(1), plan: targetPlan(), verify: o, record: recT() })
+  assert.ok(clerkCalls(obs.calls, 'verdict:record')[0].prompt.includes('{"id":"C4","passed":true,"suite":true}'))
+})
