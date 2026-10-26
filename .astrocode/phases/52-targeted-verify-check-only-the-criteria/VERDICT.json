@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "run": 5,
+  "run": 6,
   "mode": "narrowed",
   "reason": "1 of 13 unmet",
   "broad": false,
-  "commit": "a8e0a5b574822da63843d2f490213e0fdb260755",
+  "commit": "81281261038fad11660dccbbe9e973a5fae42edd",
   "criteria_sha": "sha256:3d95bbfe120f4cdd5af1c753900281d8c3ec306bb8a72d5f200e947990ff0d4f",
-  "at": "2026-10-26T22:56:22.532Z",
+  "at": "2026-10-26T23:55:00.043Z",
   "base": null,
   "criteria": [
     {
