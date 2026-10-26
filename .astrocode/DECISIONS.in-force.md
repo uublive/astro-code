@@ -574,7 +574,11 @@ _2026-10-26 · at b7a68ef_
 ## ADR-089 — A targeted verify may mark a phase verified when every carried criterion cites the phase's latest full PASS at an ancestor commit, none of its files changed, and it is not a suite criterion (unless a suite receipt covers the exact clean tree) or a test-strength criterion whose mutate scope changed; carries are one hop from a full PASS and named per criterion (amends ADR-079)
 _2026-10-26 · at d1ef95f_
 
-**Why:** Full re-verification after a one-line follow-up cost up to ~50 minutes; a deterministic floor the verifier may only widen keeps the gate honest while carrying untouched passes (phase 52, Matteo; GitHub #140, #141)
+**Why:** GitHub #140: every verify after a full PASS re-ran the whole phase, even after a one-line follow-up (phase 53's verify took about 50 minutes; targeted runs measured 1-5 units against 9-13 for full ones). #141: 16% of all test minutes re-ran suites on an identical clean tree. The floor is code: criteria whose named files the diff touched, criteria that name no file (always observed), suite criteria, and test-strength criteria whose mutate scope changed. The verifier may only widen it. ac verdict record and ac phase verify re-check every carry condition in code (lib/verdict.mjs), so a verifier cannot skip a floor criterion. A diff over MAX_TARGETED_FILES = 20 files, or one that affects over half of the criteria, runs full, as does a phase's first verify and --full. The base (the phase's most recent full PASS) is kept in VERDICT.json as base, so successive targeted verifies compare against the same full PASS and a carry never cites a targeted run. Suite receipts are local (.astrocode/.local), keyed by commit, tree and exact command, and refused on a dirty tree (untracked files included; ignored files are not checked) or a non-zero exit. ADR-079 stays in force for the re-verify after a FAIL (narrowed), and a FAIL always takes precedence over targeting (phase 52, Matteo; GitHub #140, #141)
+
+**Rejected:** Guessing a criterion's files from prose (a false carry). Forcing a full run on any diff file no criterion names (no narrowing in practice; the suite criterion is the backstop). Carrying from the previous targeted run (a chain of carries). Committed receipts (a teammate's run is not this verifier's evidence). Accepting receipts in a full verdict (full means every criterion observed).
+
+_Amended 2026-10-26: phase 52 plan: record the full why and the rejected alternatives the plan pins, instead of a duplicate decision_
 
 ## Not in force
 
