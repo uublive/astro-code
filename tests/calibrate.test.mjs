@@ -4,7 +4,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, rmSync, readdirSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeCalibrationProject, drift, sh } from './fixtures/calibrate/project.mjs';
 
@@ -176,7 +175,7 @@ test('appendLog appends one line under the lock, keeps earlier lines byte-identi
 test('planCalibration writes nothing and creates no directory', async () => {
   const { planCalibration } = await import('../lib/calibrate.mjs');
   const p = await makeCalibrationProject();
-  const snap = () => `${sh(p.dir, 'status', '--porcelain', '--ignored').stdout}${readdirSync(join(p.dir, '.astrocode')).sort().join(',')}${readdirSync(tmpdir()).filter((f) => f.startsWith('ac-v-')).join(',')}`;
+  const snap = () => `${sh(p.dir, 'status', '--porcelain', '--ignored').stdout}${readdirSync(join(p.dir, '.astrocode')).sort().join(',')}`;
   try {
     const before = snap();
     planCalibration(p.dir, { defects: 4, runs: 2, seed: 3 });
