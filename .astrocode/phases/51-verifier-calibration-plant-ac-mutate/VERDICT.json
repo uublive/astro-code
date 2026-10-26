@@ -1,38 +1,23 @@
 {
   "version": 1,
-  "run": 6,
-  "mode": "narrowed",
+  "run": 7,
+  "mode": "full",
   "broad": false,
-  "commit": "6713e3bfae445dafdefc20d0e9fe927a68286822",
-  "criteria_sha": "sha256:12927b030173d83d4557080ec12234afc01759fb22279b03e42aa0c8466bc9a0",
-  "at": "2026-10-26T15:26:19.939Z",
+  "commit": "4ea5f008ebf64a62f2b649e0876b6cd851d4a319",
+  "criteria_sha": "sha256:2ecdf2713aba46397b3ac80208f8533abd048eaecfa483f7b155c13e8a4c54e8",
+  "at": "2026-10-26T16:17:54.826Z",
   "criteria": [
     {
       "id": "C1",
-      "status": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "f28eeb1b10c104be097d7e29e1dd4789382a0154"
-      }
+      "status": "passed"
     },
     {
       "id": "C2",
-      "status": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "f28eeb1b10c104be097d7e29e1dd4789382a0154"
-      }
+      "status": "passed"
     },
     {
       "id": "C3",
-      "status": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "f28eeb1b10c104be097d7e29e1dd4789382a0154"
-      }
+      "status": "failed"
     },
     {
       "id": "C4",
@@ -40,75 +25,35 @@
     },
     {
       "id": "C5",
-      "status": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "f28eeb1b10c104be097d7e29e1dd4789382a0154"
-      }
+      "status": "passed"
     },
     {
       "id": "C6",
-      "status": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "f28eeb1b10c104be097d7e29e1dd4789382a0154"
-      }
+      "status": "passed"
     },
     {
       "id": "C7",
-      "status": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "c48224dac477848f3e77d6e25a0e049757f25147"
-      }
+      "status": "passed"
     },
     {
       "id": "C8",
-      "status": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "f28eeb1b10c104be097d7e29e1dd4789382a0154"
-      }
+      "status": "passed"
     },
     {
       "id": "C9",
-      "status": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "f28eeb1b10c104be097d7e29e1dd4789382a0154"
-      }
+      "status": "passed"
     },
     {
       "id": "C10",
-      "status": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "f28eeb1b10c104be097d7e29e1dd4789382a0154"
-      }
+      "status": "passed"
     },
     {
       "id": "C11",
-      "status": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "f28eeb1b10c104be097d7e29e1dd4789382a0154"
-      }
+      "status": "passed"
     },
     {
       "id": "C12",
-      "status": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "f28eeb1b10c104be097d7e29e1dd4789382a0154"
-      }
+      "status": "passed"
     }
   ]
 }
