@@ -137,7 +137,7 @@ test('no accepted-phase defects at all exits 0, says why, runs nothing and write
     const r = ac(p, ['verify', 'calibrate', '--yes']);
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /nothing to calibrate/);
-    assert.match(r.stdout, /Gremlins|gremlins/);
+    assert.match(r.stdout, /Gremlins is not supported/);
     assert.deepEqual(readStubLog(p.log), []);
     assert.equal(existsSync(join(p.dir, '.astrocode', 'CALIBRATION.jsonl')), false);
   } finally { done(p); }

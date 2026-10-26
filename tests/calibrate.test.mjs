@@ -73,7 +73,7 @@ test('a phase whose CRITERIA.md has no criteria is skipped with its reason', asy
   } finally { done(p); }
 });
 
-test('a gremlins kept run, or pickTool naming Gremlins with no runs, yields `unsupported: gremlins`', async () => {
+test('a gremlins kept run, or pickTool naming Gremlins with no runs, yields an unsupported-Gremlins note', async () => {
   const { gatherCandidates } = await import('../lib/calibrate.mjs');
   const g = await makeCalibrationProject({ tools: ['gremlins'] });
   const none = await makeCalibrationProject({ tools: ['gremlins'], noRuns: true });
@@ -81,7 +81,7 @@ test('a gremlins kept run, or pickTool naming Gremlins with no runs, yields `uns
     for (const p of [g, none]) {
       const c = gatherCandidates(p.dir);
       assert.deepEqual([c.easy.length, c.hard.length], [0, 0]);
-      assert.deepEqual(c.unsupported, ['gremlins (it reports no patch)']);
+      assert.deepEqual(c.unsupported, ['Gremlins is not supported (it reports no patch)']);
     }
     assert.equal(gatherCandidates(none.dir).shortfall['no kept run'], 1);
   } finally { done(g); done(none); }
