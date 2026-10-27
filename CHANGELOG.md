@@ -2,7 +2,7 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
-## Unreleased
+## v0.53.0
 
 - Targeted verify (ADR-089, amends ADR-079; #140, #141): a verify after a recorded full PASS observes only the criteria the diff since that PASS can affect (the floor, computed by `ac verdict plan`; the verifier may only widen it) and carries the rest, citing the phase's most recent full PASS. A targeted PASS may mark the phase verified when every carry still meets its conditions, re-checked in code by `ac verdict record` and `ac phase verify`; a first verify, a broad diff, a moved base and `--full` run full. `VERDICT.json` names each criterion `observed` or `carried`, and `ac phase show` and `/astro-accept` list the carried ones
 - `ac suite run|receipt --command "<cmd>"`: local suite receipts keyed by commit, tree and exact command, reused only on the identical clean tree with a passing exit. CRITERIA.md gains an optional `- **Files:**` line and a `[suite]` heading tag
