@@ -809,6 +809,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-27T19:48:33.767Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-10-27-execute-never-runs-tasks-in-parallel",
+      "name": "execute never runs tasks in parallel: every task claims PLAN.md",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "fix/execute-file-claims",
+      "claimed_at": "2026-10-27T23:12:44.999Z",
+      "status": "active"
     }
   ]
 }
