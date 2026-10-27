@@ -800,6 +800,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-27T19:48:31.282Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-10-27-a-in-the-agent-name-in-a-context-marker",
+      "name": "A '>' in the agent name in a CONTEXT marker makes the file read as 'stub'",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-27T19:48:33.767Z",
+      "status": "active"
     }
   ]
 }
