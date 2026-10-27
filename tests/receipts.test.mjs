@@ -245,6 +245,25 @@ test('a changed tracked canon file under .astrocode/ makes the tree dirty, but l
   } finally { r.done(); }
 });
 
+test('a receipt taken after the real `ac activity` / `ac state set` writes is reusable: only live status changed (phase 52 C6)', async () => {
+  const { reusableReceipt, treeState } = await import('../lib/receipts.mjs');
+  const { updateState } = await import('../lib/state.mjs');
+  const r = repo();
+  try {
+    put(r.root, '.astrocode/state.json', '{"project":"p"}');
+    commit(r.root, 'state');
+    await updateState(r.root, (s) => ({ ...s, active_phase: '01-x' }));
+    await updateState(r.root, (s) => ({ ...s, activity: { text: '⚙ verifying', at: 1 } }));
+    assert.equal(treeState(r.root).clean, true);
+    const rc = await run(r.root);
+    assert.equal(rc.clean, true);
+    assert.equal(reusableReceipt(r.root, OK).ok, true);
+    // a real change written through the same path is still dirty
+    await updateState(r.root, (s) => ({ ...s, project: 'q' }));
+    assert.equal(treeState(r.root).clean, false);
+  } finally { r.done(); }
+});
+
 test('a phase artifact the suite can read (PROBE.md, CRITERIA.md), a new file under phases/ or a real state.json change makes the tree dirty (C7)', async () => {
   const { reusableReceipt, treeState } = await import('../lib/receipts.mjs');
   const r = repo();

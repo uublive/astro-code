@@ -2653,6 +2653,8 @@ async function main() {
       const sub = pos[0];
       if (sub !== 'plan' && sub !== 'record') die('usage: ac verdict <plan|record> <phase> …');
       checkFlags(`verdict ${sub}`, flags);
+      // A stray token (`-full`, a second phase) is refused, never ignored: `-full` silently ran targeted.
+      if (pos.length > 2) die(`unexpected argument for \`ac verdict ${sub}\`: ${pos.slice(2).join(' ')} (flags take two dashes: --full, --json)`);
       const ph = findPhase(r, pos[1]);
       if (!ph) die(`usage: ac verdict plan <phase> [--full] [--json] | ac verdict record <phase> --result '<json>'`);
       if (sub === 'plan') {
