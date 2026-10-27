@@ -2,7 +2,7 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
-## Unreleased
+## v0.53.1
 
 - Execution runs disjoint tasks in parallel again: Discover filled every task's `file` with the plan's own path (its prompt never said what `file` means, and the executor prompt labelled it "Plan/task file"), so every task claimed `PLAN.md` and each wave held one task, silently. Claims are now normalised in code (backticks and `(new)` notes dropped, only paths count, the plan or any phase-folder file is no claim, so the no-file warning fires), Discover's prompt and schema define `file`, and the planner writes one `- **files:**` line per task
 
