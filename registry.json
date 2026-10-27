@@ -791,6 +791,15 @@
       "branch": "develop",
       "claimed_at": "2026-10-24T05:05:16.305Z",
       "status": "complete"
+    },
+    {
+      "type": "fix",
+      "id": "2026-10-27-a-convention-promotion-record-prints",
+      "name": "A convention promotion record prints its kind twice: 'proj (convention convention)'",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-10-27T19:48:31.282Z",
+      "status": "active"
     }
   ]
 }
