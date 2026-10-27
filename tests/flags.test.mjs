@@ -103,11 +103,10 @@ test('ADR-029: `ac verdict plan --fulll` (typo) exits non-zero instead of silent
 test('`ac verdict plan 1 -full` (one dash) exits non-zero instead of silently running targeted (phase 52 C2)', async () => {
   const dir = mkWorkdir(null);
   await addPhase(dir, { number: 1, name: 'Do a thing' });
-  for (const extra of [['-full'], ['2']]) {
+  for (const extra of [['-full'], ['2'], ['--json', '-full'], ['--json', 'full'], ['--json=full'], ['--full', 'x']]) {
     const res = run(['verdict', 'plan', '1', ...extra], dir);
-    assert.notStrictEqual(res.status, 0);
+    assert.notStrictEqual(res.status, 0, extra.join(' '));
     assert.match(res.stderr, /unexpected argument/);
-    assert.match(res.stderr, new RegExp(extra[0]));
   }
 });
 

@@ -2655,6 +2655,11 @@ async function main() {
       checkFlags(`verdict ${sub}`, flags);
       // A stray token (`-full`, a second phase) is refused, never ignored: `-full` silently ran targeted.
       if (pos.length > 2) die(`unexpected argument for \`ac verdict ${sub}\`: ${pos.slice(2).join(' ')} (flags take two dashes: --full, --json)`);
+      // parseArgs reads the token after a flag as its value (`--json -full`), so a switch that took one
+      // swallowed a stray argument: refuse it the same way.
+      for (const k of ['full', 'json']) {
+        if (flags[k] !== undefined && flags[k] !== true) die(`unexpected argument for \`ac verdict ${sub}\`: --${k} takes no value (got ${JSON.stringify(flags[k])})`);
+      }
       const ph = findPhase(r, pos[1]);
       if (!ph) die(`usage: ac verdict plan <phase> [--full] [--json] | ac verdict record <phase> --result '<json>'`);
       if (sub === 'plan') {
