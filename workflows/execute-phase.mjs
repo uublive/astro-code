@@ -220,7 +220,7 @@ const TASK_SCHEMA = {
         properties: {
           id: { type: 'string' },
           title: { type: 'string' },
-          file: { type: 'string' },
+          file: { type: 'string', description: 'The paths of the files this task creates or edits, comma-separated, from its file:/files: line; never the plan\'s own path' },
           depends_on: { type: 'array', items: { type: 'string' } },
           done: { type: 'boolean' },
           // #10 — true ONLY when the plan explicitly declares the task commit-free (a
@@ -257,6 +257,11 @@ const disc = await agent(
   `Read every plan/task file under ${root}/.astrocode/phases/${phaseSlug}/ (PLAN.md and any NN-*.md). ` +
     `Return the full task list with explicit dependencies — depends_on lists the ids of tasks ` +
     `that must complete before this one. Use the ids exactly as written in the plan.\n\n` +
+    `file: the paths of the files this task creates or edits, comma-separated, exactly as the task's ` +
+    `\`file:\` or \`files:\` line (or its Files/Touches list) names them — paths only, no backticks or notes. ` +
+    `Never the plan itself: not PLAN.md, not any file under .astrocode/phases/. The wave builder runs ` +
+    `two tasks in parallel only when their files differ, so a wrong file here makes every task collide. ` +
+    `Leave it empty only when the task names no file at all.\n\n` +
     `For each task, set done:true or done:false using this EXACT check (replace <taskId> with the task id):\n` +
     `  git log --oneline --fixed-strings --grep "(phase ${phaseNum} <taskId>)"\n` +
     `If the command returns at least one line, set done:true; otherwise set done:false.\n\n` +
@@ -275,13 +280,21 @@ const disc = await agent(
  * forces it to run alone (safe over fast).  The planner SHOULD declare files;
  * this is the fallback when it doesn't.
  *
+ * Discover often copies the plan's line as written (`` `lib/a.mjs` (new), … ``) or names the plan
+ * itself, so the claim is normalised: notes in parentheses, backticks and labels are dropped, only
+ * path-like tokens count, and the plan or any file in the phase folder is no claim. A shared
+ * `(new)` or `PLAN.md` made every task collide and the run silently sequential (fix
+ * 2026-10-27-execute-never-runs-tasks-in-parallel); nothing left means the '*' wildcard.
+ *
  * @param {{ file?: string }} task
  * @returns {Set<string>}
  */
 function claimedFiles(task) {
-  const raw = (task.file || '').trim()
-  if (!raw) return new Set(['*'])
-  return new Set(raw.split(/[\s,;]+/).filter(Boolean))
+  const tokens = String(task.file || '').replace(/\([^)]*\)/g, ' ').split(/[\s,;]+/)
+    .map((t) => t.replace(/[`'"*]/g, ''))
+    .filter((t) => /^[\w@.~+\/-]+$/.test(t) && /[./]/.test(t) && !/^[-.]+$/.test(t))
+    .filter((t) => !/(^|\/)PLAN\.md$/.test(t) && !/(^|\/)\.astrocode\/phases\//.test(t))
+  return tokens.length ? new Set(tokens) : new Set(['*'])
 }
 
 /**
@@ -545,6 +558,10 @@ function resolveHealList(wave, conflicts, integratedTaskIds, branchForTask) {
 }
 // <<< MIRROR <<<
 
+// A task's declared files as one list ('' when none): the normalised claim the wave builder uses,
+// so every prompt shows the same files and never the plan path (fix 2026-10-27-…-in-parallel).
+const declaredFiles = (t) => (claimedFiles(t).has('*') ? '' : [...claimedFiles(t)].join(', '))
+
 const tasks = disc.tasks
 
 // ADR-035 — a phase that discovers ZERO tasks is a HARD FAILURE, never a quiet no-op.
@@ -645,7 +662,8 @@ const strategy =
 // because Discover omitted `file` (a silent capability loss). Both used to print the same
 // line. `strategyReason` is also returned to the caller, so a benchmark asking "did the
 // parallel path engage?" can distinguish them without reading the log.
-const wildcardTasks = executableTasks.filter((t) => !String(t.file || '').trim()).length
+// Counted through claimedFiles, so a `file` that names only the plan counts as no file too.
+const wildcardTasks = executableTasks.filter((t) => claimedFiles(t).has('*')).length
 const strategyReason =
   input.strategy === 'sequential' || input.strategy === 'parallel'
     ? `explicit args.strategy=${input.strategy}`
@@ -697,7 +715,8 @@ const stampSelfCheck = (t) =>
 
 const execPrompt = (t) =>
   `Implement task ${t.id} — "${t.title}" — of phase ${phaseSlug} in project ${root}.\n` +
-  `Plan/task file: ${t.file || `${root}/.astrocode/phases/${phaseSlug}/PLAN.md`}\n` +
+  `Plan: ${root}/.astrocode/phases/${phaseSlug}/PLAN.md (your task is ${t.id})\n` +
+  `Declared files: ${declaredFiles(t) || 'none declared'}\n` +
   `Make the change test-first where it adds behavior, run the tests, and make ONE atomic ` +
   `commit with a clear message. Match the project canon exactly (stack, naming, patterns). ` +
   `touch ONLY your declared file(s); if other changes are genuinely required, say so in your summary. ` +
@@ -714,7 +733,7 @@ const execPrompt = (t) =>
     : '') +
   OBEY +
   BAR +
-  principlesFor('execute', 'executor', t.file) +
+  principlesFor('execute', 'executor', declaredFiles(t)) +
   CITE +
   NO_BROAD_STASH +
   SYNC_WORKTREE
@@ -764,7 +783,8 @@ const healPrompt = (t, preservedBranch) =>
   `1. Inspect current HEAD/working-tree state: read relevant files in ${root} first.\n` +
   `2. Implement FRESH against the integrated tip — the dropped attempt is stale by definition.\n` +
   `3. Make ONE atomic commit with a clear message, ending the subject with the stamp \`(phase ${phaseNum} ${t.id})\`.\n\n` +
-  `Plan/task file: ${t.file || `${root}/.astrocode/phases/${phaseSlug}/PLAN.md`}\n` +
+  `Plan: ${root}/.astrocode/phases/${phaseSlug}/PLAN.md (your task is ${t.id})\n` +
+  `Declared files: ${declaredFiles(t) || 'none declared'}\n` +
   `Make the change test-first where it adds behavior, run the tests. ` +
   `Match the project canon exactly (stack, naming, patterns). ` +
   `The stamp \`(phase ${phaseNum} ${t.id})\` must appear at the end of the commit subject — ` +
@@ -773,7 +793,7 @@ const healPrompt = (t, preservedBranch) =>
   `Return a short summary of what you changed.` +
   OBEY +
   BAR +
-  principlesFor('heal', 'executor', t.file) +
+  principlesFor('heal', 'executor', declaredFiles(t)) +
   CITE +
   NO_BROAD_STASH
 
@@ -1069,7 +1089,7 @@ const integrateWave = (w, wave, reported = []) =>
       `the staleness check below stays). Fold them onto the CURRENTLY checked-out ` +
       `branch so the next wave and the verifier see one combined tree.\n` +
       `Wave task list (taskId mapping target set + declared-file comparison): ` +
-      `${JSON.stringify(wave.map((t) => ({ id: t.id, title: t.title, file: t.file || '' })))}\n` +
+      `${JSON.stringify(wave.map((t) => ({ id: t.id, title: t.title, file: declaredFiles(t) })))}\n` +
       (reported.length
         ? `Branches the executors REPORTED for this wave (their own \`git rev-parse\` output): ` +
           `${JSON.stringify(reported)}\nEvery one of these MUST appear in exactly one of branches[], ` +
@@ -1256,9 +1276,9 @@ const batchPrompt = (orderedTasks) =>
   `that does NOT apply to this run: you must work through the ENTIRE ordered list below.\n\n` +
   `Phase ${phaseSlug} in project ${root}. Ordered task list (dependency order — implement in ` +
   `THIS order):\n` +
-  `${JSON.stringify(orderedTasks.map((t) => ({ id: t.id, title: t.title, file: t.file, depends_on: t.depends_on })))}\n\n` +
+  `${JSON.stringify(orderedTasks.map((t) => ({ id: t.id, title: t.title, file: declaredFiles(t), depends_on: t.depends_on })))}\n\n` +
   `For EACH task above, in the order listed:\n` +
-  `- Plan/task file: ${root}/.astrocode/phases/${phaseSlug}/PLAN.md (or the task's own \`file\` if set).\n` +
+  `- Plan: ${root}/.astrocode/phases/${phaseSlug}/PLAN.md; the task's \`file\` above lists the files it declares.\n` +
   `- Make the change test-first where it adds behavior, run the tests, and make ONE atomic ` +
   `commit with a clear message scoped to ONLY that task. Match the project canon exactly ` +
   `(stack, naming, patterns). touch ONLY that task's declared file(s); if other changes are ` +

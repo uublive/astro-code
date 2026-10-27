@@ -414,3 +414,29 @@ test('buildWaves preCompleted: a pre-seeded id absent from tasks is harmless', (
     't2 must still come after t1 despite the phantom pre-seeded id',
   );
 });
+
+// ── fix 2026-10-27-execute-never-runs-tasks-in-parallel ───────────────────
+// Discover copies a plan's file line verbatim (backticks, "(new)" notes), or names the plan
+// itself. Neither may make disjoint tasks collide silently.
+test('a file line copied from the plan (backticks, (new) notes) claims only the paths', async () => {
+  const { claimedFiles } = await import('../lib/waves.mjs');
+  assert.deepEqual([...claimedFiles({ file: '`lib/impact.mjs` (new), `tests/impact.test.mjs` (new)' })],
+    ['lib/impact.mjs', 'tests/impact.test.mjs']);
+  const tasks = [
+    { id: 't1', file: '`lib/a.mjs` (new), `tests/a.test.mjs` (new)', depends_on: [] },
+    { id: 't2', file: '`lib/b.mjs` (new), `tests/b.test.mjs` (new)', depends_on: [] },
+    { id: 't3', file: '- **files:** `lib/c.mjs`; `MANUAL.md` (§Two gates)', depends_on: [] },
+  ];
+  const { waves, deferredForFiles } = buildWaves(tasks);
+  assert.deepEqual(ids(waves), [['t1', 't2', 't3']]);
+  assert.equal(deferredForFiles, 0);
+});
+
+test('a task whose file is the plan itself declares no file (wildcard), never a shared PLAN.md claim', async () => {
+  const { claimedFiles } = await import('../lib/waves.mjs');
+  for (const file of ['PLAN.md', '/r/.astrocode/phases/52-x/PLAN.md', '.astrocode/phases/52-x/03-task.md', '`PLAN.md`']) {
+    assert.deepEqual([...claimedFiles({ file })], ['*'], file);
+  }
+  // a real file beside the plan path keeps the real file
+  assert.deepEqual([...claimedFiles({ file: 'PLAN.md, lib/a.mjs' })], ['lib/a.mjs']);
+});

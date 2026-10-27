@@ -167,6 +167,8 @@ const summary = await agent(
     `Researcher findings:\n${findings.filter(Boolean).join('\n\n---\n\n')}\n\n` +
     `Write ${root}/.astrocode/phases/${phaseSlug}/PLAN.md as numbered tasks. Each task MUST declare:\n` +
     `  id, title, the files it touches, and depends_on (ids of tasks that must finish first).\n` +
+    `Write the files as one line per task: \`- **files:** path/a.mjs, path/b.test.mjs\` (the paths it creates ` +
+    `or edits, never the plan itself). Execution runs two tasks in parallel only when these lists differ.\n` +
     `Keep tasks small and independently committable so execution can parallelize. ` +
     `Also write ${root}/.astrocode/phases/${phaseSlug}/ACCEPTANCE.md — a short, user-facing ` +
     `UAT checklist of "the user can …" statements a human will confirm before the phase ` +

@@ -1872,8 +1872,9 @@ test('t2 (phase-08): plan-phase.mjs Synthesize prompt closes with self-verificat
   const synthIdx = src.indexOf("phase('Synthesize')")
   assert.ok(synthIdx !== -1, "phase('Synthesize') call not found in plan-phase.mjs")
   // 3600 (was 3000): the self-check now also names the wave-green rule (ADR-020),
-  // which legitimately grew the prompt past the original window.
-  const synthWindow = src.slice(synthIdx, synthIdx + 3600)
+  // which legitimately grew the prompt past the original window. 3900: the prompt now names the
+  // `files:` line format (fix 2026-10-27-execute-never-runs-tasks-in-parallel).
+  const synthWindow = src.slice(synthIdx, synthIdx + 3900)
 
   // The closing self-verification instruction must tell the planner to check every
   // task before writing PLAN.md.  The four required rule names are:
@@ -2456,7 +2457,7 @@ test('t3 (phase 13): batchPrompt inlines the ordered task list as a trimmed JSON
 
   assert.ok(
     window.includes(
-      'JSON.stringify(orderedTasks.map((t) => ({ id: t.id, title: t.title, file: t.file, depends_on: t.depends_on })))',
+      'JSON.stringify(orderedTasks.map((t) => ({ id: t.id, title: t.title, file: declaredFiles(t), depends_on: t.depends_on })))',
     ),
     'batchPrompt must inline orderedTasks as a trimmed JSON scalar carrying id/title/file/depends_on (mirrors integrateWave)',
   )
@@ -4326,3 +4327,16 @@ test('phase 52: the record payload sends carried:true with receipt for receipt-c
   const obs = await runWorkflow(ARGS45, { discoverTasks: chainTasks(1), plan: targetPlan(), verify: o, record: recT() })
   assert.ok(clerkCalls(obs.calls, 'verdict:record')[0].prompt.includes('{"id":"C4","passed":true,"suite":true}'))
 })
+
+// fix 2026-10-27-execute-never-runs-tasks-in-parallel: Discover filled `file` with PLAN.md because
+// nothing said what it means and the executor prompt labelled it "Plan/task file".
+test('Discover defines `file` as the files the task edits, never the plan, and the no-file warning counts what buildWaves sees', () => {
+  const src = readFileSync(WF_FILE, 'utf8');
+  const disc = src.slice(src.indexOf("phase('Discover')"), src.indexOf('// >>> MIRROR'));
+  assert.match(disc, /file: the paths of the files this task creates or edits/);
+  assert.match(disc, /never the plan/i);
+  assert.match(disc, /file:.*files:|files:.*file:/s, 'both plan spellings are named');
+  assert.doesNotMatch(src, /Plan\/task file:/, 'the executor prompt no longer labels `file` as the plan');
+  assert.match(src, /const wildcardTasks = executableTasks\.filter\(\(t\) => claimedFiles\(t\)\.has\('\*'\)\)/);
+  assert.match(src, /description: 'The paths of the files this task creates or edits/);
+});

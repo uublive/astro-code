@@ -2,6 +2,10 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.53.1
+
+- Execution runs disjoint tasks in parallel again: Discover filled every task's `file` with the plan's own path (its prompt never said what `file` means, and the executor prompt labelled it "Plan/task file"), so every task claimed `PLAN.md` and each wave held one task, silently. Claims are now normalised in code (backticks and `(new)` notes dropped, only paths count, the plan or any phase-folder file is no claim, so the no-file warning fires), Discover's prompt and schema define `file`, and the planner writes one `- **files:**` line per task
+
 ## v0.53.0
 
 - Targeted verify (ADR-089, amends ADR-079; #140, #141): a verify after a recorded full PASS observes only the criteria the diff since that PASS can affect (the floor, computed by `ac verdict plan`; the verifier may only widen it) and carries the rest, citing the phase's most recent full PASS. A targeted PASS may mark the phase verified when every carry still meets its conditions, re-checked in code by `ac verdict record` and `ac phase verify`; a first verify, a broad diff, a moved base and `--full` run full. `VERDICT.json` names each criterion `observed` or `carried`, and `ac phase show` and `/astro-accept` list the carried ones
