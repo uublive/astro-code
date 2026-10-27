@@ -30,9 +30,12 @@ test('the MANUAL command list has /astro-calibrate and the CLI list has ac verif
   assert.match(ref, /^ac verify calibrate /m);
 });
 
-test('CHANGELOG Unreleased names `ac verify calibrate` and cites the decision', () => {
+test('CHANGELOG v0.53.0 names `ac verify calibrate` and cites the decision', () => {
   const log = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
-  const un = log.slice(log.indexOf('## Unreleased'), log.indexOf('\n## v'));
-  assert.match(un, /`ac verify calibrate`/);
-  assert.match(un, /ADR-088/);
+  // Phase 51 shipped in v0.53.0: its entry sits under that heading, not Unreleased.
+  const at = log.indexOf('## v0.53.0');
+  assert.ok(at > -1, 'a v0.53.0 section');
+  const v053 = log.slice(at, log.indexOf('\n## v0.', at + 5));
+  assert.match(v053, /`ac verify calibrate`/);
+  assert.match(v053, /ADR-088/);
 });
