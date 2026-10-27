@@ -126,6 +126,18 @@
       "accepted_at": "2026-10-23T07:49:12.525Z",
       "accepted_kind": "agent",
       "accepted_by": "claude"
+    },
+    {
+      "id": "2026-10-27-a-convention-promotion-record-prints",
+      "title": "A convention promotion record prints its kind twice: 'proj (convention convention)'",
+      "status": "open",
+      "opened_at": "2026-10-27T19:48:30.716Z"
+    },
+    {
+      "id": "2026-10-27-a-in-the-agent-name-in-a-context-marker",
+      "title": "A '>' in the agent name in a CONTEXT marker makes the file read as 'stub'",
+      "status": "open",
+      "opened_at": "2026-10-27T19:48:33.209Z"
     }
   ]
 }

@@ -221,22 +221,32 @@
     {
       "id": "2026-09-24-a-convention-promotion-record-prints",
       "title": "A convention promotion record prints its kind twice: 'proj (convention convention)'",
-      "status": "open",
+      "status": "paying",
       "cost": "small",
       "found_at": "2026-09-24T10:53:09.498Z",
       "why": "the decision form reads 'decision ADR-003'; the convention form repeats the word instead of naming a target",
       "phase": "22",
-      "file": "bin/ac.mjs"
+      "file": "bin/ac.mjs",
+      "paid_by": {
+        "kind": "fix",
+        "ref": "2026-10-27-a-convention-promotion-record-prints"
+      },
+      "paying_since": "2026-10-27T19:48:33.132Z"
     },
     {
       "id": "2026-09-24-a-in-the-agent-name-in-a-context-marker",
       "title": "A '>' in the agent name in a CONTEXT marker makes the file read as 'stub'",
-      "status": "open",
+      "status": "paying",
       "cost": "small",
       "found_at": "2026-09-24T14:08:29.189Z",
       "why": "The marker patterns use [^>]*, so '<!-- astro-discuss: captured by agent: a>b -->' prints 'none'/'stub'. It still proposes nothing, but /astro-plan treats the phase as undiscussed and the harvest does not count it in skipped.agentContexts.",
       "phase": "23",
-      "file": "lib/planning.mjs"
+      "file": "lib/planning.mjs",
+      "paid_by": {
+        "kind": "fix",
+        "ref": "2026-10-27-a-in-the-agent-name-in-a-context-marker"
+      },
+      "paying_since": "2026-10-27T19:48:35.365Z"
     },
     {
       "id": "2026-09-24-accept-statement-edit-records-only-an",
