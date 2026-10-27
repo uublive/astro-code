@@ -1,0 +1,1 @@
+{"at":"2026-10-26T16:49:39.967Z","phase":"51-verifier-calibration-plant-ac-mutate","signals":["remediation"],"note":"blindness in a throwaway copy leaked through git ORIG_HEAD, dependency symlinks, venv records, other path spellings, the tip commit and file birth times — each round found a narrower channel; C4 bounded by real-path matching"}

@@ -73,7 +73,10 @@ Execute phase `$ARGUMENTS`.
      no-progress** (HEAD didn't move, or the failing-criteria set didn't shrink). A
      re-verify after a FAIL narrows first — it re-checks the previously unmet criteria, then
      continues to full coverage in the same run (`ac verdict plan` decides; `--full` forces a
-     full run), so a PASS still needs every criterion. It
+     full run), so that run still observes every criterion. A verify after a recorded full PASS
+     is **targeted**: it observes only the criteria the diff since that PASS can affect and
+     carries the rest, citing that PASS (`ac verdict plan` decides, and the gate re-checks every
+     carry in code). It
      reaches `verified` at best — never auto-accepts (REQ-006).
      It discovers the plan's tasks + dependencies, groups them into waves, and
      executes them **on the current working branch**, picking a strategy automatically:
@@ -119,7 +122,8 @@ Execute phase `$ARGUMENTS`.
      `ac config get models` returns `inherit` (a local-model session): then spawn every
      agent with no model at all, so it runs on the session's model (in-memory
      only — never persisted). Follow `/astro-verify`'s sequence around every verify:
-     `ac verdict plan <slug> --json` (add `--full` when the user passed it), verify, then
+     `ac verdict plan <slug> --json` (add `--full` when the user passed it; its mode is full,
+     narrowed after a FAIL, or targeted after a full PASS), verify, then
      `ac verdict record <slug> --result '<json>'` — so these tiers record verdicts too, passing
      the verifier's per-criterion `mutation` blocks through unchanged.
      On a verify FAIL, run the same bounded verify→remediate loop:
@@ -242,7 +246,7 @@ Execute phase `$ARGUMENTS`.
    `verdict.summary` is *summarised here, not relayed verbatim*; the verifier's long-form
    evidence was never the bug. Then the next command, one line.
    - **`verdict.passed` true** → run `ac phase verify <slug>` (marks it **verified** — the
-     AI gate; it refuses without a recorded full verdict, and then you report that in one line
+     AI gate; it refuses without a recorded full or valid targeted verdict, and then you report that in one line
      and point at `/astro-verify <number>` instead), then tell the user to run **`/astro-accept <number>`** (by number, e.g.
      `/astro-accept 3`) for UAT sign-off, which is what actually closes the phase.
      Optionally add: state is saved to `.astrocode/`, so `/clear` before `/astro-accept`

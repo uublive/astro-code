@@ -128,8 +128,10 @@ import { backfillAdr } from '../lib/adrbackfill.mjs';
 import { renumberDecision } from '../lib/adrrenumber.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
-import { planReverify, recordVerdict, verifiedGate } from '../lib/verdict.mjs';
+import { planReverify, recordVerdict, verifiedGate, carriedOf } from '../lib/verdict.mjs';
+import { runSuite, reusableReceipt } from '../lib/receipts.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
+import { planCalibration, runCalibration, renderSummary, renderBill, parseCalibrateFlags, publicDefect, CALIBRATE_USAGE } from '../lib/calibrate.mjs';
 import { recordJudgements } from '../lib/survivors.mjs';
 import { REMINDER as MUTATE_REMINDER } from '../lib/mutnotice.mjs';
 import { milestoneHarvest } from '../lib/harvest.mjs';
@@ -268,8 +270,13 @@ const ALLOWED_FLAGS = {
   'verdict plan': ['full', 'json'],
   // `--result` is the verifier's checked criteria; a typo must not record an empty verdict.
   'verdict record': ['result'],
+  // Phase 52 (D6) — a typo'd `--command` must not run, or reuse a receipt for, the wrong command.
+  'suite run': ['command', 'json'],
+  'suite receipt': ['command', 'json'],
   // Phase 47 (ADR-083) — a typo'd flag must not degrade `--check` into a real run, or a
   // `setup` into a write the user did not ask for.
+  // Phase 51 — spends money: a typo'd flag (`--run 5`) must not fall back to the default and bill it.
+  'verify calibrate': ['defects', 'runs', 'seed', 'budget', 'yes', 'json'],
   'mutate': ['check', 'json', 'survivors'],
   'mutate setup': ['json'],
   'mutate dismiss': ['json'],
@@ -569,14 +576,17 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase check "<name>"             see if a phase with a similar name exists
   ac phase context <phase>            discuss-gate status: missing | stub | ready
   ac phase context <phase> --author   who captured it: human | agent <name> | none
-  ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full recorded verdict)
-  ac verdict plan <phase> [--full] [--json]  should the next verify narrow? (ADR-079)
+  ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full or valid targeted verdict)
+  ac verdict plan <phase> [--full] [--json]  full, narrowed (after a FAIL) or targeted (after a full PASS)
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
+  ac suite run --command "<cmd>" [--json]   run the project's suite and write a local receipt (exits with the suite's status)
+  ac suite receipt --command "<cmd>" [--json]  is there a reusable receipt for this exact command on HEAD's clean tree? (read-only)
   ac mutate <phase> [--json]          run the project's mutation tool on the lines the phase changed (ADR-083, ADR-084)
   ac mutate <phase> --survivors [--json]  re-test only the open survivors of the last full run (partial; never a verdict)
   ac mutate --check [<phase>] [--json]  which tool applies, is it installed, how to install it (read-only)
   ac mutate setup                     write a minimal tool config if absent (the only writer; installs nothing)
   ac mutate dismiss [<tool>]          stop showing the full install suggestion for this project
+  ac verify calibrate [--defects N] [--runs K] [--seed S] [--budget USD] [--yes] [--json]  plant real mutants in accepted phases, measure the verifier's false-PASS rate (bill first; --yes to run)
   ac mutate judge <phase> <s:key|g:group>... --equivalent "<why>" | --test-gap ["<note>"]  record a survivor judgement (SURVIVORS.json)
   ac phase accept <phase> [--by N]    UAT sign-off → complete (requires verified)
   ac phase accept <p> --agent <name>  machine-signed sign-off (records accepted_kind=agent)
@@ -2378,8 +2388,9 @@ async function main() {
       } else if (sub === 'verify') {
         if (!ph) die('usage: ac phase verify <phase> [--force]');
         checkFlags('phase verify', flags);
-        // ADR-079 — a phase is verified only by a full run. Enforced here in code, so a
-        // carried or narrowed verdict cannot reach `verified` however the prose reads.
+        // ADR-079, amended by phase 52 — a phase is verified by a full run, or by a targeted run whose
+        // every carry still meets the conditions. Enforced here in code, so a narrowed verdict or a
+        // carry that breaks one cannot reach `verified` however the prose reads.
         const gate = verifiedGate(r, ph.slug);
         if (!gate.ok && !flags.force) {
           die(`phase ${ph.number}: ${gate.reason} — run /astro-verify ${ph.number} (or pass --force)`);
@@ -2393,7 +2404,10 @@ async function main() {
         // accepted_evidence side by side. `--json` is accepted and prints the same.
         if (!ph) die('usage: ac phase show <phase> [--json]');
         checkFlags('phase show', flags);
-        json(ph);
+        // Phase 52 (D7): name the criteria the latest verdict carried instead of observing, so the
+        // human sees which passes were not re-observed. Absent when nothing was carried (Voice).
+        const carried = carriedOf(r, ph.slug);
+        json(carried.length ? { ...ph, carried } : ph);
       } else if (sub === 'accept') {
         if (!ph) die('usage: ac phase accept <phase> [--by name | --agent name | --witnessed composer] [--evidence "<id or URL>"] [--force]');
         checkFlags('phase accept', flags);
@@ -2608,11 +2622,44 @@ async function main() {
       return;
     }
 
+    // Phase 52 (D6, #141). A thin dispatcher over lib/receipts.mjs: `run` is the one writer of a suite
+    // receipt, `receipt` is a read-only query (exit 0 either way). Never prompts (5116).
+    case 'suite': {
+      const sub = pos[0];
+      if (sub !== 'run' && sub !== 'receipt') die('usage: ac suite <run|receipt> --command "<cmd>" [--json]');
+      checkFlags(`suite ${sub}`, flags);
+      if (typeof flags.command !== 'string' || !flags.command.trim()) die(`usage: ac suite ${sub} --command "<cmd>" [--json]`);
+      const r = root();
+      const cmd = flags.command;
+      const short = (x) => String(x ?? '').slice(0, 7);
+      if (sub === 'run') {
+        const rc = runSuite(r, cmd, { json: !!flags.json });
+        const reuse = reusableReceipt(r, cmd);
+        if (flags.json) json({ ...rc, reusable: reuse.ok, reason: reuse.reason });
+        else if (reuse.ok) console.log(`✓ suite receipt ${rc.key.slice(0, 8)}: exit 0 on a clean tree at ${short(rc.commit)} (reusable)`);
+        else console.log(`⚠ suite receipt ${rc.key.slice(0, 8)}: not reusable — ${reuse.reason}`);
+        process.exitCode = rc.exit;
+        return;
+      }
+      const got = reusableReceipt(r, cmd);
+      if (flags.json) json({ reusable: got.ok, reason: got.reason, receipt: got.receipt });
+      else if (got.ok) console.log(`✓ reusable receipt ${got.receipt.key.slice(0, 8)} for "${cmd}" at ${short(got.receipt.commit)}`);
+      else console.log(`• no reusable receipt: ${got.reason}`);
+      return;
+    }
+
     case 'verdict': {
       const r = root();
       const sub = pos[0];
       if (sub !== 'plan' && sub !== 'record') die('usage: ac verdict <plan|record> <phase> …');
       checkFlags(`verdict ${sub}`, flags);
+      // A stray token (`-full`, a second phase) is refused, never ignored: `-full` silently ran targeted.
+      if (pos.length > 2) die(`unexpected argument for \`ac verdict ${sub}\`: ${pos.slice(2).join(' ')} (flags take two dashes: --full, --json)`);
+      // parseArgs reads the token after a flag as its value (`--json -full`), so a switch that took one
+      // swallowed a stray argument: refuse it the same way.
+      for (const k of ['full', 'json']) {
+        if (flags[k] !== undefined && flags[k] !== true) die(`unexpected argument for \`ac verdict ${sub}\`: --${k} takes no value (got ${JSON.stringify(flags[k])})`);
+      }
       const ph = findPhase(r, pos[1]);
       if (!ph) die(`usage: ac verdict plan <phase> [--full] [--json] | ac verdict record <phase> --result '<json>'`);
       if (sub === 'plan') {
@@ -2620,6 +2667,8 @@ async function main() {
         if (flags.json) json(plan);
         else if (plan.mode === 'narrowed') {
           console.log(`• narrowed: re-check ${plan.first.join(', ')} first (run ${plan.saved.run} @ ${String(plan.saved.commit).slice(0, 7)})`);
+        } else if (plan.mode === 'targeted') {
+          console.log(`• targeted: ${plan.reason}: re-check ${plan.floor.join(', ') || 'none'}; carry ${plan.carry.length}`);
         } else console.log(`• full: ${plan.reason}`);
         return;
       }
@@ -2631,6 +2680,42 @@ async function main() {
       if (out.ignored) console.error(`⚠ ${out.ignored} reported criterion id(s) are not in CRITERIA.md and were ignored`);
       for (const f of out.refused ?? []) console.error(`⚠ ${f.id} refused: ${f.reason}`);
       json(out);
+      return;
+    }
+
+    // Phase 51 (ADR-088). On demand only: nothing in the loop calls this. A thin dispatcher over
+    // lib/calibrate.mjs. Without --yes it prints the bill and stops, writing nothing; every flag is
+    // validated before any mutation data is read. Exit 0 for a bill, a finished run, a budget stop or
+    // zero usable defects; only a flag error or a missing .astrocode/ dies.
+    case 'verify': {
+      if (pos[0] !== 'calibrate') die(CALIBRATE_USAGE);
+      checkFlags('verify calibrate', flags);
+      const opts = parseCalibrateFlags(flags, pos.slice(1));
+      if (opts.error) die(opts.error);
+      const r = root();
+      const plan = planCalibration(r, opts);
+      const bill = { usd: plan.bill_usd, per_trial_usd: plan.per_trial_usd, basis: plan.cost_basis, planned_trials: plan.planned_trials };
+      const brief = { seed: plan.seed, seed_given: plan.seed_given, requested: plan.requested, selected: plan.selected, available: plan.available, defects: plan.defects.map(publicDefect), shortfall: plan.shortfall, unsupported: plan.unsupported, budget_usd: plan.budget_usd, budget_given: plan.budget_given, bill };
+      if (!opts.yes || !plan.defects.length) {
+        // Never implies consent: --json without --yes says it still needs one.
+        if (opts.json) json({ needs_yes: plan.defects.length > 0, ran: false, ...brief });
+        else for (const l of renderBill(plan, { needsYes: !opts.yes })) console.log(l);
+        return;
+      }
+      if (!opts.json) for (const l of renderBill(plan, { needsYes: false })) console.log(l);
+      // First Ctrl-C stops between trials (the copy of a running trial is still removed); a second leaves now.
+      const ctl = new AbortController();
+      const onSigint = () => { if (ctl.signal.aborted) process.exit(130); ctl.abort(); console.error('• interrupt: stopping after the running trial (Ctrl-C again to leave now)'); };
+      process.on('SIGINT', onSigint);
+      let res;
+      try { res = await runCalibration(r, plan, { signal: ctl.signal }); } finally { process.off('SIGINT', onSigint); }
+      if (opts.json) {
+        json({ ...res.record, bill, trials: res.trials.map(({ spawned, ...t }) => t), log: res.log, notes: res.notes });
+      } else {
+        for (const l of renderSummary(res)) console.log(l);
+        if (res.notes.blindness_reported.length) console.log(`⚠ blindness: project-sourced text the verifier can see (same as /astro-verify): ${res.notes.blindness_reported.join(', ')}`);
+        console.log('• limit: a dependency binary embedding the project path in an unrecognised spelling is not detected (MANUAL: Verifier calibration)');
+      }
       return;
     }
 

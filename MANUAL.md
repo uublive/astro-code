@@ -625,7 +625,50 @@ run continues over every other criterion, so a PASS always rests on a full run. 
 full run when many criteria are unmet, `CRITERIA.md` changed, the history does not line up, the
 fix is broad, or you pass `--full` (`ac verdict plan <phase>` shows the decision and the
 thresholds live in `lib/verdict.mjs`). `ac phase verify` refuses without a full all-passed
-verdict (`--force` is the escape).
+verdict or a valid targeted one (`--force` is the escape).
+
+**Targeted verify (ADR-089, amends ADR-079).** After a recorded full PASS, the next verify
+**targets** automatically: `ac verdict plan <phase>` computes, from the diff since that PASS, the
+**floor** of criteria the change can affect. A criterion is in the floor when the diff touches a file it
+names, when it names no file at all (an unmapped criterion is always observed), when its evidence is the
+full suite, or when it is a test-strength criterion and a file in the phase's mutate scope changed. The
+verifier observes the whole floor and may only **widen** it, never shorten it. Every other criterion is
+**carried** from that full PASS, and a carry is valid only while all of these hold: it cites the phase's
+**most recent full PASS** (run and commit) at an ancestor of HEAD; none of its files changed since; it is
+not a suite criterion (unless a suite receipt covers the exact clean tree) and not a test-strength
+criterion whose mutate scope changed; and it is **one hop** from that PASS, since a targeted run is never
+the base of the next one. Any FAIL (full, targeted or narrowed) ends the base, so after a FAIL only a
+later full PASS can be carried from. `ac verdict record` and `ac phase verify` re-check every one of these in code,
+so a verifier that skips a floor criterion is refused by name, and the phase stays unverified.
+
+The first verify of a phase, a broad diff, a base that is no longer an ancestor of HEAD, a changed
+`CRITERIA.md` and `--full` each run **full**, and the plan always states the mode and why. A FAIL still
+re-verifies as before: the unmet criteria first, then the rest. `VERDICT.json` records the mode, its
+reason, the base, and for each criterion whether it was `observed` or `carried` (with the run and commit,
+or the receipt, it came from). `ac phase show <phase>` lists the carried criteria in a `carried` key
+(absent after a full PASS), and `/astro-accept` states them in one line before the walkthrough. The
+thresholds live in `lib/verdict.mjs`.
+
+**Writing criteria so a later verify can narrow.** Name every file, directory or command a criterion
+rests on in backticks on its `Observe:` line, and optionally add a `- **Files:**` line listing them. A
+criterion that names no file is always re-checked. Tag a criterion whose evidence is the full test suite
+`[suite]` right after its id (`### C5 [suite] — …`), as `[mutation]` is tagged; a suite criterion is never
+carried from an earlier PASS.
+
+### Suite receipts
+
+`ac suite run --command "<cmd>"` runs the project's suite, exits with its status and writes a receipt
+under `.astrocode/.local/suite-receipts/`: the command, commit, tree, whether the tree was clean before
+and after, the exit status, the node version and the time. `ac suite receipt --command "<cmd>"` asks
+whether a receipt can be reused (read-only, exit 0 either way). A receipt is local and never committed,
+and it is reused only on the **same commit**, the **same clean tree** (untracked files count as dirty,
+ignored files are not checked; only what a verify itself writes is exempt: `.astrocode/.local/`, each phase's
+`VERDICT.json`, `SURVIVORS.json` and `SURPRISES.jsonl`, and `state.json` when only its live status changed),
+the **exact command string** and exit 0; it is refused otherwise, each
+refusal with its own reason. A verifier on the identical clean tree cites a reusable receipt instead of
+running the suite again; the verdict records which receipt stood in. The receipt's command must be
+that criterion's suite command (the command its Observe line names, any one under a `[suite]` tag, or
+a known suite command such as `npm test` when it names none), checked at record time and by the gate. A full verdict never uses receipts.
 
 > **A phase's goal is the bar, not its task list.** Every task passing while the goal is
 > unmet is a failed phase.
@@ -736,6 +779,60 @@ verifier sets `test_strength: true` on each criterion it uses the tool for, and
 The mark is sticky for the phase: it lives in `VERDICT.json`, a later verdict or a fresh clone cannot
 drop it, and mutation evidence on a criterion marks it even if the flag is forgotten. Old criteria
 need no edit. A pass is also refused when code changed since the last full run.
+
+---
+
+## Verifier calibration
+
+The verifier's PASS gates every phase (ADR-021, ADR-022, ADR-079), so how often it passes broken
+code is worth a number. `ac verify calibrate` plants real defects into the project's accepted phases,
+runs the verifier on each exactly as `/astro-verify` would, several times, and reports its false-PASS
+rate, so "did the new prompt help?" is a diff between two records (ADR-088). It is on demand only
+(`/astro-calibrate`): no loop command or workflow runs it, and it never touches a phase's status,
+`VERDICT.json` or `SURVIVORS.json`.
+
+```bash
+ac verify calibrate                      # the bill only: cost, defects × runs, seed, budget
+ac verify calibrate --defects 10 --runs 3 --seed 7 --budget 40 --yes   # run it
+ac verify calibrate --yes --json         # the same record, machine-readable
+```
+
+- **Two sets, reported apart.** EASY defects are `ac mutate` mutants your tests already killed (a real
+  bug by construction). HARD defects are survivors you judged `test-gap` (a real bug no test catches),
+  so the hard rate shows whether the verifier looks beyond the suite. Equivalent and unjudged survivors,
+  and anything from a phase that is not `complete`, are never drawn.
+- **Where the defects come from.** This machine's kept `ac mutate` runs (`.astrocode/.local/mutate-runs/`)
+  of accepted phases, archived milestones included, never a re-run of the tool. A list kept before this
+  feature has no exact changes: run `ac mutate <n>` again. mutmut and Stryker plant exactly; Gremlins
+  reports no patch, so it is not supported and the command says so. A short set is run as it is: the
+  real counts are reported, nothing is repeated to fill the count.
+- **The bill.** Without `--yes` the command prints the estimate (the median cost per trial of your last
+  logged runs, else $3.00) and the seed, and stops: nothing runs, nothing is written. `--budget <usd>`
+  caps the run (default 1.5× the bill); trials go in rounds, one per defect at a time, and reaching the
+  budget stops cleanly with the counts that completed. `--seed` repeats the same plants.
+- **Blind.** Each trial gets a fresh throwaway clone under the temp directory with exactly one defect
+  planted, folded into the tip commit so `git status` is clean and no commit, branch or tag names it.
+  Removed from the copy: every `SURVIVORS.json` and `VERDICT.json`, the calibration log and the tool's
+  artefacts; each trial lists what was removed in `--json`. The verifier is the installed
+  `astro-verifier` agent with the contract read from `commands/astro-verify.md`, and the code checks
+  blindness before every run. The copy's history is rebuilt without those records, and nothing in it
+  leads back to the real project: no `ORIG_HEAD`, remote refs or unreachable objects; dependency
+  folders (`node_modules`, `.venv`, `venv`) are copied, not linked, with `__pycache__` dropped and every
+  absolute symlink and every absolute path in a text file whose real path falls inside the project
+  repointed at the copy, however it is spelled; the verifier's environment names only the copy.
+  **Known limit:** a binary file in a dependency that embeds the project path makes that trial refuse
+  to run (reported as invalid) when the path is spelled as the project, `$PWD` or a venv records it;
+  a binary embedding some other spelling of it is not detected.
+- **The numbers.** The headline is the defect rate (defects PASSed on at least one run) and the trial
+  rate, each with a Wilson 95% interval, plus per-defect pass^k (caught on all k runs). A crashed or
+  unreadable trial is invalid and excluded, never a catch. A set under 5 defects is marked
+  "too few defects to rely on", and a set with none is unavailable, not 0%. The measure is the verifier's own
+  verdict: the ADR-085 code gate is not applied.
+- **The log.** Each `--yes` run appends one record to `.astrocode/CALIBRATION.jsonl` (committed, with a
+  neutral subject): date, verifier model and prompt hash, seed, both rates, pass^k, counts and the
+  defects by key only. Records with the same `defect_set_hash` are comparable.
+- **Not for astro-code itself:** its `node --test` suite has no supported mutation tool. Use it in a
+  project that has Stryker or mutmut.
 
 ---
 
@@ -1297,6 +1394,7 @@ astro-code itself captures (ADR-065). A forge server reads the store back read-o
 /astro-execute <phase>    wave-based parallel execution, then verify
 /astro-verify <phase>     AI gate: confirm the phase goal is met (goal-backward)
 /astro-mutate <phase>     run the project's mutation tool on a phase's changed files; also `check`, `setup`, `dismiss`
+/astro-calibrate          measure the verifier's false-PASS rate on planted mutants (bill first, `--yes` only on your say-so)
 /astro-accept <phase>     human gate: UAT sign-off, then close the phase
 /astro-autonomous <phase> run a whole phase end-to-end (discuss→plan→execute→verify), then stop
 /astro-autonomous <phase> --challenge  same, with a challenge-mode discuss step
@@ -1348,6 +1446,7 @@ ac mutate judge <n> <id>... --equivalent "<why>" | --test-gap   # record a survi
 ac mutate --check [<n>] [--json]  # which tool applies, is it installed, how to install it (read-only)
 ac mutate setup                # write a minimal tool config if absent (the only writer; installs nothing)
 ac mutate dismiss [<tool>]     # stop the full install suggestion for this project
+ac verify calibrate [--defects N] [--runs K] [--seed S] [--budget USD] [--yes] [--json]  # verifier false-PASS rate (bill first)
 ac phase effort <n> deep       # per-phase verify→remediate budget (light|standard|deep)
 ac phase note <n> "<text>"     # durable phase note (survives ROADMAP.md renders)
 ac phase note <n> --append "…" # add a line to it; --replace overwrites (a plain write never drops a note)

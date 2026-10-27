@@ -52,6 +52,7 @@ devs never collide.
 - `/astro-kit-source <source id> <instance URL>` — author/refresh a kit's data source by introspecting the database through a running Astro instance (writes schema.json + SOURCE.md, merges on re-run)
 - `/astro-phase <name>` — add a phase · `/astro-milestone` — start the next milestone
 - `/astro-mutate <n>` — run the project's mutation tool (Stryker / Gremlins / mutmut) on a phase's changed files; `check` · `setup` · `dismiss`. Never installs a tool
+- `/astro-calibrate` — measure the verifier's false-PASS rate: plants real `ac mutate` mutants from accepted phases in throwaway copies, shows the bill first, runs only on your yes. On demand; never part of the loop
 - `/astro-status` — where am I, what's next · `/astro-doctor` — is the install and its hooks consistent? one line per problem, each ending with its fix (report only) · `/astro-decision` — record an ADR into the canon
 - `/astro-fleet` — report this machine's Claude Code sessions to an Astro Fleet's Forge (`connect <url> --token <t>`, `status`, `pause`/`resume`, `color`, `disconnect`)
 - `/astro-statusline` — set a rich statusline (busy/idle dot · task recap · model · context-fill bar · milestone/phase)

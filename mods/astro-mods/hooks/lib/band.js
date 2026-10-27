@@ -79,8 +79,40 @@ export function freshStatus(status, nowMs) {
 const METER_MAX = 10
 
 /** `n` of `total` phases done as a bar at most METER_MAX cells wide, or null with no phases. */
-export function meterOf(status) {
+/**
+ * The phases the band tracks: the current milestone's, without rejected ones. A phase carrying no
+ * milestone stays (an older roadmap); the current phase and a phase with a run in flight always
+ * stay, rejected or not, so where you are and what is running never vanish.
+ */
+export function trackedPhases(status, runs = []) {
+  const phases = status && Array.isArray(status.phases) ? status.phases.filter(p => p && typeof p.number === 'number') : []
+  const m = status ? status.milestone ?? null : null
+  const current = status && status.phase ? status.phase.number : null
+  return phases.filter(p => p.number === current || runs.some(r => r.phase === p.number) ||
+    (p.status !== 'rejected' && (m == null || p.milestone == null || p.milestone === m)))
+}
+
+/**
+ * Other milestones still holding work, one entry each: `{milestone, verified, open}` — phases
+ * awaiting acceptance and phases not yet verified. Complete and rejected phases count as closed.
+ */
+export function openMilestones(status) {
   const phases = status && Array.isArray(status.phases) ? status.phases : []
+  const m = status ? status.milestone ?? null : null
+  const by = new Map()
+  for (const p of phases) {
+    if (!p || p.milestone == null || p.milestone === m || p.remote) continue
+    if (p.status === 'complete' || p.status === 'rejected') continue
+    const tally = by.get(p.milestone) || { milestone: p.milestone, verified: 0, open: 0 }
+    if (p.status === 'verified') tally.verified++
+    else tally.open++
+    by.set(p.milestone, tally)
+  }
+  return [...by.values()].sort((a, b) => a.milestone - b.milestone)
+}
+
+export function meterOf(status) {
+  const phases = trackedPhases(status)
   if (!phases.length) return null
   const done = phases.filter(p => p && p.status === 'complete').length
   const cells = Math.min(phases.length, METER_MAX)
@@ -137,7 +169,7 @@ function chipOf(p, runs, current) {
 }
 
 function roadmapRow(status, runs) {
-  const phases = Array.isArray(status.phases) ? status.phases.filter(p => p && typeof p.number === 'number') : []
+  const phases = trackedPhases(status, runs)
   if (!phases.length) return [{ text: 'no phases on the roadmap', tone: 'note' }]
   const current = status.phase ? status.phase.number : null
   const done = phases.filter(p => p.status === 'complete' && !runs.some(r => r.phase === p.number))
@@ -168,7 +200,8 @@ function runningRow(status, runs, live) {
 }
 
 /**
- * The band, as rows: `ROADMAP` (every phase of the milestone as a chip), `RUNNING` (each astro
+ * The band, as rows: `ROADMAP` (the current milestone's phases as chips, rejected ones hidden),
+ * `OTHER` (other milestones still holding work), `RUNNING` (each astro
  * workflow run in flight with its live crew, then any Agent-tool agent, else the live verb) and
  * `NEXT` (the buttons, or a hint). `lines` holds each content row's text, the label included, so
  * a reader (or a test) can take the band in as plain text. `runs` is `[{kind, phase, agents}]`.
@@ -180,6 +213,18 @@ export function bandView(status, live, { unavailable, runs = [] } = {}) {
   }
   if (status == null) return view([], [], null, null, status)
   const rows = [[{ text: 'ROADMAP  ', tone: 'label' }, ...roadmapRow(status, runs)]]
+  // `M2 4 open · M4 6 to accept, 2 open`: other milestones still holding work, apart from the
+  // roadmap row so it stays the current milestone alone.
+  const open = openMilestones(status)
+  if (open.length) {
+    const other = []
+    for (const o of open) {
+      if (other.length) other.push({ text: ' · ', tone: 'sep' })
+      const bits = [o.verified ? `${o.verified} to accept` : '', o.open ? `${o.open} open` : ''].filter(Boolean)
+      other.push({ text: `M${o.milestone}`, tone: 'id' }, { text: ` ${bits.join(', ')}`, tone: 'note' })
+    }
+    rows.push([{ text: 'OTHER    ', tone: 'label' }, ...other])
+  }
   const running = runningRow(status, runs, live)
   if (running.length) rows.push([{ text: 'RUNNING  ', tone: 'label' }, ...running])
   // a phase already being executed or planned is not offered again

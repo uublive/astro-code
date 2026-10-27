@@ -2,7 +2,13 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
-## Unreleased
+## v0.53.0
+
+- Targeted verify (ADR-089, amends ADR-079; #140, #141): a verify after a recorded full PASS observes only the criteria the diff since that PASS can affect (the floor, computed by `ac verdict plan`; the verifier may only widen it) and carries the rest, citing the phase's most recent full PASS. A targeted PASS may mark the phase verified when every carry still meets its conditions, re-checked in code by `ac verdict record` and `ac phase verify`; a first verify, a broad diff, a moved base and `--full` run full. `VERDICT.json` names each criterion `observed` or `carried`, and `ac phase show` and `/astro-accept` list the carried ones
+- `ac suite run|receipt --command "<cmd>"`: local suite receipts keyed by commit, tree and exact command, reused only on the identical clean tree with a passing exit. CRITERIA.md gains an optional `- **Files:**` line and a `[suite]` heading tag
+- The phase band and the statusline track show only the current milestone's phases, rejected ones hidden (the current phase always stays); other milestones still holding work get one `OTHER` row (`M2 4 open · M4 6 to accept, 2 open`). With no active phase, the current phase is taken from the current milestone first
+- `ac verify calibrate` and `/astro-calibrate` (ADR-088, #157): plant real `ac mutate` mutants from accepted phases (mutmut and Stryker, exactly; killed mutants as the easy set, `test-gap` survivors as the hard set) into a blind throwaway clone, run the installed `astro-verifier` with `/astro-verify`'s own contract, and report the false-PASS rate per set with Wilson 95% intervals and per-defect pass^k. It prints the bill first and runs only with `--yes`; `--budget <usd>` caps the run; `--seed` repeats the plants; each run appends a record to the committed `.astrocode/CALIBRATION.jsonl`
+- `ac mutate` keeps each mutant's exact change in its full list (`<slug>.mutants.jsonl`), so a kept list from an older version needs one more `ac mutate <n>` before it can feed calibration
 
 ## v0.52.0
 

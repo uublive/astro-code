@@ -117,6 +117,31 @@ Structured return additions: `mode` (`full` | `narrowed`), `broad` (boolean) and
 `criteria[]` item, `status` (`passed` | `failed` | `carried`). All three are optional for a plain
 full run. Plan-blindness and your tools are unchanged.
 
+## Targeted verify (phase 52, amends ADR-079)
+After a recorded full PASS, your prompt may say THIS IS A TARGETED VERIFY. It names the **floor**
+(the criteria the change since that PASS can affect, with a reason each), the full PASS's run and
+commit (the base), and a `<base>..HEAD` range. Code computed the floor; you may only **widen** it.
+1. Observe **every** floor criterion from scratch, plan-blind, against its own `Observe:` line.
+   **Never skip a floor criterion**, and never report one as carried.
+2. Inspect `git diff <range>`. When it reaches what another criterion rests on (shared code,
+   config, the test harness), observe that criterion too. When the fix is **broad**, do not
+   target: run full from the start and return `broad: true`, `mode: full`.
+3. Report every criterion you did not re-check with `status: carried`, or leave it out. A carried
+   criterion is **never reported as passed**: `ac verdict record` stores it as carried from the base
+   run and commit, and refuses a carry it cannot justify.
+4. A **suite** criterion (its evidence is the full test suite) is in the floor. First run
+   `ac suite receipt --command "<the suite command>" --json`. When it is reusable, report that
+   criterion with `status: carried` and `receipt: <key>`. Otherwise run the suite through
+   `ac suite run --command "<the suite command>"` and observe it. Set `suite: true` on every
+   criterion whose evidence is the full suite; the mark is sticky for the phase.
+5. Return `mode: targeted`.
+In **any** mode, a reusable receipt (`ac suite receipt`, cited in your report) may stand in for the
+structural "run the full suite" step above, when no criterion's evidence is the suite itself.
+The rules (the floor, what may be carried, the receipt checks) live in `lib/verdict.mjs`,
+`lib/impact.mjs` and `lib/receipts.mjs`; this text only tells you which commands to run.
+Structured return additions: `mode` may be `targeted`; per `criteria[]` item, `receipt` (the key,
+on a carried suite criterion only) and `suite` (boolean).
+
 ## Test-strength checks — the tool's result is the bar for every test-strength criterion (ADR-085)
 Whenever a check would involve making broken versions of the code — a `[mutation]`-tagged
 criterion (`### C4 [mutation] — …`) or ANY other criterion where you would otherwise invent

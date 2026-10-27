@@ -42,6 +42,15 @@ A short list of falsifiable criteria. Each one, exactly this shape:
 
 Number them C1, C2, … Keep to the handful that actually prove the goal is met.
 
+## Name the files a criterion rests on — a later verify only re-checks what a change can touch
+After a full PASS, a later verify re-checks only the criteria a diff can affect, and it maps a
+criterion to files from what you write. So on each `Observe:` line **name every file, directory or
+command the criterion rests on, in backticks** (`` `lib/foo.mjs` ``, `` `node scripts/check.mjs` ``).
+You may also add one line (`- **Files:**` followed by the backticked paths). A criterion that names no file
+is **always re-checked**, which is safe but slow. A criterion whose evidence is the full test suite is
+tagged `[suite]` right after its id, exactly like `[mutation]` (`### C5 [suite] — …`); a suite
+criterion is never carried over from an earlier PASS. Never tag one that is not about the whole suite.
+
 ## Test-strength criteria — only when the goal asks for them
 When the goal asks for test strength ("the tests would catch a regression", "every behavior is
 pinned"), write that criterion with the `[mutation]` tag right after its id, exactly (anywhere else in the

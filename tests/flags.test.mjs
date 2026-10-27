@@ -100,6 +100,16 @@ test('ADR-029: `ac verdict plan --fulll` (typo) exits non-zero instead of silent
   assert.match(res.stderr, /--fulll/);
 });
 
+test('`ac verdict plan 1 -full` (one dash) exits non-zero instead of silently running targeted (phase 52 C2)', async () => {
+  const dir = mkWorkdir(null);
+  await addPhase(dir, { number: 1, name: 'Do a thing' });
+  for (const extra of [['-full'], ['2'], ['--json', '-full'], ['--json', 'full'], ['--json=full'], ['--full', 'x']]) {
+    const res = run(['verdict', 'plan', '1', ...extra], dir);
+    assert.notStrictEqual(res.status, 0, extra.join(' '));
+    assert.match(res.stderr, /unexpected argument/);
+  }
+});
+
 test('ADR-029: a typo\'d `ac phase accept --forse` rejects and leaves the phase unaccepted', async () => {
   const dir = mkWorkdir(null);
   await addPhase(dir, { number: 1, name: 'Do a thing' });

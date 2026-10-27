@@ -669,6 +669,7 @@ const SLOTS = [
 
   // astro-accept.md
   { command: 'astro-accept.md', slot: '1 not-verified stop', start: '1. Resolve the phase slug. Confirm its status', end: '2. Read' },
+  { command: 'astro-accept.md', slot: '2b carried criteria line', start: '2b. **Name what was carried', end: '3. Walk the user through it' },
   { command: 'astro-accept.md', slot: '3 walkthrough per item', start: '3. Walk the user through it', end: '4. Decide:' },
   { command: 'astro-accept.md', slot: '4 accept success', start: '**All criteria hold**', end: '**Who is signing' },
   { command: 'astro-accept.md', slot: '4 reject', start: '**Something fails**', end: '5. On accept' },
@@ -1081,4 +1082,94 @@ test('phase 47: verify, execute and help surface the mutation evidence', () => {
   assert.match(readFileSync(EXECUTE_MD, 'utf8'), /`mutation` blocks\s+through unchanged/);
   assert.match(readFileSync(join(COMMANDS, 'astro-help.md'), 'utf8'), /\/astro-mutate/);
   assert.ok(verify.includes('3. Clear the live status first') && verify.includes('3b. **On PASS only'));
+});
+
+// ── Phase 51: /astro-calibrate (GitHub #157) ─────────────────────────────────────────────────────
+
+test('phase 51: /astro-calibrate runs `ac verify calibrate` without --yes first, asks through AskUserQuestion, and passes --yes with the bill\'s --seed only after an explicit yes', () => {
+  const src = readFileSync(join(COMMANDS, 'astro-calibrate.md'), 'utf8');
+  const fm = src.split('---')[1];
+  assert.match(fm, /description:\s*\S/);
+  assert.match(fm, /argument-hint:\s*\[--defects N\] \[--runs K\] \[--seed S\] \[--budget USD\]/);
+  assert.match(fm, /allowed-tools:\s*Bash, AskUserQuestion/);
+  const step1 = src.slice(src.indexOf('1. Run'), src.indexOf('2. Ask'));
+  assert.match(step1, /ac verify calibrate \$ARGUMENTS` \*\*without\*\* `--yes`/);
+  const step2 = src.slice(src.indexOf('2. Ask'), src.indexOf('3. Only'));
+  assert.match(step2, /AskUserQuestion/);
+  assert.match(step2, /\$\(ac path templates\)\/asking\.md/);
+  const step3 = src.slice(src.indexOf('3. Only'), src.indexOf('4. Relay'));
+  assert.match(step3, /explicit yes/);
+  assert.match(step3, /--yes --seed <the seed the bill\s+printed>/);
+  assert.equal(src.indexOf('--yes --seed') > src.indexOf('AskUserQuestion'), true, '--yes only appears after the question');
+  assert.match(src, /never call anything but\s+`ac verify calibrate`/i);
+});
+
+test('phase 51: every reporting slot in astro-calibrate.md states a bound', () => {
+  const src = readFileSync(join(COMMANDS, 'astro-calibrate.md'), 'utf8');
+  assertSlotBound(src, 'astro-calibrate.md', 'the bill', '1. Run', '2. Ask');
+  assertSlotBound(src, 'astro-calibrate.md', 'not-run branch', '3. Only', '4. Relay');
+  assertSlotBound(src, 'astro-calibrate.md', 'the summary', '4. Relay', '**Never**');
+});
+
+test('phase 51: no loop command (discuss, plan, execute, verify, accept, status, debt) and no file in workflows/ mentions calibrate', () => {
+  const dirs = [COMMANDS, join(COMMANDS, '..', 'workflows')];
+  const loop = ['discuss', 'plan', 'execute', 'verify', 'accept', 'status', 'debt'].map((n) => join(COMMANDS, `astro-${n}.md`));
+  const files = [...loop, ...readdirSync(dirs[1]).map((f) => join(dirs[1], f))];
+  for (const f of files) assert.doesNotMatch(readFileSync(f, 'utf8'), /calibrat/i, `${f} must not start a calibration`);
+});
+
+test('phase 51: astro-help lists /astro-calibrate', () => {
+  assert.match(readFileSync(join(COMMANDS, 'astro-help.md'), 'utf8'), /`\/astro-calibrate`/);
+});
+
+// ── Phase 52 (amends ADR-079): targeted verify in the command docs ───────────────────────────────
+
+test('phase 52: /astro-verify has a targeted bullet that spawns ONE verifier with the plan\'s floor, base and range and says the floor may only be widened', () => {
+  const src = readFileSync(join(COMMANDS, 'astro-verify.md'), 'utf8');
+  const at = src.indexOf('**When the plan says `targeted`**');
+  assert.ok(at !== -1, 'a targeted bullet exists');
+  const bullet = src.slice(at, src.indexOf('- **Ask the verifier to end with a fenced JSON block**'));
+  assert.match(bullet, /ONE\*\*?\s+verifier|\bONE\b/);
+  for (const needle of ['floor', 'base', 'range', 'ac suite receipt', 'ac suite run']) assert.ok(bullet.includes(needle), `targeted bullet names ${needle}`);
+  assert.match(bullet, /only\s+be\s+\*\*widened\*\*/i);
+  assert.match(bullet, /never[^.]*shorten|never skip/i);
+  // the contract block and the spawn ordering the phase-45 tests pin are untouched
+  assert.ok(src.indexOf('ac verdict plan') < src.indexOf('spawn **ONE**'));
+});
+
+test('phase 52: the fenced JSON allows mode targeted, carried:true and receipt', () => {
+  const src = readFileSync(join(COMMANDS, 'astro-verify.md'), 'utf8');
+  const fence = src.slice(src.indexOf('- **Ask the verifier to end with a fenced JSON block**'), src.indexOf('3. Clear the live status first'));
+  assert.match(fence, /"mode": "full"\|"narrowed"\|"targeted"/);
+  assert.match(fence, /"carried": true/);
+  assert.match(fence, /"receipt"/);
+});
+
+test('phase 52: step 3 has a bounded targeted PASS line naming observed and carried counts and the full PASS run @ sha7', () => {
+  const src = readFileSync(join(COMMANDS, 'astro-verify.md'), 'utf8');
+  const step3 = src.slice(src.indexOf('3. Clear the live status first'), src.indexOf('3b. **On PASS only'));
+  assert.match(step3, /targeted/);
+  assert.match(step3, /observed <n>, carried <k> from run <R> @ <sha7>/);
+  assert.match(step3, /in one line|one line/);
+});
+
+test('phase 52: /astro-accept runs `ac phase show <slug> --json` before the walkthrough and relays the carried list in one line, saying nothing when there is none', () => {
+  const src = readFileSync(join(COMMANDS, 'astro-accept.md'), 'utf8');
+  const show = src.indexOf('ac phase show <slug> --json');
+  assert.ok(show !== -1, 'names ac phase show <slug> --json');
+  assert.ok(show < src.indexOf('3. Walk the user through it'), 'runs before the walkthrough');
+  const step = src.slice(src.indexOf('2b. **Name what was carried'), src.indexOf('3. Walk the user through it'));
+  assert.match(step, /`carried`/);
+  assert.match(step, /carried, not re-observed: /);
+  assert.match(step, /in \*\*one line\*\*|in one line/);
+  assert.match(step, /say\s+nothing/i);
+});
+
+test('phase 52: /astro-execute names targeted beside narrowed', () => {
+  const src = readFileSync(EXECUTE_MD, 'utf8');
+  const plan = src.slice(src.indexOf('A\n     re-verify after a FAIL narrows first'), src.indexOf('reaches `verified` at best'));
+  assert.match(plan, /targeted/);
+  assert.match(src, /verify after a recorded full PASS\s+is \*\*targeted\*\*/);
+  const flow = src.slice(src.indexOf("Follow `/astro-verify`'s sequence"), src.indexOf('On a verify FAIL, run the same bounded'));
+  assert.match(flow, /targeted/);
 });
