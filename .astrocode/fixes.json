@@ -142,7 +142,7 @@
     {
       "id": "2026-10-27-execute-never-runs-tasks-in-parallel",
       "title": "execute never runs tasks in parallel: every task claims PLAN.md",
-      "status": "executing",
+      "status": "verified",
       "opened_at": "2026-10-27T23:12:44.415Z"
     }
   ]
