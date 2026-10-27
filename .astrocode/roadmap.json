@@ -17,15 +17,21 @@
       "number": 51,
       "name": "Verifier calibration: plant ac mutate mutants in accepted phases and report the verifier's false-PASS rate (GitHub #157)",
       "slug": "51-verifier-calibration-plant-ac-mutate",
-      "status": "verified",
-      "milestone": 14
+      "status": "complete",
+      "milestone": 14,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-10-27T13:38:10.749Z"
     },
     {
       "number": 52,
       "name": "Targeted verify: check only the criteria and suites a change can affect (GitHub #140)",
       "slug": "52-targeted-verify-check-only-the-criteria",
-      "status": "pending",
-      "milestone": 14
+      "status": "complete",
+      "milestone": 14,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-10-27T13:38:10.823Z"
     },
     {
       "number": 53,
