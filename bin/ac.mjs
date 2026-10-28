@@ -31,6 +31,14 @@ function claudeMeetsModFloor() {
 // Phase 42 (ADR-075) -- install/update put the astro-mods plugin in place with every switch off,
 // so the plugin's own settings.json keys are written here and `ac mods enable` never edits that
 // file. Only a change, a collision or a failure is worth a line; `already` is silent.
+// One flapping flag (phase 54, D9) as one stderr line. The flag never changes the verdict; it only
+// tells the human whether a pass-then-fail looks like a regression or an inconsistent verifier.
+function flappingLine(f) {
+  const how = f.files_changed === true ? 'files changed (regression?)'
+    : f.files_changed === false ? 'files unchanged (inconsistent verifier?)' : 'file map unknown';
+  return `⚠ ${f.id} passed in run ${f.passed_run} @ ${String(f.passed_commit ?? '').slice(0, 7)}, now fails — ${how}${f.criteria_changed ? '; CRITERIA.md changed since' : ''}`;
+}
+
 function reportPluginEnsure(results) {
   for (const r of results) {
     if (r.outcome === 'installed') console.log(`✓ astro-mods installed (every mod off) → ${r.dir} [${r.label}]`);
@@ -128,7 +136,8 @@ import { backfillAdr } from '../lib/adrbackfill.mjs';
 import { renumberDecision } from '../lib/adrrenumber.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
-import { planReverify, recordVerdict, verifiedGate, carriedOf } from '../lib/verdict.mjs';
+import { planReverify, recordVerdict, verifiedGate, carriedOf, readVerdict, verdictFile } from '../lib/verdict.mjs';
+import { VERDICTS_FILE, readHistory } from '../lib/verdicthistory.mjs';
 import { runSuite, reusableReceipt } from '../lib/receipts.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
 import { planCalibration, runCalibration, renderSummary, renderBill, parseCalibrateFlags, publicDefect, CALIBRATE_USAGE } from '../lib/calibrate.mjs';
@@ -270,6 +279,9 @@ const ALLOWED_FLAGS = {
   'verdict plan': ['full', 'json'],
   // `--result` is the verifier's checked criteria; a typo must not record an empty verdict.
   'verdict record': ['result'],
+  // Phase 54 (D9) — read-only history and the latest verdict; a typo'd flag must not print the wrong form.
+  'verdict history': ['json'],
+  'verdict show': ['json'],
   // Phase 52 (D6) — a typo'd `--command` must not run, or reuse a receipt for, the wrong command.
   'suite run': ['command', 'json'],
   'suite receipt': ['command', 'json'],
@@ -579,6 +591,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full or valid targeted verdict)
   ac verdict plan <phase> [--full] [--json]  full, narrowed (after a FAIL) or targeted (after a full PASS)
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
+  ac verdict history <phase> [--json]  every recorded verdict of the phase, oldest first (VERDICTS.jsonl)
+  ac verdict show <phase> [--json]     the latest verdict: unmet ids, deferred ids, flapping flags
   ac suite run --command "<cmd>" [--json]   run the project's suite and write a local receipt (exits with the suite's status)
   ac suite receipt --command "<cmd>" [--json]  is there a reusable receipt for this exact command on HEAD's clean tree? (read-only)
   ac mutate <phase> [--json]          run the project's mutation tool on the lines the phase changed (ADR-083, ADR-084)
@@ -2651,7 +2665,7 @@ async function main() {
     case 'verdict': {
       const r = root();
       const sub = pos[0];
-      if (sub !== 'plan' && sub !== 'record') die('usage: ac verdict <plan|record> <phase> …');
+      if (!['plan', 'record', 'history', 'show'].includes(sub)) die('usage: ac verdict <plan|record|history|show> <phase> …');
       checkFlags(`verdict ${sub}`, flags);
       // A stray token (`-full`, a second phase) is refused, never ignored: `-full` silently ran targeted.
       if (pos.length > 2) die(`unexpected argument for \`ac verdict ${sub}\`: ${pos.slice(2).join(' ')} (flags take two dashes: --full, --json)`);
@@ -2661,7 +2675,38 @@ async function main() {
         if (flags[k] !== undefined && flags[k] !== true) die(`unexpected argument for \`ac verdict ${sub}\`: --${k} takes no value (got ${JSON.stringify(flags[k])})`);
       }
       const ph = findPhase(r, pos[1]);
-      if (!ph) die(`usage: ac verdict plan <phase> [--full] [--json] | ac verdict record <phase> --result '<json>'`);
+      if (!ph) die(`usage: ac verdict plan <phase> [--full] [--json] | ac verdict record <phase> --result '<json>' | ac verdict history <phase> [--json] | ac verdict show <phase> [--json]`);
+      if (sub === 'history' || sub === 'show') {
+        const sha7 = (x) => String(x ?? '').slice(0, 7);
+        const hist = readHistory(join(paths(r).phases, ph.slug, VERDICTS_FILE));
+        if (hist.damaged) console.error(`⚠ ${hist.damaged} damaged line(s) in ${VERDICTS_FILE} were skipped`);
+        if (sub === 'history') {
+          if (flags.json) { json(hist.entries); return; }
+          if (!hist.entries.length) { console.log(`⊡ no verdicts recorded for phase ${ph.slug}`); return; }
+          for (const h of hist.entries) {
+            const unmet = Array.isArray(h.unmet) && h.unmet.length ? `  unmet: ${h.unmet.join(', ')}` : '';
+            const def = Array.isArray(h.deferred) && h.deferred.length ? `  deferred: ${h.deferred.join(', ')}` : '';
+            console.log(`run ${h.run}  ${h.mode}${h.stage ? `/${h.stage}` : ''}  ${h.passed ? 'PASS' : 'FAIL'}  ${sha7(h.commit)}${unmet}${def}`);
+          }
+          return;
+        }
+        const { verdict, reason } = readVerdict(verdictFile(r, ph.slug));
+        if (!verdict) die(`no verdict to show: ${reason}`);
+        const line = hist.entries.filter((h) => h.run === verdict.run).pop();
+        const unmet = verdict.criteria.filter((c) => c.status === 'failed' || (c.status === 'carried' && c.last === 'failed')).map((c) => c.id);
+        const deferred = verdict.criteria.filter((c) => c.status === 'deferred').map((c) => ({ id: c.id, fix_id: c.fix_id }));
+        const flapping = line?.flapping ?? [];
+        const view = {
+          phase: ph.slug, run: verdict.run, mode: verdict.mode, ...(verdict.stage ? { stage: verdict.stage } : {}),
+          passed: line ? line.passed === true : unmet.length === 0, commit: verdict.commit, unmet, deferred, flapping,
+        };
+        if (flags.json) { json(view); return; }
+        console.log(`run ${view.run}  ${view.mode}  ${view.passed ? 'PASS' : 'FAIL'}  ${sha7(view.commit)}`);
+        console.log(unmet.length ? `unmet: ${unmet.join(', ')}` : 'unmet: none');
+        if (deferred.length) console.log(`deferred: ${deferred.map((d) => `${d.id} → ${d.fix_id}`).join(', ')}`);
+        for (const f of flapping) console.log(flappingLine(f));
+        return;
+      }
       if (sub === 'plan') {
         const plan = planReverify(r, ph.slug, { full: flags.full !== undefined });
         if (flags.json) json(plan);
@@ -2679,6 +2724,7 @@ async function main() {
       try { out = await recordVerdict(r, ph.slug, result); } catch (e) { die(e.message); }
       if (out.ignored) console.error(`⚠ ${out.ignored} reported criterion id(s) are not in CRITERIA.md and were ignored`);
       for (const f of out.refused ?? []) console.error(`⚠ ${f.id} refused: ${f.reason}`);
+      for (const f of out.flapping ?? []) console.error(flappingLine(f));
       json(out);
       return;
     }
