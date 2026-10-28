@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "run": 1,
+  "mode": "full",
+  "reason": "no saved verdict",
+  "broad": false,
+  "commit": "d34bb1422eb71e57fb5800064cf2a665092201c6",
+  "criteria_sha": "sha256:89d9ad7b0e14eb6c72a50797e82693f2ff281cfa7c54f996d7ce84cddbbee605",
+  "at": "2026-10-28T07:36:13.617Z",
+  "base": null,
+  "criteria": [
+    {
+      "id": "C1",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C2",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C3",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C4",
+      "status": "failed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C5",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C6",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C7",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C8",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C9",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C10",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C11",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C12",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C13",
+      "status": "failed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C14",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C15",
+      "status": "passed",
+      "evidence": "observed",
+      "test_strength": true,
+      "suite": true,
+      "mutation": {
+        "tool": "stryker",
+        "version": null,
+        "outcome": "tool-missing",
+        "reproduce": "ac mutate 54 --json",
+        "head": "d34bb1422eb71e57fb5800064cf2a665092201c6",
+        "scope": [
+          "bin/ac.mjs",
+          "lib/cheappass.mjs",
+          "lib/defer.mjs",
+          "lib/fixes.mjs",
+          "lib/impact.mjs",
+          "lib/milestone.mjs",
+          "lib/nextstep.mjs",
+          "lib/receipts.mjs",
+          "lib/setupcache.mjs",
+          "lib/verdict.mjs",
+          "lib/verdicthistory.mjs",
+          "mods/astro-mods/hooks/lib/band.js",
+          "workflows/execute-phase.mjs"
+        ],
+        "cap_seconds": 600,
+        "capped": false,
+        "complete": false,
+        "counts": {
+          "killed": 0,
+          "survived": 0,
+          "timeout": 0,
+          "no-coverage": 0,
+          "error": 0
+        },
+        "survivors": [],
+        "fallback": {
+          "reason": "mutation tool not installed — AI mutants used",
+          "ai_mutants": true,
+          "report": "AI mutants stood in: mutation tool not installed — AI mutants used"
+        }
+      }
+    }
+  ]
+}
