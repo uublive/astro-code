@@ -251,3 +251,37 @@ test('phase 46: the CLI names an ambiguous fix slug instead of saying "no such f
   assert.equal(one.status, 0, one.stderr);
   assert.deepEqual(openFixes(root).map((f) => f.id), [b.id], 'exactly the named fix was accepted');
 });
+
+// --- phase 54 t4: a deferred fix carries its link and its reproduction ---------------
+
+test('addFix persists a redacted, truncated repro and deferred_from; a plain addFix is unchanged', async () => {
+  const root = project();
+  const { deferredFixes } = await import('../lib/fixes.mjs');
+  const plain = await addFix(root, { title: 'plain bug', now: NOW });
+  const dbPlain = loadFixes(root).fixes.find((f) => f.id === plain.id);
+  assert.equal('repro' in dbPlain, false);
+  assert.equal('deferred_from' in dbPlain, false);
+
+  const from = { phase: '54-x', criterion: 'C2', run: 3, commit: 'abc1234' };
+  const secret = 'token=ghp_' + 'a'.repeat(36);
+  const f = await addFix(root, { title: 'deferred: phase 54 C2 — x', report: `cmd\n${secret}\n` + 'z'.repeat(5000), deferredFrom: from, now: NOW });
+  const stored = loadFixes(root).fixes.find((x) => x.id === f.id);
+  assert.deepEqual(stored.deferred_from, from);
+  assert.ok(stored.repro.length <= 4000);
+  assert.ok(!stored.repro.includes('ghp_' + 'a'.repeat(36)), 'secret redacted');
+  assert.ok(stored.repro.startsWith('cmd'));
+  assert.equal(typeof deferredFixes, 'function');
+});
+
+test('deferredFixes lists open deferred fixes only, filters by phase, and drops a fix once accepted', async () => {
+  const root = project();
+  const { deferredFixes } = await import('../lib/fixes.mjs');
+  await addFix(root, { title: 'plain', now: NOW });
+  const a = await addFix(root, { title: 'deferred a', deferredFrom: { phase: '54-x', criterion: 'C2' }, now: NOW });
+  const b = await addFix(root, { title: 'deferred b', deferredFrom: { phase: '55-y', criterion: 'C1' }, now: NOW });
+  assert.deepEqual(deferredFixes(root).map((f) => f.id).sort(), [a.id, b.id].sort());
+  assert.deepEqual(deferredFixes(root, { phases: ['54-x'] }).map((f) => f.id), [a.id]);
+  assert.deepEqual(deferredFixes(root, { phases: [] }), []);
+  await acceptFix(root, a.id, { now: NOW, by: 'me' });
+  assert.deepEqual(deferredFixes(root).map((f) => f.id), [b.id]);
+});
