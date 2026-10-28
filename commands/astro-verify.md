@@ -8,7 +8,12 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
 
 1. Resolve the phase slug and read its goal from `.astrocode/phases/<slug>/` and the
    roadmap.
-2. **Plan the run first.** Run `ac verdict plan <slug> --json` (add `--full` when the user
+2. **Cheap pass first.** Run `ac verdict cheap <number>` (phase 54): it runs the suite through a
+   reusable receipt plus each criterion's declared `Cheap:` command, and it can only fail a run,
+   never pass one. When it reports any unmet criterion, **stop with a FAIL** that lists EVERY unmet
+   id it printed (one line each, as in step 3), spawn no verifier, and do not record anything (it
+   already recorded the narrowed cheap verdict); the expensive stage runs only when it is clean.
+2b. **Plan the run.** Run `ac verdict plan <slug> --json` (add `--full` when the user
    passed `--full`, which forces a full run). It decides, in code, whether this re-verify may
    narrow (ADR-079); the thresholds and the fallbacks live there, so never restate or second-guess
    them here. Surface the live status (`ac activity '⚙ verifying'`), then spawn **ONE**
@@ -21,7 +26,10 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    FAIL until you run its `Observe:` evidence yourself and cite the command output; run
    the full suite; PASS only if **every** criterion independently passes. If CRITERIA.md
    is absent, self-derive goal criteria and open the verdict with a provenance line — never
-   silently trust the plan.<!-- /verifier-contract -->
+   silently trust the plan; never stop at the first failing criterion: report EVERY criterion you observe
+   unmet, each with its failing command and output; a verifier never defers a criterion (deferral is
+   a human act); a declared setup step is run with `ac setup run <name>`; a broad-fix claim names its
+   `broad_files`, checked with `ac verdict plan <slug> --broad-files <files>`.<!-- /verifier-contract -->
    - **When the plan says `narrowed`**, restate the same narrowed contract the execute workflow
      sends: re-check the plan's `first` ids first (the saved run and commit are in the plan),
      from scratch against their own `Observe:` lines; inspect `git diff <range>` first, and a
@@ -62,6 +70,11 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    criteria: `carried, not re-checked: <n> (run <R> @ <sha7>)`, citing the saved run and commit;
    then one line pointing to the verifier's full
    per-criterion report for the reproduction detail, then stop. Do not mark it verified.
+   When `ac verdict record` printed a `deferrable:` line, relay it in **one line**: the ids and the
+   form for the human to type, `ac verdict defer <number> <ids>`; say nothing when it printed none.
+   Never run it yourself: deferral is the human's choice. When it printed `flapping` flags, add
+   **one line per flagged id** (`C2 passed in run 1, now fails: files unchanged`); say nothing when
+   there are none.
    A targeted PASS says in that same one line what was not re-observed: `verified (targeted):
    observed <n>, carried <k> from run <R> @ <sha7>`, citing the full PASS the record names.
    On PASS or FAIL, when a criterion's `mutation` evidence has a `fallback`, add **at most one
