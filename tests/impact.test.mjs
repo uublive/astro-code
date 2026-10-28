@@ -136,3 +136,37 @@ test('mutateScopeFiles returns the phase\'s stamped paths plus tracked files mat
     assert.ok(!f.includes('lib/a.mjs'));
   } finally { r.done(); }
 });
+
+// ── phase 54 t2: the core/edge tag and the Cheap line (D2, D4) ──────────────────
+test('edgeIds returns only criteria tagged [edge] in the heading tag run, and fails closed on everything else', async () => {
+  const { edgeIds } = await import('../lib/impact.mjs');
+  const text = [
+    '### C1 — untagged claim', '- **Observe:** x',
+    '### C2 [edge] — an edge claim', '- **Observe:** y',
+    '### C3 [core] — core claim',
+    '### C4 [mutation] [edge] — mutation then edge',
+    '### C5 [Edge] — wrong case',
+    '### C6 [edge ] — trailing space in the tag',
+    '### C7 — edge in the claim text [edge]',
+    '### C8 — the word edge',
+    '### C9', '[edge]',
+    '### C10 — body tag', '- **Observe:** [edge] here',
+    '### C11 [suite] — suite only',
+  ].join('\n');
+  assert.deepEqual(edgeIds(text), ['C2', 'C4']);
+  assert.deepEqual(edgeIds(text.replace(/\n/g, '\r\n')), ['C2', 'C4'], 'survives CRLF');
+  assert.deepEqual(edgeIds(''), []);
+});
+
+test('cheapCommands maps a Cheap line to its first backticked command and ignores one without', async () => {
+  const { cheapCommands } = await import('../lib/impact.mjs');
+  const text = [
+    '### C1 — a', '- **Cheap:** `node a.mjs`', '- **Observe:** `slow`',
+    '### C2 — b', '- **Cheap:** run the thing',
+    '### C3 — c', '- **Cheap:** `node c.mjs --x` then `other`',
+  ].join('\r\n');
+  const m = cheapCommands(text);
+  assert.equal(m.get('C1'), 'node a.mjs');
+  assert.equal(m.has('C2'), false);
+  assert.equal(m.get('C3'), 'node c.mjs --x');
+});
