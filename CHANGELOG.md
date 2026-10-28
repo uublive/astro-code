@@ -2,6 +2,10 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.54.2
+
+- The README header follows the Astro-family style: logo, tagline, release/node/tests/licence badges and a "What astro-code is" section
+
 ## v0.54.1
 
 - The README opens with the animated astro-code logo (light and dark); the brand assets live in `assets/brand/astro-code/` (not shipped in the npm package)
