@@ -23,15 +23,18 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const TASKS = [{ id: 't1', title: 'T1', file: 'a.mjs', depends_on: [], done: true }];
 
 // `verifiers`: queue of verifier results, one per verify spawn. `records`: queue of record-clerk results.
-async function run({ verifiers, records, args = {} }) {
+async function run({ verifiers, records, plans = [], cheaps = [], args = {} }) {
   const calls = [];
   const logs = [];
   const vq = [...verifiers];
   const rq = [...records];
+  const pq = [...plans];
+  const cq = [...cheaps];
   const agent = async (prompt, opts = {}) => {
     calls.push({ prompt, opts });
     const props = (opts.schema && opts.schema.properties) || {};
-    if (opts.label === 'verdict:plan') return { mode: 'full', first: [], reason: 'stub', ids: ['C1'] };
+    if (opts.label === 'verify:cheap') return cq.length ? cq.shift() : { clean: true, unmet: [], unchecked: [] };
+    if (opts.label === 'verdict:plan') return pq.length ? pq.shift() : { mode: 'full', first: [], reason: 'stub', ids: ['C1'] };
     if (opts.label === 'verdict:record') return rq.shift() || { recorded: true, run: 1, passed: false, failing: [] };
     if (opts.agentType === 'astro-verifier') return vq.shift();
     if ('tasks' in props) return { tasks: TASKS };
@@ -95,4 +98,100 @@ test('a withdrawn PASS from ac verdict record that names failing ids still remed
   const rem = calls.filter((c) => (c.opts.label || '').startsWith('remediate:'));
   assert.equal(rem.length, 1, 'C2 is still remediated');
   assert.match(rem[0].prompt, /- C2/);
+});
+
+// ── t17: the cheap stage, every gap, broad files, the record payload and summary lines ──────────
+
+const verifierSpawns = (calls) => calls.filter((c) => c.opts.agentType === 'astro-verifier');
+const recordPayload = (call) => JSON.parse(/--result '(.*)'\n/s.exec(call.prompt)[1]);
+
+test('a cheap stage with unmet C2 and C3 ends the round as a FAIL listing both and spawns no verifier', async () => {
+  const { result, calls, logs } = await run({
+    verifiers: [],
+    cheaps: [{ clean: false, unmet: ['C2', 'C3'], unchecked: [], ran: [{ id: 'C2', kind: 'cheap', passed: false, command: 'cmd2', output: 'out2' }, { id: 'C3', kind: 'cheap', passed: false, command: 'cmd3', output: 'out3' }] }],
+    records: [],
+    args: { effort: 'light' },
+  });
+  assert.equal(verifierSpawns(calls).length, 0, 'no expensive verifier after a cheap failure');
+  assert.equal(result.verdict.passed, false);
+  assert.match(result.verdict.summary, /cheap first pass/);
+  assert.match(result.verdict.summary, /C2, C3/);
+  assert.deepEqual(result.verdict.criteria.map((c) => c.id), ['C2', 'C3']);
+  assert.equal(result.verdict.criteria[0].command, 'cmd2');
+  assert.ok(logs.some((l) => /cheap first pass: 2 unmet/.test(l)));
+  assert.equal(calls.filter((c) => c.opts.label === 'verdict:record').length, 0, 'ac verdict cheap already recorded it');
+});
+
+test('a clean cheap stage is followed by the expensive verifier, and the cheap clerk is told to run ac verdict cheap', async () => {
+  const { calls } = await run({
+    verifiers: [{ passed: true, criteriaFound: true, summary: 'ok', mode: 'full', criteria: [item('C1')] }],
+    records: [{ recorded: true, run: 1, passed: true, failing: [] }],
+    args: { effort: 'light' },
+  });
+  const order = calls.map((c) => c.opts.label || c.opts.agentType).filter((l) => ['verify:cheap', 'verdict:plan', 'astro-verifier', 'verdict:record'].includes(l));
+  assert.deepEqual(order, ['verify:cheap', 'verdict:plan', 'astro-verifier', 'verdict:record']);
+  const cheap = calls.find((c) => c.opts.label === 'verify:cheap');
+  assert.match(cheap.prompt, /ac verdict cheap 01-chain --json/);
+});
+
+test('the verifier prompt says to report every unmet criterion and never stop at the first', async () => {
+  const { calls } = await run({
+    verifiers: [{ passed: true, criteriaFound: true, summary: 'ok', mode: 'full', criteria: [item('C1')] }],
+    records: [{ recorded: true, run: 1, passed: true, failing: [] }],
+    args: { effort: 'light' },
+  });
+  const p = verifierSpawns(calls)[0].prompt;
+  assert.match(p, /never stop at the first failing criterion/);
+  assert.match(p, /Report EVERY criterion you observed unmet/);
+  assert.match(p, /never as carried/);
+});
+
+test('the narrowed and targeted prompts check a broad claim with ac verdict plan --broad-files and return broad_files', async () => {
+  const narrowed = { mode: 'narrowed', first: ['C2'], ids: ['C1', 'C2'], saved: { run: 1, commit: 'aaa1111abc', mode: 'full' }, range: 'aaa1111abc..HEAD', reason: 'x' };
+  const targeted = { mode: 'targeted', first: [], floor: ['C1'], carry: [], why: { C1: 'w' }, base: { run: 1, commit: 'aaa1111abc' }, ids: ['C1', 'C2'], range: 'aaa1111abc..HEAD', reason: 'x' };
+  for (const plan of [narrowed, targeted]) {
+    const { calls } = await run({
+      verifiers: [{ passed: false, criteriaFound: true, summary: 'no', mode: plan.mode, criteria: [item('C1', { passed: false, status: 'failed' })] }],
+      records: [{ recorded: true, run: 2, passed: false, failing: ['C1'] }],
+      plans: [plan],
+      args: { effort: 'light' },
+    });
+    const p = verifierSpawns(calls)[0].prompt;
+    assert.match(p, /ac verdict plan 01-chain --broad-files <the changed files that make it broad> --json/, plan.mode);
+    assert.match(p, /broad_files/, plan.mode);
+  }
+});
+
+test('the record payload carries broad_files and each failed criterion\'s command and output, truncated to 1500', async () => {
+  const long = 'x'.repeat(3000);
+  const { calls } = await run({
+    verifiers: [{ passed: false, criteriaFound: true, summary: 'no', mode: 'full', broad: true, broad_files: ['src/a.mjs'],
+      criteria: [item('C1'), { id: 'C2', passed: false, status: 'failed', command: long, output: long }] }],
+    records: [{ recorded: true, run: 1, passed: false, failing: ['C2'] }],
+    plans: [{ mode: 'full', first: [], reason: 's', ids: ['C1', 'C2'] }],
+    args: { effort: 'light' },
+  });
+  const payload = recordPayload(calls.find((c) => c.opts.label === 'verdict:record'));
+  assert.deepEqual(payload.broad_files, ['src/a.mjs']);
+  const c2 = payload.criteria.find((c) => c.id === 'C2');
+  assert.equal(c2.command.length, 1500);
+  assert.equal(c2.output.length, 1500);
+  assert.equal('command' in payload.criteria.find((c) => c.id === 'C1'), false, 'a passed criterion carries no evidence');
+});
+
+test('the record\'s deferrable, flapping and broad_refused each add one summary line', async () => {
+  const { result } = await run({
+    verifiers: [{ passed: false, criteriaFound: true, summary: 'FAIL — C2 unmet', mode: 'full', criteria: [item('C1'), { id: 'C2', passed: false, status: 'failed' }] }],
+    records: [{
+      recorded: true, run: 3, passed: false, failing: ['C2'], deferrable: ['C2'],
+      flapping: [{ id: 'C2', passed_run: 1, files_changed: false }], broad_refused: 'no files named',
+    }],
+    plans: [{ mode: 'full', first: [], reason: 's', ids: ['C1', 'C2'] }],
+    args: { effort: 'light' },
+  });
+  const lines = result.verdict.summary.split('\n');
+  assert.equal(lines.length, 4, result.verdict.summary);
+  assert.match(lines[1], /^deferrable: C2 — a human may defer with `ac verdict defer 01 C2`$/);
+  assert.match(lines[2], /^flapping: C2 passed in run 1, files unchanged$/);
+  assert.match(lines[3], /^broad claim refused: no files named — recorded narrowed$/);
 });

@@ -32,8 +32,9 @@ test('the execute-phase Verify spawn is CRITERIA.md-based, plan-blind, adversari
   // Window spans the Verify section (both the integrationFailed branch and the else spawn).
   // Widened for ADR-031's re-verify focus preamble, again for the non-blocking
   // findings rule, and again for ADR-079's verdict clerks and narrowed preamble, and again for phase 52's targeted
-  // preamble; assertions below are unchanged.
-  const window = execPhase.slice(vi, vi + 20000);
+  // preamble, and again for phase 54's cheap stage and broad-file text;
+  // assertions below are unchanged.
+  const window = execPhase.slice(vi, vi + 30000);
   assert.match(window, /CRITERIA\.md/, 'spawn prompt must reference CRITERIA.md');
   assert.match(window, /do NOT read[^.\n]*PLAN\.md/i, 'spawn prompt must forbid reading PLAN.md');
   assert.match(window, /assume[^.\n]*FAIL/i, 'spawn prompt must be adversarial (assume FAIL)');

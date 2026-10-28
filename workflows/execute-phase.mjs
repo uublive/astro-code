@@ -1862,6 +1862,9 @@ const VERIFY_SCHEMA = {
     // Phase 52 — 'targeted' after a recorded full PASS: the floor is observed, the rest carried.
     mode: { type: 'string', enum: ['full', 'narrowed', 'targeted'] },
     broad: { type: 'boolean' },
+    // Phase 54 (D6) — the files that make a fix broad. `ac verdict record` checks them against the
+    // criteria file map; a bare `broad: true` with none is refused there and the run stays narrowed.
+    broad_files: { type: 'array', items: { type: 'string' } },
     criteria: {
       type: 'array',
       items: {
@@ -2125,8 +2128,40 @@ const VERDICT_RECORD_SCHEMA = {
     },
     committed: { type: 'boolean' },
     note: { type: 'string' },
+    // Phase 54 — what `ac verdict record` printed beyond the verdict itself, each added to the
+    // summary as ONE line: failed [edge] criteria a human may defer, criteria that passed earlier
+    // and fail now, and a broad claim the code refused.
+    deferrable: { type: 'array', items: { type: 'string' } },
+    flapping: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: true, properties: { id: { type: 'string' }, passed_run: { type: 'integer' }, files_changed: { type: ['boolean', 'null'] } } },
+    },
+    broad_refused: { type: 'string' },
   },
   required: ['recorded'],
+}
+
+// The cheap first pass (phase 54, D4): `ac verdict cheap` runs the suite (through a receipt) and each
+// criterion's declared Cheap command, lists EVERY unmet id, and has already recorded a narrowed cheap
+// verdict when any is unmet. The clerk only relays it; the expensive verifier runs only when clean.
+const CHEAP_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    clean: { type: 'boolean' },
+    unmet: { type: 'array', items: { type: 'string' } },
+    unchecked: { type: 'array', items: { type: 'string' } },
+    ran: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: true,
+        properties: { id: { type: 'string' }, kind: { type: 'string' }, passed: { type: 'boolean' }, command: { type: 'string' }, output: { type: 'string' } },
+      },
+    },
+    note: { type: 'string' },
+  },
+  required: ['clean'],
 }
 
 const runVerdictPlan = (full = false) =>
@@ -2147,10 +2182,24 @@ const runVerdictRecord = (resultJson) =>
       `anything. Run exactly this ONE command in ${root} and return its fields verbatim:\n` +
       `  ac verdict record ${phaseSlug} --result '${resultJson}'\n` +
       `Return recorded=true plus run, mode, reason, passed, failing, observed, carried, carriedFrom ` +
-      `(omit when null) and committed from the JSON it prints. If the command exits non-zero, return recorded=false and put ` +
+      `(omit when null), committed, and deferrable, flapping and broad_refused (each omitted when absent) ` +
+      `from the JSON it prints. If the command exits non-zero, return recorded=false and put ` +
       `the first stderr line in note.`,
     { label: 'verdict:record', phase: 'Verify', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: VERDICT_RECORD_SCHEMA },
   )
+
+const runCheapStage = () =>
+  agent(
+    `CHEAP FIRST PASS for phase ${phaseSlug} in ${root}. Purely mechanical — do not fix, judge or edit ` +
+      `anything. Run exactly this ONE command in ${root} and return its fields verbatim:\n` +
+      `  ac verdict cheap ${phaseSlug} --json\n` +
+      `It exits 1 when any check is unmet; that is a result, not an error. Return clean, unmet (every ` +
+      `id), unchecked and ran (each item's id, kind, passed, command, output) from the JSON it prints. ` +
+      `If it cannot run (non-zero exit with no JSON), return clean=true and put the first stderr line in note.`,
+    { label: 'verify:cheap', phase: 'Verify', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: CHEAP_SCHEMA },
+  )
+
+const clip = (x, n = 1500) => (typeof x === 'string' && x.length > n ? x.slice(0, n) : x)
 
 const FULL_PLAN = (reason) => ({ mode: 'full', reason, first: [], ids: [], saved: null, range: null, floor: [], carry: [], why: {}, base: null })
 
@@ -2222,7 +2271,9 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
           `test harness) observe that one too. You may NEVER skip, or carry, a floor criterion.\n` +
           `2. Report every criterion you did not re-check with status 'carried' (or leave it out). Never report ` +
           `a carried criterion as passed: ac records it as carried from run ${plan.base.run}, not observed. If the ` +
-          `fix is BROAD, do not target: run a FULL verify and return broad=true, mode='full'.\n` +
+          `fix is BROAD, do not target: first run \`ac verdict plan ${phaseSlug} --broad-files <the changed files that make it broad> --json\`; ` +
+          `only when it plans \`full\`, run a FULL verify and return broad=true, mode='full' and broad_files (those files). ` +
+          `A bare broad claim with no supporting files is refused by ac and the run stays targeted.\n` +
           `3. A SUITE criterion (its evidence is the full test suite) is in the floor: FIRST run ` +
           `\`ac suite receipt --command "<the suite command>" --json\`. When it is reusable, report that ` +
           `criterion with status 'carried' and receipt set to the printed key; otherwise run the suite through ` +
@@ -2234,7 +2285,9 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
           `${plan.saved.commit}) left these criteria unmet: ${plan.first.join(', ')}.\n` +
           `1. FIRST inspect \`git diff ${plan.range}\` (the change since that verdict). If the fix is BROAD — ` +
           `it touches what many criteria rest on (shared code, config, the test harness) — do not ` +
-          `narrow: run a FULL verify from the start and return broad=true, mode='full'.\n` +
+          `narrow: FIRST run \`ac verdict plan ${phaseSlug} --broad-files <the changed files that make it broad> --json\`; ` +
+          `only when it plans \`full\`, run a FULL verify from the start and return broad=true, mode='full' ` +
+          `and broad_files (those files). A bare broad claim with no supporting files is refused by ac and the run stays narrowed.\n` +
           `2. Otherwise re-check ${plan.first.join(', ')} first, from scratch and plan-blind, against their ` +
           `own Observe: lines. Check ALL of them before you stop, so the report names every one still unmet.\n` +
           `3. If ANY is still unmet, stop: return passed=false, mode='narrowed', every criterion you ` +
@@ -2267,6 +2320,12 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
       `Observe: command / drive the behavior end-to-end, and cite the exact command + its actual ` +
       `output as evidence; actively try its "Fails if:". A green suite is not evidence for a ` +
       `criterion unless it actually exercises that behavior.\n\n` +
+      `EVERY GAP IN ONE PASS: never stop at the first failing criterion. Report EVERY criterion you ` +
+      `observed unmet, each as failed with its exact command and output, so one round names all the gaps. ` +
+      `A stop-early narrowed run reports any other criterion you saw fail as failed, never as carried.\n\n` +
+      `A declared setup step (\`ac setup list\`) is run with \`ac setup run <name>\`, which reuses an earlier ` +
+      `result for the same commit and command. You can never defer a criterion: deferral is a human act ` +
+      `(ac verdict defer), so report an unmet criterion as failed whatever it is.\n\n` +
       `Also confirm the phase's commits are present (\`git log --oneline\`) and that no \`worktree-*\` ` +
       `branch still holds un-integrated changes (\`git for-each-ref refs/heads/worktree-*\`, then ` +
       `\`git cherry HEAD <branch>\` must print no \`+\` line — a leftover branch whose changes are ` +
@@ -2300,6 +2359,31 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
 // (the loop's in-memory failing set) must equal the plan's `first`, else the saved verdict is not
 // the one this run just produced and the round degrades to full.
 const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false) => {
+  // Phase 54 (D4): the cheap first pass runs BEFORE any expensive stage. Unmet -> the round ends here
+  // as a FAIL naming EVERY unmet id and no verifier is spawned; `ac verdict cheap` has already
+  // recorded the narrowed cheap verdict. Clean (or unavailable) -> the expensive stage runs. A cheap
+  // pass never sets `lastSeen` true: it can fail a run, never pass one.
+  let cheap = null
+  try { cheap = await runCheapStage() } catch (e) { cheap = null }
+  const cheapUnmet = cheap && Array.isArray(cheap.unmet) ? cheap.unmet.map((x) => (x && typeof x === 'object' ? x.id : x)).filter((id) => typeof id === 'string' && /^C\d+$/.test(id)) : []
+  if (cheapUnmet.length) {
+    const ran = cheap && Array.isArray(cheap.ran) ? cheap.ran : []
+    const items = cheapUnmet.map((id) => {
+      const r = ran.find((x) => x && x.id === id) || {}
+      return { id, passed: false, status: 'failed', ...(r.command ? { command: r.command } : {}), ...(r.output ? { output: r.output } : {}) }
+    })
+    for (const c of items) {
+      seenIds.add(c.id)
+      lastSeen.set(c.id, false)
+      evidence.set(c.id, { command: c.command, output: c.output })
+    }
+    log(`✖ cheap first pass: ${cheapUnmet.length} unmet (${cheapUnmet.join(', ')}) — no expensive verifier this round`)
+    return {
+      passed: false, criteriaFound: true, mode: 'narrowed', criteria: items,
+      summary: `FAIL — cheap first pass: ${cheapUnmet.length} unmet criterion/criteria (${cheapUnmet.join(', ')}); the expensive verifier was not run`,
+    }
+  }
+  if (!cheap) log('⚠ cheap first pass unavailable — running the full verifier stage')
   let plan = await getVerdictPlan(forceFull)
   if (plan.mode === 'narrowed' && expectFirst) {
     const a = [...plan.first].sort().join(',')
@@ -2367,8 +2451,11 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false) 
   try {
     rec = await runVerdictRecord(JSON.stringify({
       mode, broad: v.broad === true,
+      ...(Array.isArray(v.broad_files) && v.broad_files.length ? { broad_files: v.broad_files } : {}),
       criteria: [
-        ...checked.map((c) => ({ id: c.id, passed: c.passed === true, ...(c.test_strength === true ? { test_strength: true } : {}), ...(c.suite === true ? { suite: true } : {}), ...(c.mutation ? { mutation: c.mutation } : {}) })),
+        // A failed criterion carries the verifier's command and output (capped), so a human's
+        // deferral can pre-fill its fix with the real reproduction.
+        ...checked.map((c) => ({ id: c.id, passed: c.passed === true, ...(c.passed !== true && c.command ? { command: clip(c.command) } : {}), ...(c.passed !== true && c.output ? { output: clip(c.output) } : {}), ...(c.test_strength === true ? { test_strength: true } : {}), ...(c.suite === true ? { suite: true } : {}), ...(c.mutation ? { mutation: c.mutation } : {}) })),
         // A suite criterion carried by a receipt travels as a citation; every other carry is implicit.
         ...(mode === 'targeted'
           ? items.filter((c) => c.status === 'carried' && typeof c.receipt === 'string' && c.receipt && /^C\d+$/.test(c.id))
@@ -2387,6 +2474,18 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false) 
   // even one the verifier reported passed (a mutation/strength gate can withdraw it).
   if (rec && rec.recorded === true && Array.isArray(rec.failing)) {
     for (const id of rec.failing) lastSeen.set(id, false)
+  }
+  // Phase 54: what the record printed beyond the verdict, one line each (nothing when absent).
+  if (rec && rec.recorded === true) {
+    if (Array.isArray(rec.deferrable) && rec.deferrable.length) {
+      v.summary = `${v.summary}\ndeferrable: ${rec.deferrable.join(', ')} — a human may defer with \`ac verdict defer ${phaseNum} ${rec.deferrable.join(' ')}\``
+    }
+    if (Array.isArray(rec.flapping) && rec.flapping.length) {
+      v.summary = `${v.summary}\nflapping: ${rec.flapping.map((f) => `${f.id} passed in run ${f.passed_run}, files ${f.files_changed === true ? 'changed' : f.files_changed === false ? 'unchanged' : 'unknown'}`).join('; ')}`
+    }
+    if (typeof rec.broad_refused === 'string' && rec.broad_refused) {
+      v.summary = `${v.summary}\nbroad claim refused: ${rec.broad_refused} — recorded narrowed`
+    }
   }
   if (mode === 'targeted' && plan.base) {
     const n = rec && Number.isInteger(rec.carried) ? rec.carried : Math.max(0, known.length - checked.length)

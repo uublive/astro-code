@@ -4146,7 +4146,7 @@ test('phase 45 C6: a criterion newly failing in the continuation is a FAIL, repo
   })
   assert.equal(result.verdict.passed, false)
   assert.ok(result.verdict.criteria.some((c) => c.id === 'C6' && c.passed === false && c.status !== 'carried'))
-  assert.match(clerkCalls(calls, 'verdict:record')[1].prompt, /\{"id":"C6","passed":false\}/)
+  assert.match(clerkCalls(calls, 'verdict:record')[1].prompt, /\{"id":"C6","passed":false(?:,"command":"cmd-C6","output":"out-C6")?\}/)
 })
 
 test('phase 45 C5: a narrowed FAIL records every checked criterion, none carried, and cites the saved run', async () => {
@@ -4199,7 +4199,7 @@ test('phase 45 C8: the narrowed prompt carries the range and a broad-fix instruc
   const full = await run(vdict(IDS9, { mode: 'full', broad: true }))
   const p = verifierCalls(full.calls)[1].prompt
   assert.match(p, /aaa1111\.\.HEAD/)
-  assert.match(p, /BROAD[^.]*do not narrow: run a FULL verify/s)
+  assert.match(p, /BROAD[^.]*do not narrow:[^.]*run a FULL verify/s)
   assert.match(clerkCalls(full.calls, 'verdict:record')[1].prompt, /"mode":"full","broad":true/)
   const bad = await run(vdict(IDS9, { mode: 'narrowed', broad: true, passed: true }))
   assert.equal(bad.result.verdict.passed, false)
