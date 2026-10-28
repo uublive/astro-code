@@ -115,6 +115,7 @@ import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims, waitingMilestones, renameMilestone } from '../lib/registry.mjs';
 import { addFix, acceptFix, setFixStatus, resolveFix, openFixes, loadFixes, deferredFixes, FIX_STATUSES } from '../lib/fixes.mjs';
 import { deferCriteria } from '../lib/defer.mjs';
+import { runCheapPass } from '../lib/cheappass.mjs';
 import {
   addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt, setDebtNote,
   debtAgeDays, debtScore, loadDebt, DEBT_COSTS, STALE_DAYS,
@@ -277,7 +278,10 @@ const ALLOWED_FLAGS = {
   // `phase accept`; a typo'd flag must not silently verify without the gate's say.
   'phase verify': ['force'],
   // `--full` forces a full re-verify; a typo (`--fulll`) must not degrade into a narrowed run.
-  'verdict plan': ['full', 'json'],
+  // Phase 54 (D6) — `--broad-files` is the verifier's broad claim, checked in code; a typo'd name must not
+  // silently plan without the claim.
+  'verdict plan': ['full', 'json', 'broad-files'],
+  'verdict cheap': ['json'],
   // `--result` is the verifier's checked criteria; a typo must not record an empty verdict.
   'verdict record': ['result'],
   // Phase 54 (D9) — read-only history and the latest verdict; a typo'd flag must not print the wrong form.
@@ -593,7 +597,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase context <phase>            discuss-gate status: missing | stub | ready
   ac phase context <phase> --author   who captured it: human | agent <name> | none
   ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full or valid targeted verdict)
-  ac verdict plan <phase> [--full] [--json]  full, narrowed (after a FAIL) or targeted (after a full PASS)
+  ac verdict plan <phase> [--full] [--broad-files a,b] [--json]  full, narrowed (after a FAIL) or targeted (after a full PASS)
+  ac verdict cheap <phase> [--json]    the cheap first pass: suite receipt + each criterion's Cheap: command; exits 1 on any unmet
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
   ac verdict history <phase> [--json]  every recorded verdict of the phase, oldest first (VERDICTS.jsonl)
   ac verdict show <phase> [--json]     the latest verdict: unmet ids, deferred ids, flapping flags
@@ -2679,7 +2684,7 @@ async function main() {
     case 'verdict': {
       const r = root();
       const sub = pos[0];
-      if (!['plan', 'record', 'history', 'show', 'defer'].includes(sub)) die('usage: ac verdict <plan|record|history|show|defer> <phase> …');
+      if (!['plan', 'record', 'history', 'show', 'defer', 'cheap'].includes(sub)) die('usage: ac verdict <plan|record|history|show|defer|cheap> <phase> …');
       if (sub === 'defer') {
         // ADR-090/074/033: deferral is a human act. An agent signer (the flag, or the env a witness
         // exports) is refused BEFORE anything is read or written, and no prompt is ever shown.
@@ -2695,7 +2700,7 @@ async function main() {
         if (flags[k] !== undefined && flags[k] !== true) die(`unexpected argument for \`ac verdict ${sub}\`: --${k} takes no value (got ${JSON.stringify(flags[k])})`);
       }
       const ph = findPhase(r, pos[1]);
-      if (!ph) die(`usage: ac verdict plan <phase> [--full] [--json] | ac verdict record <phase> --result '<json>' | ac verdict history <phase> [--json] | ac verdict show <phase> [--json]`);
+      if (!ph) die(`usage: ac verdict plan <phase> [--full] [--broad-files a,b] [--json] | ac verdict cheap <phase> [--json] | ac verdict record <phase> --result '<json>' | ac verdict history <phase> [--json] | ac verdict show <phase> [--json]`);
       if (sub === 'defer') {
         const want = pos.slice(2);
         if (!want.length) die(`name the criteria to defer, e.g. \`ac verdict defer ${ph.number} C2\` — nothing is deferred automatically (see the \`deferrable:\` line of the FAIL)`);
@@ -2744,8 +2749,31 @@ async function main() {
         for (const f of flapping) console.log(flappingLine(f));
         return;
       }
+      if (sub === 'cheap') {
+        // The cheap first pass (phase 54, D4): code runs every declared cheap check and lists EVERY
+        // unmet id. Exit 1 on any unmet; a clean pass records nothing.
+        const res = await runCheapPass(r, ph.slug);
+        if (flags.json) json(res);
+        else if (!res.ran.length) console.log('⊡ no cheap observation declared — nothing checked');
+        else {
+          for (const x of res.ran) {
+            console.log(x.passed ? `✓ ${x.id} ${x.kind}: ${x.command}` : `✖ ${x.id} ${x.kind}: ${x.command} — ${String(x.output ?? '').split('\n')[0].slice(0, 160)}`);
+          }
+          console.log(res.clean ? `✓ cheap pass clean (${res.ran.length} checked${res.unchecked.length ? `, ${res.unchecked.length} left to the expensive stage` : ''})`
+            : `✖ cheap pass: ${res.unmet.length} unmet — ${res.unmet.join(', ')}`);
+        }
+        if (res.recorded && res.recorded.recorded === false) console.error(`⚠ the cheap verdict was not recorded: ${res.recorded.error}`);
+        if (!res.clean) process.exitCode = 1;
+        return;
+      }
       if (sub === 'plan') {
-        const plan = planReverify(r, ph.slug, { full: flags.full !== undefined });
+        let broadFiles;
+        if (flags['broad-files'] !== undefined) {
+          if (typeof flags['broad-files'] !== 'string' || !flags['broad-files'].trim()) die('--broad-files needs the changed files that make the fix broad, e.g. --broad-files src/a.mjs,lib/b.mjs');
+          broadFiles = flags['broad-files'].split(',').map((x) => x.trim()).filter(Boolean);
+        }
+        const plan = planReverify(r, ph.slug, { full: flags.full !== undefined, broadFiles });
+        if (plan.broad_refused) console.error(`⚠ broad claim refused: ${plan.broad_refused} — the plan stays ${plan.mode}`);
         if (flags.json) json(plan);
         else if (plan.mode === 'narrowed') {
           console.log(`• narrowed: re-check ${plan.first.join(', ')} first (run ${plan.saved.run} @ ${String(plan.saved.commit).slice(0, 7)})`);
@@ -2761,6 +2789,7 @@ async function main() {
       try { out = await recordVerdict(r, ph.slug, result); } catch (e) { die(e.message); }
       if (out.ignored) console.error(`⚠ ${out.ignored} reported criterion id(s) are not in CRITERIA.md and were ignored`);
       for (const f of out.refused ?? []) console.error(`⚠ ${f.id} refused: ${f.reason}`);
+      if (out.broad_refused) console.error(`⚠ broad claim refused: ${out.broad_refused} — recorded ${out.mode}`);
       for (const f of out.flapping ?? []) console.error(flappingLine(f));
       // A FAIL lists what a HUMAN may defer; code decided (canDefer), nothing here defers or asks.
       if (out.deferrable?.length) console.error(`• deferrable: ${out.deferrable.join(', ')} — a human may defer with \`ac verdict defer ${ph.number} ${out.deferrable.join(' ')}\``);
