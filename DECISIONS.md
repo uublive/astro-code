@@ -596,3 +596,10 @@ _2026-10-28 · at ca0e3c2_
 
 **Rejected:** Automatic deferral of any kind; deferral by the verifier; core/edge tags editable after planning (the bar could be bent after a FAIL)
 
+## ADR-091 — Verify rounds: cheap first pass, every observed gap listed, a broad claim checked in code, remediation overlapped in a worktree, a setup cache, and an append-only verdict history with a flapping flag (amends ADR-079/ADR-089)
+_2026-10-28 · at ca0e3c2_
+
+**Why:** Phase 54 makes a phase reach verified in fewer, cheaper rounds without weakening core criteria. (1) A criterion may declare a Cheap: command; a cheap first pass runs the suite (through a reusable receipt, ADR-089) plus those commands, and a cheap failure ends the round with every unmet id and no expensive stage; cheap evidence can fail a run but never pass one. (2) Every criterion a run observed unmet is recorded, including on a narrowed re-verify. (3) A broad-fix claim must name files that changed and that the criteria file map ties to a criterion, else the run stays narrowed and says why. (4) With worktrees on, two verifier groups run while remediation starts in its own worktree; the integrator folds the fix only after the verdict (ADR-005/019/040 kept). (5) Declared setup steps in config.json setup.steps are cached under .astrocode/.local by commit plus exact command, with a size cap and oldest-first eviction. (6) VERDICTS.jsonl keeps every run append-only and a flapping flag marks a criterion that passed earlier and now fails, saying whether its files changed; the flag never changes a verdict. Every rule is code, not prose.
+
+**Rejected:** Setup declared in RUN-CONTRACT.md; verifier-judged cheap order; LRU eviction (reuse must not refresh age, so the rule stays deterministic)
+
