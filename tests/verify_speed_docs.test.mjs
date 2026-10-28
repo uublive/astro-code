@@ -67,14 +67,16 @@ for (const file of ['MANUAL.md', 'CHANGELOG.md']) {
   });
 }
 
-test('MANUAL.md documents each new verb, the tags and the setup declaration; CHANGELOG.md has an Unreleased entry citing the ADRs', () => {
+test('MANUAL.md documents each new verb, the tags and the setup declaration; CHANGELOG.md has a v0.54.0 entry citing the ADRs', () => {
   const manual = readFileSync(join(ROOT, 'MANUAL.md'), 'utf8');
   const cmds = quoted(manual).join('\n');
   for (const re of [/verdict defer/, /verdict history/, /verdict show/, /verdict cheap/, /--broad-files/, /setup run/, /setup list/]) assert.match(cmds, re);
   for (const re of [/\[edge\]/, /\[core\]/, /Cheap:/, /setup\.steps\./, /setup\.max_mb/, /VERDICTS\.jsonl/, /ADR-090/, /ADR-091/]) assert.match(manual, re);
   const log = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
-  assert.match(log, /^## Unreleased$/m);
-  assert.match(log.slice(log.indexOf('## Unreleased'), log.indexOf('## v0.53.1')), /ADR-090, ADR-091/);
+  // Phase 54 shipped in v0.54.0: its entry sits under that heading, not Unreleased.
+  const at = log.indexOf('## v0.54.0');
+  assert.ok(at > -1, 'a v0.54.0 section');
+  assert.match(log.slice(at, log.indexOf('## v0.53.1')), /ADR-090, ADR-091/);
 });
 
 test('MANUAL.md points at lib/ for thresholds instead of restating them', () => {

@@ -2,7 +2,7 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
-## Unreleased
+## v0.54.0
 
 - Verify in fewer, cheaper rounds (ADR-090, ADR-091; amend ADR-079 and ADR-089): `ac verdict cheap <phase>` runs a cheap first pass (the suite through a receipt plus each criterion's `- **Cheap:** `<command>`` line) before any expensive stage, and can only fail a run; a FAIL lists every unmet criterion in one pass; a broad-fix claim must name changed files the criteria map ties to a criterion (`ac verdict plan <phase> --broad-files src/a.mjs`), else the run stays narrowed and says why
 - Deferral (ADR-090): criteria are tagged `[core]` or `[edge]` in their heading (untagged is core); at a FAIL a human runs `ac verdict defer <phase> C2` to move a failed `[edge]` criterion into a fix pre-filled with the failing command and output. The phase verifies when every non-deferred criterion passes; open deferred fixes show in `/astro-accept`, `ac phase show`, `ac status` and the band, and block `ac milestone complete`
