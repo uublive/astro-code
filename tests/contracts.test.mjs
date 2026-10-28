@@ -96,7 +96,8 @@ test('every /astro-<command> referenced exists as a command file', () => {
   const violations = [];
   const sources = [...mdFiles(COMMANDS), join(ROOT, 'README.md'), join(ROOT, 'MANUAL.md')];
   for (const file of sources) {
-    for (const m of read(file).matchAll(/\/(astro-[a-z-]+)/g)) {
+    // A slash command starts a token; `…/svg/astro-code-logo.svg` (a path segment) is not one.
+    for (const m of read(file).matchAll(/(?<![\w.\/-])\/(astro-[a-z-]+)(?![\w\/-]|\.\w)/g)) {
       const name = m[1];
       if (NON_COMMANDS.has(name)) continue;
       if (!have.has(name)) violations.push(`${file.split('/').pop()}: /${name}`);
