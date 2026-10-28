@@ -116,6 +116,7 @@ import { claim, readRegistry, registryBranch, markComplete, findNameMatches, ini
 import { addFix, acceptFix, setFixStatus, resolveFix, openFixes, loadFixes, deferredFixes, FIX_STATUSES } from '../lib/fixes.mjs';
 import { deferCriteria } from '../lib/defer.mjs';
 import { runCheapPass } from '../lib/cheappass.mjs';
+import { runSetup, listSetup } from '../lib/setupcache.mjs';
 import {
   addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt, setDebtNote,
   debtAgeDays, debtScore, loadDebt, DEBT_COSTS, STALE_DAYS,
@@ -282,6 +283,9 @@ const ALLOWED_FLAGS = {
   // silently plan without the claim.
   'verdict plan': ['full', 'json', 'broad-files'],
   'verdict cheap': ['json'],
+  // Phase 54 (D8) — a typo'd `--commit` must not silently build (and cache) HEAD instead of the commit asked for.
+  'setup run': ['commit', 'json'],
+  'setup list': ['json'],
   // `--result` is the verifier's checked criteria; a typo must not record an empty verdict.
   'verdict record': ['result'],
   // Phase 54 (D9) — read-only history and the latest verdict; a typo'd flag must not print the wrong form.
@@ -603,6 +607,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac verdict history <phase> [--json]  every recorded verdict of the phase, oldest first (VERDICTS.jsonl)
   ac verdict show <phase> [--json]     the latest verdict: unmet ids, deferred ids, flapping flags
   ac verdict defer <phase> <C-id…> [--by name]  a HUMAN defers failed [edge] criteria into tracked fixes (never an agent; core and suite criteria refuse)
+  ac setup run <name> [--commit <ref>] [--json]  run a declared setup step, or reuse its result for the same commit + command (ac config set setup.steps.<name>)
+  ac setup list [--json]               declared setup steps and the cached results (.astrocode/.local/setup-cache)
   ac suite run --command "<cmd>" [--json]   run the project's suite and write a local receipt (exits with the suite's status)
   ac suite receipt --command "<cmd>" [--json]  is there a reusable receipt for this exact command on HEAD's clean tree? (read-only)
   ac mutate <phase> [--json]          run the project's mutation tool on the lines the phase changed (ADR-083, ADR-084)
@@ -2678,6 +2684,38 @@ async function main() {
       if (flags.json) json({ reusable: got.ok, reason: got.reason, receipt: got.receipt });
       else if (got.ok) console.log(`✓ reusable receipt ${got.receipt.key.slice(0, 8)} for "${cmd}" at ${short(got.receipt.commit)}`);
       else console.log(`• no reusable receipt: ${got.reason}`);
+      return;
+    }
+
+    // Phase 54 (D8, ADR-091). A thin dispatcher over lib/setupcache.mjs: it decides reuse, runs the
+    // step in a detached worktree of the commit, caps the cache. `run` exits with the step's status.
+    case 'setup': {
+      const sub = pos[0];
+      if (sub !== 'run' && sub !== 'list') die('usage: ac setup run <name> [--commit <ref>] [--json] | ac setup list [--json]');
+      checkFlags(`setup ${sub}`, flags);
+      const r = root();
+      const sha7 = (x) => String(x ?? '').slice(0, 7);
+      if (sub === 'list') {
+        const l = listSetup(r);
+        if (flags.json) { json(l); return; }
+        const names = Object.keys(l.steps);
+        if (!names.length) { console.log('⊡ no setup steps declared — declare one with `ac config set setup.steps.<name> \'{"command":"…"}\'`'); return; }
+        for (const n of names) console.log(`  ${n}  ${l.steps[n].command}  @ ${l.steps[n].commit}`);
+        const mb = l.entries.reduce((n, e) => n + (e.bytes || 0), 0) / (1024 * 1024);
+        console.log(l.entries.length ? `cached: ${l.entries.map((e) => `${e.name}@${sha7(e.commit)}`).join(', ')} — ${mb.toFixed(1)} MB of ${l.max_mb} MB` : `cached: none (cap ${l.max_mb} MB)`);
+        return;
+      }
+      const name = pos[1];
+      if (!name) die('usage: ac setup run <name> [--commit <ref>] [--json]');
+      if (flags.commit !== undefined && (typeof flags.commit !== 'string' || !flags.commit.trim())) die('--commit needs a ref, e.g. --commit HEAD~1');
+      let res;
+      try { res = await runSetup(r, name, { commit: flags.commit, json: !!flags.json }); } catch (e) { die(e.message); }
+      if (flags.json) json(res);
+      else if (res.reused) console.log(`✓ reused ${name} @ ${sha7(res.commit)} — same commit and command (${res.out})`);
+      else if (res.exit === 0) console.log(`• ran ${name} @ ${sha7(res.commit)} in ${res.seconds}s${res.kept ? ` → ${res.out}` : ''}${res.evicted.length ? ` (evicted ${res.evicted.length} older)` : ''}`);
+      else console.log(`✖ ${name} exited ${res.exit} — not cached, it runs again next time`);
+      if (res.warning) console.error(`⚠ ${res.warning}`);
+      process.exitCode = res.exit;
       return;
     }
 
