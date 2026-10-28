@@ -1,15 +1,10 @@
-# astro-code
-
-```text
-        PZÇP
-       ääZPäP       4str0|ize · astro-code
-      àääPPääà      lean, multi-developer planning for Claude Code
-      PäP  PäP
-     Pääà  àääP
-    àääP ºº Pää¥
-    Pää –²²– äää
-        °²²°
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/astro-code/svg/astro-code-logo-dark-animated.svg">
+    <img src="assets/brand/astro-code/svg/astro-code-logo-light-animated.svg" alt="astro-code" width="460">
+  </picture>
+</p>
+<p align="center"><code>AI CODING CREW · HUMAN AT THE HELM</code></p>
 
 Planning and execution for coding agents. It runs a
 `discuss → plan → execute → verify → accept` loop over milestones and phases, kept as
