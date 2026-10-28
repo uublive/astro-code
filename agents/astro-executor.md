@@ -34,6 +34,11 @@ Constraints:
 - When you run the project's full test suite after your commit on a clean tree, run it as
   `ac suite run --command "<cmd>"`, so a later verifier on the same tree can reuse the receipt
   instead of running it again (the receipt is local, never committed).
+- During an **overlapped verify** (the prompt says so, and you run on your own worktree branch while
+  the verifier is still checking the working branch), work only on that branch: sync first (the
+  prompt's SYNC FIRST), make exactly ONE stamped commit, and report your branch and commit. Never run
+  `ac verdict`, `ac state` or any `ac phase` write, and never touch the main working tree; the
+  integrator folds your branch after the verdict is recorded.
 - To record a decision, run `ac decision add "<title>" --why …` (it claims the ADR number — see the AGENTS.md rule); never pick a number or write an ADR file yourself.
 - If you are blocked (ambiguous spec, missing dependency), stop and report the
   blocker clearly rather than guessing.

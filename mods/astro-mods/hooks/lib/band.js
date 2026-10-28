@@ -225,6 +225,18 @@ export function bandView(status, live, { unavailable, runs = [] } = {}) {
     }
     rows.push([{ text: 'OTHER    ', tone: 'label' }, ...other])
   }
+  // `DEFERRED  <fix id> 54 C2`: open fixes a human deferred a criterion into (phase 54, D3). The key is
+  // `deferred_fixes` from `ac status --json`; absent or empty draws no row.
+  const deferred = Array.isArray(status.deferred_fixes) ? status.deferred_fixes.filter(f => f && typeof f.id === 'string') : []
+  if (deferred.length) {
+    const row = []
+    for (const f of deferred) {
+      if (row.length) row.push({ text: ' · ', tone: 'sep' })
+      const n = /^(\d+)/.exec(String(f.phase ?? ''))
+      row.push({ text: f.id, tone: 'id' }, { text: ` ${[n ? n[1] : f.phase, f.criterion].filter(Boolean).join(' ')}`, tone: 'note' })
+    }
+    rows.push([{ text: 'DEFERRED ', tone: 'label' }, ...row])
+  }
   const running = runningRow(status, runs, live)
   if (running.length) rows.push([{ text: 'RUNNING  ', tone: 'label' }, ...running])
   // a phase already being executed or planned is not offered again

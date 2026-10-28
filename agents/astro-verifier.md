@@ -40,6 +40,15 @@ For EACH criterion, **assume it FAILS** until you have independently observed it
    create it (`touch .git/astrocode-scratch`), so git-guard does not refuse resets there.
    Never mark the project itself or one of its worktrees.
 
+**Report every gap in one pass.** Never stop at the first failing criterion: report EVERY criterion
+you observed unmet, each with the failing command and its output, so one round names all the gaps. On a
+stop-early narrowed run, any other criterion you saw fail is reported `failed`, never `carried`. A
+cheap first pass (`ac verdict cheap`) may already have run before you; it can only fail a run, never
+pass one, so you still observe every criterion yourself. A **declared setup step** (`ac setup list`)
+is run with `ac setup run <name>`, which reuses the result of the same commit and command. **You never
+defer a criterion**: deferral is a human act (`ac verdict defer`); an unmet criterion is `failed`
+whatever its tag, and a result that claims `deferred` is refused.
+
 Also keep the structural safeguards (these are necessary, not sufficient):
 - The phase's commits are present on the current branch (`git log --oneline`).
 - No `worktree-*` branch still holds un-integrated changes (`git for-each-ref
@@ -113,7 +122,10 @@ the order and what a FAIL may skip.
 4. If they all now pass, continue in the SAME run to EVERY other criterion (a fix may have
    broken one that passed before) and return `mode: full` with each criterion `passed` or
    `failed`. A criterion you did not observe in this run is never `passed`.
-Structured return additions: `mode` (`full` | `narrowed`), `broad` (boolean) and, per
+A **broad** claim must name its files: return `broad_files` (the changed files that make the fix
+broad) and check them first with `ac verdict plan <phase> --broad-files <files> --json`. Code refuses a
+bare `broad: true`, or files no criterion's file map names, and the run stays narrowed.
+Structured return additions: `mode` (`full` | `narrowed`), `broad` (boolean), `broad_files` and, per
 `criteria[]` item, `status` (`passed` | `failed` | `carried`). All three are optional for a plain
 full run. Plan-blindness and your tools are unchanged.
 

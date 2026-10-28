@@ -663,7 +663,7 @@ and after, the exit status, the node version and the time. `ac suite receipt --c
 whether a receipt can be reused (read-only, exit 0 either way). A receipt is local and never committed,
 and it is reused only on the **same commit**, the **same clean tree** (untracked files count as dirty,
 ignored files are not checked; only what a verify itself writes is exempt: `.astrocode/.local/`, each phase's
-`VERDICT.json`, `SURVIVORS.json` and `SURPRISES.jsonl`, and `state.json` when only its live status changed),
+`VERDICT.json`, `VERDICTS.jsonl`, `SURVIVORS.json` and `SURPRISES.jsonl`, and `state.json` when only its live status changed),
 the **exact command string** and exit 0; it is refused otherwise, each
 refusal with its own reason. A verifier on the identical clean tree cites a reusable receipt instead of
 running the suite again; the verdict records which receipt stood in. The receipt's command must be
@@ -672,6 +672,77 @@ a known suite command such as `npm test` when it names none), checked at record 
 
 > **A phase's goal is the bar, not its task list.** Every task passing while the goal is
 > unmet is a failed phase.
+
+---
+
+## Fewer, cheaper verify rounds
+
+Phase 54 (ADR-090 for deferral, ADR-091 for the rest; both amend ADR-079 and ADR-089) makes a phase reach
+`verified` in fewer and cheaper rounds without lowering the bar for its core criteria. Every rule below is
+code, checked in `lib/`, and the thresholds live there, not here.
+
+### Tag every criterion `[core]` or `[edge]`, and add a `Cheap:` line
+
+The criteria author tags each criterion in its heading, **last in the run of `[tags]`, right after the id**,
+before any plan exists: `### C7 [edge] — …`, `### C4 [mutation] [edge] — …`, `### C3 [core] — …`. Only an exact,
+case-sensitive `[edge]` there counts. **Anything else is core**: untagged, `[Edge]`, the word `edge` in the claim,
+a tag on the next line. A `[suite]` criterion is never deferrable. A criterion may also declare its fastest
+signal, `- **Cheap:** `<command>``; that command exits 0 when the criterion is met, and it is used only by the cheap
+first pass below.
+
+### Every gap in one pass
+
+A FAIL names **every** criterion the run observed unmet, on a full run and on a narrowed re-verify alike. The
+verifier is told never to stop at the first failure, and `ac verdict record` stores each failure with its command
+and output. `ac verdict show <phase>` prints the latest verdict's unmet ids.
+
+### The cheap first pass
+
+`ac verdict cheap <phase>` runs the suite (reusing a valid suite receipt, so an identical clean tree is not re-run) and
+each criterion's `Cheap:` command, lists every unmet id, and exits 1 when any is unmet. `/astro-verify` and the execute
+workflow run it before any expensive stage; an unmet result ends the round with a FAIL and no verifier is spawned. Cheap
+evidence can only **fail** a run: it records a narrowed verdict marked `cheap`, never a pass, and `ac phase verify` refuses
+it. `ac verdict cheap <phase> --json` prints the same result as data.
+
+### Broad fixes must name files
+
+A verifier that calls a fix "broad" must name the changed files (`broad_files`). `ac verdict plan <phase> --broad-files src/a.mjs,lib/b.mjs`
+answers the question before the run: it plans `full` only when a named file changed since the verdict and some criterion's
+file map names it; otherwise the plan stays narrowed and says why (`broad_refused`). `ac verdict record` applies the same check, so a bare
+`broad: true` cannot turn narrowing off.
+
+### Deferral (ADR-090)
+
+At a FAIL, `ac verdict record` prints a `deferrable:` line naming the failed `[edge]` criteria. **A human** may then run
+`ac verdict defer <phase> C2 [--by name]`. Each deferral opens a fix (`ac fix list`) whose reproduction holds the
+failing command and output, and the verdict records the criterion as `deferred` with that fix id. The phase can then verify
+when every non-deferred criterion passes. The code refuses a core, untagged or suite criterion, a tag added after the plan was
+committed, an agent signer, and any verifier result that claims a deferral. Open deferred fixes are listed by `/astro-accept`,
+`ac phase show`, `ac status` and the status band, and `ac milestone complete` refuses (even with `--force`) while one is open;
+close each with `ac fix accept <id>`.
+
+### Remediation overlaps the verify
+
+With `use_worktrees` on, a full verify of four or more criteria runs as two verifier groups. When one group finds a failure while
+the other is still running, the executor starts fixing it at once on its own worktree branch; the verifiers never see the tree
+move, and the existing integrator folds the fix only after the verdict is recorded. A failed worktree remediation re-runs on the
+branch and turns the overlap off for the rest of the run. Without worktrees, remediation waits for the verdict as before.
+
+### Setup cache
+
+Declare an expensive setup step in `.astrocode/config.json` with `ac config set setup.steps.build '{"command":"make prebuilt"}'`
+(an optional `"commit"` defaults to `HEAD`) and cap the cache with `ac config set setup.max_mb 2048`. `ac setup run build` runs the
+step in a detached worktree of the commit with `AC_SETUP_OUT` pointing at its output folder, and reuses the result when both the
+exact command and the commit match; a failed step is never kept. `ac setup run build --commit HEAD~1` builds another commit, and
+`ac setup list` shows the declared steps and what is cached. Results live under `.astrocode/.local/setup-cache/`, never committed;
+past the cap the oldest are removed first.
+
+### History and flapping
+
+Every `ac verdict record` appends one line to the phase's `VERDICTS.jsonl`, next to `VERDICT.json`, and never rewrites an earlier
+one. `ac verdict history <phase>` lists the runs oldest first (run, mode, PASS or FAIL, short commit, unmet ids). A criterion that
+passed in an earlier run and now fails is flagged as **flapping**, with whether the files it maps changed since: files unchanged suggests
+an inconsistent verifier, files changed suggests a regression. The flag is printed and kept in the history; it never changes the verdict.
 
 ---
 
@@ -1437,6 +1508,11 @@ ac phase accept <n>            # human gate — requires a prior `verified`
 ac phase accept <n> --witnessed composer  # evidence the witness mod adds; also on `phase reject` and `fix accept`. `ac` never detects: it records what is declared
 ac phase accept <n> --evidence "<id or URL>"  # cite a decision made elsewhere (cited_evidence; never makes the signer human); also on `phase reject` and `fix accept`
 ac phase show <n> [--json]     # one phase's record, incl. accepted_kind / accepted_evidence
+ac verdict cheap <n>           # the cheap first pass; exits 1 listing every unmet criterion
+ac verdict show <n>            # the latest verdict: unmet, deferred, flapping
+ac verdict history <n>         # every recorded verdict, oldest first
+ac verdict defer <n> C2        # a human defers a failed [edge] criterion into a fix (ADR-090)
+ac setup run build             # run or reuse a declared setup step (commit + command keyed)
 ac phase reject <n> --reason … [--agent name]  # UAT failed → rejected + a blocker (--agent: machine-signed)
 ac phase surprise <n> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]  # execute records a run surprise
 ac phase context <n> [--author]  # discuss-gate status, or who captured it: human | agent <name> | none

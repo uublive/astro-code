@@ -588,3 +588,18 @@ _2026-10-26 · at d1ef95f_
 **Rejected:** Guessing a criterion's files from prose (a false carry). Forcing a full run on any diff file no criterion names (no narrowing in practice; the suite criterion is the backstop). Carrying from the previous targeted run (a chain of carries). Committed receipts (a teammate's run is not this verifier's evidence). Accepting receipts in a full verdict (full means every criterion observed).
 
 _Amended 2026-10-26: phase 52 plan: record the full why and the rejected alternatives the plan pins, instead of a duplicate decision_
+
+## ADR-090 — Deferral: a human may defer failed [edge] criteria at a verify FAIL, each into a tracked fix; core and suite criteria are never deferrable, checked in code (amends ADR-079/ADR-089, what verified means)
+_2026-10-28 · at ca0e3c2_
+
+**Why:** Phases 51/52 and astrobot 104/105 spent 7-10 verify rounds because one edge criterion kept a phase from verifying while its goal was met. D1-D3 of phase 54: at a FAIL the human (never the verifier, never automatically; ac verdict defer refuses --agent) names failed criteria to defer. The core/edge tag sits in the criterion heading (### C7 [edge]) and is fixed at pre-registration: untagged means core (fail-closed), a tag added after PLAN.md was committed is refused, and a [suite] criterion is never deferrable. Each deferral opens a fix in the fix register pre-filled with the failing command and output, and VERDICT.json records the criterion as deferred with its fix id. The phase verifies when every non-deferred criterion passes (verified still means AI-checked, accepted still needs a human). Open deferred fixes are listed by /astro-accept, ac phase show, ac status and the band, and block ac milestone complete (not bypassed by --force). All of it is enforced in code (333f/ce7b): lib/verdict.mjs canDefer, verifiedGate, lib/defer.mjs.
+
+**Rejected:** Automatic deferral of any kind; deferral by the verifier; core/edge tags editable after planning (the bar could be bent after a FAIL)
+
+## ADR-091 — Verify rounds: cheap first pass, every observed gap listed, a broad claim checked in code, remediation overlapped in a worktree, a setup cache, and an append-only verdict history with a flapping flag (amends ADR-079/ADR-089)
+_2026-10-28 · at ca0e3c2_
+
+**Why:** Phase 54 makes a phase reach verified in fewer, cheaper rounds without weakening core criteria. (1) A criterion may declare a Cheap: command; a cheap first pass runs the suite (through a reusable receipt, ADR-089) plus those commands, and a cheap failure ends the round with every unmet id and no expensive stage; cheap evidence can fail a run but never pass one. (2) Every criterion a run observed unmet is recorded, including on a narrowed re-verify. (3) A broad-fix claim must name files that changed and that the criteria file map ties to a criterion, else the run stays narrowed and says why. (4) With worktrees on, two verifier groups run while remediation starts in its own worktree; the integrator folds the fix only after the verdict (ADR-005/019/040 kept). (5) Declared setup steps in config.json setup.steps are cached under .astrocode/.local by commit plus exact command, with a size cap and oldest-first eviction. (6) VERDICTS.jsonl keeps every run append-only and a flapping flag marks a criterion that passed earlier and now fails, saying whether its files changed; the flag never changes a verdict. Every rule is code, not prose.
+
+**Rejected:** Setup declared in RUN-CONTRACT.md; verifier-judged cheap order; LRU eviction (reuse must not refresh age, so the rule stays deterministic)
+

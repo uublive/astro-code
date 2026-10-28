@@ -1,5 +1,13 @@
 {
   "version": 1,
-  "milestone": 14,
-  "phases": []
+  "milestone": 15,
+  "phases": [
+    {
+      "number": 54,
+      "name": "Verify in fewer, cheaper rounds: every gap in one pass, a fast first check, fix while verifying, human-chosen deferral to tracked fixes, code-checked broad claims, cached setup",
+      "slug": "54-verify-in-fewer-cheaper-rounds-every",
+      "status": "verified",
+      "milestone": 15
+    }
+  ]
 }

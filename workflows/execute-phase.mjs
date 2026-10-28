@@ -1080,7 +1080,7 @@ const INTEGRATE_SCHEMA = {
 //   completely gates the overflow check — a stale branch is NEVER classified for
 //   overflow, it is always routed to heal regardless of whether the cherry-pick
 //   would apply cleanly.  Phase-04 proved textual cleanliness proves nothing.
-const integrateWave = (w, wave, reported = []) =>
+const integrateWave = (w, wave, reported = [], labelOverride = null) =>
   agent(
     `You are the WAVE INTEGRATOR for phase ${phaseSlug}, running in the MAIN working tree of ${root} ` +
       `(you have NO worktree of your own). The parallel executors each committed on a separate ` +
@@ -1194,7 +1194,7 @@ const integrateWave = (w, wave, reported = []) =>
     // from the balanced/fast profiles, #125; or `ac config set
     // models.integrator sonnet` to opt out) always wins; it is the only role the
     // profiles put on haiku.
-    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.integrator || (onSessionModel ? undefined : 'sonnet'), effort: reasoning.integrator, schema: INTEGRATE_SCHEMA },
+    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.integrator || (onSessionModel ? undefined : 'sonnet'), effort: reasoning.integrator, schema: INTEGRATE_SCHEMA, ...(labelOverride ? { label: labelOverride } : {}) },
   )
 
 // ── Phase-13 (ADR-026): warm batched sequential executor primitives ────────────
@@ -1862,6 +1862,9 @@ const VERIFY_SCHEMA = {
     // Phase 52 — 'targeted' after a recorded full PASS: the floor is observed, the rest carried.
     mode: { type: 'string', enum: ['full', 'narrowed', 'targeted'] },
     broad: { type: 'boolean' },
+    // Phase 54 (D6) — the files that make a fix broad. `ac verdict record` checks them against the
+    // criteria file map; a bare `broad: true` with none is refused there and the run stays narrowed.
+    broad_files: { type: 'array', items: { type: 'string' } },
     criteria: {
       type: 'array',
       items: {
@@ -1958,6 +1961,22 @@ const REMEDIATE_SCHEMA = {
     headBefore: { type: 'string' },
     headAfter: { type: 'string' },
     summary: { type: 'string' },
+  },
+  required: ['headBefore', 'headAfter'],
+}
+
+// Phase 54 (D7): a remediation that overlaps the verify runs on its OWN worktree branch, so it also
+// reports where its commit is (the same fields EXEC_SCHEMA carries); the integrator folds it after the
+// verdict is recorded.
+const REMEDIATE_WT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    headBefore: { type: 'string' },
+    headAfter: { type: 'string' },
+    summary: { type: 'string' },
+    branch: { type: ['string', 'null'] },
+    commit: { type: ['string', 'null'] },
   },
   required: ['headBefore', 'headAfter'],
 }
@@ -2125,15 +2144,47 @@ const VERDICT_RECORD_SCHEMA = {
     },
     committed: { type: 'boolean' },
     note: { type: 'string' },
+    // Phase 54 — what `ac verdict record` printed beyond the verdict itself, each added to the
+    // summary as ONE line: failed [edge] criteria a human may defer, criteria that passed earlier
+    // and fail now, and a broad claim the code refused.
+    deferrable: { type: 'array', items: { type: 'string' } },
+    flapping: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: true, properties: { id: { type: 'string' }, passed_run: { type: 'integer' }, files_changed: { type: ['boolean', 'null'] } } },
+    },
+    broad_refused: { type: 'string' },
   },
   required: ['recorded'],
 }
 
-const runVerdictPlan = () =>
+// The cheap first pass (phase 54, D4): `ac verdict cheap` runs the suite (through a receipt) and each
+// criterion's declared Cheap command, lists EVERY unmet id, and has already recorded a narrowed cheap
+// verdict when any is unmet. The clerk only relays it; the expensive verifier runs only when clean.
+const CHEAP_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    clean: { type: 'boolean' },
+    unmet: { type: 'array', items: { type: 'string' } },
+    unchecked: { type: 'array', items: { type: 'string' } },
+    ran: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: true,
+        properties: { id: { type: 'string' }, kind: { type: 'string' }, passed: { type: 'boolean' }, command: { type: 'string' }, output: { type: 'string' } },
+      },
+    },
+    note: { type: 'string' },
+  },
+  required: ['clean'],
+}
+
+const runVerdictPlan = (full = false) =>
   agent(
     `VERDICT PLAN for phase ${phaseSlug} in ${root}. Purely mechanical — do not fix, judge or edit ` +
       `anything. Run exactly this ONE command in ${root} and return its fields verbatim:\n` +
-      `  ac verdict plan ${phaseSlug} --json${fullRun ? ' --full' : ''}\n` +
+      `  ac verdict plan ${phaseSlug} --json${fullRun || full ? ' --full' : ''}\n` +
       `Return mode, reason, first, ids, total, saved (omit it when the output has saved: null) and range ` +
       `(omit it when null), plus floor, carry, why, base (omit it when null), changed and unmapped_files. ` +
       `If the command fails or prints no JSON, return mode="full", first=[] and ` +
@@ -2147,18 +2198,32 @@ const runVerdictRecord = (resultJson) =>
       `anything. Run exactly this ONE command in ${root} and return its fields verbatim:\n` +
       `  ac verdict record ${phaseSlug} --result '${resultJson}'\n` +
       `Return recorded=true plus run, mode, reason, passed, failing, observed, carried, carriedFrom ` +
-      `(omit when null) and committed from the JSON it prints. If the command exits non-zero, return recorded=false and put ` +
+      `(omit when null), committed, and deferrable, flapping and broad_refused (each omitted when absent) ` +
+      `from the JSON it prints. If the command exits non-zero, return recorded=false and put ` +
       `the first stderr line in note.`,
     { label: 'verdict:record', phase: 'Verify', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: VERDICT_RECORD_SCHEMA },
   )
+
+const runCheapStage = () =>
+  agent(
+    `CHEAP FIRST PASS for phase ${phaseSlug} in ${root}. Purely mechanical — do not fix, judge or edit ` +
+      `anything. Run exactly this ONE command in ${root} and return its fields verbatim:\n` +
+      `  ac verdict cheap ${phaseSlug} --json\n` +
+      `It exits 1 when any check is unmet; that is a result, not an error. Return clean, unmet (every ` +
+      `id), unchecked and ran (each item's id, kind, passed, command, output) from the JSON it prints. ` +
+      `If it cannot run (non-zero exit with no JSON), return clean=true and put the first stderr line in note.`,
+    { label: 'verify:cheap', phase: 'Verify', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: CHEAP_SCHEMA },
+  )
+
+const clip = (x, n = 1500) => (typeof x === 'string' && x.length > n ? x.slice(0, n) : x)
 
 const FULL_PLAN = (reason) => ({ mode: 'full', reason, first: [], ids: [], saved: null, range: null, floor: [], carry: [], why: {}, base: null })
 
 // Ask the clerk, validate, never throw. A narrowed plan must carry everything the narrowed
 // prompt cites (first ids, saved run + commit, range); otherwise it is not trusted.
-const getVerdictPlan = async () => {
+const getVerdictPlan = async (full = false) => {
   let r = null
-  try { r = await runVerdictPlan() } catch (e) { r = null }
+  try { r = await runVerdictPlan(full) } catch (e) { r = null }
   if (!r || (r.mode !== 'full' && r.mode !== 'narrowed' && r.mode !== 'targeted') || !Array.isArray(r.first)) {
     log('⚠ verdict plan unavailable — running a full verify')
     return FULL_PLAN('verdict plan unavailable')
@@ -2208,10 +2273,29 @@ const seenIds = new Set()
 // check the previously unmet criteria first and stop with a FAIL if any is still unmet. When they
 // all pass, the SAME run continues over every other criterion, so a PASS still costs one run and
 // still observed everything. `focusIds` (full mode) only redirects the verifier's depth.
-const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
+// The structural checks (commits present, no stranded worktree-* branch, the full suite). In a split
+// verify (phase 54) only group 1 runs them.
+const STRUCTURAL_CHECKS =
+  `Also confirm the phase's commits are present (\`git log --oneline\`) and that no \`worktree-*\` ` +
+  `branch still holds un-integrated changes (\`git for-each-ref refs/heads/worktree-*\`, then ` +
+  `\`git cherry HEAD <branch>\` must print no \`+\` line — a leftover branch whose changes are ` +
+  `all in HEAD is residue, not stranded work). Run the full test suite. Flag any project-canon ` +
+  `violation.\n\n`
+
+const groupPreamble = (group) =>
+  `THIS IS GROUP ${group.index} OF ${group.total} OF A SPLIT VERIFY (phase 54): a sibling verifier checks the other ` +
+  `criteria at the same time, on this same unchanged tree. You are responsible ONLY for ${group.ids.join(', ')}: observe ` +
+  `every one of them, and report ONLY them in criteria[] (do not check or report the others). ` +
+  (group.structural
+    ? `You ALSO run the structural checks below.\n\n`
+    : `SKIP the structural checks below (commits present, worktree-* branches, the full test suite): group 1 runs them. ` +
+      `Set passed from your own criteria only.\n\n`)
+
+const runVerify = (plan = FULL_PLAN(''), focusIds = [], group = null) =>
   agent(
     `Verify phase "${phaseSlug}" of the project at ${root}. The work is committed on the ` +
       `CURRENT branch — verify against HEAD/the working tree, NOT a fresh checkout of main.\n\n` +
+      (group ? groupPreamble(group) : '') +
       (plan.mode === 'targeted'
         ? `THIS IS A TARGETED VERIFY (phase 52). The phase's most recent full PASS (run ${plan.base.run}, ` +
           `commit ${plan.base.commit}) is the base; what changed since is \`git diff ${plan.range}\`. ac ` +
@@ -2222,7 +2306,9 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
           `test harness) observe that one too. You may NEVER skip, or carry, a floor criterion.\n` +
           `2. Report every criterion you did not re-check with status 'carried' (or leave it out). Never report ` +
           `a carried criterion as passed: ac records it as carried from run ${plan.base.run}, not observed. If the ` +
-          `fix is BROAD, do not target: run a FULL verify and return broad=true, mode='full'.\n` +
+          `fix is BROAD, do not target: first run \`ac verdict plan ${phaseSlug} --broad-files <the changed files that make it broad> --json\`; ` +
+          `only when it plans \`full\`, run a FULL verify and return broad=true, mode='full' and broad_files (those files). ` +
+          `A bare broad claim with no supporting files is refused by ac and the run stays targeted.\n` +
           `3. A SUITE criterion (its evidence is the full test suite) is in the floor: FIRST run ` +
           `\`ac suite receipt --command "<the suite command>" --json\`. When it is reusable, report that ` +
           `criterion with status 'carried' and receipt set to the printed key; otherwise run the suite through ` +
@@ -2234,7 +2320,9 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
           `${plan.saved.commit}) left these criteria unmet: ${plan.first.join(', ')}.\n` +
           `1. FIRST inspect \`git diff ${plan.range}\` (the change since that verdict). If the fix is BROAD — ` +
           `it touches what many criteria rest on (shared code, config, the test harness) — do not ` +
-          `narrow: run a FULL verify from the start and return broad=true, mode='full'.\n` +
+          `narrow: FIRST run \`ac verdict plan ${phaseSlug} --broad-files <the changed files that make it broad> --json\`; ` +
+          `only when it plans \`full\`, run a FULL verify from the start and return broad=true, mode='full' ` +
+          `and broad_files (those files). A bare broad claim with no supporting files is refused by ac and the run stays narrowed.\n` +
           `2. Otherwise re-check ${plan.first.join(', ')} first, from scratch and plan-blind, against their ` +
           `own Observe: lines. Check ALL of them before you stop, so the report names every one still unmet.\n` +
           `3. If ANY is still unmet, stop: return passed=false, mode='narrowed', every criterion you ` +
@@ -2267,11 +2355,13 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
       `Observe: command / drive the behavior end-to-end, and cite the exact command + its actual ` +
       `output as evidence; actively try its "Fails if:". A green suite is not evidence for a ` +
       `criterion unless it actually exercises that behavior.\n\n` +
-      `Also confirm the phase's commits are present (\`git log --oneline\`) and that no \`worktree-*\` ` +
-      `branch still holds un-integrated changes (\`git for-each-ref refs/heads/worktree-*\`, then ` +
-      `\`git cherry HEAD <branch>\` must print no \`+\` line — a leftover branch whose changes are ` +
-      `all in HEAD is residue, not stranded work). Run the full test suite. Flag any project-canon ` +
-      `violation.\n\n` +
+      `EVERY GAP IN ONE PASS: never stop at the first failing criterion. Report EVERY criterion you ` +
+      `observed unmet, each as failed with its exact command and output, so one round names all the gaps. ` +
+      `A stop-early narrowed run reports any other criterion you saw fail as failed, never as carried.\n\n` +
+      `A declared setup step (\`ac setup list\`) is run with \`ac setup run <name>\`, which reuses an earlier ` +
+      `result for the same commit and command. You can never defer a criterion: deferral is a human act ` +
+      `(ac verdict defer), so report an unmet criterion as failed whatever it is.\n\n` +
+      (group && !group.structural ? '' : STRUCTURAL_CHECKS) +
       `PASS only if EVERY criterion has independent passing evidence you gathered yourself AND the ` +
       `structural checks hold. Otherwise FAIL — name the unmet criterion, the command you ran, the ` +
       `output you saw, and what is needed to close it.\n\n` +
@@ -2296,11 +2386,124 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
     { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier, effort: reasoning.verifier, schema: VERIFY_SCHEMA },
   )
 
+// ── Phase 54 (D7, ADR-091): remediation overlaps the verify, in its own worktree ─────────────
+//
+// The bug this removes: the verifier found a failure in minute 5 of a 90-minute verify and the
+// executor then waited for the other 85 minutes. When worktrees are on, budget remains, the plan is
+// full and there are enough criteria to split, the expensive stage runs as TWO verifier spawns (the
+// ids split in file order into halves; group 1 also runs the structural checks) inside one
+// parallel(). When the first group returns with a failed criterion while the other is still running,
+// a remediation executor starts at once on its OWN worktree branch (SYNC FIRST, ADR-040). The
+// verifiers never run on that worktree and never see the tree move: the fix is folded onto the
+// working branch by the existing integrator only AFTER the verdict is recorded (`landOverlapped`),
+// and only then does the next round verify. ADR-005/019/040 hold: the script runs no git, a null or
+// failed worktree remediation re-runs on-branch and latches the overlap off, and without
+// worktrees the verifier is one spawn and remediation waits for the verdict, as before.
+let overlapOk = true
+let pendingRem = null // { cycle, promise } — a remediation started by the overlap, not yet landed
+
+const remediateWorktreePrompt = (unmet, cycle) =>
+  remediatePrompt(unmet, cycle) + EXEC_IDENTITY + SYNC_WORKTREE +
+  `\n\nOVERLAPPED REMEDIATION (phase 54): the verifier is still running on the working branch while you fix ` +
+  `this, so you work ONLY on your own worktree branch: sync first, make exactly ONE stamped commit, and report ` +
+  `branch and commit. Never run \`ac verdict\`, \`ac state\` or any \`ac phase\` write, and never touch the ` +
+  `main working tree. The integrator folds your branch after the verdict is recorded.`
+
+const startOverlappedRemediation = (unmet, cycle) =>
+  agent(remediateWorktreePrompt(unmet, cycle), {
+    label: `remediate:c${cycle}`,
+    phase: 'Execute',
+    agentType: 'astro-executor',
+    isolation: 'worktree',
+    model: models.executor, effort: reasoning.executor,
+    schema: REMEDIATE_WT_SCHEMA,
+  })
+
+// Two verifier groups, one remediation started the moment one group reports a failure while the
+// other is still running. Returns the merged verifier result.
+const runVerifyOverlapped = async (plan, focusIds, cycle) => {
+  const ids = plan.ids
+  const half = Math.ceil(ids.length / 2)
+  const groups = [ids.slice(0, half), ids.slice(half)]
+  let running = groups.length
+  let started = false
+  const thunks = groups.map((gids, i) => async () => {
+    let v = null
+    try {
+      v = await runVerify(plan, focusIds, { index: i + 1, total: groups.length, ids: gids, structural: i === 0 })
+    } finally {
+      running--
+    }
+    const failed = v && Array.isArray(v.criteria)
+      ? v.criteria.filter((c) => c && gids.includes(c.id) && c.passed !== true && c.status !== 'carried')
+      : []
+    if (failed.length && running > 0 && !started) {
+      started = true
+      log(`• verify group ${i + 1}/${groups.length} found ${failed.map((c) => c.id).join(', ')} unmet while the other group is still running — remediation starts now, in its own worktree`)
+      pendingRem = {
+        cycle,
+        promise: startOverlappedRemediation(failed.map((c) => ({ id: c.id, command: c.command, output: c.output })), cycle).catch(() => null),
+      }
+    }
+    return v
+  })
+  const out = await parallel(thunks)
+  return mergeGroups(out, groups)
+}
+
+// Combine the groups: passed only if both passed, criteria concatenated (each group's own ids only,
+// de-duplicated), mode full only if both are, findings concatenated. The coverage guard in verifyOnce
+// then runs on this union, so an id neither group reported withdraws the PASS.
+const mergeGroups = (out, groups) => {
+  const got = out.filter(Boolean)
+  const criteria = []
+  out.forEach((v, i) => {
+    for (const c of (v && Array.isArray(v.criteria) ? v.criteria : [])) {
+      if (c && groups[i].includes(c.id) && !criteria.some((x) => x.id === c.id)) criteria.push(c)
+    }
+  })
+  const missing = out.map((v, i) => (v ? null : i + 1)).filter(Boolean)
+  return {
+    passed: missing.length === 0 && got.every((v) => v.passed === true),
+    criteriaFound: got.every((v) => v.criteriaFound !== false),
+    summary: [...got.map((v) => v.summary).filter(Boolean), ...missing.map((n) => `FAIL — verifier group ${n} returned nothing`)].join('\n'),
+    mode: got.every((v) => (v.mode || 'full') === 'full') && missing.length === 0 ? 'full' : 'narrowed',
+    broad: false,
+    criteria,
+    findings: got.flatMap((v) => (Array.isArray(v.findings) ? v.findings : [])),
+  }
+}
+
 // One verify round: plan clerk → ONE verifier → coverage guard → record clerk. `expectFirst`
 // (the loop's in-memory failing set) must equal the plan's `first`, else the saved verdict is not
 // the one this run just produced and the round degrades to full.
-const verifyOnce = async (focusIds = [], expectFirst = null) => {
-  let plan = await getVerdictPlan()
+const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, overlapCycle = remediationCycles < maxCycles ? remediationCycles : null) => {
+  // Phase 54 (D4): the cheap first pass runs BEFORE any expensive stage. Unmet -> the round ends here
+  // as a FAIL naming EVERY unmet id and no verifier is spawned; `ac verdict cheap` has already
+  // recorded the narrowed cheap verdict. Clean (or unavailable) -> the expensive stage runs. A cheap
+  // pass never sets `lastSeen` true: it can fail a run, never pass one.
+  let cheap = null
+  try { cheap = await runCheapStage() } catch (e) { cheap = null }
+  const cheapUnmet = cheap && Array.isArray(cheap.unmet) ? cheap.unmet.map((x) => (x && typeof x === 'object' ? x.id : x)).filter((id) => typeof id === 'string' && /^C\d+$/.test(id)) : []
+  if (cheapUnmet.length) {
+    const ran = cheap && Array.isArray(cheap.ran) ? cheap.ran : []
+    const items = cheapUnmet.map((id) => {
+      const r = ran.find((x) => x && x.id === id) || {}
+      return { id, passed: false, status: 'failed', ...(r.command ? { command: r.command } : {}), ...(r.output ? { output: r.output } : {}) }
+    })
+    for (const c of items) {
+      seenIds.add(c.id)
+      lastSeen.set(c.id, false)
+      evidence.set(c.id, { command: c.command, output: c.output })
+    }
+    log(`✖ cheap first pass: ${cheapUnmet.length} unmet (${cheapUnmet.join(', ')}) — no expensive verifier this round`)
+    return {
+      passed: false, criteriaFound: true, mode: 'narrowed', criteria: items,
+      summary: `FAIL — cheap first pass: ${cheapUnmet.length} unmet criterion/criteria (${cheapUnmet.join(', ')}); the expensive verifier was not run`,
+    }
+  }
+  if (!cheap) log('⚠ cheap first pass unavailable — running the full verifier stage')
+  let plan = await getVerdictPlan(forceFull)
   if (plan.mode === 'narrowed' && expectFirst) {
     const a = [...plan.first].sort().join(',')
     const b = [...expectFirst].sort().join(',')
@@ -2309,7 +2512,11 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
       plan = { ...plan, mode: 'full', first: [], reason: 'saved verdict does not match this run' }
     }
   }
-  const v = await runVerify(plan, focusIds)
+  // D7: split + overlap only when worktrees work, remediation budget remains for the cycle that would
+  // start, the plan is full, and there are enough criteria to split (ADR-019: the latch stays off once tripped).
+  const overlap = overlapCycle !== null && useWorktrees && !worktreesUnavailable && overlapOk
+    && plan.mode === 'full' && plan.ids.length >= 4
+  const v = overlap ? await runVerifyOverlapped(plan, focusIds, overlapCycle) : await runVerify(plan, focusIds)
   const items = Array.isArray(v.criteria) ? v.criteria : []
   for (const c of items) seenIds.add(c.id)
   // What this run actually covered. A narrowed plan whose verifier did not say otherwise was
@@ -2329,14 +2536,18 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
     const c = byId.get(id)
     return c && c.passed === true && (c.status !== 'carried' || (typeof c.receipt === 'string' && c.receipt !== ''))
   })
-  if (v.passed && mode === 'targeted') {
-    if (!floorCovered) {
-      v.passed = false
-      log('⚠ verify PASS withdrawn — a floor criterion was not observed in the targeted run')
-    }
-  } else if (v.passed && (mode === 'narrowed' || items.some((c) => c.status === 'carried') || !covered)) {
+  // C12: a withdrawn PASS must never read as the verifier's own 'ok'. The summary leads with the
+  // withdrawal and the verifier's pass text is dropped from it (it stays in the log).
+  const withdraw = (reason) => {
+    log(`⚠ verify PASS withdrawn — ${reason}`)
+    if (v.passed) log(`  verifier said: ${String(v.summary || '').split('\n')[0]}`)
     v.passed = false
-    log('⚠ verify PASS withdrawn — not every criterion was independently checked in a full run')
+    v.summary = `FAIL — verify PASS withdrawn: ${reason}`
+  }
+  if (v.passed && mode === 'targeted') {
+    if (!floorCovered) withdraw('a floor criterion was not observed in the targeted run')
+  } else if (v.passed && (mode === 'narrowed' || items.some((c) => c.status === 'carried') || !covered)) {
+    withdraw('not every criterion was independently checked in a full run')
   }
   v.mode = mode
   for (const c of items) {
@@ -2363,8 +2574,11 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
   try {
     rec = await runVerdictRecord(JSON.stringify({
       mode, broad: v.broad === true,
+      ...(Array.isArray(v.broad_files) && v.broad_files.length ? { broad_files: v.broad_files } : {}),
       criteria: [
-        ...checked.map((c) => ({ id: c.id, passed: c.passed === true, ...(c.test_strength === true ? { test_strength: true } : {}), ...(c.suite === true ? { suite: true } : {}), ...(c.mutation ? { mutation: c.mutation } : {}) })),
+        // A failed criterion carries the verifier's command and output (capped), so a human's
+        // deferral can pre-fill its fix with the real reproduction.
+        ...checked.map((c) => ({ id: c.id, passed: c.passed === true, ...(c.passed !== true && c.command ? { command: clip(c.command) } : {}), ...(c.passed !== true && c.output ? { output: clip(c.output) } : {}), ...(c.test_strength === true ? { test_strength: true } : {}), ...(c.suite === true ? { suite: true } : {}), ...(c.mutation ? { mutation: c.mutation } : {}) })),
         // A suite criterion carried by a receipt travels as a citation; every other carry is implicit.
         ...(mode === 'targeted'
           ? items.filter((c) => c.status === 'carried' && typeof c.receipt === 'string' && c.receipt && /^C\d+$/.test(c.id))
@@ -2375,15 +2589,26 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
   } catch (e) { rec = null }
   if (rec && rec.recorded === true) {
     log(`• verdict run ${rec.run} saved (${rec.mode || mode})`)
-    if (rec.passed === false && v.passed) {
-      v.passed = false
-      log('⚠ verify PASS withdrawn — ac verdict record derived a failing verdict')
-    }
+    if (rec.passed === false && v.passed) withdraw('ac verdict record derived a failing verdict')
   } else {
     log(`⚠ verdict not saved — ${(rec && rec.note) || 'the record clerk returned nothing'}`)
   }
-  if (mode === 'targeted' && rec && Array.isArray(rec.failing)) {
+  // The record's `failing` is the code's own reckoning (C12): in ANY mode an id it names is unmet,
+  // even one the verifier reported passed (a mutation/strength gate can withdraw it).
+  if (rec && rec.recorded === true && Array.isArray(rec.failing)) {
     for (const id of rec.failing) lastSeen.set(id, false)
+  }
+  // Phase 54: what the record printed beyond the verdict, one line each (nothing when absent).
+  if (rec && rec.recorded === true) {
+    if (Array.isArray(rec.deferrable) && rec.deferrable.length) {
+      v.summary = `${v.summary}\ndeferrable: ${rec.deferrable.join(', ')} — a human may defer with \`ac verdict defer ${phaseNum} ${rec.deferrable.join(' ')}\``
+    }
+    if (Array.isArray(rec.flapping) && rec.flapping.length) {
+      v.summary = `${v.summary}\nflapping: ${rec.flapping.map((f) => `${f.id} passed in run ${f.passed_run}, files ${f.files_changed === true ? 'changed' : f.files_changed === false ? 'unchanged' : 'unknown'}`).join('; ')}`
+    }
+    if (typeof rec.broad_refused === 'string' && rec.broad_refused) {
+      v.summary = `${v.summary}\nbroad claim refused: ${rec.broad_refused} — recorded narrowed`
+    }
   }
   if (mode === 'targeted' && plan.base) {
     const n = rec && Number.isInteger(rec.carried) ? rec.carried : Math.max(0, known.length - checked.length)
@@ -2438,6 +2663,43 @@ const runRemediation = (unmet, cycle) =>
     schema: REMEDIATE_SCHEMA,
   })
 
+// One verify that ignores any saved verdict (the plan clerk is asked for --full). C12.
+const verifyFullAgain = () => verifyOnce([], null, true)
+
+// One remediation cycle. Normally the executor is spawned now, after the verdict. When the overlap
+// already started one in its own worktree (D7), its result is taken instead and its branch is folded
+// through the integrator NOW, after the verdict was recorded, before the next round verifies.
+// `{ rem }` carries the executor result; `{ stop: true }` ends the loop (an integration failure).
+const remediateCycle = async (unmet, cycle) => {
+  if (!pendingRem) {
+    const rem = await runRemediation(unmet, cycle)
+    remediationCycles++
+    return { rem }
+  }
+  const started = pendingRem
+  pendingRem = null
+  const r = await started.promise
+  remediationCycles++
+  const moved = r && r.headAfter && r.headBefore && r.headAfter !== r.headBefore && r.branch && r.commit
+  if (!moved) {
+    // ADR-019: a null or commit-less worktree remediation is not trusted again this run.
+    overlapOk = false
+    log('⚠ the overlapped worktree remediation returned no commit — re-running it on-branch now, and verifying in one piece for the rest of the run')
+    return { rem: await runRemediation(unmet, cycle) }
+  }
+  const id = `remediate-c${started.cycle}`
+  const integ = await integrateWave(started.cycle, [{ id, title: `remediation cycle ${started.cycle + 1}` }], [{ taskId: id, branch: r.branch, commit: r.commit }], `integrate:${id}`)
+  const pos = integ && integ.position
+  const landed = integ && integ.integrated === true && (integ.branches || []).includes(r.branch)
+    && !(pos && (pos.toplevel !== root || /^worktree-/.test(pos.branch || '')))
+  if (!landed) {
+    stoppedReason = 'integration-failed'
+    log(`✖ the overlapped remediation branch \`${r.branch}\` did not integrate — it is preserved; stopping`)
+    return { stop: true }
+  }
+  return { rem: r }
+}
+
 if (!integrationFailed) {
   // ADR-021 — adversarial, plan-blind verification (runVerify, defined above).
   // Phase-10 (ADR-022): the FIRST verify, then the bounded verify→remediate loop.
@@ -2457,8 +2719,22 @@ if (!integrationFailed) {
         `• remediation cycle ${cycle + 1}/${maxCycles}: ${beforeIds.size} unmet criterion/criteria` +
           (beforeIds.size ? ` (${[...beforeIds].join(', ')})` : ''),
       )
-      const rem = await runRemediation(unmet, cycle)
-      remediationCycles++
+      // C12: a withdrawn PASS can leave NOTHING unmet. An executor handed an empty list has nothing
+      // to fix, so no remediation is spawned; one forced-full verify runs instead, and it spends
+      // this cycle of the budget so the loop still ends.
+      if (beforeIds.size === 0) {
+        log('⚠ no unmet criterion to remediate — running one full verify instead')
+        remediationCycles++ // the forced verify spends this cycle's budget (and keeps the overlap cycle index in step)
+        verdict = await verifyFullAgain()
+        if (verdict.passed) {
+          log(`✓ cycle ${cycle + 1}: the full verify closed the phase — verified`)
+          break
+        }
+        continue
+      }
+      const got = await remediateCycle(unmet, cycle)
+      if (got.stop) break
+      const rem = got.rem
 
       // STOP-ON-NO-PROGRESS #1 (checked BEFORE consuming more budget, C6): the pass
       // committed nothing — HEAD did not move (or the executor returned no heads at
@@ -2500,7 +2776,7 @@ if (!integrationFailed) {
     }
     // If the loop exhausted its budget still-failing (and did not bail on no-progress),
     // that is `max-cycles`. verdict.passed remains false; the command surfaces it.
-    if (!verdict.passed && stoppedReason !== 'no-progress') stoppedReason = 'max-cycles'
+    if (!verdict.passed && stoppedReason !== 'no-progress' && stoppedReason !== 'integration-failed') stoppedReason = 'max-cycles'
   }
   // A pass on the very first verify (loop never ran) leaves stoppedReason at its
   // 'passed' default; be explicit for any pass so the report is unambiguous. A single-pass
@@ -2508,6 +2784,7 @@ if (!integrationFailed) {
   // the 'passed' default: relabel it honestly so telemetry never reads 'passed' on a failure.
   if (verdict.passed) stoppedReason = 'passed'
   else if (stoppedReason === 'passed') stoppedReason = 'single-pass'
+  if (pendingRem) log(`⚠ an overlapped remediation (cycle ${pendingRem.cycle + 1}) was started but never landed — its worktree branch is preserved`)
 }
 
 // verdict is now the structured object; verdict.summary / verdict.passed are what the

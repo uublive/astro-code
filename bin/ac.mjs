@@ -31,6 +31,14 @@ function claudeMeetsModFloor() {
 // Phase 42 (ADR-075) -- install/update put the astro-mods plugin in place with every switch off,
 // so the plugin's own settings.json keys are written here and `ac mods enable` never edits that
 // file. Only a change, a collision or a failure is worth a line; `already` is silent.
+// One flapping flag (phase 54, D9) as one stderr line. The flag never changes the verdict; it only
+// tells the human whether a pass-then-fail looks like a regression or an inconsistent verifier.
+function flappingLine(f) {
+  const how = f.files_changed === true ? 'files changed (regression?)'
+    : f.files_changed === false ? 'files unchanged (inconsistent verifier?)' : 'file map unknown';
+  return `⚠ ${f.id} passed in run ${f.passed_run} @ ${String(f.passed_commit ?? '').slice(0, 7)}, now fails — ${how}${f.criteria_changed ? '; CRITERIA.md changed since' : ''}`;
+}
+
 function reportPluginEnsure(results) {
   for (const r of results) {
     if (r.outcome === 'installed') console.log(`✓ astro-mods installed (every mod off) → ${r.dir} [${r.label}]`);
@@ -105,7 +113,10 @@ import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhase
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims, waitingMilestones, renameMilestone } from '../lib/registry.mjs';
-import { addFix, acceptFix, setFixStatus, resolveFix, openFixes, loadFixes, FIX_STATUSES } from '../lib/fixes.mjs';
+import { addFix, acceptFix, setFixStatus, resolveFix, openFixes, loadFixes, deferredFixes, FIX_STATUSES } from '../lib/fixes.mjs';
+import { deferCriteria } from '../lib/defer.mjs';
+import { runCheapPass } from '../lib/cheappass.mjs';
+import { runSetup, listSetup } from '../lib/setupcache.mjs';
 import {
   addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt, setDebtNote,
   debtAgeDays, debtScore, loadDebt, DEBT_COSTS, STALE_DAYS,
@@ -128,7 +139,8 @@ import { backfillAdr } from '../lib/adrbackfill.mjs';
 import { renumberDecision } from '../lib/adrrenumber.mjs';
 import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
-import { planReverify, recordVerdict, verifiedGate, carriedOf } from '../lib/verdict.mjs';
+import { planReverify, recordVerdict, verifiedGate, carriedOf, readVerdict, verdictFile } from '../lib/verdict.mjs';
+import { VERDICTS_FILE, readHistory } from '../lib/verdicthistory.mjs';
 import { runSuite, reusableReceipt } from '../lib/receipts.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
 import { planCalibration, runCalibration, renderSummary, renderBill, parseCalibrateFlags, publicDefect, CALIBRATE_USAGE } from '../lib/calibrate.mjs';
@@ -267,9 +279,21 @@ const ALLOWED_FLAGS = {
   // `phase accept`; a typo'd flag must not silently verify without the gate's say.
   'phase verify': ['force'],
   // `--full` forces a full re-verify; a typo (`--fulll`) must not degrade into a narrowed run.
-  'verdict plan': ['full', 'json'],
+  // Phase 54 (D6) — `--broad-files` is the verifier's broad claim, checked in code; a typo'd name must not
+  // silently plan without the claim.
+  'verdict plan': ['full', 'json', 'broad-files'],
+  'verdict cheap': ['json'],
+  // Phase 54 (D8) — a typo'd `--commit` must not silently build (and cache) HEAD instead of the commit asked for.
+  'setup run': ['commit', 'json'],
+  'setup list': ['json'],
   // `--result` is the verifier's checked criteria; a typo must not record an empty verdict.
   'verdict record': ['result'],
+  // Phase 54 (D9) — read-only history and the latest verdict; a typo'd flag must not print the wrong form.
+  'verdict history': ['json'],
+  'verdict show': ['json'],
+  // Phase 54 (ADR-090) — deferral is a human act: only `--by` (who) is accepted, and `--agent` is
+  // refused outright with the reason rather than as an unknown flag.
+  'verdict defer': ['by'],
   // Phase 52 (D6) — a typo'd `--command` must not run, or reuse a receipt for, the wrong command.
   'suite run': ['command', 'json'],
   'suite receipt': ['command', 'json'],
@@ -577,8 +601,14 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase context <phase>            discuss-gate status: missing | stub | ready
   ac phase context <phase> --author   who captured it: human | agent <name> | none
   ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full or valid targeted verdict)
-  ac verdict plan <phase> [--full] [--json]  full, narrowed (after a FAIL) or targeted (after a full PASS)
+  ac verdict plan <phase> [--full] [--broad-files a,b] [--json]  full, narrowed (after a FAIL) or targeted (after a full PASS)
+  ac verdict cheap <phase> [--json]    the cheap first pass: suite receipt + each criterion's Cheap: command; exits 1 on any unmet
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
+  ac verdict history <phase> [--json]  every recorded verdict of the phase, oldest first (VERDICTS.jsonl)
+  ac verdict show <phase> [--json]     the latest verdict: unmet ids, deferred ids, flapping flags
+  ac verdict defer <phase> <C-id…> [--by name]  a HUMAN defers failed [edge] criteria into tracked fixes (never an agent; core and suite criteria refuse)
+  ac setup run <name> [--commit <ref>] [--json]  run a declared setup step, or reuse its result for the same commit + command (ac config set setup.steps.<name>)
+  ac setup list [--json]               declared setup steps and the cached results (.astrocode/.local/setup-cache)
   ac suite run --command "<cmd>" [--json]   run the project's suite and write a local receipt (exits with the suite's status)
   ac suite receipt --command "<cmd>" [--json]  is there a reusable receipt for this exact command on HEAD's clean tree? (read-only)
   ac mutate <phase> [--json]          run the project's mutation tool on the lines the phase changed (ADR-083, ADR-084)
@@ -779,7 +809,8 @@ async function main() {
           const acc = f.status === 'accepted'
             ? `  · by ${f.accepted_by || 'unknown'}${f.accepted_kind === 'agent' ? ' (agent)' : ''}${f.cited_evidence ? ` · cites ${f.cited_evidence}` : ''}`
             : '';
-          console.log(`  ${f.id}  ${f.status}  ${f.title}${acc}`);
+          const from = f.deferred_from ? `  · deferred from ${String(f.deferred_from.phase).match(/^\d+/)?.[0] ?? f.deferred_from.phase} ${f.deferred_from.criterion}` : '';
+          console.log(`  ${f.id}  ${f.status}  ${f.title}${acc}${from}`);
         }
         return;
       }
@@ -1970,6 +2001,11 @@ async function main() {
         const stale = staleDebt(r).length;
         console.log(`Debt:      ${debt.length} open${stale ? ` (${stale} stale)` : ''}  — \`ac debt list\``);
       }
+      // Phase 54 (D3): ONE line naming each open deferred fix; absent when there are none.
+      const deferred = deferredFixes(r);
+      if (deferred.length) {
+        console.log(`Deferred:  ${deferred.map((f) => `${f.id} (${String(f.deferred_from.phase).match(/^\d+/)?.[0] ?? f.deferred_from.phase} ${f.deferred_from.criterion})`).join(', ')}  — \`ac fix list\``);
+      }
       // Same posture as Debt: suppressed at zero, and never throws on a project whose
       // .astrocode/ predates this phase and has no backlog.json at all — openBacklog
       // reads an absent file as a true empty, not a damaged one.
@@ -2407,7 +2443,10 @@ async function main() {
         // Phase 52 (D7): name the criteria the latest verdict carried instead of observing, so the
         // human sees which passes were not re-observed. Absent when nothing was carried (Voice).
         const carried = carriedOf(r, ph.slug);
-        json(carried.length ? { ...ph, carried } : ph);
+        // Phase 54 (D3): the open fixes a human deferred this phase's criteria into; absent when none.
+        const deferred = deferredFixes(r, { phases: [ph.slug] })
+          .map((f) => ({ id: f.id, title: f.title, status: f.status, criterion: f.deferred_from.criterion }));
+        json({ ...ph, ...(carried.length ? { carried } : {}), ...(deferred.length ? { deferred_fixes: deferred } : {}) });
       } else if (sub === 'accept') {
         if (!ph) die('usage: ac phase accept <phase> [--by name | --agent name | --witnessed composer] [--evidence "<id or URL>"] [--force]');
         checkFlags('phase accept', flags);
@@ -2648,22 +2687,131 @@ async function main() {
       return;
     }
 
+    // Phase 54 (D8, ADR-091). A thin dispatcher over lib/setupcache.mjs: it decides reuse, runs the
+    // step in a detached worktree of the commit, caps the cache. `run` exits with the step's status.
+    case 'setup': {
+      const sub = pos[0];
+      if (sub !== 'run' && sub !== 'list') die('usage: ac setup run <name> [--commit <ref>] [--json] | ac setup list [--json]');
+      checkFlags(`setup ${sub}`, flags);
+      const r = root();
+      const sha7 = (x) => String(x ?? '').slice(0, 7);
+      if (sub === 'list') {
+        const l = listSetup(r);
+        if (flags.json) { json(l); return; }
+        const names = Object.keys(l.steps);
+        if (!names.length) { console.log('⊡ no setup steps declared — declare one with `ac config set setup.steps.<name> \'{"command":"…"}\'`'); return; }
+        for (const n of names) console.log(`  ${n}  ${l.steps[n].command}  @ ${l.steps[n].commit}`);
+        const mb = l.entries.reduce((n, e) => n + (e.bytes || 0), 0) / (1024 * 1024);
+        console.log(l.entries.length ? `cached: ${l.entries.map((e) => `${e.name}@${sha7(e.commit)}`).join(', ')} — ${mb.toFixed(1)} MB of ${l.max_mb} MB` : `cached: none (cap ${l.max_mb} MB)`);
+        return;
+      }
+      const name = pos[1];
+      if (!name) die('usage: ac setup run <name> [--commit <ref>] [--json]');
+      if (flags.commit !== undefined && (typeof flags.commit !== 'string' || !flags.commit.trim())) die('--commit needs a ref, e.g. --commit HEAD~1');
+      let res;
+      try { res = await runSetup(r, name, { commit: flags.commit, json: !!flags.json }); } catch (e) { die(e.message); }
+      if (flags.json) json(res);
+      else if (res.reused) console.log(`✓ reused ${name} @ ${sha7(res.commit)} — same commit and command (${res.out})`);
+      else if (res.exit === 0) console.log(`• ran ${name} @ ${sha7(res.commit)} in ${res.seconds}s${res.kept ? ` → ${res.out}` : ''}${res.evicted.length ? ` (evicted ${res.evicted.length} older)` : ''}`);
+      else console.log(`✖ ${name} exited ${res.exit} — not cached, it runs again next time`);
+      if (res.warning) console.error(`⚠ ${res.warning}`);
+      process.exitCode = res.exit;
+      return;
+    }
+
     case 'verdict': {
       const r = root();
       const sub = pos[0];
-      if (sub !== 'plan' && sub !== 'record') die('usage: ac verdict <plan|record> <phase> …');
+      if (!['plan', 'record', 'history', 'show', 'defer', 'cheap'].includes(sub)) die('usage: ac verdict <plan|record|history|show|defer|cheap> <phase> …');
+      if (sub === 'defer') {
+        // ADR-090/074/033: deferral is a human act. An agent signer (the flag, or the env a witness
+        // exports) is refused BEFORE anything is read or written, and no prompt is ever shown.
+        signerFromEnv(flags);
+        if (flags.agent !== undefined || flags.witnessed !== undefined) die('deferral is a human act — an agent cannot defer (ADR-090); the human types `ac verdict defer <phase> <C-id…>`');
+      }
       checkFlags(`verdict ${sub}`, flags);
       // A stray token (`-full`, a second phase) is refused, never ignored: `-full` silently ran targeted.
-      if (pos.length > 2) die(`unexpected argument for \`ac verdict ${sub}\`: ${pos.slice(2).join(' ')} (flags take two dashes: --full, --json)`);
+      if (sub !== 'defer' && pos.length > 2) die(`unexpected argument for \`ac verdict ${sub}\`: ${pos.slice(2).join(' ')} (flags take two dashes: --full, --json)`);
       // parseArgs reads the token after a flag as its value (`--json -full`), so a switch that took one
       // swallowed a stray argument: refuse it the same way.
       for (const k of ['full', 'json']) {
         if (flags[k] !== undefined && flags[k] !== true) die(`unexpected argument for \`ac verdict ${sub}\`: --${k} takes no value (got ${JSON.stringify(flags[k])})`);
       }
       const ph = findPhase(r, pos[1]);
-      if (!ph) die(`usage: ac verdict plan <phase> [--full] [--json] | ac verdict record <phase> --result '<json>'`);
+      if (!ph) die(`usage: ac verdict plan <phase> [--full] [--broad-files a,b] [--json] | ac verdict cheap <phase> [--json] | ac verdict record <phase> --result '<json>' | ac verdict history <phase> [--json] | ac verdict show <phase> [--json]`);
+      if (sub === 'defer') {
+        const want = pos.slice(2);
+        if (!want.length) die(`name the criteria to defer, e.g. \`ac verdict defer ${ph.number} C2\` — nothing is deferred automatically (see the \`deferrable:\` line of the FAIL)`);
+        const bad = want.filter((x) => !/^C\d+$/.test(x));
+        if (bad.length) die(`not criterion ids: ${bad.join(' ')} (expected C<n>, e.g. C2)`);
+        let res;
+        try { res = await deferCriteria(r, ph.slug, want, { by: typeof flags.by === 'string' ? flags.by : gitIdentity(r).owner }); } catch (e) { die(e.message); }
+        for (const d of res.deferred) {
+          console.log(`✓ ${d.id} deferred → fix ${d.fix_id}`);
+          // Registry is advisory for a fix, exactly as `ac fix add` treats it (ADR-013).
+          claimFix({ root: r, id: d.fix_id, name: `deferred: phase ${ph.number} ${d.id}` });
+        }
+        if (!res.committed) console.log('⚠ written, not committed: commit VERDICT.json and fixes.json');
+        const gate = verifiedGate(r, ph.slug);
+        console.log(gate.ok ? `• the phase can now verify — run \`ac phase verify ${ph.number}\`` : `• the phase cannot verify yet: ${gate.reason}`);
+        return;
+      }
+      if (sub === 'history' || sub === 'show') {
+        const sha7 = (x) => String(x ?? '').slice(0, 7);
+        const hist = readHistory(join(paths(r).phases, ph.slug, VERDICTS_FILE));
+        if (hist.damaged) console.error(`⚠ ${hist.damaged} damaged line(s) in ${VERDICTS_FILE} were skipped`);
+        if (sub === 'history') {
+          if (flags.json) { json(hist.entries); return; }
+          if (!hist.entries.length) { console.log(`⊡ no verdicts recorded for phase ${ph.slug}`); return; }
+          for (const h of hist.entries) {
+            const unmet = Array.isArray(h.unmet) && h.unmet.length ? `  unmet: ${h.unmet.join(', ')}` : '';
+            const def = Array.isArray(h.deferred) && h.deferred.length ? `  deferred: ${h.deferred.join(', ')}` : '';
+            console.log(`run ${h.run}  ${h.mode}${h.stage ? `/${h.stage}` : ''}  ${h.passed ? 'PASS' : 'FAIL'}  ${sha7(h.commit)}${unmet}${def}`);
+          }
+          return;
+        }
+        const { verdict, reason } = readVerdict(verdictFile(r, ph.slug));
+        if (!verdict) die(`no verdict to show: ${reason}`);
+        const line = hist.entries.filter((h) => h.run === verdict.run).pop();
+        const unmet = verdict.criteria.filter((c) => c.status === 'failed' || (c.status === 'carried' && c.last === 'failed')).map((c) => c.id);
+        const deferred = verdict.criteria.filter((c) => c.status === 'deferred').map((c) => ({ id: c.id, fix_id: c.fix_id }));
+        const flapping = line?.flapping ?? [];
+        const view = {
+          phase: ph.slug, run: verdict.run, mode: verdict.mode, ...(verdict.stage ? { stage: verdict.stage } : {}),
+          passed: line ? line.passed === true : unmet.length === 0, commit: verdict.commit, unmet, deferred, flapping,
+        };
+        if (flags.json) { json(view); return; }
+        console.log(`run ${view.run}  ${view.mode}  ${view.passed ? 'PASS' : 'FAIL'}  ${sha7(view.commit)}`);
+        console.log(unmet.length ? `unmet: ${unmet.join(', ')}` : 'unmet: none');
+        if (deferred.length) console.log(`deferred: ${deferred.map((d) => `${d.id} → ${d.fix_id}`).join(', ')}`);
+        for (const f of flapping) console.log(flappingLine(f));
+        return;
+      }
+      if (sub === 'cheap') {
+        // The cheap first pass (phase 54, D4): code runs every declared cheap check and lists EVERY
+        // unmet id. Exit 1 on any unmet; a clean pass records nothing.
+        const res = await runCheapPass(r, ph.slug);
+        if (flags.json) json(res);
+        else if (!res.ran.length) console.log('⊡ no cheap observation declared — nothing checked');
+        else {
+          for (const x of res.ran) {
+            console.log(x.passed ? `✓ ${x.id} ${x.kind}: ${x.command}` : `✖ ${x.id} ${x.kind}: ${x.command} — ${String(x.output ?? '').split('\n')[0].slice(0, 160)}`);
+          }
+          console.log(res.clean ? `✓ cheap pass clean (${res.ran.length} checked${res.unchecked.length ? `, ${res.unchecked.length} left to the expensive stage` : ''})`
+            : `✖ cheap pass: ${res.unmet.length} unmet — ${res.unmet.join(', ')}`);
+        }
+        if (res.recorded && res.recorded.recorded === false) console.error(`⚠ the cheap verdict was not recorded: ${res.recorded.error}`);
+        if (!res.clean) process.exitCode = 1;
+        return;
+      }
       if (sub === 'plan') {
-        const plan = planReverify(r, ph.slug, { full: flags.full !== undefined });
+        let broadFiles;
+        if (flags['broad-files'] !== undefined) {
+          if (typeof flags['broad-files'] !== 'string' || !flags['broad-files'].trim()) die('--broad-files needs the changed files that make the fix broad, e.g. --broad-files src/a.mjs,lib/b.mjs');
+          broadFiles = flags['broad-files'].split(',').map((x) => x.trim()).filter(Boolean);
+        }
+        const plan = planReverify(r, ph.slug, { full: flags.full !== undefined, broadFiles });
+        if (plan.broad_refused) console.error(`⚠ broad claim refused: ${plan.broad_refused} — the plan stays ${plan.mode}`);
         if (flags.json) json(plan);
         else if (plan.mode === 'narrowed') {
           console.log(`• narrowed: re-check ${plan.first.join(', ')} first (run ${plan.saved.run} @ ${String(plan.saved.commit).slice(0, 7)})`);
@@ -2679,6 +2827,10 @@ async function main() {
       try { out = await recordVerdict(r, ph.slug, result); } catch (e) { die(e.message); }
       if (out.ignored) console.error(`⚠ ${out.ignored} reported criterion id(s) are not in CRITERIA.md and were ignored`);
       for (const f of out.refused ?? []) console.error(`⚠ ${f.id} refused: ${f.reason}`);
+      if (out.broad_refused) console.error(`⚠ broad claim refused: ${out.broad_refused} — recorded ${out.mode}`);
+      for (const f of out.flapping ?? []) console.error(flappingLine(f));
+      // A FAIL lists what a HUMAN may defer; code decided (canDefer), nothing here defers or asks.
+      if (out.deferrable?.length) console.error(`• deferrable: ${out.deferrable.join(', ')} — a human may defer with \`ac verdict defer ${ph.number} ${out.deferrable.join(' ')}\``);
       json(out);
       return;
     }

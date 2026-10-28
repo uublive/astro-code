@@ -2,6 +2,15 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.54.0
+
+- Verify in fewer, cheaper rounds (ADR-090, ADR-091; amend ADR-079 and ADR-089): `ac verdict cheap <phase>` runs a cheap first pass (the suite through a receipt plus each criterion's `- **Cheap:** `<command>`` line) before any expensive stage, and can only fail a run; a FAIL lists every unmet criterion in one pass; a broad-fix claim must name changed files the criteria map ties to a criterion (`ac verdict plan <phase> --broad-files src/a.mjs`), else the run stays narrowed and says why
+- Deferral (ADR-090): criteria are tagged `[core]` or `[edge]` in their heading (untagged is core); at a FAIL a human runs `ac verdict defer <phase> C2` to move a failed `[edge]` criterion into a fix pre-filled with the failing command and output. The phase verifies when every non-deferred criterion passes; open deferred fixes show in `/astro-accept`, `ac phase show`, `ac status` and the band, and block `ac milestone complete`
+- `ac verdict history <phase>` and `ac verdict show <phase>`: every record appends a line to the append-only `VERDICTS.jsonl`; a criterion that passed earlier and now fails is flagged with whether its files changed (flapping), without changing the verdict
+- `ac setup run <name>` and `ac setup list`: a declared setup step (`ac config set setup.steps.<name> …`) is run once per commit and exact command and reused after, cached under `.astrocode/.local/setup-cache/` with a size cap (`setup.max_mb`)
+- With worktrees on, a full verify of four or more criteria runs as two verifier groups and remediation starts in its own worktree as soon as one group reports a failure; the integrator folds the fix after the verdict is recorded
+- Fixed: after a withdrawn carried PASS the execute loop no longer spends a remediation cycle on zero unmet criteria, and the round's summary no longer reads `ok`
+
 ## v0.53.1
 
 - Execution runs disjoint tasks in parallel again: Discover filled every task's `file` with the plan's own path (its prompt never said what `file` means, and the executor prompt labelled it "Plan/task file"), so every task claimed `PLAN.md` and each wave held one task, silently. Claims are now normalised in code (backticks and `(new)` notes dropped, only paths count, the plan or any phase-folder file is no claim, so the no-file warning fires), Discover's prompt and schema define `file`, and the planner writes one `- **files:**` line per task

@@ -177,8 +177,13 @@
       "id": "2026-10-23-verdict-history-ac-verdict-history",
       "title": "Verdict history: `ac verdict history <phase>` and an append-only `VERDICTS.jsonl` beside `VERDICT.json`",
       "note": "GitHub #161 (@luigi-lauro): https://github.com/uublive/astro-code/issues/161",
-      "status": "open",
-      "captured_at": "2026-10-23T08:46:52.232Z"
+      "status": "linked",
+      "captured_at": "2026-10-23T08:46:52.232Z",
+      "linked_by": {
+        "kind": "phase",
+        "ref": "54-verify-in-fewer-cheaper-rounds-every"
+      },
+      "linked_at": "2026-10-28T06:30:48.031Z"
     },
     {
       "id": "2026-10-23-verifier-reuse-a-recorded-passing-suite",

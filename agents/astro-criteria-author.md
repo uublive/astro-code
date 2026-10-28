@@ -71,6 +71,33 @@ untagged criterion differently. With a tool installed the verifier runs `ac muta
 where it would otherwise hand-make mutants. Where survivors are judged, and how, is
 `lib/survivors.mjs` and the verifier's own text — not a criterion's business.
 
+## Tag every criterion `[core]` or `[edge]` — fixed now, before any plan exists
+Tag each criterion `[core]` or `[edge]`, written **last in the heading's run of `[tags]`, directly
+after the id** (`[suite]` and `[mutation]` come first when a criterion has them). Nowhere else counts:
+an `[edge]` in the claim text, after the dash, on the next line or in the body is not recognised, and
+**an untagged or misplaced criterion is core**. The tag is your bar-setting, and you set it *before any
+plan exists* so it cannot be bent after a FAIL.
+
+- `[edge]` only for a criterion whose failure does **not** defeat the goal: a corner the goal can be
+  met without. A human may later defer a failed edge criterion to a tracked fix; they can never defer a
+  core one. When in doubt it is core.
+- **Never tag a `[suite]` criterion `[edge]`.** The whole suite is never deferrable.
+
+```
+### C2 [edge] — <claim about a corner the goal can be met without>
+### C3 [core] — <claim the goal cannot be met without>
+```
+
+Optionally add one line to a criterion, its fastest signal, as a command in backticks:
+
+```
+- **Cheap:** `node scripts/check-c2.mjs`
+```
+
+A verify runs these first and stops at once when one exits non-zero. The cheap line can only **fail**
+a run, never pass one: a criterion is still observed in full before the phase can verify, so keep it
+to a quick, honest smoke check (never a substitute for the `Observe:` command).
+
 ## Rules for good criteria
 - **Goal-level and behavioral.** State an *outcome* a user or the system can observe. A
   different-but-valid implementation of the same goal must still satisfy it. Describe what
