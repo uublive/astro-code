@@ -19,3 +19,8 @@ __pycache__/
 # Python bytecode from the vendored kit tools under examples/
 __pycache__/
 *.pyc
+
+# Personal, per-machine tooling: never published
+.claude/settings.local.json
+.claude/rules/
+LEAN-CTX.md

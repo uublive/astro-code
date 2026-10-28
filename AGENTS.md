@@ -1,12 +1,5 @@
 # Agent Instructions
 
-<!-- lean-ctx -->
-## lean-ctx
-
-Prefer lean-ctx MCP tools over native equivalents for token savings.
-Full rules: @LEAN-CTX.md
-<!-- /lean-ctx -->
-
 ## External knowledge graph (retired)
 
 astro-code no longer reads or writes an external knowledge-graph MCP server. Phase 25

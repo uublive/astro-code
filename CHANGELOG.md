@@ -2,6 +2,10 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.54.3
+
+- Repo tidy: personal per-machine tooling (`.claude/settings.local.json`, the lean-ctx rules and `LEAN-CTX.md`) is no longer published, and merged release/feature branches are gone from GitHub
+
 ## v0.54.2
 
 - The README header follows the Astro-family style: logo, tagline, release/node/tests/licence badges and a "What astro-code is" section
