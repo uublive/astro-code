@@ -4049,7 +4049,8 @@ const narrowPlan = (first, run = 1, commit = 'aaa1111') => ({
   saved: { run, commit, mode: 'full' }, range: `${commit}..HEAD`,
 })
 const moving = (n) => ({ headBefore: `h${n}`, headAfter: `h${n + 1}`, summary: 'fixed' })
-const ARGS45 = { root: '/tmp/proj', phase: '45-x', strategy: 'sequential' }
+// phase 54: a split, overlapped verify is its own scenario (tests/verify_overlap.test.mjs); these are the single-verifier flows.
+const ARGS45 = { root: '/tmp/proj', phase: '45-x', strategy: 'sequential', useWorktrees: false }
 const recOk = (extra = {}) => (prompt, n) => ({ recorded: true, run: n + 1, mode: 'full', passed: false, failing: [], ...extra })
 
 test('phase 45 C2: a re-verify after a first-pass FAIL names the saved failing ids, run, commit and range', async () => {

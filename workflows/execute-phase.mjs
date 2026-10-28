@@ -1080,7 +1080,7 @@ const INTEGRATE_SCHEMA = {
 //   completely gates the overflow check — a stale branch is NEVER classified for
 //   overflow, it is always routed to heal regardless of whether the cherry-pick
 //   would apply cleanly.  Phase-04 proved textual cleanliness proves nothing.
-const integrateWave = (w, wave, reported = []) =>
+const integrateWave = (w, wave, reported = [], labelOverride = null) =>
   agent(
     `You are the WAVE INTEGRATOR for phase ${phaseSlug}, running in the MAIN working tree of ${root} ` +
       `(you have NO worktree of your own). The parallel executors each committed on a separate ` +
@@ -1194,7 +1194,7 @@ const integrateWave = (w, wave, reported = []) =>
     // from the balanced/fast profiles, #125; or `ac config set
     // models.integrator sonnet` to opt out) always wins; it is the only role the
     // profiles put on haiku.
-    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.integrator || (onSessionModel ? undefined : 'sonnet'), effort: reasoning.integrator, schema: INTEGRATE_SCHEMA },
+    { label: `integrate:w${w + 1}`, phase: 'Execute', agentType: 'astro-executor', model: models.integrator || (onSessionModel ? undefined : 'sonnet'), effort: reasoning.integrator, schema: INTEGRATE_SCHEMA, ...(labelOverride ? { label: labelOverride } : {}) },
   )
 
 // ── Phase-13 (ADR-026): warm batched sequential executor primitives ────────────
@@ -1965,6 +1965,22 @@ const REMEDIATE_SCHEMA = {
   required: ['headBefore', 'headAfter'],
 }
 
+// Phase 54 (D7): a remediation that overlaps the verify runs on its OWN worktree branch, so it also
+// reports where its commit is (the same fields EXEC_SCHEMA carries); the integrator folds it after the
+// verdict is recorded.
+const REMEDIATE_WT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    headBefore: { type: 'string' },
+    headAfter: { type: 'string' },
+    summary: { type: 'string' },
+    branch: { type: ['string', 'null'] },
+    commit: { type: ['string', 'null'] },
+  },
+  required: ['headBefore', 'headAfter'],
+}
+
 // ADR-041 — COMPLETENESS GATE: prove every executable task actually landed.
 //
 // Benchmark #4: in 3 of the 4 phases that had one, the task whose only job was wiring
@@ -2257,10 +2273,29 @@ const seenIds = new Set()
 // check the previously unmet criteria first and stop with a FAIL if any is still unmet. When they
 // all pass, the SAME run continues over every other criterion, so a PASS still costs one run and
 // still observed everything. `focusIds` (full mode) only redirects the verifier's depth.
-const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
+// The structural checks (commits present, no stranded worktree-* branch, the full suite). In a split
+// verify (phase 54) only group 1 runs them.
+const STRUCTURAL_CHECKS =
+  `Also confirm the phase's commits are present (\`git log --oneline\`) and that no \`worktree-*\` ` +
+  `branch still holds un-integrated changes (\`git for-each-ref refs/heads/worktree-*\`, then ` +
+  `\`git cherry HEAD <branch>\` must print no \`+\` line — a leftover branch whose changes are ` +
+  `all in HEAD is residue, not stranded work). Run the full test suite. Flag any project-canon ` +
+  `violation.\n\n`
+
+const groupPreamble = (group) =>
+  `THIS IS GROUP ${group.index} OF ${group.total} OF A SPLIT VERIFY (phase 54): a sibling verifier checks the other ` +
+  `criteria at the same time, on this same unchanged tree. You are responsible ONLY for ${group.ids.join(', ')}: observe ` +
+  `every one of them, and report ONLY them in criteria[] (do not check or report the others). ` +
+  (group.structural
+    ? `You ALSO run the structural checks below.\n\n`
+    : `SKIP the structural checks below (commits present, worktree-* branches, the full test suite): group 1 runs them. ` +
+      `Set passed from your own criteria only.\n\n`)
+
+const runVerify = (plan = FULL_PLAN(''), focusIds = [], group = null) =>
   agent(
     `Verify phase "${phaseSlug}" of the project at ${root}. The work is committed on the ` +
       `CURRENT branch — verify against HEAD/the working tree, NOT a fresh checkout of main.\n\n` +
+      (group ? groupPreamble(group) : '') +
       (plan.mode === 'targeted'
         ? `THIS IS A TARGETED VERIFY (phase 52). The phase's most recent full PASS (run ${plan.base.run}, ` +
           `commit ${plan.base.commit}) is the base; what changed since is \`git diff ${plan.range}\`. ac ` +
@@ -2326,11 +2361,7 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
       `A declared setup step (\`ac setup list\`) is run with \`ac setup run <name>\`, which reuses an earlier ` +
       `result for the same commit and command. You can never defer a criterion: deferral is a human act ` +
       `(ac verdict defer), so report an unmet criterion as failed whatever it is.\n\n` +
-      `Also confirm the phase's commits are present (\`git log --oneline\`) and that no \`worktree-*\` ` +
-      `branch still holds un-integrated changes (\`git for-each-ref refs/heads/worktree-*\`, then ` +
-      `\`git cherry HEAD <branch>\` must print no \`+\` line — a leftover branch whose changes are ` +
-      `all in HEAD is residue, not stranded work). Run the full test suite. Flag any project-canon ` +
-      `violation.\n\n` +
+      (group && !group.structural ? '' : STRUCTURAL_CHECKS) +
       `PASS only if EVERY criterion has independent passing evidence you gathered yourself AND the ` +
       `structural checks hold. Otherwise FAIL — name the unmet criterion, the command you ran, the ` +
       `output you saw, and what is needed to close it.\n\n` +
@@ -2355,10 +2386,98 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
     { phase: 'Verify', agentType: 'astro-verifier', model: models.verifier, effort: reasoning.verifier, schema: VERIFY_SCHEMA },
   )
 
+// ── Phase 54 (D7, ADR-091): remediation overlaps the verify, in its own worktree ─────────────
+//
+// The bug this removes: the verifier found a failure in minute 5 of a 90-minute verify and the
+// executor then waited for the other 85 minutes. When worktrees are on, budget remains, the plan is
+// full and there are enough criteria to split, the expensive stage runs as TWO verifier spawns (the
+// ids split in file order into halves; group 1 also runs the structural checks) inside one
+// parallel(). When the first group returns with a failed criterion while the other is still running,
+// a remediation executor starts at once on its OWN worktree branch (SYNC FIRST, ADR-040). The
+// verifiers never run on that worktree and never see the tree move: the fix is folded onto the
+// working branch by the existing integrator only AFTER the verdict is recorded (`landOverlapped`),
+// and only then does the next round verify. ADR-005/019/040 hold: the script runs no git, a null or
+// failed worktree remediation re-runs on-branch and latches the overlap off, and without
+// worktrees the verifier is one spawn and remediation waits for the verdict, as before.
+let overlapOk = true
+let pendingRem = null // { cycle, promise } — a remediation started by the overlap, not yet landed
+
+const remediateWorktreePrompt = (unmet, cycle) =>
+  remediatePrompt(unmet, cycle) + EXEC_IDENTITY + SYNC_WORKTREE +
+  `\n\nOVERLAPPED REMEDIATION (phase 54): the verifier is still running on the working branch while you fix ` +
+  `this, so you work ONLY on your own worktree branch: sync first, make exactly ONE stamped commit, and report ` +
+  `branch and commit. Never run \`ac verdict\`, \`ac state\` or any \`ac phase\` write, and never touch the ` +
+  `main working tree. The integrator folds your branch after the verdict is recorded.`
+
+const startOverlappedRemediation = (unmet, cycle) =>
+  agent(remediateWorktreePrompt(unmet, cycle), {
+    label: `remediate:c${cycle}`,
+    phase: 'Execute',
+    agentType: 'astro-executor',
+    isolation: 'worktree',
+    model: models.executor, effort: reasoning.executor,
+    schema: REMEDIATE_WT_SCHEMA,
+  })
+
+// Two verifier groups, one remediation started the moment one group reports a failure while the
+// other is still running. Returns the merged verifier result.
+const runVerifyOverlapped = async (plan, focusIds, cycle) => {
+  const ids = plan.ids
+  const half = Math.ceil(ids.length / 2)
+  const groups = [ids.slice(0, half), ids.slice(half)]
+  let running = groups.length
+  let started = false
+  const thunks = groups.map((gids, i) => async () => {
+    let v = null
+    try {
+      v = await runVerify(plan, focusIds, { index: i + 1, total: groups.length, ids: gids, structural: i === 0 })
+    } finally {
+      running--
+    }
+    const failed = v && Array.isArray(v.criteria)
+      ? v.criteria.filter((c) => c && gids.includes(c.id) && c.passed !== true && c.status !== 'carried')
+      : []
+    if (failed.length && running > 0 && !started) {
+      started = true
+      log(`• verify group ${i + 1}/${groups.length} found ${failed.map((c) => c.id).join(', ')} unmet while the other group is still running — remediation starts now, in its own worktree`)
+      pendingRem = {
+        cycle,
+        promise: startOverlappedRemediation(failed.map((c) => ({ id: c.id, command: c.command, output: c.output })), cycle).catch(() => null),
+      }
+    }
+    return v
+  })
+  const out = await parallel(thunks)
+  return mergeGroups(out, groups)
+}
+
+// Combine the groups: passed only if both passed, criteria concatenated (each group's own ids only,
+// de-duplicated), mode full only if both are, findings concatenated. The coverage guard in verifyOnce
+// then runs on this union, so an id neither group reported withdraws the PASS.
+const mergeGroups = (out, groups) => {
+  const got = out.filter(Boolean)
+  const criteria = []
+  out.forEach((v, i) => {
+    for (const c of (v && Array.isArray(v.criteria) ? v.criteria : [])) {
+      if (c && groups[i].includes(c.id) && !criteria.some((x) => x.id === c.id)) criteria.push(c)
+    }
+  })
+  const missing = out.map((v, i) => (v ? null : i + 1)).filter(Boolean)
+  return {
+    passed: missing.length === 0 && got.every((v) => v.passed === true),
+    criteriaFound: got.every((v) => v.criteriaFound !== false),
+    summary: [...got.map((v) => v.summary).filter(Boolean), ...missing.map((n) => `FAIL — verifier group ${n} returned nothing`)].join('\n'),
+    mode: got.every((v) => (v.mode || 'full') === 'full') && missing.length === 0 ? 'full' : 'narrowed',
+    broad: false,
+    criteria,
+    findings: got.flatMap((v) => (Array.isArray(v.findings) ? v.findings : [])),
+  }
+}
+
 // One verify round: plan clerk → ONE verifier → coverage guard → record clerk. `expectFirst`
 // (the loop's in-memory failing set) must equal the plan's `first`, else the saved verdict is not
 // the one this run just produced and the round degrades to full.
-const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false) => {
+const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, overlapCycle = remediationCycles < maxCycles ? remediationCycles : null) => {
   // Phase 54 (D4): the cheap first pass runs BEFORE any expensive stage. Unmet -> the round ends here
   // as a FAIL naming EVERY unmet id and no verifier is spawned; `ac verdict cheap` has already
   // recorded the narrowed cheap verdict. Clean (or unavailable) -> the expensive stage runs. A cheap
@@ -2393,7 +2512,11 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false) 
       plan = { ...plan, mode: 'full', first: [], reason: 'saved verdict does not match this run' }
     }
   }
-  const v = await runVerify(plan, focusIds)
+  // D7: split + overlap only when worktrees work, remediation budget remains for the cycle that would
+  // start, the plan is full, and there are enough criteria to split (ADR-019: the latch stays off once tripped).
+  const overlap = overlapCycle !== null && useWorktrees && !worktreesUnavailable && overlapOk
+    && plan.mode === 'full' && plan.ids.length >= 4
+  const v = overlap ? await runVerifyOverlapped(plan, focusIds, overlapCycle) : await runVerify(plan, focusIds)
   const items = Array.isArray(v.criteria) ? v.criteria : []
   for (const c of items) seenIds.add(c.id)
   // What this run actually covered. A narrowed plan whose verifier did not say otherwise was
@@ -2543,6 +2666,40 @@ const runRemediation = (unmet, cycle) =>
 // One verify that ignores any saved verdict (the plan clerk is asked for --full). C12.
 const verifyFullAgain = () => verifyOnce([], null, true)
 
+// One remediation cycle. Normally the executor is spawned now, after the verdict. When the overlap
+// already started one in its own worktree (D7), its result is taken instead and its branch is folded
+// through the integrator NOW, after the verdict was recorded, before the next round verifies.
+// `{ rem }` carries the executor result; `{ stop: true }` ends the loop (an integration failure).
+const remediateCycle = async (unmet, cycle) => {
+  if (!pendingRem) {
+    const rem = await runRemediation(unmet, cycle)
+    remediationCycles++
+    return { rem }
+  }
+  const started = pendingRem
+  pendingRem = null
+  const r = await started.promise
+  remediationCycles++
+  const moved = r && r.headAfter && r.headBefore && r.headAfter !== r.headBefore && r.branch && r.commit
+  if (!moved) {
+    // ADR-019: a null or commit-less worktree remediation is not trusted again this run.
+    overlapOk = false
+    log('⚠ the overlapped worktree remediation returned no commit — re-running it on-branch now, and verifying in one piece for the rest of the run')
+    return { rem: await runRemediation(unmet, cycle) }
+  }
+  const id = `remediate-c${started.cycle}`
+  const integ = await integrateWave(started.cycle, [{ id, title: `remediation cycle ${started.cycle + 1}` }], [{ taskId: id, branch: r.branch, commit: r.commit }], `integrate:${id}`)
+  const pos = integ && integ.position
+  const landed = integ && integ.integrated === true && (integ.branches || []).includes(r.branch)
+    && !(pos && (pos.toplevel !== root || /^worktree-/.test(pos.branch || '')))
+  if (!landed) {
+    stoppedReason = 'integration-failed'
+    log(`✖ the overlapped remediation branch \`${r.branch}\` did not integrate — it is preserved; stopping`)
+    return { stop: true }
+  }
+  return { rem: r }
+}
+
 if (!integrationFailed) {
   // ADR-021 — adversarial, plan-blind verification (runVerify, defined above).
   // Phase-10 (ADR-022): the FIRST verify, then the bounded verify→remediate loop.
@@ -2567,6 +2724,7 @@ if (!integrationFailed) {
       // this cycle of the budget so the loop still ends.
       if (beforeIds.size === 0) {
         log('⚠ no unmet criterion to remediate — running one full verify instead')
+        remediationCycles++ // the forced verify spends this cycle's budget (and keeps the overlap cycle index in step)
         verdict = await verifyFullAgain()
         if (verdict.passed) {
           log(`✓ cycle ${cycle + 1}: the full verify closed the phase — verified`)
@@ -2574,8 +2732,9 @@ if (!integrationFailed) {
         }
         continue
       }
-      const rem = await runRemediation(unmet, cycle)
-      remediationCycles++
+      const got = await remediateCycle(unmet, cycle)
+      if (got.stop) break
+      const rem = got.rem
 
       // STOP-ON-NO-PROGRESS #1 (checked BEFORE consuming more budget, C6): the pass
       // committed nothing — HEAD did not move (or the executor returned no heads at
@@ -2617,7 +2776,7 @@ if (!integrationFailed) {
     }
     // If the loop exhausted its budget still-failing (and did not bail on no-progress),
     // that is `max-cycles`. verdict.passed remains false; the command surfaces it.
-    if (!verdict.passed && stoppedReason !== 'no-progress') stoppedReason = 'max-cycles'
+    if (!verdict.passed && stoppedReason !== 'no-progress' && stoppedReason !== 'integration-failed') stoppedReason = 'max-cycles'
   }
   // A pass on the very first verify (loop never ran) leaves stoppedReason at its
   // 'passed' default; be explicit for any pass so the report is unambiguous. A single-pass
@@ -2625,6 +2784,7 @@ if (!integrationFailed) {
   // the 'passed' default: relabel it honestly so telemetry never reads 'passed' on a failure.
   if (verdict.passed) stoppedReason = 'passed'
   else if (stoppedReason === 'passed') stoppedReason = 'single-pass'
+  if (pendingRem) log(`⚠ an overlapped remediation (cycle ${pendingRem.cycle + 1}) was started but never landed — its worktree branch is preserved`)
 }
 
 // verdict is now the structured object; verdict.summary / verdict.passed are what the
