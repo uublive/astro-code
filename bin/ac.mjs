@@ -113,7 +113,8 @@ import { loadRoadmap, addPhase, renderRoadmap, setMilestone, findPhase, setPhase
 import { resolveEffort, DEFAULT_EFFORT } from '../lib/effort.mjs';
 import { gitIdentity, git, isRepo } from '../lib/git.mjs';
 import { claim, readRegistry, registryBranch, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, repointPhaseClaim, claimDrift, activateMilestone, milestoneClaims, waitingMilestones, renameMilestone } from '../lib/registry.mjs';
-import { addFix, acceptFix, setFixStatus, resolveFix, openFixes, loadFixes, FIX_STATUSES } from '../lib/fixes.mjs';
+import { addFix, acceptFix, setFixStatus, resolveFix, openFixes, loadFixes, deferredFixes, FIX_STATUSES } from '../lib/fixes.mjs';
+import { deferCriteria } from '../lib/defer.mjs';
 import {
   addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt, setDebtNote,
   debtAgeDays, debtScore, loadDebt, DEBT_COSTS, STALE_DAYS,
@@ -282,6 +283,9 @@ const ALLOWED_FLAGS = {
   // Phase 54 (D9) — read-only history and the latest verdict; a typo'd flag must not print the wrong form.
   'verdict history': ['json'],
   'verdict show': ['json'],
+  // Phase 54 (ADR-090) — deferral is a human act: only `--by` (who) is accepted, and `--agent` is
+  // refused outright with the reason rather than as an unknown flag.
+  'verdict defer': ['by'],
   // Phase 52 (D6) — a typo'd `--command` must not run, or reuse a receipt for, the wrong command.
   'suite run': ['command', 'json'],
   'suite receipt': ['command', 'json'],
@@ -593,6 +597,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
   ac verdict history <phase> [--json]  every recorded verdict of the phase, oldest first (VERDICTS.jsonl)
   ac verdict show <phase> [--json]     the latest verdict: unmet ids, deferred ids, flapping flags
+  ac verdict defer <phase> <C-id…> [--by name]  a HUMAN defers failed [edge] criteria into tracked fixes (never an agent; core and suite criteria refuse)
   ac suite run --command "<cmd>" [--json]   run the project's suite and write a local receipt (exits with the suite's status)
   ac suite receipt --command "<cmd>" [--json]  is there a reusable receipt for this exact command on HEAD's clean tree? (read-only)
   ac mutate <phase> [--json]          run the project's mutation tool on the lines the phase changed (ADR-083, ADR-084)
@@ -793,7 +798,8 @@ async function main() {
           const acc = f.status === 'accepted'
             ? `  · by ${f.accepted_by || 'unknown'}${f.accepted_kind === 'agent' ? ' (agent)' : ''}${f.cited_evidence ? ` · cites ${f.cited_evidence}` : ''}`
             : '';
-          console.log(`  ${f.id}  ${f.status}  ${f.title}${acc}`);
+          const from = f.deferred_from ? `  · deferred from ${String(f.deferred_from.phase).match(/^\d+/)?.[0] ?? f.deferred_from.phase} ${f.deferred_from.criterion}` : '';
+          console.log(`  ${f.id}  ${f.status}  ${f.title}${acc}${from}`);
         }
         return;
       }
@@ -1984,6 +1990,11 @@ async function main() {
         const stale = staleDebt(r).length;
         console.log(`Debt:      ${debt.length} open${stale ? ` (${stale} stale)` : ''}  — \`ac debt list\``);
       }
+      // Phase 54 (D3): ONE line naming each open deferred fix; absent when there are none.
+      const deferred = deferredFixes(r);
+      if (deferred.length) {
+        console.log(`Deferred:  ${deferred.map((f) => `${f.id} (${String(f.deferred_from.phase).match(/^\d+/)?.[0] ?? f.deferred_from.phase} ${f.deferred_from.criterion})`).join(', ')}  — \`ac fix list\``);
+      }
       // Same posture as Debt: suppressed at zero, and never throws on a project whose
       // .astrocode/ predates this phase and has no backlog.json at all — openBacklog
       // reads an absent file as a true empty, not a damaged one.
@@ -2421,7 +2432,10 @@ async function main() {
         // Phase 52 (D7): name the criteria the latest verdict carried instead of observing, so the
         // human sees which passes were not re-observed. Absent when nothing was carried (Voice).
         const carried = carriedOf(r, ph.slug);
-        json(carried.length ? { ...ph, carried } : ph);
+        // Phase 54 (D3): the open fixes a human deferred this phase's criteria into; absent when none.
+        const deferred = deferredFixes(r, { phases: [ph.slug] })
+          .map((f) => ({ id: f.id, title: f.title, status: f.status, criterion: f.deferred_from.criterion }));
+        json({ ...ph, ...(carried.length ? { carried } : {}), ...(deferred.length ? { deferred_fixes: deferred } : {}) });
       } else if (sub === 'accept') {
         if (!ph) die('usage: ac phase accept <phase> [--by name | --agent name | --witnessed composer] [--evidence "<id or URL>"] [--force]');
         checkFlags('phase accept', flags);
@@ -2665,10 +2679,16 @@ async function main() {
     case 'verdict': {
       const r = root();
       const sub = pos[0];
-      if (!['plan', 'record', 'history', 'show'].includes(sub)) die('usage: ac verdict <plan|record|history|show> <phase> …');
+      if (!['plan', 'record', 'history', 'show', 'defer'].includes(sub)) die('usage: ac verdict <plan|record|history|show|defer> <phase> …');
+      if (sub === 'defer') {
+        // ADR-090/074/033: deferral is a human act. An agent signer (the flag, or the env a witness
+        // exports) is refused BEFORE anything is read or written, and no prompt is ever shown.
+        signerFromEnv(flags);
+        if (flags.agent !== undefined || flags.witnessed !== undefined) die('deferral is a human act — an agent cannot defer (ADR-090); the human types `ac verdict defer <phase> <C-id…>`');
+      }
       checkFlags(`verdict ${sub}`, flags);
       // A stray token (`-full`, a second phase) is refused, never ignored: `-full` silently ran targeted.
-      if (pos.length > 2) die(`unexpected argument for \`ac verdict ${sub}\`: ${pos.slice(2).join(' ')} (flags take two dashes: --full, --json)`);
+      if (sub !== 'defer' && pos.length > 2) die(`unexpected argument for \`ac verdict ${sub}\`: ${pos.slice(2).join(' ')} (flags take two dashes: --full, --json)`);
       // parseArgs reads the token after a flag as its value (`--json -full`), so a switch that took one
       // swallowed a stray argument: refuse it the same way.
       for (const k of ['full', 'json']) {
@@ -2676,6 +2696,23 @@ async function main() {
       }
       const ph = findPhase(r, pos[1]);
       if (!ph) die(`usage: ac verdict plan <phase> [--full] [--json] | ac verdict record <phase> --result '<json>' | ac verdict history <phase> [--json] | ac verdict show <phase> [--json]`);
+      if (sub === 'defer') {
+        const want = pos.slice(2);
+        if (!want.length) die(`name the criteria to defer, e.g. \`ac verdict defer ${ph.number} C2\` — nothing is deferred automatically (see the \`deferrable:\` line of the FAIL)`);
+        const bad = want.filter((x) => !/^C\d+$/.test(x));
+        if (bad.length) die(`not criterion ids: ${bad.join(' ')} (expected C<n>, e.g. C2)`);
+        let res;
+        try { res = await deferCriteria(r, ph.slug, want, { by: typeof flags.by === 'string' ? flags.by : gitIdentity(r).owner }); } catch (e) { die(e.message); }
+        for (const d of res.deferred) {
+          console.log(`✓ ${d.id} deferred → fix ${d.fix_id}`);
+          // Registry is advisory for a fix, exactly as `ac fix add` treats it (ADR-013).
+          claimFix({ root: r, id: d.fix_id, name: `deferred: phase ${ph.number} ${d.id}` });
+        }
+        if (!res.committed) console.log('⚠ written, not committed: commit VERDICT.json and fixes.json');
+        const gate = verifiedGate(r, ph.slug);
+        console.log(gate.ok ? `• the phase can now verify — run \`ac phase verify ${ph.number}\`` : `• the phase cannot verify yet: ${gate.reason}`);
+        return;
+      }
       if (sub === 'history' || sub === 'show') {
         const sha7 = (x) => String(x ?? '').slice(0, 7);
         const hist = readHistory(join(paths(r).phases, ph.slug, VERDICTS_FILE));
@@ -2725,6 +2762,8 @@ async function main() {
       if (out.ignored) console.error(`⚠ ${out.ignored} reported criterion id(s) are not in CRITERIA.md and were ignored`);
       for (const f of out.refused ?? []) console.error(`⚠ ${f.id} refused: ${f.reason}`);
       for (const f of out.flapping ?? []) console.error(flappingLine(f));
+      // A FAIL lists what a HUMAN may defer; code decided (canDefer), nothing here defers or asks.
+      if (out.deferrable?.length) console.error(`• deferrable: ${out.deferrable.join(', ')} — a human may defer with \`ac verdict defer ${ph.number} ${out.deferrable.join(' ')}\``);
       json(out);
       return;
     }
