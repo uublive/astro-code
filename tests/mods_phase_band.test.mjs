@@ -236,3 +236,11 @@ test('bandView: the roadmap row is the current milestone without rejected phases
   const cur = bandView({ ...status, phase: { number: 103, slug: '103-n', name: 'n', status: 'rejected' }, phases: [...status.phases, { number: 110, status: 'pending' }] }, null, {});
   assert.equal(cur.lines[0], 'ROADMAP  ✗103  ○104  ○105  ○110');
 });
+
+test('bandView: open deferred fixes draw a DEFERRED row naming the fix id and phase + criterion; none draws no row (phase 54)', async () => {
+  const { bandView } = await band();
+  const d = bandView({ ...STATUS, deferred_fixes: [{ id: '2026-10-28-deferred-phase-54-c2', phase: '54-x', criterion: 'C2', status: 'open' }] }, null, {});
+  assert.equal(d.lines[1], 'DEFERRED 2026-10-28-deferred-phase-54-c2 54 C2');
+  assert.equal(bandView(STATUS, null, {}).lines.length, 1);
+  assert.equal(bandView({ ...STATUS, deferred_fixes: [] }, null, {}).lines.length, 1);
+});
