@@ -257,6 +257,12 @@ Execute phase `$ARGUMENTS`.
      loop) plus one line pointing at where the full per-criterion evidence lives (the
      workflow log — `/workflows`), **never the evidence itself**, then stop; leave the
      phase unverified.
+   - **Deferrable criteria (a human's call).** When the FAIL's `verdict.summary` carries a
+     `deferrable:` line (the failed `[edge]` criteria `ac verdict record` says may be deferred),
+     relay it in **one line** with the command for the human to type, `ac verdict defer <number>
+     <ids>`. Say nothing when there is no such line. **Only the human may run `ac verdict defer`**:
+     never run it yourself, never on their behalf, never as part of a loop. It refuses an agent
+     signer, and a deferral is a decision about the bar, not a repair.
    - **The assembled summary is one shape, not five separate walls of text**: **verdict
      first**, then each fold-in (4c's sweep, 4d's debt count, 4e's fixtures line) at
      exactly the one line or silence it already promises above, then the next command —

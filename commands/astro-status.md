@@ -27,6 +27,10 @@ Show where the project stands and what to do next.
    discuss→plan→execute→accept order the gate never passes and the saving is never
    realised. One extra discuss up front turns it on.
 
+3c. **Open deferred fixes.** When `ac status` printed a `Deferred:` line, repeat it in **one
+   line** (each fix id with its phase and criterion) and say it blocks `ac milestone complete`.
+   Say nothing when there is no `Deferred:` line.
+
 4. If the active phase just hit a resting point (**verified** or **complete**) and the
    next action starts a new phase, add an optional one-liner: state is on disk, so
    `/clear` before the next phase keeps context lean and loses nothing. Skip this nudge

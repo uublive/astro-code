@@ -18,6 +18,11 @@ human accepts. This is the **human gate** after `/astro-verify` (the AI gate).
    `carried, not re-observed: C3, C4 (run 4 @ abc1234); C5 (suite receipt @ def5678)`, naming each
    criterion with the full PASS run and commit it came from, or the suite receipt's commit. Say
    nothing when there is no `carried` key (a full PASS observed everything).
+2c. **List the open deferred fixes.** From the same `ac phase show <slug> --json` output, when it
+   has a `deferred_fixes` key, list each in **one line** before the walkthrough:
+   `deferred, still open: <fix id> — <criterion> (<title>)`. Say nothing when there is no
+   `deferred_fixes` key. A deferred fix does not stop this accept (the human deferred it
+   knowingly), but it blocks `ac milestone complete` until `ac fix accept <id>` closes it.
 3. Walk the user through it: for each criterion, state it plus **one line** on how to
    try it (the command to run, the URL to open, the thing to click) — not a
    re-explanation of what was built. Let them confirm each one. Use `AskUserQuestion`
