@@ -2,6 +2,10 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.54.1
+
+- The README opens with the animated astro-code logo (light and dark); the brand assets live in `assets/brand/astro-code/` (not shipped in the npm package)
+
 ## v0.54.0
 
 - Verify in fewer, cheaper rounds (ADR-090, ADR-091; amend ADR-079 and ADR-089): `ac verdict cheap <phase>` runs a cheap first pass (the suite through a receipt plus each criterion's `- **Cheap:** `<command>`` line) before any expensive stage, and can only fail a run; a FAIL lists every unmet criterion in one pass; a broad-fix claim must name changed files the criteria map ties to a criterion (`ac verdict plan <phase> --broad-files src/a.mjs`), else the run stays narrowed and says why
