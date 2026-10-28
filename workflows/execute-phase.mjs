@@ -2129,11 +2129,11 @@ const VERDICT_RECORD_SCHEMA = {
   required: ['recorded'],
 }
 
-const runVerdictPlan = () =>
+const runVerdictPlan = (full = false) =>
   agent(
     `VERDICT PLAN for phase ${phaseSlug} in ${root}. Purely mechanical — do not fix, judge or edit ` +
       `anything. Run exactly this ONE command in ${root} and return its fields verbatim:\n` +
-      `  ac verdict plan ${phaseSlug} --json${fullRun ? ' --full' : ''}\n` +
+      `  ac verdict plan ${phaseSlug} --json${fullRun || full ? ' --full' : ''}\n` +
       `Return mode, reason, first, ids, total, saved (omit it when the output has saved: null) and range ` +
       `(omit it when null), plus floor, carry, why, base (omit it when null), changed and unmapped_files. ` +
       `If the command fails or prints no JSON, return mode="full", first=[] and ` +
@@ -2156,9 +2156,9 @@ const FULL_PLAN = (reason) => ({ mode: 'full', reason, first: [], ids: [], saved
 
 // Ask the clerk, validate, never throw. A narrowed plan must carry everything the narrowed
 // prompt cites (first ids, saved run + commit, range); otherwise it is not trusted.
-const getVerdictPlan = async () => {
+const getVerdictPlan = async (full = false) => {
   let r = null
-  try { r = await runVerdictPlan() } catch (e) { r = null }
+  try { r = await runVerdictPlan(full) } catch (e) { r = null }
   if (!r || (r.mode !== 'full' && r.mode !== 'narrowed' && r.mode !== 'targeted') || !Array.isArray(r.first)) {
     log('⚠ verdict plan unavailable — running a full verify')
     return FULL_PLAN('verdict plan unavailable')
@@ -2299,8 +2299,8 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = []) =>
 // One verify round: plan clerk → ONE verifier → coverage guard → record clerk. `expectFirst`
 // (the loop's in-memory failing set) must equal the plan's `first`, else the saved verdict is not
 // the one this run just produced and the round degrades to full.
-const verifyOnce = async (focusIds = [], expectFirst = null) => {
-  let plan = await getVerdictPlan()
+const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false) => {
+  let plan = await getVerdictPlan(forceFull)
   if (plan.mode === 'narrowed' && expectFirst) {
     const a = [...plan.first].sort().join(',')
     const b = [...expectFirst].sort().join(',')
@@ -2329,14 +2329,18 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
     const c = byId.get(id)
     return c && c.passed === true && (c.status !== 'carried' || (typeof c.receipt === 'string' && c.receipt !== ''))
   })
-  if (v.passed && mode === 'targeted') {
-    if (!floorCovered) {
-      v.passed = false
-      log('⚠ verify PASS withdrawn — a floor criterion was not observed in the targeted run')
-    }
-  } else if (v.passed && (mode === 'narrowed' || items.some((c) => c.status === 'carried') || !covered)) {
+  // C12: a withdrawn PASS must never read as the verifier's own 'ok'. The summary leads with the
+  // withdrawal and the verifier's pass text is dropped from it (it stays in the log).
+  const withdraw = (reason) => {
+    log(`⚠ verify PASS withdrawn — ${reason}`)
+    if (v.passed) log(`  verifier said: ${String(v.summary || '').split('\n')[0]}`)
     v.passed = false
-    log('⚠ verify PASS withdrawn — not every criterion was independently checked in a full run')
+    v.summary = `FAIL — verify PASS withdrawn: ${reason}`
+  }
+  if (v.passed && mode === 'targeted') {
+    if (!floorCovered) withdraw('a floor criterion was not observed in the targeted run')
+  } else if (v.passed && (mode === 'narrowed' || items.some((c) => c.status === 'carried') || !covered)) {
+    withdraw('not every criterion was independently checked in a full run')
   }
   v.mode = mode
   for (const c of items) {
@@ -2375,14 +2379,13 @@ const verifyOnce = async (focusIds = [], expectFirst = null) => {
   } catch (e) { rec = null }
   if (rec && rec.recorded === true) {
     log(`• verdict run ${rec.run} saved (${rec.mode || mode})`)
-    if (rec.passed === false && v.passed) {
-      v.passed = false
-      log('⚠ verify PASS withdrawn — ac verdict record derived a failing verdict')
-    }
+    if (rec.passed === false && v.passed) withdraw('ac verdict record derived a failing verdict')
   } else {
     log(`⚠ verdict not saved — ${(rec && rec.note) || 'the record clerk returned nothing'}`)
   }
-  if (mode === 'targeted' && rec && Array.isArray(rec.failing)) {
+  // The record's `failing` is the code's own reckoning (C12): in ANY mode an id it names is unmet,
+  // even one the verifier reported passed (a mutation/strength gate can withdraw it).
+  if (rec && rec.recorded === true && Array.isArray(rec.failing)) {
     for (const id of rec.failing) lastSeen.set(id, false)
   }
   if (mode === 'targeted' && plan.base) {
@@ -2438,6 +2441,9 @@ const runRemediation = (unmet, cycle) =>
     schema: REMEDIATE_SCHEMA,
   })
 
+// One verify that ignores any saved verdict (the plan clerk is asked for --full). C12.
+const verifyFullAgain = () => verifyOnce([], null, true)
+
 if (!integrationFailed) {
   // ADR-021 — adversarial, plan-blind verification (runVerify, defined above).
   // Phase-10 (ADR-022): the FIRST verify, then the bounded verify→remediate loop.
@@ -2457,6 +2463,18 @@ if (!integrationFailed) {
         `• remediation cycle ${cycle + 1}/${maxCycles}: ${beforeIds.size} unmet criterion/criteria` +
           (beforeIds.size ? ` (${[...beforeIds].join(', ')})` : ''),
       )
+      // C12: a withdrawn PASS can leave NOTHING unmet. An executor handed an empty list has nothing
+      // to fix, so no remediation is spawned; one forced-full verify runs instead, and it spends
+      // this cycle of the budget so the loop still ends.
+      if (beforeIds.size === 0) {
+        log('⚠ no unmet criterion to remediate — running one full verify instead')
+        verdict = await verifyFullAgain()
+        if (verdict.passed) {
+          log(`✓ cycle ${cycle + 1}: the full verify closed the phase — verified`)
+          break
+        }
+        continue
+      }
       const rem = await runRemediation(unmet, cycle)
       remediationCycles++
 
