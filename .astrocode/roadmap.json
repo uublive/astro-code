@@ -6,7 +6,7 @@
       "number": 54,
       "name": "Verify in fewer, cheaper rounds: every gap in one pass, a fast first check, fix while verifying, human-chosen deferral to tracked fixes, code-checked broad claims, cached setup",
       "slug": "54-verify-in-fewer-cheaper-rounds-every",
-      "status": "pending",
+      "status": "verified",
       "milestone": 15
     }
   ]
