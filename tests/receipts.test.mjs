@@ -227,6 +227,15 @@ test('changes under .astrocode/ do not make the tree dirty', async () => {
   } finally { r.done(); }
 });
 
+test('a dirty phases/<x>/VERDICTS.jsonl (the verdict history) does not make the tree dirty', async () => {
+  const { treeState } = await import('../lib/receipts.mjs');
+  const r = repo();
+  try {
+    put(r.root, '.astrocode/phases/01-x/VERDICTS.jsonl', '{"run":1}\n');
+    assert.equal(treeState(r.root).clean, true);
+  } finally { r.done(); }
+});
+
 test('a changed tracked canon file under .astrocode/ makes the tree dirty, but loop runtime state does not', async () => {
   const { reusableReceipt, treeState } = await import('../lib/receipts.mjs');
   const r = repo();
