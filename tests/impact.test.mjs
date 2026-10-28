@@ -152,9 +152,11 @@ test('edgeIds returns only criteria tagged [edge] in the heading tag run, and fa
     '### C9', '[edge]',
     '### C10 — body tag', '- **Observe:** [edge] here',
     '### C11 [suite] — suite only',
+    '### C12 [edge] [core] — edge not last', '### C13 [core] [edge] — core then edge',
+    '### C14 [edge] [mutation] — edge first', '### C15 [edge][suite] — edge then suite',
   ].join('\n');
-  assert.deepEqual(edgeIds(text), ['C2', 'C4']);
-  assert.deepEqual(edgeIds(text.replace(/\n/g, '\r\n')), ['C2', 'C4'], 'survives CRLF');
+  assert.deepEqual(edgeIds(text), ['C2', 'C4', 'C13']);
+  assert.deepEqual(edgeIds(text.replace(/\n/g, '\r\n')), ['C2', 'C4', 'C13'], 'survives CRLF');
   assert.deepEqual(edgeIds(''), []);
 });
 
