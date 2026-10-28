@@ -1,13 +1,16 @@
 {
   "version": 1,
-  "run": 1,
+  "run": 2,
   "mode": "full",
-  "reason": "no saved verdict",
+  "reason": "verifier ran full (plan: narrowed: 2 of 15 unmet)",
   "broad": false,
-  "commit": "d34bb1422eb71e57fb5800064cf2a665092201c6",
+  "commit": "675eaa646e66f6d68c10540e6ba2b52704238ba0",
   "criteria_sha": "sha256:89d9ad7b0e14eb6c72a50797e82693f2ff281cfa7c54f996d7ce84cddbbee605",
-  "at": "2026-10-28T07:36:13.617Z",
-  "base": null,
+  "at": "2026-10-28T07:46:42.414Z",
+  "base": {
+    "run": 2,
+    "commit": "675eaa646e66f6d68c10540e6ba2b52704238ba0"
+  },
   "criteria": [
     {
       "id": "C1",
@@ -26,7 +29,7 @@
     },
     {
       "id": "C4",
-      "status": "failed",
+      "status": "passed",
       "evidence": "observed"
     },
     {
@@ -71,7 +74,7 @@
     },
     {
       "id": "C13",
-      "status": "failed",
+      "status": "passed",
       "evidence": "observed"
     },
     {
@@ -90,7 +93,7 @@
         "version": null,
         "outcome": "tool-missing",
         "reproduce": "ac mutate 54 --json",
-        "head": "d34bb1422eb71e57fb5800064cf2a665092201c6",
+        "head": "675eaa646e66f6d68c10540e6ba2b52704238ba0",
         "scope": [
           "bin/ac.mjs",
           "lib/cheappass.mjs",
