@@ -2,6 +2,10 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.54.4
+
+- `ac canon pull` and `ac decision add` no longer refuse a published decision that cites an old id (e.g. ADR-034): the D-series relabel now applies to both the local copy and the registry before they are compared
+
 ## v0.54.3
 
 - Repo tidy: personal per-machine tooling (`.claude/settings.local.json`, the lean-ctx rules and `LEAN-CTX.md`) is no longer published, and merged release/feature branches are gone from GitHub
