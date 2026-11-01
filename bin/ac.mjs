@@ -3896,7 +3896,7 @@ async function main() {
       const rows = runDoctor({ astroHome: ASTRO_HOME });
       if (flags.json) json(rows);
       else for (const l of renderDoctor(rows)) console.log(l);
-      process.exitCode = rows.some((r) => !r.ok) ? 1 : 0;
+      process.exitCode = rows.some((r) => !r.ok && !r.advisory) ? 1 : 0;
       return;
     }
 

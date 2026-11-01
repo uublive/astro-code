@@ -249,7 +249,9 @@ test('runDoctor writes nothing', async () => {
 
 test('no astro home means one failing row naming ac install', async () => {
   const { runDoctor } = await import('../lib/doctor.mjs');
-  const rows = runDoctor({ astroHome: join(mkdtempSync(join(tmpdir(), 'ac-none-')), 'nope') });
+  // A fake home too: the lean-ctx advisory row reads `<home>/.lean-ctx`, never the machine's real one.
+  const home = mkdtempSync(join(tmpdir(), 'ac-none-'));
+  const rows = runDoctor({ home, astroHome: join(home, 'nope') });
   assert.equal(rows.length, 1);
   assert.deepEqual([rows[0].ok, rows[0].fix], [false, 'ac install']);
 });
