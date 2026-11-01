@@ -144,6 +144,12 @@
       "title": "execute never runs tasks in parallel: every task claims PLAN.md",
       "status": "verified",
       "opened_at": "2026-10-27T23:12:44.415Z"
+    },
+    {
+      "id": "2026-11-01-ac-update-writes-its-symlinks-into-the",
+      "title": "ac update writes its symlinks into the astro-code source checkout",
+      "status": "verified",
+      "opened_at": "2026-11-01T21:21:07.640Z"
     }
   ]
 }
