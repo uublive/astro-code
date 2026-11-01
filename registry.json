@@ -847,6 +847,15 @@
       "branch": "develop",
       "claimed_at": "2026-11-01T21:15:15.081Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-01-ac-update-writes-its-symlinks-into-the",
+      "name": "ac update writes its symlinks into the astro-code source checkout",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "fix/install-links-into-source",
+      "claimed_at": "2026-11-01T21:21:09.440Z",
+      "status": "active"
     }
   ]
 }
