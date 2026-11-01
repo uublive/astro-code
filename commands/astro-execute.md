@@ -268,6 +268,11 @@ Execute phase `$ARGUMENTS`.
      exactly the one line or silence it already promises above, then the next command —
      nothing else. This is a shape rule, not a length gate: five individually-terse
      fold-ins printed one after another still read as noise if nothing orders them.
+   - **Not checked** (a fold-in, after the verdict): from the result's `notChecked`, one line per
+     entry (`<from>: <items>`), **at most 8 lines**, then `+N more — see /workflows`; say nothing
+     when it is empty. Without a Workflow (the no-Workflow tiers), collect the same
+     `skipped / not checked:` line from each executor's own summary, under the same bound. This line
+     is for the human only: it is **never** passed to `/astro-verify` or the verifier (ADR-021).
    - **Record surprises for the milestone sweep — after the verdict above is already
      reported, never before, and never changes or gates it.** Unconditionally run
      `ac phase surprise <N> --healed <healed.length> --remediation-cycles

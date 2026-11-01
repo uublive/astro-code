@@ -200,6 +200,32 @@ const BAR =
   `while missing the intent still FAILS — the verifier gathers its own evidence independently ` +
   `and never replays this file. Never edit CRITERIA.md.`
 
+// Phase 55 (C4): every IMPLEMENTER summary ends with a `skipped / not checked:` line (the
+// executor agent requires it too; repeated here because a batch or heal prompt is the one
+// place a model might drop it). It goes to the HUMAN report only, as `notChecked` in the
+// return value, and is NEVER interpolated into a verifier prompt: the verifier stays
+// claim-blind (ADR-021). Same implementer set as BAR plus remediate, not the verify, cheap,
+// testgate, integrator, teardown or stamp-audit prompts.
+const NOT_CHECKED =
+  ` End your summary with the line \`skipped / not checked: <items | none>\` — required, even ` +
+  `when it is none.`
+
+// Pure: pull the closing line out of a summary (a string, or an object with .summary). Returns
+// the items text, or null when the line is absent or says none. The last match wins.
+const notCheckedItems = (res) => {
+  const text = typeof res === 'string' ? res : res && typeof res.summary === 'string' ? res.summary : ''
+  const found = [...text.matchAll(/^[ \t>*_-]*skipped \/ not checked:[ \t*_]*(.*)$/gim)]
+  const items = found.length ? found[found.length - 1][1].trim() : ''
+  return items && !/^none\b\.?$/i.test(items) ? items : null
+}
+const notCheckedList = [] // [{ from, items }] — surfaced as `notChecked` for the human report
+const viaNotChecked = async (from, pending) => {
+  const res = await pending
+  const items = notCheckedItems(res)
+  if (items) notCheckedList.push({ from, items })
+  return res
+}
+
 // Phase-07 / ADR-017: TASK_SCHEMA items gain `done: boolean` (required).
 // WHY required AND boolean: without a strict schema the Discover agent can omit
 // `done` entirely (returns {} or null) and the skip-wiring would treat the
@@ -725,7 +751,7 @@ const execPrompt = (t) =>
   `enables idempotent re-execution (ADR-017): a later re-run of /astro-execute will detect ` +
   `the stamp and skip this task rather than re-executing it. ` +
   (t.no_commit ? '' : stampSelfCheck(t)) +
-  `Return a short summary of what you changed.` +
+  `Return a short summary of what you changed.` + NOT_CHECKED +
   (t.no_commit
     ? `\nThis task is declared COMMIT-FREE in the plan (a verification-only gate): do the ` +
       `checks it describes and report the result, but make NO commit — there is nothing to ` +
@@ -763,7 +789,7 @@ const EXEC_IDENTITY =
 const runOnBranch = (t) =>
   // #100 — the on-branch executor reports branch/commit too: without it the script had no
   // signal that a task stopped BLOCKED, and dispatched its dependents on top of nothing.
-  agent(execPrompt(t) + EXEC_IDENTITY, { label: taskLabel('exec', t), phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: EXEC_SCHEMA })
+  viaNotChecked(t.id, agent(execPrompt(t) + EXEC_IDENTITY, { label: taskLabel('exec', t), phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: EXEC_SCHEMA }))
 
 // healPrompt is DISTINCT from execPrompt — it tells the executor this is a HEAL
 // re-run after an integration cherry-pick conflict, so it must not blindly pick up
@@ -790,7 +816,7 @@ const healPrompt = (t, preservedBranch) =>
   `The stamp \`(phase ${phaseNum} ${t.id})\` must appear at the end of the commit subject — ` +
   `it enables idempotent re-execution (ADR-017) so future re-runs skip this healed task. ` +
   stampSelfCheck(t) +
-  `Return a short summary of what you changed.` +
+  `Return a short summary of what you changed.` + NOT_CHECKED +
   OBEY +
   BAR +
   principlesFor('heal', 'executor', declaredFiles(t)) +
@@ -798,7 +824,7 @@ const healPrompt = (t, preservedBranch) =>
   NO_BROAD_STASH
 
 const runHealOnBranch = (t, preservedBranch) =>
-  agent(healPrompt(t, preservedBranch), { label: taskLabel('heal', t), phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor })
+  viaNotChecked(t.id, agent(healPrompt(t, preservedBranch), { label: taskLabel('heal', t), phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor }))
 
 // Strict schema for the healed-wave test gate (see the helper below).
 //
@@ -1308,7 +1334,7 @@ const batchPrompt = (orderedTasks) =>
   `An unstamped commit is invisible to the integrator's branch→task mapping and to re-run ` +
   `resumability, so it is worse than a missing commit: it silently costs the whole phase its ` +
   `ability to resume. ` +
-  `Return committed=[the task ids whose stamp you found] and a short summary.` +
+  `Return committed=[the task ids whose stamp you found] and a short summary.` + NOT_CHECKED +
   OBEY +
   BAR +
   principlesFor('execute', 'executor', "each task's own `file`") +
@@ -1323,13 +1349,13 @@ const batchPrompt = (orderedTasks) =>
 // strategy, where isolation buys nothing and only adds a worktree-creation
 // failure mode for no benefit.
 const runBatchOnBranch = (orderedTasks) =>
-  agent(batchPrompt(orderedTasks), {
+  viaNotChecked('batch', agent(batchPrompt(orderedTasks), {
     label: 'exec:batch',
     phase: 'Execute',
     agentType: 'astro-executor',
     model: models.executor, effort: reasoning.executor,
     schema: BATCH_SCHEMA,
-  })
+  }))
 
 phase('Execute')
 const results = []
@@ -1442,14 +1468,14 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
   // B: isolated parallel executors, then fold the wave onto the working branch.
   const out = await parallel(
     wave.map((t) => () =>
-      agent(execPrompt(t) + EXEC_IDENTITY, {
+      viaNotChecked(t.id, agent(execPrompt(t) + EXEC_IDENTITY, {
         label: taskLabel('exec', t),
         phase: 'Execute',
         isolation: 'worktree',
         schema: EXEC_SCHEMA,
         agentType: 'astro-executor',
         model: models.executor, effort: reasoning.executor,
-      }),
+      })),
     ),
   )
   results.push(...out.filter(Boolean))
@@ -2410,14 +2436,14 @@ const remediateWorktreePrompt = (unmet, cycle) =>
   `main working tree. The integrator folds your branch after the verdict is recorded.`
 
 const startOverlappedRemediation = (unmet, cycle) =>
-  agent(remediateWorktreePrompt(unmet, cycle), {
+  viaNotChecked(`remediate-c${cycle}`, agent(remediateWorktreePrompt(unmet, cycle), {
     label: `remediate:c${cycle}`,
     phase: 'Execute',
     agentType: 'astro-executor',
     isolation: 'worktree',
     model: models.executor, effort: reasoning.executor,
     schema: REMEDIATE_WT_SCHEMA,
-  })
+  }))
 
 // Two verifier groups, one remediation started the moment one group reports a failure while the
 // other is still running. Returns the merged verifier result.
@@ -2649,19 +2675,19 @@ const remediatePrompt = (unmet, cycle) =>
   `test-first where it adds behavior, run the tests, then make ONE atomic commit whose subject ends ` +
   `with the stamp \`(phase ${phaseNum} remediate-c${cycle})\` (ADR-017 idempotency). After committing, ` +
   `run \`git rev-parse HEAD\` again and report it as headAfter. Match the project canon exactly ` +
-  `(stack, naming, patterns). Return headBefore, headAfter, and a short summary of what you changed.` +
+  `(stack, naming, patterns). Return headBefore, headAfter, and a short summary of what you changed.` + NOT_CHECKED +
   OBEY +
   principlesFor('remediate', 'executor') +
   CITE
 
 const runRemediation = (unmet, cycle) =>
-  agent(remediatePrompt(unmet, cycle), {
+  viaNotChecked(`remediate-c${cycle}`, agent(remediatePrompt(unmet, cycle), {
     label: `remediate:c${cycle}`,
     phase: 'Execute',
     agentType: 'astro-executor',
     model: models.executor, effort: reasoning.executor,
     schema: REMEDIATE_SCHEMA,
-  })
+  }))
 
 // One verify that ignores any saved verdict (the plan clerk is asked for --full). C12.
 const verifyFullAgain = () => verifyOnce([], null, true)
@@ -2807,6 +2833,8 @@ return {
   blocked: [...notLanded].map(([id, reason]) => ({ id, reason })),
   healed: healedTaskIds,
   unstamped: unstampedBranches,
+  // Phase 55 (C4): the executors' `skipped / not checked:` lines, for the human report only.
+  notChecked: notCheckedList,
   leftovers: [...leftovers.values()],
   remediationCycles,
   stoppedReason,
