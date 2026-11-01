@@ -118,7 +118,7 @@ import { deferCriteria } from '../lib/defer.mjs';
 import { runCheapPass } from '../lib/cheappass.mjs';
 import { runSetup, listSetup } from '../lib/setupcache.mjs';
 import {
-  addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt, setDebtNote,
+  addDebt, openDebt, findDebt, payDebt, dropDebt, dismissDebt, closeDebtFor, staleDebt, missingFileDebt, harvestDebt, setDebtNote,
   debtAgeDays, debtScore, loadDebt, DEBT_COSTS, STALE_DAYS,
 } from '../lib/debt.mjs';
 import {
@@ -321,6 +321,8 @@ const ALLOWED_FLAGS = {
   'debt note': ['append', 'replace'],
   'debt dismiss': ['reason'],
   'debt pay': ['as', 'milestone'],
+  // Harvest writes to the register, so a typo'd flag must not silently run a plain harvest.
+  'debt harvest': ['json'],
   // A typo'd `--phase` must not silently degrade into "checked the wrong phase".
   'fixtures check': ['phase'],
   'backlog add': ['note'],
@@ -627,7 +629,8 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac fix list [--all]                 open fixes (--all: accepted too)
   ac fix status <id> [<status>]       read or move the lifecycle
   ac fix accept <id> [--agent <name> | --witnessed composer] [--evidence "<id or URL>"] human gate → accepted + archived
-  ac debt list [--phase N|--file p|--stale]  open technical debt (the verifier files it)
+  ac debt list [--phase N|--file p|--stale]  open technical debt (the verifier files it); --stale: 30+ days old or its file is gone
+  ac debt harvest [--json]            file shortcut comments in tracked files as debt (idempotent, on demand)
   ac debt add "<what>" [--why …] [--phase N] [--file p] [--cost small|medium|large]
   ac debt note <id> ["<text>"] [--append|--replace]  read/set/clear a debt's note (title and id stay fixed)
   ac debt score                       is it worth paying debt down right now? (0-100 + why)
@@ -901,6 +904,7 @@ async function main() {
           });
         if (flags.json) { json(items); return; }
         if (!items.length) { console.log(flags.stale ? '• no stale debt' : '• no open debt'); return; }
+        const fileGone = new Set(missingFileDebt(r).map((d) => d.id));
         for (const d of items) {
           const age = debtAgeDays(d);
           const where = [d.phase ? `phase ${d.phase}` : '', d.file || '', d.cost].filter(Boolean).join(' · ');
@@ -911,6 +915,7 @@ async function main() {
           // actually hurts, so they are surfaced rather than buried in the JSON.
           if (d.also_found_in?.length) console.log(`    ⚠ hit again in phase ${d.also_found_in.join(', ')}`);
           if (age >= STALE_DAYS) console.log(`    ⚠ ${age} days old — pay it or drop it`);
+          if (fileGone.has(d.id)) console.log(`    ⚠ file gone — ${d.file}`);
         }
         const total = loadDebt(r).debt.length;
         console.log(`\n${items.length} open · ${total} filed all-time`);
@@ -933,6 +938,22 @@ async function main() {
         // running after every phase, and the same finding recurring is information.
         if (res.created) console.log(`✓ debt ${res.entry.id}`);
         else console.log(`• already filed as ${res.entry.id} — recorded another sighting`);
+        return;
+      }
+
+      // On demand only: nothing in execute / verify / accept calls this (phase 55, C12). Triage of
+      // what it files stays in /astro-debt.
+      if (sub === 'harvest') {
+        checkFlags('debt harvest', flags);
+        let res;
+        try { res = await harvestDebt(r); } catch (e) { die(e.message); }
+        if (flags.json) { json(res); return; }
+        for (const d of res.added) {
+          console.log(`✓ debt ${d.id}  ${d.file}${d.line ? `:${d.line}` : ''}  ${d.title}`);
+          if (res.noTrigger.includes(d.id)) console.log('    ⚠ no upgrade trigger');
+        }
+        if (res.already) console.log(`• ${res.already} already filed${res.added.length ? '' : ' — nothing new to harvest'}`);
+        else if (!res.added.length) console.log('• nothing new to harvest');
         return;
       }
 
@@ -1998,8 +2019,11 @@ async function main() {
       // stop opening, so the count rides along on the command already run constantly.
       const debt = openDebt(r);
       if (debt.length) {
-        const stale = staleDebt(r).length;
-        console.log(`Debt:      ${debt.length} open${stale ? ` (${stale} stale)` : ''}  — \`ac debt list\``);
+        // `staleDebt` is the age-or-file-gone union; status keeps the two counts apart.
+        const aged = debt.filter((d) => debtAgeDays(d) >= STALE_DAYS).length;
+        const gone = missingFileDebt(r).length;
+        const flagged = [aged ? `${aged} stale` : '', gone ? `${gone} file gone` : ''].filter(Boolean).join(', ');
+        console.log(`Debt:      ${debt.length} open${flagged ? ` (${flagged})` : ''}  — \`ac debt list${gone ? ' --stale' : ''}\``);
       }
       // Phase 54 (D3): ONE line naming each open deferred fix; absent when there are none.
       const deferred = deferredFixes(r);

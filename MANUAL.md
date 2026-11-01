@@ -1539,7 +1539,8 @@ ac fix list [--all]            # what is open (--all: accepted too, with who sig
 ac fix accept <id>             # human gate — archives it
 ac fix accept <id> --agent <n> # machine-signed (ADR-033): records accepted_kind=agent
 
-ac debt list [--stale]         # open technical debt (the verifier files it automatically)
+ac debt list [--stale]         # open technical debt (the verifier files it automatically); --stale: 30+ days old or its file is gone
+ac debt harvest [--json]       # file shortcut comments from tracked files as debt (idempotent, on demand only)
 ac debt score                  # pay-it-down-now signal, 0-100, with the evidence
 ac debt note <id> ["…"] [--append|--replace]  # add what you learn later; the id and age stay
 ac debt pay <id> [--as phase] [--milestone N]  # graduate it into a fix (default) or a roadmap phase
