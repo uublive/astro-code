@@ -1,106 +1,92 @@
 {
   "version": 1,
-  "run": 1,
-  "mode": "narrowed",
-  "stage": "cheap",
-  "reason": "verifier ran narrowed (plan: full: no saved verdict)",
+  "run": 2,
+  "mode": "full",
+  "reason": "verifier ran full (plan: narrowed: 2 of 15 unmet)",
   "broad": false,
-  "commit": "aa72fe21091203a89bd65d557caedb7ee136cf28",
+  "commit": "5e20a3f712730c65e823f19d080d78a3af980b8d",
   "criteria_sha": "sha256:a2a537a6445c65784a48628ef66c096446c45585116b43dd768c95297db22143",
-  "at": "2026-11-01T22:47:39.492Z",
-  "base": null,
+  "at": "2026-11-01T23:50:05.628Z",
+  "base": {
+    "run": 2,
+    "commit": "5e20a3f712730c65e823f19d080d78a3af980b8d"
+  },
   "criteria": [
     {
       "id": "C1",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C2",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C3",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C4",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C5",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C6",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C7",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C8",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C9",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C10",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C11",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C12",
-      "status": "failed",
-      "evidence": "observed",
-      "command": "npm test",
-      "output": "suite exited 1: npm test"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C13",
-      "status": "failed",
+      "status": "passed",
       "evidence": "observed",
-      "command": "cd /Users/buu/Development/astro-code && npm test",
-      "output": "suite exited 1: cd /Users/buu/Development/astro-code && npm test"
+      "suite": true
     },
     {
       "id": "C14",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C15",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved"
+      "status": "passed",
+      "evidence": "observed"
     }
   ]
 }
