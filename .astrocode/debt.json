@@ -82,11 +82,16 @@
     {
       "id": "2026-09-17-the-planner-has-no-guidance-for-test",
       "title": "the planner has no guidance for test-first task pairs split across a wave boundary",
-      "status": "open",
+      "status": "paying",
       "cost": "small",
       "found_at": "2026-09-17T10:11:25.999Z",
       "why": "An ESM import of a not-yet-existing export fails the whole test file, so 'write failing tests' is structurally impossible without stubs — which pushes the test task's executor to implement, overflowing its declared files and breaking the wave's file-disjointness. That was cause 2 of the phase-04 wave-2 incident. The other four bullets from that report shipped (heal ladder, fork-base guard under ADR-040, file-ownership enforcement, ADR-017 stamped resumability); this one did not.",
-      "file": "agents/astro-planner.md"
+      "file": "agents/astro-planner.md",
+      "paid_by": {
+        "kind": "phase",
+        "ref": "55-smallest-complete-change-discipline-for"
+      },
+      "paying_since": "2026-11-01T21:49:19.643Z"
     },
     {
       "id": "2026-09-19-ac-milestone-new-never-persists-the",
