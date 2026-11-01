@@ -421,7 +421,9 @@ test('C8: a Bash write judged by its effect on line 1: sed -i 1d, an escaped mar
     const d = mkdtempSync(join(tmpdir(), 'w46-'));
     mkdirSync(join(d, '.astrocode/phases/41-x'), { recursive: true });
     if (seed !== null) writeFileSync(join(d, ctx), seed);
-    const r = spawnSync('bash', ['-c', cmd], { cwd: d, encoding: 'utf8' });
+    // BSD sed (macOS) needs a backup-suffix argument after -i; GNU sed forbids a separate one
+    const bsd = process.platform === 'darwin' ? `sed() { if [ "$1" = -i ]; then shift; command sed -i '' "$@"; else command sed "$@"; fi; }; ` : '';
+    const r = spawnSync('bash', ['-c', bsd + cmd], { cwd: d, encoding: 'utf8' });
     return { status: r.status, text: readFileSync(join(d, ctx), 'utf8') };
   };
   const agentLine1 = (text) => text.split('\n')[0] === AGENT_MARKER;
