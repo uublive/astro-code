@@ -1,0 +1,1 @@
+{"at":"2026-11-01T23:50:50.700Z","phase":"55-smallest-complete-change-discipline-for","signals":["remediation"],"note":"first verify failed only on the full-suite criterion: 8 pre-existing machine-dependent test failures (git PATH, global excludes, BSD sed) had to be made hermetic"}

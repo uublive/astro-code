@@ -156,13 +156,14 @@
       "id": "2026-10-23-flag-open-debt-whose-file-no-longer",
       "title": "Flag open debt whose `file` no longer exists (`ac debt list --stale`, `ac status`)",
       "note": "GitHub #150 (@luigi-lauro): https://github.com/uublive/astro-code/issues/150",
-      "status": "linked",
+      "status": "absorbed",
       "captured_at": "2026-10-23T08:46:56.891Z",
       "linked_by": {
         "kind": "phase",
         "ref": "55-smallest-complete-change-discipline-for"
       },
-      "linked_at": "2026-11-01T21:20:22.037Z"
+      "linked_at": "2026-11-01T21:20:22.037Z",
+      "absorbed_at": "2026-11-02T09:44:41.998Z"
     },
     {
       "id": "2026-10-23-how-should-an-unattended-run-leave-a",

@@ -16,8 +16,12 @@
       "number": 55,
       "name": "Smallest-complete-change discipline for executors and planners, and ac debt harvest for shortcut markers",
       "slug": "55-smallest-complete-change-discipline-for",
-      "status": "verified",
-      "milestone": 15
+      "status": "complete",
+      "milestone": 15,
+      "accepted_by": "matteo.alvazzi@gmail.com",
+      "accepted_kind": "human",
+      "accepted_at": "2026-11-02T09:44:41.967Z",
+      "accepted_evidence": "composer"
     }
   ]
 }
