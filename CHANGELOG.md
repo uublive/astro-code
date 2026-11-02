@@ -2,6 +2,17 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.55.0
+
+- Executors and planners follow a smallest-complete-change rule: reuse what exists, then the standard library, then an installed dependency, then the minimum code. Validation, data-loss handling, security, accessibility and anything the criteria require are never cut, and a deliberate shortcut is marked in code as `shortcut: <the limit>, <when to upgrade>`. The verifier and criteria-author are told to ignore minimal-code advice from other tools: their only bar is the criteria and the phase goal. A one-off with/without run (8 tasks × 3 runs per arm) passed 24/24 with the rule and 23/24 without
+- Every executor summary ends with `skipped / not checked: <items | none>`; `/astro-execute` shows those lines in its report (bounded, silent when all say none), and they never reach the verifier
+- `ac debt harvest` files `shortcut:` code comments from tracked files into the debt register, never twice for the same marker (closed entries included); a marker with no upgrade trigger is flagged
+- `ac debt list --stale` also lists open debt whose file no longer exists, and `ac status` shows the count (GitHub #150)
+- `ac doctor` warns, without failing, when lean-ctx injects its own solution guidance into subagents, with the one setting that turns it off; astro-code never edits the lean-ctx config
+- The planner has guidance for a test-first task split from its implementation across waves
+- Fix: `ac update` no longer deletes and relinks the tracked command and agent files of an astro-code source checkout that a Claude config dir's `commands/` or `agents/` links into
+- Tests no longer depend on the machine's git PATH, global git excludes or GNU vs BSD `sed`
+
 ## v0.54.4
 
 - `ac canon pull` and `ac decision add` no longer refuse a published decision that cites an old id (e.g. ADR-034): the D-series relabel now applies to both the local copy and the registry before they are compared
