@@ -137,7 +137,7 @@ import {
 import { inForceText } from '../lib/decisions.mjs';
 import { backfillAdr } from '../lib/adrbackfill.mjs';
 import { renumberDecision } from '../lib/adrrenumber.mjs';
-import { completeMilestone, belongsToMilestone } from '../lib/milestone.mjs';
+import { completeMilestone, belongsToMilestone, plannedMilestones } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate, carriedOf, readVerdict, verdictFile } from '../lib/verdict.mjs';
 import { VERDICTS_FILE, readHistory } from '../lib/verdicthistory.mjs';
@@ -2189,8 +2189,9 @@ async function main() {
         // Only the closing milestone's own phases gate it (#29 follow-up): a phase scheduled
         // for a later milestone is not unfinished work of this one, and is not archived.
         const closing = loadRoadmap(r)?.milestone;
+        const planned = plannedMilestones(r);
         const unfinished = (loadRoadmap(r)?.phases || [])
-          .filter((ph) => belongsToMilestone(ph, closing) && ph.status !== 'complete');
+          .filter((ph) => belongsToMilestone(ph, closing, planned) && ph.status !== 'complete');
         if (unfinished.length && !flags.force) {
           const list = unfinished.map((ph) => `  ${String(ph.number).padStart(2, '0')}  ${ph.status.padEnd(9)} ${ph.name}`).join('\n');
           die(`${unfinished.length} phase(s) are not complete — refusing to archive them:\n${list}\n` +
