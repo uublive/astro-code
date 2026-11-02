@@ -117,7 +117,7 @@ test('no command tells anyone to mark debt paid by hand', () => {
     // `ac debt <verb>` where the verb is not one the CLI actually has
     for (const m of text.matchAll(/ac debt ([a-z-]+)/g)) {
       const verb = m[1];
-      if (!['add', 'list', 'show', 'score', 'pay', 'drop', 'dismiss'].includes(verb)) {
+      if (!['add', 'list', 'show', 'score', 'pay', 'drop', 'dismiss', 'harvest'].includes(verb)) {
         violations.push(`${file.split('/').pop()}: ac debt ${verb}`);
       }
     }

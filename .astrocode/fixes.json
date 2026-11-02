@@ -40,14 +40,22 @@
     {
       "id": "2026-10-02-codex-astro-config-offers-claude-models",
       "title": "codex-astro-config-offers-claude-models",
-      "status": "verified",
-      "opened_at": "2026-10-02T13:33:37.143Z"
+      "status": "accepted",
+      "opened_at": "2026-10-02T13:33:37.143Z",
+      "accepted_at": "2026-10-31T18:20:51.309Z",
+      "accepted_kind": "agent",
+      "accepted_by": "Comet",
+      "cited_evidence": "owner direct request in Comet chat 2026-10-31: accept all verified phases/fixes"
     },
     {
       "id": "2026-10-12-astro-execute-clears-the-live-activity",
       "title": "/astro-execute clears the live activity on an early stop even when it stopped because a workflow is already running, and a resumed workflow never sets the activity again",
-      "status": "verified",
-      "opened_at": "2026-10-12T06:48:45.088Z"
+      "status": "accepted",
+      "opened_at": "2026-10-12T06:48:45.088Z",
+      "accepted_at": "2026-10-31T18:20:46.525Z",
+      "accepted_kind": "agent",
+      "accepted_by": "Comet",
+      "cited_evidence": "owner direct request in Comet chat 2026-10-31: accept all verified phases/fixes"
     },
     {
       "id": "2026-10-12-hook-registrations-can-point-at-scripts",
@@ -62,8 +70,12 @@
     {
       "id": "2026-10-12-questions-put-to-the-user-discuss",
       "title": "Questions put to the user (discuss, accept, challenge…) start from a low-level detail with no context, so the user can't tell what part of the system they're about or why the choice matters",
-      "status": "verified",
-      "opened_at": "2026-10-12T09:51:14.944Z"
+      "status": "accepted",
+      "opened_at": "2026-10-12T09:51:14.944Z",
+      "accepted_at": "2026-10-31T18:20:42.105Z",
+      "accepted_kind": "agent",
+      "accepted_by": "Comet",
+      "cited_evidence": "owner direct request in Comet chat 2026-10-31: accept all verified phases/fixes"
     },
     {
       "id": "2026-10-23-a-decisions-collision-refusal-prints-a",
@@ -106,8 +118,12 @@
     {
       "id": "2026-10-23-ac-status-suggests-discussing-a-phase",
       "title": "ac status suggests discussing a phase from a later milestone ahead of one in the active milestone (GitHub #142)",
-      "status": "verified",
-      "opened_at": "2026-10-23T08:48:53.140Z"
+      "status": "accepted",
+      "opened_at": "2026-10-23T08:48:53.140Z",
+      "accepted_at": "2026-10-31T18:20:37.717Z",
+      "accepted_kind": "agent",
+      "accepted_by": "Comet",
+      "cited_evidence": "owner direct request in Comet chat 2026-10-31: accept all verified phases/fixes"
     },
     {
       "id": "2026-10-23-canon-pull-silently-deletes-hand",
@@ -142,14 +158,21 @@
     {
       "id": "2026-10-27-execute-never-runs-tasks-in-parallel",
       "title": "execute never runs tasks in parallel: every task claims PLAN.md",
-      "status": "verified",
-      "opened_at": "2026-10-27T23:12:44.415Z"
+      "status": "accepted",
+      "opened_at": "2026-10-27T23:12:44.415Z",
+      "accepted_at": "2026-10-31T18:20:33.323Z",
+      "accepted_kind": "agent",
+      "accepted_by": "Comet",
+      "cited_evidence": "owner direct request in Comet chat 2026-10-31: accept all verified phases/fixes"
     },
     {
       "id": "2026-11-01-ac-update-writes-its-symlinks-into-the",
       "title": "ac update writes its symlinks into the astro-code source checkout",
-      "status": "verified",
-      "opened_at": "2026-11-01T21:21:07.640Z"
+      "status": "accepted",
+      "opened_at": "2026-11-01T21:21:07.640Z",
+      "accepted_at": "2026-11-02T09:40:40.390Z",
+      "accepted_kind": "human",
+      "accepted_by": "matteo.alvazzi@gmail.com"
     }
   ]
 }

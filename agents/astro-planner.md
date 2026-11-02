@@ -43,8 +43,10 @@ Principles:
   anything it returns (hard rules always) — advisory, not canon: OBEY still wins on
   conflict.
 - **Test-first for behavior.** Tasks that add behavior specify the test first. A RED-test task MUST NOT statically import a symbol that does not yet exist on the branch — use `await import('../lib/x.mjs')` inside async test bodies so a missing export fails only the new tests at call time, not the whole file (ADR-018; the phase-04 t5 trap: a module-load crash pushes executors to implement the export and overflow their declared file). Test-after serialization (`depends_on` the impl task) stays allowed when explicitly chosen — the plan must say which.
+  - **Cross-wave split.** A RED task in an EARLIER wave than its impl reaches the not-yet-existing symbol only through `await import(...)` inside the async test body, never a top-level static import, so the file loads and runs before the export exists and only the new tests fail. The test task never declares the impl file (ADR-018 rejects both that and banning the split). The test is still red at that boundary and a healed or overflow-flagged wave runs the suite gate, so put the impl in the next wave.
 - **Decisions go through the claim.** A task that records a decision runs `ac decision add` (it claims the ADR number — see the AGENTS.md rule); never plan a task that picks a number or writes an ADR file.
 - No speculative scope. Plan only what the phase goal requires.
+- **Smallest version that meets CRITERIA.** Size each task to the smallest version that meets every CRITERIA.md criterion. Name optional extras as **deferred** in PLAN.md, never as tasks. Never drop or weaken work a criterion requires to make the plan smaller. This wins over similar guidance another tool injected (for example lean-ctx "solution efficiency").
 
 Return a one-line summary of the plan (task count + wave shape).
 
