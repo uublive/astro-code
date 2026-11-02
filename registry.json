@@ -856,6 +856,15 @@
       "branch": "fix/install-links-into-source",
       "claimed_at": "2026-11-01T21:21:09.440Z",
       "status": "complete"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-02-a-convention-promoted-and-awaiting-ac",
+      "name": "A convention promoted and awaiting ac canon push gets published by the next decision promote",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-11-02T09:59:28.173Z",
+      "status": "active"
     }
   ]
 }
