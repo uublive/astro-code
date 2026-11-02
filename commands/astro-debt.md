@@ -23,6 +23,10 @@ register nobody reviews becomes the thing it replaced.
    If there is no open debt, say so in one line and stop. Nothing to review is a good
    outcome, not an empty report to dress up.
 
+   `--stale` lists debt that is 30+ days old **or whose file no longer exists** (each row says
+   which). `ac debt harvest` files `shortcut:` code comments from tracked files as debt, on
+   demand; triage of what it files happens here, like any other item.
+
 2. **Present it so it can be acted on**, not as a dump of the CLI output:
    - Lead with the **pressure number and its band, in one line**, stating what it means:
      *healthy* = your debt is not charging you, keep building; *watch* = something is

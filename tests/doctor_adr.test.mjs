@@ -20,7 +20,7 @@ async function sandbox(fn) {
   mkdirSync(home, { recursive: true });
   process.env.HOME = home;
   for (const k of ['CLAUDE_CONFIG_DIR', 'CURSOR_CONFIG_DIR', 'CODEX_HOME', 'XDG_CONFIG_HOME']) delete process.env[k];
-  process.env.PATH = `${mkdtempSync(join(tmpdir(), 'ac-nopath-'))}:${dirname(process.execPath)}`;
+  process.env.PATH = `${mkdtempSync(join(tmpdir(), 'ac-nopath-'))}:${dirname(process.execPath)}:/usr/bin:/bin`;
   try {
     const q = encodeURIComponent(`${home}-${Math.random()}`);
     const inst = await import(`../lib/install.mjs?d=${q}`);

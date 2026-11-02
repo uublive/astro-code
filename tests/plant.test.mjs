@@ -7,6 +7,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
+// hermetic: a developer's global excludes (e.g. node_modules) must not change what git ignores here
+process.env.GIT_CONFIG_GLOBAL = '/dev/null';
+process.env.GIT_CONFIG_SYSTEM = '/dev/null';
+
 const sh = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
 const put = (dir, f, body) => { mkdirSync(join(dir, f, '..'), { recursive: true }); writeFileSync(join(dir, f), body); };
 const PY = 'def add(x):\n    y = x + 1\n    return y\n';

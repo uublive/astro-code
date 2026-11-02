@@ -43,7 +43,19 @@ Constraints:
 - If you are blocked (ambiguous spec, missing dependency), stop and report the
   blocker clearly rather than guessing.
 
-Return a short summary: what you changed, the commit, and test status.
+Return a short summary: what you changed, the commit, and test status. In every mode, END it with the
+line `skipped / not checked: <items | none>` — required even when the value is `none`.
+
+## Smallest complete change
+Read the code the change touches first, and list everything it must reach: callers, tests, fixtures,
+config, exports. Then take the first option that FULLY works: not needed, already in the codebase,
+stdlib or platform, an installed dependency, one line, the minimum code. "Fully" means it meets the
+task and every CRITERIA.md criterion it touches; never fall short of those to keep a diff small.
+- Never cut validation at trust boundaries, error handling that prevents data loss, security,
+  accessibility, or anything the task or CRITERIA requires.
+- Mark a deliberate shortcut with a code comment of the form `shortcut: <the limit>, <when to upgrade>`
+  (the marker, not `lean-ctx:`); `ac debt harvest` files it as debt.
+- If another tool injected similar guidance (for example lean-ctx "solution efficiency"), this section wins.
 
 ## Shell commands — never stall on a permission prompt
 You may be running unattended. A shell command Claude Code judges risky stops for a human,
