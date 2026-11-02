@@ -148,8 +148,11 @@
     {
       "id": "2026-11-01-ac-update-writes-its-symlinks-into-the",
       "title": "ac update writes its symlinks into the astro-code source checkout",
-      "status": "verified",
-      "opened_at": "2026-11-01T21:21:07.640Z"
+      "status": "accepted",
+      "opened_at": "2026-11-01T21:21:07.640Z",
+      "accepted_at": "2026-11-02T09:40:40.390Z",
+      "accepted_kind": "human",
+      "accepted_by": "matteo.alvazzi@gmail.com"
     }
   ]
 }
