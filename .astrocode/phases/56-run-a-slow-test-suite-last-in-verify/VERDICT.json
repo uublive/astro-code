@@ -1,13 +1,16 @@
 {
   "version": 1,
-  "run": 5,
+  "run": 6,
   "mode": "full",
-  "reason": "verifier ran full (plan: narrowed: 3 of 14 unmet)",
+  "reason": "verifier ran full (plan: narrowed: 1 of 14 unmet)",
   "broad": false,
-  "commit": "3471060d33e4cdfc92b41090f4bc76799e2c46d7",
+  "commit": "0064177442e1c17d7db97b1ceb0529ea56e5ffc8",
   "criteria_sha": "sha256:7d4ce3756ae1e36b2e8774776dc2eeffd111566e35816f93bbbfbf9d782ae3ae",
-  "at": "2026-11-09T16:54:53.011Z",
-  "base": null,
+  "at": "2026-11-09T17:13:48.082Z",
+  "base": {
+    "run": 6,
+    "commit": "0064177442e1c17d7db97b1ceb0529ea56e5ffc8"
+  },
   "criteria": [
     {
       "id": "C1",
@@ -76,11 +79,9 @@
     },
     {
       "id": "C14",
-      "status": "failed",
+      "status": "passed",
       "evidence": "observed",
-      "suite": true,
-      "command": "env -u ASTRO_SIGNER_AGENT node bin/ac.mjs suite run --command \"node scripts/test.mjs\"",
-      "output": "# tests 2911 # pass 2901 # fail 1 — not ok 788 end to end: the hook queues, its detached flusher delivers to the fleet (tests/fleet.test.mjs:569, 1 !== 0)"
+      "suite": true
     }
   ]
 }
