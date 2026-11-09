@@ -2872,6 +2872,16 @@ if (!integrationFailed) {
         )
         break
       }
+      // Nothing unmet (a withdrawn carried PASS, or every non-suite criterion passed with a slow suite
+      // held back): it is not "still failing", so say what comes next instead (C12, the debt
+      // 2026-10-15-after-a-withdrawn-carried-pass-the-loop).
+      if (afterIds.size === 0) {
+        log(
+          `• remediation cycle ${cycle + 1}: nothing unmet (was ${beforeIds.size}) — ` +
+            `a full verify (with any held-back suite) comes next`,
+        )
+        continue
+      }
       log(
         `⚠ remediation cycle ${cycle + 1}: ${afterIds.size} criterion/criteria still failing ` +
           `(was ${beforeIds.size}) — continuing`,

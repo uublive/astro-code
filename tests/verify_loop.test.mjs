@@ -23,7 +23,7 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const TASKS = [{ id: 't1', title: 'T1', file: 'a.mjs', depends_on: [], done: true }];
 
 // `verifiers`: queue of verifier results, one per verify spawn. `records`: queue of record-clerk results.
-async function run({ verifiers, records, plans = [], cheaps = [], args = {} }) {
+async function run({ verifiers, records, plans = [], cheaps = [], args = {}, moved = false }) {
   const calls = [];
   const logs = [];
   const vq = [...verifiers];
@@ -40,7 +40,7 @@ async function run({ verifiers, records, plans = [], cheaps = [], args = {} }) {
     if ('tasks' in props) return { tasks: TASKS };
     if ('missing' in props) return { missing: [] };
     if ('integrated' in props) return { integrated: true, branches: [] };
-    if ('headBefore' in props) return { headBefore: 'a', headAfter: 'a', summary: 'noop' };
+    if ('headBefore' in props) return { headBefore: 'a', headAfter: moved ? 'b' : 'a', summary: 'noop' }; // moved: the remediation committed
     if ('ranSuite' in props) return { ranSuite: true, passed: true, testsRun: 3 };
     return { summary: 'done', branch: 'main', commit: 'sha' };
   };
@@ -214,3 +214,22 @@ test('a narrowed withdrawn round with zero unmet leads FAIL — verify PASS with
   assert.match(result.verdict.summary, /carried, not re-checked: 1 criteria/)
   assert.doesNotMatch(result.verdict.summary, /^ok/)
 })
+
+// Phase 56 remediate (C12, the debt 2026-10-15-after-a-withdrawn-carried-pass-the-loop): a remediation
+// cycle whose re-verify is a withdrawn carried PASS leaves zero unmet criteria. That is not "still
+// failing": the loop says nothing is unmet and that a full verify comes next.
+test('a withdrawn PASS after a remediation cycle never logs "0 … still failing — continuing"', async () => {
+  const IDS = ['C1', 'C2', 'C3'];
+  const nplan = (first) => ({ mode: 'narrowed', first, reason: 'stub', ids: IDS, saved: { run: 1, commit: 'abc1234' }, range: 'abc1234..HEAD' });
+  const carried = (id) => ({ id, passed: true, status: 'carried' });
+  const claim = { passed: true, criteriaFound: true, mode: 'narrowed', summary: 'ok', criteria: [carried('C1'), item('C2'), carried('C3')] };
+  const many = (n, f) => Array.from({ length: n }, f);
+  const { logs } = await run({
+    plans: [{ mode: 'full', first: [], reason: 'stub', ids: IDS }, nplan(['C2']), ...many(5, () => nplan([]))],
+    verifiers: [{ passed: false, criteriaFound: true, mode: 'full', summary: 'C2 bad', criteria: [item('C1'), { id: 'C2', passed: false, status: 'failed' }, item('C3')] }, ...many(6, () => claim)],
+    records: [{ recorded: true, run: 1, passed: false, failing: ['C2'] }, ...many(6, (_, i) => ({ recorded: true, run: i + 2, passed: false, failing: [] }))],
+    moved: true,
+  });
+  assert.ok(!logs.some((l) => /\b0 criterion\/criteria still failing/.test(l)), logs.join('\n'));
+  assert.ok(logs.some((l) => /nothing unmet \(was 1\)/.test(l)), 'it says nothing is unmet and what comes next');
+});
