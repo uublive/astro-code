@@ -181,6 +181,12 @@
       "opened_at": "2026-11-02T09:59:26.341Z"
     },
     {
+      "id": "2026-11-09-a-done-task-mid-chain-makes-its",
+      "title": "a done task mid-chain makes its dependents ready before their pending predecessors (GitHub #187)",
+      "status": "verified",
+      "opened_at": "2026-11-09T10:16:57.046Z"
+    },
+    {
       "id": "2026-11-09-ac-mutate-errors-when-the-go-module-is",
       "title": "ac mutate errors when the Go module is in a subfolder",
       "status": "accepted",
