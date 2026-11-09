@@ -634,6 +634,15 @@
       "file": "lib/mutate.mjs",
       "dropped_at": "2026-10-22T21:25:27.053Z",
       "drop_reason": "phase 49 t4: version read from the binary's build info"
+    },
+    {
+      "id": "2026-11-09-signer-kind-tests-fail-when-astro",
+      "title": "Signer-kind tests fail when ASTRO_SIGNER_AGENT is set in the environment (14 tests assume a human signer)",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-11-09T13:17:06.555Z",
+      "why": "Inside a Forge agent session ASTRO_SIGNER_AGENT is set, so tests/flags.test.mjs, the phase reject/accept and fix accept signer --agent claude tests and the fleet report tests fail (2026-11-09: 14 failures, all pass with the variable unset). The suite should unset it per test like it pins HOME and PATH.",
+      "file": "tests/flags.test.mjs"
     }
   ]
 }
