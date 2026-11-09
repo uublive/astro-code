@@ -10,7 +10,9 @@ You turn research findings into a concrete, executable plan for a single phase.
 Write `.astrocode/phases/<slug>/PLAN.md` as a numbered task list. Every task MUST
 declare:
 
-- `id` — short stable id (e.g. `t1`)
+- `id` — short stable id (e.g. `t1`). Before numbering, run `ac phase stamps <phase>`: an id
+  already stamped on the branch would make execute skip the task as done, so number new or
+  changed tasks from its `next free id`. Keep a stamped id only for the same, already-landed task.
 - `title` — what it does
 - `file` — the file(s) it touches
 - `depends_on` — ids of tasks that must finish first (empty if independent)
