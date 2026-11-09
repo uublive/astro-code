@@ -1,140 +1,84 @@
 {
   "version": 1,
-  "run": 3,
-  "mode": "narrowed",
-  "reason": "1 of 14 unmet",
+  "run": 4,
+  "mode": "full",
+  "reason": "verifier ran full (plan: narrowed: 1 of 14 unmet)",
   "broad": false,
-  "commit": "f88d913fe550dc9b0b4280ea0e4484493c7ae0b9",
+  "commit": "2e68dd4b9f38606237253266ab55f31a719e6c96",
   "criteria_sha": "sha256:7d4ce3756ae1e36b2e8774776dc2eeffd111566e35816f93bbbfbf9d782ae3ae",
-  "at": "2026-11-09T16:28:35.568Z",
+  "at": "2026-11-09T16:37:27.632Z",
   "base": null,
   "criteria": [
     {
       "id": "C1",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C2",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "failed",
+      "evidence": "observed",
+      "command": "ac suite run on a suite exiting 1 (0.1s), commit, ac verdict cheap 1",
+      "output": "held back — no recorded run of this command on this machine; the fast failing run leaves no timing the next pass reads"
     },
     {
       "id": "C3",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "failed",
+      "evidence": "observed",
+      "command": "passing 900s run then failing 30s run, ac verdict cheap 1",
+      "output": "held back — last run 900s; cheap pass clean: the latest failing run is hidden"
     },
     {
       "id": "C4",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C5",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C6",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "failed",
+      "evidence": "observed",
+      "command": "passing 900s run then failing 30s run, ac verdict cheap 1",
+      "output": "an older, longer run decides: last run 900s > 600s"
     },
     {
       "id": "C7",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C8",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C9",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C10",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C11",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C12",
-      "status": "failed",
-      "evidence": "observed",
-      "command": "scratchpad drive.mjs scenario B (effort standard, last cycle)",
-      "output": "• remediation cycle 1: nothing unmet (was 1) — a full verify (with any held-back suite) comes next / passed=false stopped=max-cycles: no further verify runs"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C13",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 2,
-        "commit": "f8957cd8ff4d0d75830a6896337a1a621099d9f0"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C14",
