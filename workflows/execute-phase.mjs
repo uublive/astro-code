@@ -368,9 +368,13 @@ function filesCollide(a, b) {
  * @param {Set<string>} [preCompleted=new Set()]  Task ids already done on the
  *   branch (found via commit-stamp grep).  Safe to omit — defaults to an empty
  *   set so all existing callers are unaffected.
+ * #187 — `doneDeps` (done id → its depends_on): a done task stands in for its own predecessors, so
+ *   when stamps landed out of order (rb17 done, rb16 pending) rb18 still waits for rb16. Without it a
+ *   done dependency satisfies its dependents at once, as before.
+ *
  * @returns {{ waves: Array<typeof tasks>, deferredForFiles: number }}
  */
-function buildWaves(tasks, preCompleted = new Set()) {
+function buildWaves(tasks, preCompleted = new Set(), doneDeps = new Map()) {
   // Seed completed with every pre-done id so their dependents are satisfied
   // from the very first Kahn iteration (phase-07 resumability).
   const completed = new Set(preCompleted)
@@ -379,9 +383,17 @@ function buildWaves(tasks, preCompleted = new Set()) {
   // Filter pre-done ids out of remaining: a stamped task must never appear in
   // any wave even though its id satisfies dependents' depends_on checks above.
   let remaining = tasks.filter((t) => !completed.has(t.id))
+  // A done dependency is replaced by its own predecessors, transitively (`seen` stops a cycle).
+  const expand = (d, seen) => {
+    if (!doneDeps.has(d)) return [d]
+    if (seen.has(d)) return []
+    seen.add(d)
+    return doneDeps.get(d).flatMap((x) => expand(x, seen))
+  }
+  const deps = new Map(remaining.map((t) => [t, t.depends_on.flatMap((d) => expand(d, new Set()))]))
 
   while (remaining.length) {
-    const ready = remaining.filter((t) => t.depends_on.every((d) => completed.has(d)))
+    const ready = remaining.filter((t) => deps.get(t).every((d) => completed.has(d)))
     if (!ready.length) {
       // Dependency cycle or a depends_on referencing an id that does not exist
       // in this task list.  Running the remainder together is wrong in the
@@ -648,7 +660,12 @@ for (const id of skippedTaskIds) {
 // preCompleted still seeds the completed set inside buildWaves so dependents of
 // done tasks are immediately "ready" in wave 1 (the whole point of pre-seeding).
 const executableTasks = tasks.filter((t) => !t.done)
-const { waves, deferredForFiles } = buildWaves(executableTasks, preCompleted)
+// #187: a done task's dependents still wait for its pending predecessors (stamps can land out of order).
+const doneDeps = new Map(tasks.filter((t) => t.done).map((t) => [t.id, t.depends_on]))
+const pendingIds = new Set(executableTasks.map((t) => t.id))
+const doneAhead = tasks.filter((t) => t.done && t.depends_on.some((d) => pendingIds.has(d))).map((t) => t.id)
+if (doneAhead.length) log(`• done tasks with pending predecessors: ${doneAhead.join(', ')} — their dependents wait for those predecessors`)
+const { waves, deferredForFiles } = buildWaves(executableTasks, preCompleted, doneDeps)
 log(
   `${tasks.length} task(s) in ${waves.length} wave(s)` +
     (skippedTaskIds.length ? ` (${skippedTaskIds.length} already done)` : '') +
@@ -732,10 +749,18 @@ const taskLabel = (kind, t) => {
 // and the audit need the stamp — each miss then costs a full heal cycle on work that
 // was already complete and correct. The executor knows its task id; checking is one git
 // call, and amending its own not-yet-integrated commit is the cheapest place to fix it.
+// #180 — a post-commit hook may already have pushed the commit; amending it then rewrites a pushed
+// commit and the branch diverges from its remote. The heal step and the completeness audit already
+// repair an unstamped commit, so a pushed one is reported, never rewritten.
+const NO_AMEND_PUSHED =
+  `Amend ONLY a commit no remote has: if \`git branch -r --contains HEAD\` prints anything, the commit ` +
+  `is already pushed — never rewrite it; report it as committed unstamped, with its hash, and the heal ` +
+  `step repairs it. `
+
 const stampSelfCheck = (t) =>
   `Before you report success, CHECK the stamp: run \`git log -1 --format=%s\` and confirm the ` +
   `subject ends with \`(phase ${phaseNum} ${t.id})\`. If it does not, fix it with ` +
-  `\`git commit --amend -m "<subject> (phase ${phaseNum} ${t.id})"\` and check again. Never report ` +
+  `\`git commit --amend -m "<subject> (phase ${phaseNum} ${t.id})"\` and check again. ${NO_AMEND_PUSHED}Never report ` +
   `an unstamped commit as done: the integrator maps branches by this stamp, and a miss costs a ` +
   `whole heal cycle to repair. `
 
@@ -1330,7 +1355,7 @@ const batchPrompt = (orderedTasks) =>
   `however sure you are that you wrote the code — benchmark #3 saw a batched run produce 25 ` +
   `commits with ZERO stamps while reporting every task as committed. If the grep comes back ` +
   `empty for a task you believe you finished, AMEND that commit to add the stamp ` +
-  `(\`git commit --amend\`) and re-run the grep, rather than reporting it committed unstamped. ` +
+  `(\`git commit --amend\`) and re-run the grep, rather than reporting it committed unstamped. ${NO_AMEND_PUSHED}` +
   `An unstamped commit is invisible to the integrator's branch→task mapping and to re-run ` +
   `resumability, so it is worse than a missing commit: it silently costs the whole phase its ` +
   `ability to resume. ` +
@@ -2076,7 +2101,7 @@ if (!integrationFailed && auditedTasks.length) {
         `lived in other worktrees can find nothing legitimate to commit from a stale fork base), ` +
         `or it committed without the ADR-017 stamp (which also breaks branch→task mapping and ` +
         `re-run resumability). Check \`git log --oneline\` for the work itself before re-running: ` +
-        `if the change IS present but unstamped, amend the stamp; if it is absent, the task never ` +
+        `if the change IS present but unstamped, amend the stamp (${NO_AMEND_PUSHED.trim()}); if it is absent, the task never ` +
         `ran and a re-execute will pick it up. A task that is commit-free BY DESIGN must say ` +
         `\`commits: none\` in the plan to be exempt.`,
     }
