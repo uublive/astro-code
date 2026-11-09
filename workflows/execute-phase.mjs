@@ -2876,9 +2876,13 @@ if (!integrationFailed) {
       // held back): it is not "still failing", so say what comes next instead (C12, the debt
       // 2026-10-15-after-a-withdrawn-carried-pass-the-loop).
       if (afterIds.size === 0) {
+        // On the last cycle the budget allows, no further verify runs: say that, never promise one.
         log(
-          `• remediation cycle ${cycle + 1}: nothing unmet (was ${beforeIds.size}) — ` +
-            `a full verify (with any held-back suite) comes next`,
+          cycle + 1 < maxCycles
+            ? `• remediation cycle ${cycle + 1}: nothing unmet (was ${beforeIds.size}) — ` +
+                `a full verify (with any held-back suite) comes next`
+            : `• remediation cycle ${cycle + 1}: nothing unmet (was ${beforeIds.size}), but the remediation ` +
+                `budget is spent — no further verify runs this time; re-run /astro-verify for a full verify`,
         )
         continue
       }

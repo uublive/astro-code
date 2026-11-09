@@ -233,3 +233,25 @@ test('a withdrawn PASS after a remediation cycle never logs "0 … still failing
   assert.ok(!logs.some((l) => /\b0 criterion\/criteria still failing/.test(l)), logs.join('\n'));
   assert.ok(logs.some((l) => /nothing unmet \(was 1\)/.test(l)), 'it says nothing is unmet and what comes next');
 });
+
+// Phase 56 remediate (C12, re-verify finding): when that withdrawal lands on the LAST cycle the budget
+// allows (effort standard = 1 cycle), no further verify runs, so the log must not promise one.
+test('a withdrawn PASS on the last remediation cycle says the budget is spent, never that a verify comes next', async () => {
+  const IDS = ['C1', 'C2', 'C3'];
+  const nplan = (first) => ({ mode: 'narrowed', first, reason: 'stub', ids: IDS, saved: { run: 1, commit: 'abc1234' }, range: 'abc1234..HEAD' });
+  const carried = (id) => ({ id, passed: true, status: 'carried' });
+  const { logs, result, calls } = await run({
+    plans: [{ mode: 'full', first: [], reason: 'stub', ids: IDS }, nplan(['C2'])],
+    verifiers: [
+      { passed: false, criteriaFound: true, mode: 'full', summary: 'C2 bad', criteria: [item('C1'), { id: 'C2', passed: false, status: 'failed' }, item('C3')] },
+      { passed: true, criteriaFound: true, mode: 'narrowed', summary: 'ok', criteria: [carried('C1'), item('C2'), carried('C3')] },
+    ],
+    records: [{ recorded: true, run: 1, passed: false, failing: ['C2'] }, { recorded: true, run: 2, passed: false, failing: [] }],
+    args: { effort: 'standard' },
+    moved: true,
+  });
+  assert.equal(verifierSpawns(calls).length, 2, 'no third verify runs');
+  assert.ok(!logs.some((l) => /comes next/.test(l)), logs.join('\n'));
+  assert.ok(logs.some((l) => /nothing unmet \(was 1\), but the remediation budget is spent/.test(l)), logs.join('\n'));
+  assert.equal(result.verdict.passed, false);
+});
