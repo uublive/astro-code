@@ -865,6 +865,15 @@
       "branch": "develop",
       "claimed_at": "2026-11-02T09:59:28.173Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-09-ac-mutate-errors-when-the-go-module-is",
+      "name": "ac mutate errors when the Go module is in a subfolder",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "fix/mutate-go-module-subdir",
+      "claimed_at": "2026-11-09T09:19:41.018Z",
+      "status": "active"
     }
   ]
 }
