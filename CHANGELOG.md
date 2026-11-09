@@ -2,6 +2,17 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.56.0
+
+- `ac phase stamps <n>` lists the task ids a phase already stamped and the next free one; the planner numbers a re-plan's tasks from it, and `/astro-plan` checks the plan (`--check`) so a reused id is never skipped as already done (GitHub #186)
+- Challenge rounds stay plain text by default; `ac config set challenge.ask picker` asks them through the question picker, a round of more than 4 questions split across several (ADR-092, GitHub #189)
+- `mutation.max_children` (or `mutation.phases.<n>.max_children`) bounds mutmut 3's workers through its own `--max-children` (GitHub #188)
+- Fix: `ac mutate` runs Gremlins and the `go test` baseline from a Go module in a subfolder (`host/go.mod`), with module-relative paths in and repo paths back out
+- Fix: execute no longer makes a task ready while a done task it depends on still has pending predecessors, so a serial chain stays serial (GitHub #187)
+- Fix: an executor never amends a stamp onto a commit a remote already has; a pushed commit is reported unstamped for the heal step (GitHub #180)
+- Fix: git-guard judges a program run by an expanded path (`"$HOME/bin/tool" --reason switch`) by its name; `$GIT` and other possible git expansions are still refused (GitHub #169)
+- Fix: `ac milestone complete` neither gates on nor archives phases of a planned lower-numbered milestone (GitHub #184, by @luigi-lauro)
+
 ## v0.55.0
 
 - Executors and planners follow a smallest-complete-change rule: reuse what exists, then the standard library, then an installed dependency, then the minimum code. Validation, data-loss handling, security, accessibility and anything the criteria require are never cut, and a deliberate shortcut is marked in code as `shortcut: <the limit>, <when to upgrade>`. The verifier and criteria-author are told to ignore minimal-code advice from other tools: their only bar is the criteria and the phase goal. A one-off with/without run (8 tasks × 3 runs per arm) passed 24/24 with the rule and 23/24 without

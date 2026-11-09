@@ -217,12 +217,17 @@
     {
       "id": "2026-09-24-a-convention-promoted-and-awaiting-ac",
       "title": "A convention promoted and awaiting ac canon push gets published by the next decision promote",
-      "status": "open",
+      "status": "paying",
       "cost": "small",
       "found_at": "2026-09-24T10:53:09.442Z",
       "why": "principles promote --as convention prints 'publish it to the team: ac canon push', but a later promote --as decision (via ac decision add, which publishes CONVENTIONS.md since before phase 22) prints '✓ published CONVENTIONS.md' — the hint misleads about when the convention reaches the team",
       "phase": "22",
-      "file": "bin/ac.mjs"
+      "file": "bin/ac.mjs",
+      "paid_by": {
+        "kind": "fix",
+        "ref": "2026-11-02-a-convention-promoted-and-awaiting-ac"
+      },
+      "paying_since": "2026-11-02T09:59:30.553Z"
     },
     {
       "id": "2026-09-24-a-convention-promotion-record-prints",
@@ -485,12 +490,14 @@
     {
       "id": "2026-10-11-phase-37-worktree-residue-still-checked",
       "title": "Phase-37 worktree residue still checked out at .claude/worktrees/wf_6a116c1d-67a-9 (branch worktree-wf_6a116c1d-67a-9)",
-      "status": "open",
+      "status": "dropped",
       "cost": "small",
       "found_at": "2026-10-11T20:44:10.720Z",
       "why": "`git cherry HEAD` shows the branch is fully integrated (it is an ancestor of HEAD), so nothing is stranded. But the worktree and branch are still present and show up as untracked .claude/worktrees/ in git status.",
       "phase": "40",
-      "file": ".claude/worktrees/wf_6a116c1d-67a-9"
+      "file": ".claude/worktrees/wf_6a116c1d-67a-9",
+      "dropped_at": "2026-11-02T09:59:30.738Z",
+      "drop_reason": "the phase-37 worktree and its branch no longer exist (checked 2026-11-02: not in git worktree list or refs)"
     },
     {
       "id": "2026-10-11-unbuilt-feature-enable-message-promises",
@@ -627,6 +634,15 @@
       "file": "lib/mutate.mjs",
       "dropped_at": "2026-10-22T21:25:27.053Z",
       "drop_reason": "phase 49 t4: version read from the binary's build info"
+    },
+    {
+      "id": "2026-11-09-signer-kind-tests-fail-when-astro",
+      "title": "Signer-kind tests fail when ASTRO_SIGNER_AGENT is set in the environment (14 tests assume a human signer)",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-11-09T13:17:06.555Z",
+      "why": "Inside a Forge agent session ASTRO_SIGNER_AGENT is set, so tests/flags.test.mjs, the phase reject/accept and fix accept signer --agent claude tests and the fleet report tests fail (2026-11-09: 14 failures, all pass with the variable unset). The suite should unset it per test like it pins HOME and PATH.",
+      "file": "tests/flags.test.mjs"
     }
   ]
 }

@@ -72,6 +72,16 @@ test('templates/challenge.md states the round is never asked via AskUserQuestion
   );
 });
 
+test('#189: challenge.ask picker asks the round through AskUserQuestion, split at 4, text stays the default', () => {
+  const flat = specSrc.replace(/\n/g, ' ');
+  assert.ok(specSrc.includes('ac config get challenge.ask'), 'the spec names the setting and how to read it');
+  assert.match(flat, /`text` unless the project set\s+`picker`/, 'text is the default');
+  assert.match(flat, /\*\*`picker`, on a host that has one:\*\* ask the round through `AskUserQuestion`/);
+  assert.match(flat, /at most 4 questions, so a bigger round is split over consecutive\s+calls/);
+  assert.match(flat, /"\(Recommended\)"/, 'the recommendation is the first, marked option');
+  assert.match(flat, /Otherwise \(unset, `text`, any other value, outside a project, or no picker on the\s+host\):\*\* the plain-text round/);
+});
+
 test('templates/challenge.md states facts are looked up, never asked, via a read-only sub-agent', () => {
   assert.ok(/Facts are looked up, never asked/i.test(specSrc), 'the spec must title §2 "Facts are looked up, never asked"');
   assert.ok(/never a question/i.test(specFlat), 'the spec must state discoverable facts are never asked');

@@ -557,8 +557,11 @@ of the normal discuss step, `/astro-autonomous <phase> --challenge` passes it st
 through to that discuss step, and the standalone `/astro-challenge "<idea>"` runs it
 against a backlog item before any phase exists at all.
 
-Every round is numbered plain text (never a picker-only format, so it works on hosts
-without one) and is saved to its destination immediately — a `/clear` or a crash loses at
+Every round is numbered plain text by default, so it works on hosts without a picker. A
+project that prefers clicking sets `ac config set challenge.ask picker`: rounds then go
+through the question picker, one question per decision with the recommendation first, a
+round of more than 4 questions split over several pickers, and plain text where the host has
+none. Either way a round is saved to its destination immediately — a `/clear` or a crash loses at
 most one round, never the whole session. A discuss session run this way stamps a second
 marker line, `<!-- astro-challenge: <rounds> rounds -->`, so a rerun resumes rather than
 re-asking what was already settled. On Codex, the round and the round-end checkpoint are
@@ -786,6 +789,9 @@ lock-managed Python environment adds a warning that an install may change nothin
   `ac config set mutation.phases.<n>.cap_seconds 1800` for one phase. At the cap the whole process
   group is killed and the result names the step it was in, how many mutants were tested and the key
   to raise. A capped run is never "all killed".
+- **Workers (mutmut 3).** One per CPU by default; `mutation.max_children` (or
+  `mutation.phases.<n>.max_children`) bounds it, passed as mutmut's own `--max-children`. mutmut 2 has
+  no such flag, so the key is reported as ignored there.
 - **Outcomes.** `clean`, `survivors`, `incomplete` (capped or not every mutant ran), `no-scope`,
   `tool-missing`, `no-tool`, `not-configured` (mutmut 3 installed but without configuration: run
   `ac mutate setup`), `error`. Timeouts count as killed. A dirty scope is an `error`: the result

@@ -603,3 +603,10 @@ _2026-10-28 · at ca0e3c2_
 
 **Rejected:** Setup declared in RUN-CONTRACT.md; verifier-judged cheap order; LRU eviction (reuse must not refresh age, so the rule stays deterministic)
 
+## ADR-092 — Challenge rounds are plain text by default; a project can set challenge.ask picker to ask them through AskUserQuestion, split at 4 per call (amends ADR-069)
+_2026-11-09 · at 925511c_
+
+**Why:** GitHub #189: a project whose rule is that every choice goes through the picker had to override the template with a hook. The owner chose text as the default (ADR-069's reasons hold: big rounds, open answers, hosts without a picker) and the picker as a per-project opt-in, with big rounds split over several pickers.
+
+**Rejected:** Picker for every project by default (changes every existing user's interview); size-based switching between picker and text (the format would change from round to round)
+

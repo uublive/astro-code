@@ -90,6 +90,8 @@ const DANGER = new Set(['stash', 'clean', 'reset', 'checkout', 'restore', 'switc
 
 // An expansion the guard cannot resolve: `$VAR`, `$(…)`, backticks.
 const dynamic = (w) => /[$`]/.test(w);
+// `$HOME/bin/tool`, `${HOME}/bin/tool`, `~/bin/tool`: a single plain variable, then only literal path parts.
+const pathOnly = (w) => /^(?:\$\{?[A-Za-z_]\w*\}?|~)(?:\/[^$`/]+)+$/.test(w);
 
 // The hook's `cwd`, set per call by decide(); pathspecs are resolved against it.
 let CWD = null;
@@ -395,8 +397,10 @@ function judgeSegment(raw, depth) {
     if (typeof body === 'string') return judgeCommand(body, depth + 1);
   }
   if (cmd === 'eval') return judgeCommand(words.slice(1).join(' '), depth + 1);
-  // `$GIT stash -u`, `"$(which git)" reset --hard`: the command word itself is an expansion.
-  if (dynamic(words[0])) return unsure(words.slice(1));
+  // `$GIT stash -u`, `"$(which git)" reset --hard`: the command word itself is an expansion. One plain
+  // variable (or ~) before a literal path (`$HOME/bin/tool`) is an ordinary program path, judged by its
+  // name like `/home/x/bin/tool` — a `git` name was already judged above (#169).
+  if (dynamic(words[0]) && !pathOnly(words[0])) return unsure(words.slice(1));
   // An unknown wrapper in front of a bare `git` word (`xargs git clean -f`, `watch git reset
   // --hard`): judge from that word. A git command quoted inside one argument is one word, not `git`.
   const gi = words.findIndex((w, k) => k > 0 && base(w) === 'git');

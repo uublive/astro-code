@@ -89,6 +89,42 @@ test('real Gremlins accepts what ac mutate builds (diff scope, GOFLAGS tests, lo
   } finally { rmSync(dir, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
 });
 
+// Fix 2026-11-09-ac-mutate-errors-when-the-go-module-is: the Go module sits in a subfolder (no go.mod at
+// the repo root). Gremlins and the go-test baseline must run from the module, and the report's paths
+// must come back repo-relative so they still match the phase's lines.
+test('real Gremlins on a Go module in a subfolder: runs from the module, survivors keep repo paths', { skip: !REAL || !which('gremlins') || !which('go') }, async () => {
+  const dir = await scratch();
+  const home = mkdtempSync(join(tmpdir(), 'ac-mutate-gohome-'));
+  try {
+    const sub = (op) => `package p2\n\nfunc Sub(a, b int) int {\n\tif a ${op} b {\n\t\treturn a - b\n\t}\n\treturn b - a\n}\n`;
+    put(dir, 'host/go.mod', 'module example.com/real\n\ngo 1.22\n');
+    put(dir, 'host/p1/p1.go', 'package p1\n\nfunc Add(a, b int) int {\n\treturn a + b\n}\n');
+    put(dir, 'host/p1/p1_test.go', 'package p1\n\nimport "testing"\n\nfunc TestAdd(t *testing.T) {\n\tif Add(1, 2) != 3 {\n\t\tt.Fatal("bad")\n\t}\n}\n');
+    put(dir, 'host/p2/p2.go', sub('<'));
+    put(dir, 'host/p2/p2_test.go', 'package p2\n\nimport "testing"\n\nfunc TestOld(t *testing.T) {}\n');
+    commit(dir, 'baseline');
+    put(dir, 'host/p2/p2.go', sub('>'));
+    put(dir, 'host/p2/p2_test.go', 'package p2\n\nimport "testing"\n\nfunc TestSub(t *testing.T) {\n\tif Sub(3, 1) != 2 {\n\t\tt.Fatal("bad")\n\t}\n}\n');
+    commit(dir, 'work (phase 5 t1)');
+    // No go.mod at the root, so detection finds no Go project: the subfolder project names its tool.
+    put(dir, '.astrocode/config.json', JSON.stringify({ ...JSON.parse(readFileSync(join(dir, '.astrocode/config.json'), 'utf8')), mutation: { tool: 'gremlins' } }));
+    const r = ac(dir, ['mutate', '5', '--json'], { HOME: home, GOFLAGS: '-mod=mod' });
+    assert.equal(r.status, 0, r.stderr);
+    const res = JSON.parse(r.stdout);
+    common(res, dir);
+    // Gremlins' --diff cannot map a subfolder module (it skips every mutant), so the module's other files are excluded.
+    assert.equal(res.scope_detail.narrowed, 'files');
+    assert.match(res.command, /--exclude-files \^p1\/p1\\\.go\$/);
+    assert.deepEqual(res.scope, ['host/p2/p2.go']);
+    assert.equal(res.flaky.checked, true, res.flaky.reason);
+    assert.equal(res.flaky.command, 'go test -count=1 -v ./p2');
+    assert.deepEqual(res.flaky.baseline_failing, []);
+    const counted = Object.values(res.counts).reduce((a, b) => a + b, 0);
+    assert.ok(counted > 0, 'mutants were tested and matched to the phase\'s lines');
+    assert.ok(res.survivors.every((s) => s.file === 'host/p2/p2.go'), JSON.stringify(res.survivors));
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
 // ---- Phase 49 t12 — triage, --survivors, the flaky check and the Gremlins version, on the real tools ----
 const json = (dir, args, env = {}) => { const r = ac(dir, ['mutate', '5', '--json', ...args], env); assert.equal(r.status, 0, r.stderr); return JSON.parse(r.stdout); };
 const judgeOk = (dir, ...a) => { const r = ac(dir, ['mutate', 'judge', '5', ...a]); assert.equal(r.status, 0, r.stderr); return r; };

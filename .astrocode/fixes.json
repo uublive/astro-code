@@ -173,6 +173,51 @@
       "accepted_at": "2026-11-02T09:40:40.390Z",
       "accepted_kind": "human",
       "accepted_by": "matteo.alvazzi@gmail.com"
+    },
+    {
+      "id": "2026-11-02-a-convention-promoted-and-awaiting-ac",
+      "title": "A convention promoted and awaiting ac canon push gets published by the next decision promote",
+      "status": "open",
+      "opened_at": "2026-11-02T09:59:26.341Z"
+    },
+    {
+      "id": "2026-11-09-a-done-task-mid-chain-makes-its",
+      "title": "a done task mid-chain makes its dependents ready before their pending predecessors (GitHub #187)",
+      "status": "verified",
+      "opened_at": "2026-11-09T10:16:57.046Z"
+    },
+    {
+      "id": "2026-11-09-ac-mutate-errors-when-the-go-module-is",
+      "title": "ac mutate errors when the Go module is in a subfolder",
+      "status": "accepted",
+      "opened_at": "2026-11-09T09:19:38.840Z",
+      "accepted_at": "2026-11-09T09:40:46.371Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude"
+    },
+    {
+      "id": "2026-11-09-git-guard-refuses-a-command-run-by-an",
+      "title": "git-guard refuses a command run by an expanded path ($HOME/...) when an argument is switch/stash/reset (GitHub #169)",
+      "status": "verified",
+      "opened_at": "2026-11-09T10:29:00.814Z"
+    },
+    {
+      "id": "2026-11-09-executor-prompts-amend-a-missing-stamp",
+      "title": "executor prompts amend a missing stamp even when the commit is already pushed (GitHub #180)",
+      "status": "verified",
+      "opened_at": "2026-11-09T10:40:18.317Z"
+    },
+    {
+      "id": "2026-11-09-a-re-plan-that-reuses-task-ids-is",
+      "title": "a re-plan that reuses task ids is skipped as already done (GitHub #186)",
+      "status": "verified",
+      "opened_at": "2026-11-09T12:51:06.630Z"
+    },
+    {
+      "id": "2026-11-09-ac-mutate-cannot-bound-mutmut-s-worker",
+      "title": "ac mutate cannot bound mutmut's worker count, so a run uses every CPU (GitHub #188)",
+      "status": "verified",
+      "opened_at": "2026-11-09T13:17:15.829Z"
     }
   ]
 }

@@ -57,6 +57,11 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    checks the result against it, so it must not be shaped by the plan) — then the result
    is `.astrocode/phases/<slug>/PLAN.md` (+ `ACCEPTANCE.md`) with numbered,
    dependency-aware tasks conforming to the canon and aimed at every criterion.
+3a. **Check the task ids against the branch (#186).** Run `ac phase stamps <number> --check`. It
+   exits non-zero when PLAN.md reuses a task id that already carries a `(phase NN tK)` stamp,
+   which execute would skip as already done. Then state the reused ids and the next free id
+   **in one line**, and ask whether each is the same, already-landed task (keep it) or new
+   work (re-plan with fresh ids) before committing. Say nothing when the check passes.
 3b. **Commit the plan artifacts (ADR-035).** `plan-phase.mjs` writes `CRITERIA.md`,
    `PLAN.md` and `ACCEPTANCE.md` and leaves them UNTRACKED. Untracked files in the shared
    working tree are one `git stash -u` / `git clean` away from gone — that is exactly how a
