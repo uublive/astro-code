@@ -6,7 +6,7 @@
       "number": 56,
       "name": "Run a slow test suite last in verify, only once every other criterion has passed",
       "slug": "56-run-a-slow-test-suite-last-in-verify",
-      "status": "pending",
+      "status": "verified",
       "milestone": 16
     }
   ]
