@@ -892,6 +892,15 @@
       "branch": "fix/git-guard-expanded-path",
       "claimed_at": "2026-11-09T10:29:03.053Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-09-executor-prompts-amend-a-missing-stamp",
+      "name": "executor prompts amend a missing stamp even when the commit is already pushed (GitHub #180)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "fix/no-amend-pushed-stamp",
+      "claimed_at": "2026-11-09T10:40:22.564Z",
+      "status": "active"
     }
   ]
 }
