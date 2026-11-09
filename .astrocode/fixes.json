@@ -183,8 +183,11 @@
     {
       "id": "2026-11-09-ac-mutate-errors-when-the-go-module-is",
       "title": "ac mutate errors when the Go module is in a subfolder",
-      "status": "verified",
-      "opened_at": "2026-11-09T09:19:38.840Z"
+      "status": "accepted",
+      "opened_at": "2026-11-09T09:19:38.840Z",
+      "accepted_at": "2026-11-09T09:40:46.371Z",
+      "accepted_kind": "agent",
+      "accepted_by": "claude"
     }
   ]
 }
