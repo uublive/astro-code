@@ -901,6 +901,15 @@
       "branch": "fix/no-amend-pushed-stamp",
       "claimed_at": "2026-11-09T10:40:22.564Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-09-a-re-plan-that-reuses-task-ids-is",
+      "name": "a re-plan that reuses task ids is skipped as already done (GitHub #186)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "fix/replan-reuses-stamped-ids",
+      "claimed_at": "2026-11-09T12:51:09.307Z",
+      "status": "active"
     }
   ]
 }
