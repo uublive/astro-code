@@ -142,7 +142,7 @@ import { completeMilestone, belongsToMilestone, plannedMilestones } from '../lib
 import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate, carriedOf, readVerdict, verdictFile } from '../lib/verdict.mjs';
 import { VERDICTS_FILE, readHistory } from '../lib/verdicthistory.mjs';
-import { runSuite, reusableReceipt } from '../lib/receipts.mjs';
+import { runSuite, reusableReceipt, suiteSpeed } from '../lib/receipts.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
 import { planCalibration, runCalibration, renderSummary, renderBill, parseCalibrateFlags, publicDefect, CALIBRATE_USAGE } from '../lib/calibrate.mjs';
 import { recordJudgements } from '../lib/survivors.mjs';
@@ -605,7 +605,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase context <phase> --author   who captured it: human | agent <name> | none
   ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full or valid targeted verdict)
   ac verdict plan <phase> [--full] [--broad-files a,b] [--json]  full, narrowed (after a FAIL) or targeted (after a full PASS)
-  ac verdict cheap <phase> [--json]    the cheap first pass: suite receipt + each criterion's Cheap: command; exits 1 on any unmet
+  ac verdict cheap <phase> [--json]    the cheap first pass: suite receipt + each criterion's Cheap: command; exits 1 on any unmet; a slow suite is held back, not run
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
   ac verdict history <phase> [--json]  every recorded verdict of the phase, oldest first (VERDICTS.jsonl)
   ac verdict show <phase> [--json]     the latest verdict: unmet ids, deferred ids, flapping flags
@@ -613,7 +613,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac setup run <name> [--commit <ref>] [--json]  run a declared setup step, or reuse its result for the same commit + command (ac config set setup.steps.<name>)
   ac setup list [--json]               declared setup steps and the cached results (.astrocode/.local/setup-cache)
   ac suite run --command "<cmd>" [--json]   run the project's suite and write a local receipt (exits with the suite's status)
-  ac suite receipt --command "<cmd>" [--json]  is there a reusable receipt for this exact command on HEAD's clean tree? (read-only)
+  ac suite receipt --command "<cmd>" [--json]  is there a reusable receipt for this exact command on HEAD's clean tree, and is the suite slow (held back) or fast? (read-only)
   ac mutate <phase> [--json]          run the project's mutation tool on the lines the phase changed (ADR-083, ADR-084)
   ac mutate <phase> --survivors [--json]  re-test only the open survivors of the last full run (partial; never a verdict)
   ac mutate --check [<phase>] [--json]  which tool applies, is it installed, how to install it (read-only)
@@ -2725,9 +2725,18 @@ async function main() {
         return;
       }
       const got = reusableReceipt(r, cmd);
-      if (flags.json) json({ reusable: got.ok, reason: got.reason, receipt: got.receipt });
-      else if (got.ok) console.log(`✓ reusable receipt ${got.receipt.key.slice(0, 8)} for "${cmd}" at ${short(got.receipt.commit)}`);
-      else console.log(`• no reusable receipt: ${got.reason}`);
+      // ADR-093: the ONE slow-or-fast answer both verify tiers act on (never the verifier's estimate).
+      const warns = [];
+      const slow = suiteSpeed(r, cmd, warns);
+      for (const w of warns) console.error(`⚠ ${w}`);
+      if (flags.json) json({ reusable: got.ok, reason: got.reason, receipt: got.receipt, slow });
+      else {
+        if (got.ok) console.log(`✓ reusable receipt ${got.receipt.key.slice(0, 8)} for "${cmd}" at ${short(got.receipt.commit)}`);
+        else console.log(`• no reusable receipt: ${got.reason}`);
+        console.log(slow.slow
+          ? `• slow suite (${slow.reason}) — held back: run it last, through ac suite run, only after every other criterion passes`
+          : `• fast suite (${slow.reason}) — run it in order`);
+      }
       return;
     }
 
@@ -2810,7 +2819,8 @@ async function main() {
           for (const h of hist.entries) {
             const unmet = Array.isArray(h.unmet) && h.unmet.length ? `  unmet: ${h.unmet.join(', ')}` : '';
             const def = Array.isArray(h.deferred) && h.deferred.length ? `  deferred: ${h.deferred.join(', ')}` : '';
-            console.log(`run ${h.run}  ${h.mode}${h.stage ? `/${h.stage}` : ''}  ${h.passed ? 'PASS' : 'FAIL'}  ${sha7(h.commit)}${unmet}${def}`);
+            const held = Array.isArray(h.held) && h.held.length ? `  held: ${h.held.join(', ')}` : '';
+            console.log(`run ${h.run}  ${h.mode}${h.stage ? `/${h.stage}` : ''}  ${h.passed ? 'PASS' : 'FAIL'}  ${sha7(h.commit)}${unmet}${def}${held}`);
           }
           return;
         }
@@ -2820,13 +2830,15 @@ async function main() {
         const unmet = verdict.criteria.filter((c) => c.status === 'failed' || (c.status === 'carried' && c.last === 'failed')).map((c) => c.id);
         const deferred = verdict.criteria.filter((c) => c.status === 'deferred').map((c) => ({ id: c.id, fix_id: c.fix_id }));
         const flapping = line?.flapping ?? [];
+        const held = verdict.criteria.filter((c) => c.held).map((c) => c.id);
         const view = {
           phase: ph.slug, run: verdict.run, mode: verdict.mode, ...(verdict.stage ? { stage: verdict.stage } : {}),
-          passed: line ? line.passed === true : unmet.length === 0, commit: verdict.commit, unmet, deferred, flapping,
+          passed: line ? line.passed === true : unmet.length === 0, commit: verdict.commit, unmet, held, deferred, flapping,
         };
         if (flags.json) { json(view); return; }
         console.log(`run ${view.run}  ${view.mode}  ${view.passed ? 'PASS' : 'FAIL'}  ${sha7(view.commit)}`);
         console.log(unmet.length ? `unmet: ${unmet.join(', ')}` : 'unmet: none');
+        if (held.length) console.log(`held back: ${held.join(', ')} (slow suite, not run)`);
         if (deferred.length) console.log(`deferred: ${deferred.map((d) => `${d.id} → ${d.fix_id}`).join(', ')}`);
         for (const f of flapping) console.log(flappingLine(f));
         return;
@@ -2836,14 +2848,17 @@ async function main() {
         // unmet id. Exit 1 on any unmet; a clean pass records nothing.
         const res = await runCheapPass(r, ph.slug);
         if (flags.json) json(res);
-        else if (!res.ran.length) console.log('⊡ no cheap observation declared — nothing checked');
+        else if (!res.ran.length && !res.held.length) console.log('⊡ no cheap observation declared — nothing checked');
         else {
           for (const x of res.ran) {
             console.log(x.passed ? `✓ ${x.id} ${x.kind}: ${x.command}` : `✖ ${x.id} ${x.kind}: ${x.command} — ${String(x.output ?? '').split('\n')[0].slice(0, 160)}`);
           }
-          console.log(res.clean ? `✓ cheap pass clean (${res.ran.length} checked${res.unchecked.length ? `, ${res.unchecked.length} left to the expensive stage` : ''})`
-            : `✖ cheap pass: ${res.unmet.length} unmet — ${res.unmet.join(', ')}`);
+          for (const h of res.held) console.log(`• ${h.id} suite: held back — ${h.reason}; not run this round`);
+          const heldN = res.held.length ? ` (${res.held.length} held back)` : '';
+          console.log(res.clean ? `✓ cheap pass clean (${res.ran.length} checked${res.unchecked.length ? `, ${res.unchecked.length} left to the expensive stage` : ''})${heldN}`
+            : `✖ cheap pass: ${res.unmet.length} unmet — ${res.unmet.join(', ')}${heldN}`);
         }
+        for (const w of res.warnings) console.error(`⚠ ${w}`);
         if (res.recorded && res.recorded.recorded === false) console.error(`⚠ the cheap verdict was not recorded: ${res.recorded.error}`);
         if (!res.clean) process.exitCode = 1;
         return;
@@ -2862,6 +2877,11 @@ async function main() {
         } else if (plan.mode === 'targeted') {
           console.log(`• targeted: ${plan.reason}: re-check ${plan.floor.join(', ') || 'none'}; carry ${plan.carry.length}`);
         } else console.log(`• full: ${plan.reason}`);
+        // ADR-093: the suite criteria go last, and only after every other criterion passes. One line, only
+        // when the saved verdict actually held a suite back.
+        if (!flags.json && plan.order?.last?.length && readVerdict(verdictFile(r, ph.slug)).verdict?.criteria.some((c) => c.held)) {
+          console.log(`• slow suite last: ${plan.order.last.join(', ')}`);
+        }
         return;
       }
       if (typeof flags.result !== 'string') die(`usage: ac verdict record <phase> --result '<json>'`);
