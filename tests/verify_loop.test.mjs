@@ -195,3 +195,22 @@ test('the record\'s deferrable, flapping and broad_refused each add one summary 
   assert.match(lines[2], /^flapping: C2 passed in run 1, files unchanged$/);
   assert.match(lines[3], /^broad claim refused: no files named — recorded narrowed$/);
 });
+
+// Phase 56 t5 (C12 guard): a narrowed, withdrawn round with zero unmet keeps the withdrawal headline,
+// with the carried line appended, and never reads ok. (Fixed in phase 54 t1; this only guards it.)
+test('a narrowed withdrawn round with zero unmet leads FAIL — verify PASS withdrawn with the carried line, never ok', async () => {
+  const narrowedPlan = { mode: 'narrowed', first: ['C2'], reason: 'stub', ids: ['C1', 'C2'], saved: { run: 1, commit: 'abcdef1234' }, range: 'abcdef1..HEAD' }
+  const claim = { passed: true, criteriaFound: true, summary: 'ok', mode: 'narrowed', criteria: [item('C2'), item('C1', { status: 'carried' })] }
+  const rec = { recorded: true, run: 2, passed: false, failing: [], carried: 1, carriedFrom: { run: 1, commit: 'abcdef1234' } }
+  const { result, calls } = await run({
+    verifiers: [claim, claim],
+    plans: [narrowedPlan, narrowedPlan],
+    records: [rec, rec],
+    args: { effort: 'standard' },
+  })
+  assert.equal(calls.filter((c) => (c.opts.label || '').startsWith('remediate:')).length, 0)
+  assert.equal(result.verdict.passed, false)
+  assert.match(result.verdict.summary, /^FAIL — verify PASS withdrawn: /)
+  assert.match(result.verdict.summary, /carried, not re-checked: 1 criteria/)
+  assert.doesNotMatch(result.verdict.summary, /^ok/)
+})
