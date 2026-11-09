@@ -928,6 +928,16 @@
       "branch": "develop",
       "claimed_at": "2026-11-09T14:14:14.260Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 56,
+      "milestone": 16,
+      "name": "Run a slow test suite last in verify, only once every other criterion has passed",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-11-09T14:14:38.045Z",
+      "status": "active"
     }
   ]
 }
