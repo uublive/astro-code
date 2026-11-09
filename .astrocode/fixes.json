@@ -179,6 +179,12 @@
       "title": "A convention promoted and awaiting ac canon push gets published by the next decision promote",
       "status": "open",
       "opened_at": "2026-11-02T09:59:26.341Z"
+    },
+    {
+      "id": "2026-11-09-ac-mutate-errors-when-the-go-module-is",
+      "title": "ac mutate errors when the Go module is in a subfolder",
+      "status": "verified",
+      "opened_at": "2026-11-09T09:19:38.840Z"
     }
   ]
 }
