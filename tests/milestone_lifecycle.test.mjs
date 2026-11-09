@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -214,4 +214,33 @@ test('#78: rename refuses an unclaimed number, an empty name and unknown flags; 
   assert.match(ac(['milestone', 'rename', '2', 'Y', '--force'], dir).stderr, /unknown flag/);
   assert.match(ac(['milestone', 'rename', '2', 'Later'], dir).stdout, /already named "Later"/);
   assert.equal(JSON.stringify(readRegistry(dir).registry), snap, 'none of these wrote to the registry');
+});
+
+test('#184: closing the active milestone neither gates on nor archives a PLANNED lower-numbered milestone', () => {
+  const dir = fixture();
+  assert.equal(ac(['milestone', 'new', '--planned', '--name', 'M2'], dir).status, 0);
+  assert.equal(ac(['milestone', 'new', '--planned', '--name', 'M3'], dir).status, 0);
+  assert.equal(ac(['phase', 'add', 'pending in M2', '--milestone', '2'], dir).status, 0);
+  assert.equal(ac(['phase', 'add', 'pending in M3', '--milestone', '3'], dir).status, 0);
+  assert.equal(ac(['milestone', 'activate', '3'], dir).status, 0); // out of numeric order
+  assert.equal(ac(['phase', 'add', 'work in M3'], dir).status, 0);
+  const p = paths(dir);
+  const rm = readJSON(p.roadmap);
+  for (const ph of rm.phases) if (ph.milestone === 3) ph.status = 'complete';
+  writeFileSync(p.roadmap, JSON.stringify(rm, null, 2) + '\n');
+
+  const r = ac(['milestone', 'complete'], dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /milestone 3 complete — archived 2 phase\(s\)/);
+  assert.deepEqual(readJSON(p.roadmap).phases.map((ph) => ph.name), ['pending in M2'], 'the planned milestone stays scheduled');
+});
+
+test('#184: a phase of an earlier, unplanned milestone is still carried into the close', () => {
+  const dir = fixture();
+  assert.equal(ac(['phase', 'add', 'left behind in m1'], dir).status, 0);
+  assert.equal(ac(['milestone', 'new', '--planned', '--name', 'M2'], dir).status, 0);
+  assert.equal(ac(['milestone', 'activate', '2'], dir).status, 0);
+  const r = ac(['milestone', 'complete'], dir);
+  assert.notEqual(r.status, 0, 'a milestone-1 phase left behind (not planned) still gates the close');
+  assert.match(r.stderr, /left behind in m1/);
 });
