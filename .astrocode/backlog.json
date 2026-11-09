@@ -204,6 +204,34 @@
       },
       "linked_at": "2026-10-26T14:39:14.404Z",
       "absorbed_at": "2026-10-27T13:38:10.831Z"
+    },
+    {
+      "id": "2026-11-09-a-configurable-pre-accept-command-for",
+      "title": "A configurable pre-accept command for `ac phase accept` and `ac fix accept` (a project gate that holds on every path)",
+      "note": "GitHub #175 (@luigi-lauro): https://github.com/uublive/astro-code/issues/175",
+      "status": "open",
+      "captured_at": "2026-11-09T12:49:57.624Z"
+    },
+    {
+      "id": "2026-11-09-ac-milestone-list-json-planned",
+      "title": "ac milestone list --json: planned milestones with name, status and order",
+      "note": "GitHub #172 (@luigi-lauro): https://github.com/uublive/astro-code/issues/172",
+      "status": "open",
+      "captured_at": "2026-11-09T12:49:56.847Z"
+    },
+    {
+      "id": "2026-11-09-ac-status-json-and-ac-roadmap-list-json",
+      "title": "ac status --json and ac roadmap list --json: return the active milestone's name",
+      "note": "GitHub #171 (@luigi-lauro): https://github.com/uublive/astro-code/issues/171",
+      "status": "open",
+      "captured_at": "2026-11-09T12:49:56.132Z"
+    },
+    {
+      "id": "2026-11-09-phases-an-optional-short-name-in-ac",
+      "title": "Phases: an optional short name in ac status --json and ac roadmap list --json",
+      "note": "GitHub #170 (@luigi-lauro): https://github.com/uublive/astro-code/issues/170",
+      "status": "open",
+      "captured_at": "2026-11-09T12:49:55.344Z"
     }
   ]
 }
