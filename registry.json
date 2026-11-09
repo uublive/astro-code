@@ -919,6 +919,15 @@
       "branch": "fix/mutmut-max-children",
       "claimed_at": "2026-11-09T13:17:17.917Z",
       "status": "active"
+    },
+    {
+      "type": "milestone",
+      "number": 16,
+      "name": "Verify speed",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-11-09T14:14:14.260Z",
+      "status": "active"
     }
   ]
 }
