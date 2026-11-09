@@ -749,10 +749,18 @@ const taskLabel = (kind, t) => {
 // and the audit need the stamp — each miss then costs a full heal cycle on work that
 // was already complete and correct. The executor knows its task id; checking is one git
 // call, and amending its own not-yet-integrated commit is the cheapest place to fix it.
+// #180 — a post-commit hook may already have pushed the commit; amending it then rewrites a pushed
+// commit and the branch diverges from its remote. The heal step and the completeness audit already
+// repair an unstamped commit, so a pushed one is reported, never rewritten.
+const NO_AMEND_PUSHED =
+  `Amend ONLY a commit no remote has: if \`git branch -r --contains HEAD\` prints anything, the commit ` +
+  `is already pushed — never rewrite it; report it as committed unstamped, with its hash, and the heal ` +
+  `step repairs it. `
+
 const stampSelfCheck = (t) =>
   `Before you report success, CHECK the stamp: run \`git log -1 --format=%s\` and confirm the ` +
   `subject ends with \`(phase ${phaseNum} ${t.id})\`. If it does not, fix it with ` +
-  `\`git commit --amend -m "<subject> (phase ${phaseNum} ${t.id})"\` and check again. Never report ` +
+  `\`git commit --amend -m "<subject> (phase ${phaseNum} ${t.id})"\` and check again. ${NO_AMEND_PUSHED}Never report ` +
   `an unstamped commit as done: the integrator maps branches by this stamp, and a miss costs a ` +
   `whole heal cycle to repair. `
 
@@ -1347,7 +1355,7 @@ const batchPrompt = (orderedTasks) =>
   `however sure you are that you wrote the code — benchmark #3 saw a batched run produce 25 ` +
   `commits with ZERO stamps while reporting every task as committed. If the grep comes back ` +
   `empty for a task you believe you finished, AMEND that commit to add the stamp ` +
-  `(\`git commit --amend\`) and re-run the grep, rather than reporting it committed unstamped. ` +
+  `(\`git commit --amend\`) and re-run the grep, rather than reporting it committed unstamped. ${NO_AMEND_PUSHED}` +
   `An unstamped commit is invisible to the integrator's branch→task mapping and to re-run ` +
   `resumability, so it is worse than a missing commit: it silently costs the whole phase its ` +
   `ability to resume. ` +
@@ -2093,7 +2101,7 @@ if (!integrationFailed && auditedTasks.length) {
         `lived in other worktrees can find nothing legitimate to commit from a stale fork base), ` +
         `or it committed without the ADR-017 stamp (which also breaks branch→task mapping and ` +
         `re-run resumability). Check \`git log --oneline\` for the work itself before re-running: ` +
-        `if the change IS present but unstamped, amend the stamp; if it is absent, the task never ` +
+        `if the change IS present but unstamped, amend the stamp (${NO_AMEND_PUSHED.trim()}); if it is absent, the task never ` +
         `ran and a re-execute will pick it up. A task that is commit-free BY DESIGN must say ` +
         `\`commits: none\` in the plan to be exempt.`,
     }

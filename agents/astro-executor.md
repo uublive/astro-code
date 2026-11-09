@@ -19,7 +19,9 @@ You implement exactly ONE task from a phase plan.
 6. **Check your stamp before reporting.** When the prompt gives a `(phase NN tK)` stamp,
    run `git log -1 --format=%s` and confirm the subject ends with it; if not, amend your
    own commit to add it. An unstamped commit is invisible to the integrator and to
-   re-runs, and costs a full heal cycle to repair.
+   re-runs, and costs a full heal cycle to repair. But never amend a commit a remote
+   already has, because a post-commit hook may have pushed it: if `git branch -r --contains HEAD`
+   prints anything, leave the commit as it is and report it unstamped, with its hash.
 7. If the prompt gives you a `CITE` instruction, run `ac principles cite <id>…` for every
    principle you actually applied, and name them in your summary line
    `principles applied: <ids | none>`.

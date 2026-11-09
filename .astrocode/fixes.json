@@ -200,6 +200,12 @@
       "title": "git-guard refuses a command run by an expanded path ($HOME/...) when an argument is switch/stash/reset (GitHub #169)",
       "status": "verified",
       "opened_at": "2026-11-09T10:29:00.814Z"
+    },
+    {
+      "id": "2026-11-09-executor-prompts-amend-a-missing-stamp",
+      "title": "executor prompts amend a missing stamp even when the commit is already pushed (GitHub #180)",
+      "status": "verified",
+      "opened_at": "2026-11-09T10:40:18.317Z"
     }
   ]
 }
