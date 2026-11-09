@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "run": 1,
+  "mode": "narrowed",
+  "stage": "cheap",
+  "reason": "verifier ran narrowed (plan: full: no saved verdict)",
+  "broad": false,
+  "commit": "a45a8712bf20b77b6a4d72cddbe52bfe8aadfb73",
+  "criteria_sha": "sha256:7d4ce3756ae1e36b2e8774776dc2eeffd111566e35816f93bbbfbf9d782ae3ae",
+  "at": "2026-11-09T15:33:21.214Z",
+  "base": null,
+  "criteria": [
+    {
+      "id": "C1",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C2",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C3",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C4",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C5",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C6",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C7",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C8",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C9",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C10",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C11",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C12",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C13",
+      "status": "carried",
+      "evidence": "carried",
+      "last": "unobserved"
+    },
+    {
+      "id": "C14",
+      "status": "failed",
+      "evidence": "observed",
+      "command": "node scripts/test.mjs",
+      "output": "suite exited 1: node scripts/test.mjs"
+    }
+  ]
+}
