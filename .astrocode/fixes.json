@@ -181,6 +181,12 @@
       "opened_at": "2026-11-02T09:59:26.341Z"
     },
     {
+      "id": "2026-11-09-ac-mutate-cannot-bound-mutmut-s-worker",
+      "title": "ac mutate cannot bound mutmut's worker count, so a run uses every CPU (GitHub #188)",
+      "status": "verified",
+      "opened_at": "2026-11-09T13:17:15.829Z"
+    },
+    {
       "id": "2026-11-09-ac-mutate-errors-when-the-go-module-is",
       "title": "ac mutate errors when the Go module is in a subfolder",
       "status": "accepted",

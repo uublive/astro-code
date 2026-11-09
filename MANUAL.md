@@ -786,6 +786,9 @@ lock-managed Python environment adds a warning that an install may change nothin
   `ac config set mutation.phases.<n>.cap_seconds 1800` for one phase. At the cap the whole process
   group is killed and the result names the step it was in, how many mutants were tested and the key
   to raise. A capped run is never "all killed".
+- **Workers (mutmut 3).** One per CPU by default; `mutation.max_children` (or
+  `mutation.phases.<n>.max_children`) bounds it, passed as mutmut's own `--max-children`. mutmut 2 has
+  no such flag, so the key is reported as ignored there.
 - **Outcomes.** `clean`, `survivors`, `incomplete` (capped or not every mutant ran), `no-scope`,
   `tool-missing`, `no-tool`, `not-configured` (mutmut 3 installed but without configuration: run
   `ac mutate setup`), `error`. Timeouts count as killed. A dirty scope is an `error`: the result
