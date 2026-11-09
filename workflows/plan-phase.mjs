@@ -196,6 +196,9 @@ const summary = await agent(
     `wave-green rule (no task leaves the build broken; deletions carry their consumer fixups), ` +
     `two same-file tasks never both have empty depends_on, every task declares its file(s) ` +
     `— and fix any violation.\n\n` +
+    `TASK IDS (#186): number them from the next free id that \`ac phase stamps ${phaseSlug}\` prints. An id ` +
+    `already stamped on the branch would make execute skip the task as already done; keep a stamped id only ` +
+    `for the same, already-landed task.\n\n` +
     `Return a one-line summary of the plan.` +
     OBEY +
     PRINCIPLES_PLAN,
