@@ -1,7 +1,7 @@
 # Roadmap
 
-**Milestone 15**
+**Milestone 16**
 
-_No phases yet. Add one with `ac phase add <name>`._
+- [ ] Phase 56 — Run a slow test suite last in verify, only once every other criterion has passed `pending`
 
 <!-- generated from roadmap.json — edits here are overwritten; use `ac phase note <phase> "<text>"` -->

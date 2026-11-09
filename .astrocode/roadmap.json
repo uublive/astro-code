@@ -1,5 +1,13 @@
 {
   "version": 1,
-  "milestone": 15,
-  "phases": []
+  "milestone": 16,
+  "phases": [
+    {
+      "number": 56,
+      "name": "Run a slow test suite last in verify, only once every other criterion has passed",
+      "slug": "56-run-a-slow-test-suite-last-in-verify",
+      "status": "pending",
+      "milestone": 16
+    }
+  ]
 }
