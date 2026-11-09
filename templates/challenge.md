@@ -42,7 +42,19 @@ If recomputing would unblock nothing while questions remain — two open questio
 waiting on the other — merge them into one combined question rather than stall the
 session.
 
-Ask the round as one plain text message, never through `AskUserQuestion` or any other
+How the round is asked is the project's setting `challenge.ask` (read it with
+`ac config get challenge.ask`, inside a project only). It is `text` unless the project set
+`picker` (#189):
+
+- **`picker`, on a host that has one:** ask the round through `AskUserQuestion`, one
+  question per decision, its recommended answer as the first option with "(Recommended)" in
+  its label. A call holds at most 4 questions, so a bigger round is split over consecutive
+  calls in round order, and the round is saved only after the last one is answered. An answer
+  that fits no option comes back through "Other" and is taken as written.
+- **Otherwise (unset, `text`, any other value, outside a project, or no picker on the
+  host):** the plain-text round below.
+
+Ask the plain-text round as one message, never through `AskUserQuestion` or any other
 picker (a picker caps at a handful of fixed options and does not exist on every host;
 this must work on a host with no picker at all). Number the questions `Q1` … `Qn`, each
 with a short title, the question itself, and a recommended answer. The user replies
