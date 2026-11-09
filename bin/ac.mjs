@@ -137,6 +137,7 @@ import {
 import { inForceText } from '../lib/decisions.mjs';
 import { backfillAdr } from '../lib/adrbackfill.mjs';
 import { renumberDecision } from '../lib/adrrenumber.mjs';
+import { stampedTaskIds, planIdCollisions } from '../lib/stamps.mjs';
 import { completeMilestone, belongsToMilestone, plannedMilestones } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate, carriedOf, readVerdict, verdictFile } from '../lib/verdict.mjs';
@@ -676,6 +677,7 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
                                        (--agent: machine-signed rejection, not human UAT)
   ac phase surprise <phase> [--healed n] [--remediation-cycles n] [--stopped-reason r] [--note "…"]
                                        record what an /astro-execute run hit sideways (silent; for the milestone sweep)
+  ac phase stamps <phase> [--json] [--check]  task ids already stamped on the branch + the next free one; --check fails when PLAN.md reuses one
   ac phase effort <phase> [<level>]   read/resolve (or set) the per-phase effort dial (light|standard|deep)
   ac phase note <phase> ["<text>"] [--append|--replace]  read/set/clear a durable phase note (survives ROADMAP.md renders)
   ac phase milestone <phase> [<N>]    read/correct which milestone a phase belongs to (never moves the project)
@@ -2594,6 +2596,23 @@ async function main() {
           stoppedReason: typeof flags['stopped-reason'] === 'string' ? flags['stopped-reason'] : undefined,
           note: typeof flags.note === 'string' ? flags.note : undefined,
         });
+      } else if (sub === 'stamps') {
+        // #186: the task ids this phase already stamped on the branch, and the next free one.
+        //   ac phase stamps <n> [--json]   list them (the planner numbers new tasks from `next`)
+        //   ac phase stamps <n> --check    exit 1 when PLAN.md reuses a stamped id
+        if (!ph) die('usage: ac phase stamps <phase> [--json] [--check]');
+        if (flags.check) {
+          const { collisions, next } = planIdCollisions(r, ph.number, ph.slug);
+          if (flags.json) { console.log(JSON.stringify({ collisions, next })); if (collisions.length) process.exitCode = 1; return; }
+          if (!collisions.length) { console.log(`✓ phase ${ph.number}: no task id in PLAN.md is already stamped`); return; }
+          console.log(`✖ phase ${ph.number}: PLAN.md reuses task id(s) already stamped on this branch: ${collisions.join(', ')}\n` +
+            `  execute would skip them as already done. Renumber new or changed tasks from ${next}; keep an id only for the same, already-landed task.`);
+          process.exitCode = 1;
+          return;
+        }
+        const { stamped, next } = stampedTaskIds(r, ph.number);
+        if (flags.json) { console.log(JSON.stringify({ stamped, next })); return; }
+        console.log(stamped.length ? `phase ${ph.number} stamped task ids: ${stamped.join(', ')} · next free id: ${next}` : `phase ${ph.number}: no task id stamped yet · next free id: ${next}`);
       } else if (sub === 'effort') {
         // Per-phase effort dial (ADR-022), mirroring `ac models` ergonomics.
         //   ac phase effort <n>               RESOLVE: print the effective level
