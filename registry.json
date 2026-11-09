@@ -883,6 +883,15 @@
       "branch": "fix/waves-done-mid-chain",
       "claimed_at": "2026-11-09T10:16:59.383Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-09-git-guard-refuses-a-command-run-by-an",
+      "name": "git-guard refuses a command run by an expanded path ($HOME/...) when an argument is switch/stash/reset (GitHub #169)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "fix/git-guard-expanded-path",
+      "claimed_at": "2026-11-09T10:29:03.053Z",
+      "status": "active"
     }
   ]
 }
