@@ -212,6 +212,12 @@
       "title": "a re-plan that reuses task ids is skipped as already done (GitHub #186)",
       "status": "verified",
       "opened_at": "2026-11-09T12:51:06.630Z"
+    },
+    {
+      "id": "2026-11-09-ac-mutate-cannot-bound-mutmut-s-worker",
+      "title": "ac mutate cannot bound mutmut's worker count, so a run uses every CPU (GitHub #188)",
+      "status": "verified",
+      "opened_at": "2026-11-09T13:17:15.829Z"
     }
   ]
 }
