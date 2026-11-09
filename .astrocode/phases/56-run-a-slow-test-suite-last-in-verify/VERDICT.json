@@ -1,12 +1,12 @@
 {
   "version": 1,
-  "run": 4,
+  "run": 5,
   "mode": "full",
-  "reason": "verifier ran full (plan: narrowed: 1 of 14 unmet)",
+  "reason": "verifier ran full (plan: narrowed: 3 of 14 unmet)",
   "broad": false,
-  "commit": "2e68dd4b9f38606237253266ab55f31a719e6c96",
+  "commit": "3471060d33e4cdfc92b41090f4bc76799e2c46d7",
   "criteria_sha": "sha256:7d4ce3756ae1e36b2e8774776dc2eeffd111566e35816f93bbbfbf9d782ae3ae",
-  "at": "2026-11-09T16:37:27.632Z",
+  "at": "2026-11-09T16:54:53.011Z",
   "base": null,
   "criteria": [
     {
@@ -16,17 +16,13 @@
     },
     {
       "id": "C2",
-      "status": "failed",
-      "evidence": "observed",
-      "command": "ac suite run on a suite exiting 1 (0.1s), commit, ac verdict cheap 1",
-      "output": "held back — no recorded run of this command on this machine; the fast failing run leaves no timing the next pass reads"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C3",
-      "status": "failed",
-      "evidence": "observed",
-      "command": "passing 900s run then failing 30s run, ac verdict cheap 1",
-      "output": "held back — last run 900s; cheap pass clean: the latest failing run is hidden"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C4",
@@ -40,10 +36,8 @@
     },
     {
       "id": "C6",
-      "status": "failed",
-      "evidence": "observed",
-      "command": "passing 900s run then failing 30s run, ac verdict cheap 1",
-      "output": "an older, longer run decides: last run 900s > 600s"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C7",
@@ -82,11 +76,11 @@
     },
     {
       "id": "C14",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved",
-      "held": "slow suite",
-      "suite": true
+      "status": "failed",
+      "evidence": "observed",
+      "suite": true,
+      "command": "env -u ASTRO_SIGNER_AGENT node bin/ac.mjs suite run --command \"node scripts/test.mjs\"",
+      "output": "# tests 2911 # pass 2901 # fail 1 — not ok 788 end to end: the hook queues, its detached flusher delivers to the fleet (tests/fleet.test.mjs:569, 1 !== 0)"
     }
   ]
 }
