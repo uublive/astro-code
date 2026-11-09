@@ -281,7 +281,7 @@ export async function phaseBandRender($, e, next) {
   if (e.props.hasSurvey || !active()) return next(e) // a survey holds the band: yield
   const status = freshStatus(st.status, Date.now())
   const live = liveFrom(st.agentRows, status ? status.activity ?? null : null, WORKFLOW_AGENTS_LISTED)
-  const view = bandView(status, live, { unavailable: st.unavailable, runs: runsNow() })
+  const view = bandView(status, live, { unavailable: st.unavailable, runs: runsNow(), lists: st.lists })
   if (!view.lines.length && !view.buttons.length) return next(e)
   const { Box, Text, Button } = $.ui.resolve(e)
   // `ac` failed: one dim line and nothing else (C7), so a broken read never looks like a state

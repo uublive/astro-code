@@ -244,3 +244,18 @@ test('bandView: open deferred fixes draw a DEFERRED row naming the fix id and ph
   assert.equal(bandView(STATUS, null, {}).lines.length, 1);
   assert.equal(bandView({ ...STATUS, deferred_fixes: [] }, null, {}).lines.length, 1);
 });
+
+// The owner's request (2026-11-09): one COUNTS row with the open backlog, debt and fix (bug) counts,
+// from the lists the band already reads (`ac backlog|debt|fix list --json`). A list that could not be
+// read is left out rather than shown as 0; no list at all draws no row.
+test('bandView: a COUNTS row shows the open backlog, debt and fix counts on one line', async () => {
+  const { bandView } = await band();
+  const lists = { backlog: [{}, {}, {}], debt: Array(26).fill({}), fix: [{}, {}] };
+  const v = bandView(STATUS, null, { lists });
+  const row = v.lines.find((l) => l.startsWith('COUNTS'));
+  assert.equal(row, 'COUNTS   backlog 3 · debt 26 · fixes 2');
+  const partial = bandView(STATUS, null, { lists: { backlog: [], debt: null, fix: [{}] } });
+  assert.equal(partial.lines.find((l) => l.startsWith('COUNTS')), 'COUNTS   backlog 0 · fixes 1', 'an unread list is left out, an empty one is 0');
+  assert.ok(!bandView(STATUS, null, {}).lines.some((l) => l.startsWith('COUNTS')), 'no lists, no row');
+  assert.ok(!bandView(STATUS, null, { lists: { backlog: null, debt: null, fix: null } }).lines.some((l) => l.startsWith('COUNTS')));
+});

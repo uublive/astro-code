@@ -604,7 +604,7 @@ const rowsFor = async ($: any, text: string) => {
   return (r?.suggestions ?? []) as Array<{ text: string, label?: string, description?: string }>
 }
 // the band at rest over FX_STATUS: one ROADMAP row, a chip per phase (◉ verified, ▸ planned, ◌ discussed, ○ to do)
-const IDLE = ['ROADMAP  ◉1  ▸2  ◌3  ○4']
+const IDLE = ['ROADMAP  ◉1  ▸2  ◌3  ○4', 'COUNTS   backlog 2 · debt 2 · fixes 1']
 const BAND_QUERIES = ['ac status --json', 'ac debt list --json', 'ac backlog list --json', 'ac fix list --json']
 
 test('phase-band: switch on in a project, the band draws one idle line and the buttons ac recommends (C2, C4)', async ($, on) => {
@@ -677,6 +677,7 @@ test('phase-band: concurrent astro runs show in RUNNING with their live crews, a
   expect(await lineTexts(ui)).toEqual([
     'ROADMAP  ◉1  ⚙2  ✎3  ○4',
     'RUNNING  ⚙ execute 2 · 1 executor   ✎ plan 3 · 2 researchers',
+    IDLE[1],
   ])
   // a phase already being executed or planned is not offered again
   expect(await buttonKeys(ui)).toEqual(['/astro-accept 1'])
@@ -690,7 +691,7 @@ test('phase-band: concurrent astro runs show in RUNNING with their live crews, a
   await $.prompt.submit({ text: '<task-notification><task-id>task-plan</task-id><status>completed</status></task-notification>', origin: { kind: 'task-notification' } })
   await settle()
   ui = await mountBand($)
-  expect(await lineTexts(ui)).toEqual(['ROADMAP  ◉1  ⚙2  ◌3  ○4', 'RUNNING  ⚙ execute 2 · 1 executor'])
+  expect(await lineTexts(ui)).toEqual(['ROADMAP  ◉1  ⚙2  ◌3  ○4', 'RUNNING  ⚙ execute 2 · 1 executor', 'COUNTS   backlog 2 · debt 2 · fixes 1'])
   await ui.unmount()
   await $.prompt.submit({ text: '<task-notification><task-id>task-exec</task-id><status>completed</status></task-notification>', origin: { kind: 'task-notification' } })
   await settle()
@@ -824,7 +825,7 @@ test('phase-band: a real .astrocode change at the next turn is drawn, and offere
   await settle()
   ui = await mountBand($)
   expect(await buttonKeys(ui)).toEqual(['/astro-execute 2', '/astro-plan 3'])
-  expect(await lineTexts(ui)).toEqual(['ROADMAP  ✓1  ▸2  ◌3  ○4'])
+  expect(await lineTexts(ui)).toEqual(['ROADMAP  ✓1  ▸2  ◌3  ○4', 'COUNTS   backlog 2 · debt 2 · fixes 1'])
   expect((await rowsFor($, '/astro-accept 1'))[0]!.description).toEqual('complete')
   expect(rig.asked.length).toEqual(8)
   await ui.unmount()
@@ -906,7 +907,7 @@ test('phase-band: a live run expands the band with the activity text and says wo
   const rig = bandRig(on)
   await startBand($)
   let ui = await mountBand($)
-  expect((await lineTexts(ui)).length).toEqual(1)
+  expect((await lineTexts(ui)).length).toEqual(IDLE.length)
   await ui.unmount()
   rig.out['ac status --json'] = statusWith({ activity: '⚙ executing 38' })
   rig.version++
@@ -915,7 +916,7 @@ test('phase-band: a live run expands the band with the activity text and says wo
   ui = await mountBand($)
   const live = await lineTexts(ui)
   expect(live.length).toBeGreaterThan(1)
-  expect(live).toEqual([IDLE[0], 'RUNNING  ⚙ executing 38'])
+  expect(live).toEqual([IDLE[0], 'RUNNING  ⚙ executing 38', IDLE[1]])
   expect(live.some(l => /astro-executor — /.test(l))).toBe(false) // no invented per-agent rows
   await ui.unmount()
   // the run ends: activity cleared, the band collapses to one line
@@ -924,7 +925,7 @@ test('phase-band: a live run expands the band with the activity text and says wo
   await $.turn.complete(TURN_DONE)
   await settle()
   ui = await mountBand($)
-  expect((await lineTexts(ui)).length).toEqual(1)
+  expect((await lineTexts(ui)).length).toEqual(IDLE.length)
   expect(rig.toasts).toEqual([])
   await ui.unmount()
 })
@@ -939,7 +940,7 @@ test('phase-band: a run that ends collapses the band, even after an executor spa
   await $.agent.spawn({ ...SPAWN, subagentType: 'astro-executor' })
   await settle()
   let ui = await mountBand($)
-  expect(await lineTexts(ui)).toEqual([IDLE[0], 'RUNNING  ⚙ executing'])
+  expect(await lineTexts(ui)).toEqual([IDLE[0], 'RUNNING  ⚙ executing', IDLE[1]])
   await ui.unmount()
   // `ac activity clear`: the verb goes and state.json changes
   rig.out['ac status --json'] = statusWith({ activity: null, activityUntil: null })
@@ -1000,13 +1001,13 @@ test('phase-band: a listed Agent-tool executor shows its observed state, and the
   await settle()
   let ui = await mountBand($)
   const live = await lineTexts(ui)
-  expect(live).toEqual([IDLE[0], 'RUNNING  astro-executor — running'])
+  expect(live).toEqual([IDLE[0], 'RUNNING  astro-executor — running', IDLE[1]])
   await ui.unmount()
   rig.agents = []
   await $.turn.complete(TURN_DONE)
   await settle()
   ui = await mountBand($)
-  expect((await lineTexts(ui)).length).toEqual(1)
+  expect((await lineTexts(ui)).length).toEqual(IDLE.length)
   expect(rig.toasts).toEqual([])
   await ui.unmount()
 })
@@ -1112,7 +1113,7 @@ test('phase-band: it draws the live-capture count on its idle line and claims it
   await settle()
   await $.turn.complete(TURN_DONE)
   await settle()
-  expect(await lineTexts(ui)).toEqual([`${IDLE[0]}   1 proposed — /astro-principles-review`])
+  expect(await lineTexts(ui)).toEqual([`${IDLE[0]}   1 proposed — /astro-principles-review`, IDLE[1]])
   expect(logs).toEqual([])
   expect(rig.toasts).toEqual([])
   await ui.unmount()
