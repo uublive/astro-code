@@ -132,6 +132,12 @@ Execute phase `$ARGUMENTS`.
      one atomic commit, then re-verify — up to the level's budget (`light`=0 / `standard`=1
      / `deep`=3 cycles) and **bailing early to FAIL on no-progress** (HEAD unchanged, or the
      failing-criteria set didn't shrink).
+     **Slow suite last (ADR-093):** observe every non-suite criterion first; a slow suite runs only after every
+     non-suite criterion passes, and only through `ac suite run`. Which suite is slow comes from
+     `ac verdict cheap` (`held`) or `ac suite receipt` (its `slow` line), never the verifier's estimate; the
+     verifier reports a suite it did not run as `held: true`. Held back is not unmet: it is never handed to the
+     remediation executor, and a round with nothing unmet but a held suite verifies once more, running the
+     suite, instead of remediating.
      The warm/batched executor described above is a **Workflow-tool optimization only** — at
      this tier every task is already spawned one-at-a-time by construction (ADR-008), so
      there's no per-task cold-start to eliminate and no `leanExecution` equivalent here.

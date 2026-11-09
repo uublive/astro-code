@@ -4,7 +4,7 @@ argument-hint: [models|tools|statusline]
 allowed-tools: Bash, AskUserQuestion
 ---
 
-Three things can be configured here:
+Three things can be configured here (plus one project setting, below):
 
 - **models** — which model runs each role, and how hard it thinks (below, "Models").
 - **tools** — which extra MCP tools astro-code's agents may use ("Agent tools").
@@ -212,6 +212,15 @@ you list what this session actually has.**
    installed agents immediately. Relay its warnings; if it refuses, show why and stop.
 7. **Finish** with `ac agent-tools` (the per-agent result) and one line: a Claude Code session
    already running keeps its old agent definitions — restart it to pick them up.
+
+# Slow suite threshold
+
+`verify.slow_suite_minutes` (project, default **10**, in minutes) decides which suite a verify holds back
+until last (phase 56, ADR-093). A suite whose most recent recorded run of that exact command on this machine
+took **longer** than this is slow: the cheap pass does not run it (it reports it `held`), and a verify runs it
+only after every other criterion passes. Set it with `ac config set verify.slow_suite_minutes 30`. A value that
+is not a number above zero is ignored with a warning and the default applies. The timing is machine-local: on
+a new machine the first round holds the suite back once, until `ac suite run` has timed it.
 
 # Statusline gauges
 
