@@ -98,22 +98,27 @@ test('no timing is slow; corrupt and non-hex files are skipped', async () => {
   } finally { r.done(); }
 });
 
-test('a failing run is a lower bound, not a timing', async () => {
+// Re-verify finding (C2/C3/C6): the newest recorded run decides whatever its exit status. A fast failing
+// run is a timing (a red suite during remediation keeps running early, its failure visible), and an older
+// longer passing run never hides it; the reason names that run and its exit.
+test('the newest run decides whatever its exit status, and the reason names it', async () => {
   const r = repo();
   try {
     await seed(r.root, { seconds: 900, at: T(1) });
     await seed(r.root, { seconds: 20, at: T(2), exit: 1 });
-    assert.equal((await speed(r.root)).slow, true);
+    const s = await speed(r.root);
+    assert.equal(s.slow, false, 'a newer fast failure is not hidden behind an older 900s pass');
+    assert.match(s.reason, /last run 20s \(exit 1\)/);
   } finally { r.done(); }
   const r2 = repo();
   try {
     await seed(r2.root, { seconds: 30, at: T(1) });
     await seed(r2.root, { seconds: 900, at: T(2), exit: 1 });
-    assert.equal((await speed(r2.root)).slow, true);
+    assert.equal((await speed(r2.root)).slow, true, 'a newer slow failure is slow');
   } finally { r2.done(); }
   const r3 = repo();
   try {
     await seed(r3.root, { seconds: 20, at: T(1), exit: 1 });
-    assert.equal((await speed(r3.root)).slow, true);
+    assert.equal((await speed(r3.root)).slow, false, 'a fast failing run alone is a timing, not "no recorded run"');
   } finally { r3.done(); }
 });
