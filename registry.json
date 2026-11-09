@@ -874,6 +874,15 @@
       "branch": "fix/mutate-go-module-subdir",
       "claimed_at": "2026-11-09T09:19:41.018Z",
       "status": "complete"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-09-a-done-task-mid-chain-makes-its",
+      "name": "a done task mid-chain makes its dependents ready before their pending predecessors (GitHub #187)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "fix/waves-done-mid-chain",
+      "claimed_at": "2026-11-09T10:16:59.383Z",
+      "status": "active"
     }
   ]
 }
