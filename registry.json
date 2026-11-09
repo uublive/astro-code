@@ -910,6 +910,15 @@
       "branch": "fix/replan-reuses-stamped-ids",
       "claimed_at": "2026-11-09T12:51:09.307Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-09-ac-mutate-cannot-bound-mutmut-s-worker",
+      "name": "ac mutate cannot bound mutmut's worker count, so a run uses every CPU (GitHub #188)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "fix/mutmut-max-children",
+      "claimed_at": "2026-11-09T13:17:17.917Z",
+      "status": "active"
     }
   ]
 }
