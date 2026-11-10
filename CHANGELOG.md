@@ -2,6 +2,13 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.57.0
+
+- Verify runs a slow test suite last (ADR-093): a suite whose newest recorded run took longer than `verify.slow_suite_minutes` (10 by default), or that has never been timed on this machine, is skipped by the cheap first pass and run only once every other criterion passes. A failing round still lists every unmet criterion and shows the suite as "held back, not run this round", never as passed or failed; a PASS still needs the full suite on the verified commit. `ac suite receipt` says whether a suite counts as slow and why
+- The phase band has a COUNTS row with the open backlog, debt and fix counts (`COUNTS   backlog 19 · debt 26 · fixes 5`), from the lists it already reads
+- Fix: a remediation cycle that leaves nothing unmet says so (and, on the last cycle, that the budget is spent) instead of "0 criteria still failing — continuing"
+- Fix: the fleet end-to-end test waits for its queue to drain, so it no longer flakes under a loaded full suite
+
 ## v0.56.0
 
 - `ac phase stamps <n>` lists the task ids a phase already stamped and the next free one; the planner numbers a re-plan's tasks from it, and `/astro-plan` checks the plan (`--check`) so a reused id is never skipped as already done (GitHub #186)
