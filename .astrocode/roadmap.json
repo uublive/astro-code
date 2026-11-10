@@ -6,8 +6,11 @@
       "number": 56,
       "name": "Run a slow test suite last in verify, only once every other criterion has passed",
       "slug": "56-run-a-slow-test-suite-last-in-verify",
-      "status": "verified",
-      "milestone": 16
+      "status": "complete",
+      "milestone": 16,
+      "accepted_by": "claude",
+      "accepted_kind": "agent",
+      "accepted_at": "2026-11-10T10:05:17.417Z"
     }
   ]
 }

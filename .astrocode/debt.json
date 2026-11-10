@@ -582,12 +582,18 @@
     {
       "id": "2026-10-15-after-a-withdrawn-carried-pass-the-loop",
       "title": "After a withdrawn carried PASS the loop spends a remediation cycle on zero unmet criteria, and the FAIL summary reads 'ok'",
-      "status": "open",
+      "status": "paid",
       "cost": "small",
       "found_at": "2026-10-15T09:44:55.189Z",
       "why": "Observed at effort deep. A verifier claims passed:true while carrying criteria, so the PASS is correctly withdrawn. The last-seen failing set is then empty, the loop logs '0 criterion/criteria still failing (was 1) — continuing', and it spawns a second remediation with '0 unmet criterion/criteria' before bailing 0 → 0. The human summary is 'ok\\ncarried, not re-checked: 8 criteria', with no unmet line. This is safe (never verified) but wastes an executor and a verifier run and leaves the human report unclear.",
       "phase": "45",
-      "file": "workflows/execute-phase.mjs"
+      "file": "workflows/execute-phase.mjs",
+      "paid_by": {
+        "kind": "phase",
+        "ref": "56-run-a-slow-test-suite-last-in-verify"
+      },
+      "paying_since": "2026-11-10T10:05:38.141Z",
+      "paid_at": "2026-11-10T10:05:38.149Z"
     },
     {
       "id": "2026-10-15-witness-rewrites-gate-text-inside",
