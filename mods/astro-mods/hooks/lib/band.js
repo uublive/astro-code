@@ -206,7 +206,7 @@ function runningRow(status, runs, live) {
  * `NEXT` (the buttons, or a hint). `lines` holds each content row's text, the label included, so
  * a reader (or a test) can take the band in as plain text. `runs` is `[{kind, phase, agents}]`.
  */
-export function bandView(status, live, { unavailable, runs = [] } = {}) {
+export function bandView(status, live, { unavailable, runs = [], lists = null } = {}) {
   if (unavailable) {
     const text = `astro-code status unavailable (${String(unavailable).slice(0, REASON_MAX)})`
     return view([[{ text, tone: 'unavailable' }]], [], null, null, status)
@@ -239,6 +239,17 @@ export function bandView(status, live, { unavailable, runs = [] } = {}) {
   }
   const running = runningRow(status, runs, live)
   if (running.length) rows.push([{ text: 'RUNNING  ', tone: 'label' }, ...running])
+  // `backlog 3 · debt 26 · fixes 2`, the last row: the open items of the lists the band already reads.
+  // A list that could not be read is left out rather than shown as 0; none at all draws no row.
+  const counts = [['backlog', lists?.backlog], ['debt', lists?.debt], ['fixes', lists?.fix]].filter(([, l]) => Array.isArray(l))
+  if (counts.length) {
+    const row = []
+    for (const [name, l] of counts) {
+      if (row.length) row.push({ text: ' · ', tone: 'sep' })
+      row.push({ text: name, tone: 'note' }, { text: ` ${l.length}`, tone: 'id' })
+    }
+    rows.push([{ text: 'COUNTS   ', tone: 'label' }, ...row])
+  }
   // a phase already being executed or planned is not offered again
   const busy = new Set(runs.map(r => `/astro-${r.kind} ${r.phase}`))
   const buttons = buttonsOf(status).filter(b => !busy.has(b.command))

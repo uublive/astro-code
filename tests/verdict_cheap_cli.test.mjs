@@ -48,7 +48,7 @@ test('ac verdict cheap exits 1 listing EVERY unmet id on a failing fixture, and 
     const j = ac(p.dir, 'verdict', 'cheap', '1', '--json');
     assert.equal(j.status, 1);
     const out = JSON.parse(j.stdout);
-    assert.deepEqual(Object.keys(out).sort(), ['clean', 'ran', 'recorded', 'unchecked', 'unmet']);
+    assert.deepEqual(Object.keys(out).sort(), ['clean', 'held', 'ran', 'recorded', 'unchecked', 'unmet', 'warnings']);
     assert.deepEqual(out.unmet, ['C2', 'C3']);
     assert.equal(out.recorded.mode, 'narrowed');
     assert.equal(ac(p.dir, 'verdict', 'history', '1').stdout.includes('narrowed/cheap'), true, 'the cheap round is in the history');

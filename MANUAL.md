@@ -707,6 +707,25 @@ workflow run it before any expensive stage; an unmet result ends the round with 
 evidence can only **fail** a run: it records a narrowed verdict marked `cheap`, never a pass, and `ac phase verify` refuses
 it. `ac verdict cheap <phase> --json` prints the same result as data.
 
+### A slow suite runs last
+
+A verify that fails should cost the time of what it checked, not of the slowest thing in the project. A suite
+command is **slow** when its most recent recorded run on this machine took longer than
+`verify.slow_suite_minutes` (default 10, in minutes; `ac config set verify.slow_suite_minutes 30`; a value that
+is not a number above zero falls back to 10 with a warning). The timing comes from the newest suite receipt of
+that exact command, from any commit; a failing run only counts when it already ran past the threshold, and a
+suite never timed is slow, so the first round on a new machine holds it back once.
+
+- `ac verdict cheap <phase>` does not run a slow suite. It lists it under `held` (held back, not run), still
+  lists every other unmet criterion, and still counts a reusable receipt as met. A held suite is never unmet.
+- The verifier observes every non-suite criterion first and runs the slow suite only after they all pass,
+  through `ac suite run`. `ac suite receipt --command "<cmd>"` prints the slow-or-fast decision.
+- A failing round with a held suite is recorded as a FAIL that lists every unmet criterion; the suite shows as
+  `held back: <ids> (slow suite, not run)`, never passed and never failed, so it is not remediated or deferred.
+  `ac verdict plan <phase> --json` gives `order: { first, last }`.
+- A PASS is unchanged: it still needs the suite observed on the verified commit (or a reusable receipt).
+  A round with nothing unmet but a held suite runs it next.
+
 ### Broad fixes must name files
 
 A verifier that calls a fix "broad" must name the changed files (`broad_files`). `ac verdict plan <phase> --broad-files src/a.mjs,lib/b.mjs`

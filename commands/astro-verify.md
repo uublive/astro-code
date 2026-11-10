@@ -13,6 +13,8 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    never pass one. When it reports any unmet criterion, **stop with a FAIL** that lists EVERY unmet
    id it printed (one line each, as in step 3), spawn no verifier, and do not record anything (it
    already recorded the narrowed cheap verdict); the expensive stage runs only when it is clean.
+   A suite `ac` measured as slow is **not run** by the cheap pass: it prints it under `held` (held
+   back, never unmet), and a reusable receipt still counts as met. Carry the held ids into step 2b.
 2b. **Plan the run.** Run `ac verdict plan <slug> --json` (add `--full` when the user
    passed `--full`, which forces a full run). It decides, in code, whether this re-verify may
    narrow (ADR-079); the thresholds and the fallbacks live there, so never restate or second-guess
@@ -24,7 +26,10 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    prompt), so restate the contract when you spawn it: <!-- verifier-contract -->check goal + CRITERIA.md only;
    **do NOT read PLAN.md/SPEC.md or trust task/commit summaries**; per criterion, assume
    FAIL until you run its `Observe:` evidence yourself and cite the command output; run
-   the full suite; PASS only if **every** criterion independently passes. If CRITERIA.md
+   the full suite; observe every non-suite criterion first; a slow suite runs only after every non-suite criterion
+   passes, and only through `ac suite run`; the slow-or-fast decision comes from `ac suite receipt` (its `slow` line)
+   or `ac verdict cheap` (`held`), never your own estimate; otherwise report it `held: true` (held back, not run),
+   never passed or failed; PASS only if **every** criterion independently passes. If CRITERIA.md
    is absent, self-derive goal criteria and open the verdict with a provenance line — never
    silently trust the plan; never stop at the first failing criterion: report EVERY criterion you observe
    unmet, each with its failing command and output; a verifier never defers a criterion (deferral is
@@ -49,9 +54,10 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
      observes it. The rules are not restated here: `ac verdict record` and `ac phase verify` re-check
      every carry in code.
    - **Ask the verifier to end with a fenced JSON block**
-     `{"mode": "full"|"narrowed"|"targeted", "broad": <bool>, "criteria": [{"id": "C1", "passed": <bool>, "suite": <bool>, "mutation": {…}}, {"id": "C2", "carried": true, "receipt": "<key>"}]}`
+     `{"mode": "full"|"narrowed"|"targeted", "broad": <bool>, "criteria": [{"id": "C1", "passed": <bool>, "suite": <bool>, "mutation": {…}}, {"id": "C2", "carried": true, "receipt": "<key>"}, {"id": "C3", "held": true, "suite": true}]}`
      listing only the criteria it actually checked this run (omit carried ones; the `carried` form is
-     only for a suite criterion standing on a receipt, in a targeted run). `mutation` is
+     only for a suite criterion standing on a receipt, in a targeted run; the `held` form is only for a
+     slow suite criterion not run this round, and is never a pass or a failure). `mutation` is
      optional per criterion: the `ac mutate <slug> --json` evidence with `triage` added per survivor,
      and `"test_strength": true` on every criterion the verifier used the tool for, tagged or not
      (gated in code once marked, and the mark is sticky; the survivors file and the rules are
@@ -68,7 +74,8 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    and, if given, stays to one line too. On FAIL: **one line per unmet criterion** — what is
    missing, not how it was observed — and, for a narrowed run, **one more line** for the carried
    criteria: `carried, not re-checked: <n> (run <R> @ <sha7>)`, citing the saved run and commit;
-   then one line pointing to the verifier's full
+   plus **one line** `held back: <ids> (slow suite, not run)` when the record printed `held` (it is not
+   unmet and is never handed to a remediation); then one line pointing to the verifier's full
    per-criterion report for the reproduction detail, then stop. Do not mark it verified.
    When `ac verdict record` printed a `deferrable:` line, relay it in **one line**: the ids and the
    form for the human to type, `ac verdict defer <number> <ids>`; say nothing when it printed none.

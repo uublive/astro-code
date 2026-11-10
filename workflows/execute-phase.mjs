@@ -1934,6 +1934,9 @@ const VERIFY_SCHEMA = {
           // verdict); `receipt` is the key from `ac suite receipt`, cited by a SUITE criterion
           // reported as 'carried'. The code in lib/verdict.mjs checks both; this only lets them through.
           suite: { type: 'boolean' },
+          // Phase 56 (ADR-093) — `held: true` on a SUITE criterion the round did not run because ac
+          // measured it slow: held back, never passed, never failed. `ac verdict record` stores it.
+          held: { type: 'boolean' },
           receipt: { type: 'string' },
           // Phase 47 (ADR-083) — test-strength evidence from `ac mutate <phase> --json`, copied
           // across by the verifier with `triage` added per survivor. The code gate in
@@ -2218,6 +2221,8 @@ const CHEAP_SCHEMA = {
     clean: { type: 'boolean' },
     unmet: { type: 'array', items: { type: 'string' } },
     unchecked: { type: 'array', items: { type: 'string' } },
+    // Phase 56 (ADR-093) — a slow suite the cheap pass did not run: never unmet, never remediated.
+    held: { type: 'array', items: { type: 'object', additionalProperties: true, properties: { id: { type: 'string' }, command: { type: 'string' }, seconds: { type: ['number', 'null'] }, threshold_seconds: { type: 'number' }, reason: { type: 'string' } } } },
     ran: {
       type: 'array',
       items: {
@@ -2261,7 +2266,8 @@ const runCheapStage = () =>
       `anything. Run exactly this ONE command in ${root} and return its fields verbatim:\n` +
       `  ac verdict cheap ${phaseSlug} --json\n` +
       `It exits 1 when any check is unmet; that is a result, not an error. Return clean, unmet (every ` +
-      `id), unchecked and ran (each item's id, kind, passed, command, output) from the JSON it prints. ` +
+      `id), unchecked, held (each item's id, command, seconds, threshold_seconds, reason; omit when absent) ` +
+      `and ran (each item's id, kind, passed, command, output) from the JSON it prints. ` +
       `If it cannot run (non-zero exit with no JSON), return clean=true and put the first stderr line in note.`,
     { label: 'verify:cheap', phase: 'Verify', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: CHEAP_SCHEMA },
   )
@@ -2326,12 +2332,34 @@ const seenIds = new Set()
 // still observed everything. `focusIds` (full mode) only redirects the verifier's depth.
 // The structural checks (commits present, no stranded worktree-* branch, the full suite). In a split
 // verify (phase 54) only group 1 runs them.
-const STRUCTURAL_CHECKS =
+const structuralChecks = () =>
   `Also confirm the phase's commits are present (\`git log --oneline\`) and that no \`worktree-*\` ` +
   `branch still holds un-integrated changes (\`git for-each-ref refs/heads/worktree-*\`, then ` +
   `\`git cherry HEAD <branch>\` must print no \`+\` line — a leftover branch whose changes are ` +
-  `all in HEAD is residue, not stranded work). Run the full test suite. Flag any project-canon ` +
+  `all in HEAD is residue, not stranded work). Run the full test suite` +
+  (heldSuite.length ? ` LAST, only as the held-back-suite paragraph above says` : '') + `. Flag any project-canon ` +
   `violation.\n\n`
+
+// Phase 56 (ADR-093): a suite `ac` measured as slow is run LAST. `heldSuite` is the ids the cheap pass held
+// back (or the verifier reported held last round); `suiteNow` is set once every other criterion passed and
+// the loop needs the suite observed. The slow-or-fast decision is ac's (verdict cheap / suite receipt),
+// never the verifier's estimate (ADR-021).
+let heldSuite = []
+let suiteNow = false
+const heldParagraph = () => {
+  const ids = heldSuite.join(', ')
+  const cmd = `\`ac suite run --command "<the suite command>"\``
+  return suiteNow
+    ? `SLOW SUITE ${ids} (ADR-093): every non-suite criterion passed last round, so the held suite MUST now be run. ` +
+      `Observe every non-suite criterion first; when they all still pass, run ${ids} through ${cmd} (so its timing is ` +
+      `recorded) and report it passed or failed with the output. Only if a non-suite criterion is now unmet, do not ` +
+      `run it: report it held back.\n\n`
+    : `A SLOW SUITE IS HELD BACK (ADR-093): ${ids} is a suite criterion that ac measured as slow (\`ac verdict cheap\` ` +
+      `listed it as held; \`ac suite receipt --command "<the suite command>" --json\` prints its slow line — never ` +
+      `decide that yourself). ORDER: observe EVERY non-suite criterion first and report EVERY unmet one. Run ${ids} ONLY ` +
+      `after every non-suite criterion passed, and only through ${cmd}. If any non-suite criterion is unmet, do NOT run ` +
+      `it: report it as {"id":"${heldSuite[0]}","held":true,"suite":true} — held back, not run; never passed and never failed.\n\n`
+}
 
 const groupPreamble = (group) =>
   `THIS IS GROUP ${group.index} OF ${group.total} OF A SPLIT VERIFY (phase 54): a sibling verifier checks the other ` +
@@ -2393,6 +2421,7 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = [], group = null) =>
           `introduced is invisible unless you check. Never carry forward a previous PASS on ` +
           `trust.\n\n`
         : '') +
+      (heldSuite.length ? heldParagraph() : '') +
       `Your job is to PROVE THE WORK IS WRONG. A false PASS is the costliest error — assume the ` +
       `work is broken until you have run the evidence yourself.\n\n` +
       `Check ONLY against: the phase goal, and ${root}/.astrocode/phases/${phaseSlug}/CRITERIA.md ` +
@@ -2412,7 +2441,7 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = [], group = null) =>
       `A declared setup step (\`ac setup list\`) is run with \`ac setup run <name>\`, which reuses an earlier ` +
       `result for the same commit and command. You can never defer a criterion: deferral is a human act ` +
       `(ac verdict defer), so report an unmet criterion as failed whatever it is.\n\n` +
-      (group && !group.structural ? '' : STRUCTURAL_CHECKS) +
+      (group && !group.structural ? '' : structuralChecks()) +
       `PASS only if EVERY criterion has independent passing evidence you gathered yourself AND the ` +
       `structural checks hold. Otherwise FAIL — name the unmet criterion, the command you ran, the ` +
       `output you saw, and what is needed to close it.\n\n` +
@@ -2536,6 +2565,9 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, 
   let cheap = null
   try { cheap = await runCheapStage() } catch (e) { cheap = null }
   const cheapUnmet = cheap && Array.isArray(cheap.unmet) ? cheap.unmet.map((x) => (x && typeof x === 'object' ? x.id : x)).filter((id) => typeof id === 'string' && /^C\d+$/.test(id)) : []
+  const heldIdOf = (x) => (x && typeof x === 'object' ? x.id : x)
+  if (cheap) heldSuite = Array.isArray(cheap.held) ? cheap.held.map(heldIdOf).filter((id) => typeof id === 'string' && /^C\d+$/.test(id)) : []
+  const heldClause = (ids) => `held back: slow suite (${ids.join(', ')}), not run this round`
   if (cheapUnmet.length) {
     const ran = cheap && Array.isArray(cheap.ran) ? cheap.ran : []
     const items = cheapUnmet.map((id) => {
@@ -2550,7 +2582,7 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, 
     log(`✖ cheap first pass: ${cheapUnmet.length} unmet (${cheapUnmet.join(', ')}) — no expensive verifier this round`)
     return {
       passed: false, criteriaFound: true, mode: 'narrowed', criteria: items,
-      summary: `FAIL — cheap first pass: ${cheapUnmet.length} unmet criterion/criteria (${cheapUnmet.join(', ')}); the expensive verifier was not run`,
+      summary: `FAIL — cheap first pass: ${cheapUnmet.length} unmet criterion/criteria (${cheapUnmet.join(', ')}); the expensive verifier was not run` + (heldSuite.length ? `; ${heldClause(heldSuite)}` : ''),
     }
   }
   if (!cheap) log('⚠ cheap first pass unavailable — running the full verifier stage')
@@ -2566,10 +2598,16 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, 
   // D7: split + overlap only when worktrees work, remediation budget remains for the cycle that would
   // start, the plan is full, and there are enough criteria to split (ADR-019: the latch stays off once tripped).
   const overlap = overlapCycle !== null && useWorktrees && !worktreesUnavailable && overlapOk
-    && plan.mode === 'full' && plan.ids.length >= 4
+    && plan.mode === 'full' && plan.ids.length >= 4 && !heldSuite.length // a parallel group would run the held suite regardless of the other half
   const v = overlap ? await runVerifyOverlapped(plan, focusIds, overlapCycle) : await runVerify(plan, focusIds)
   const items = Array.isArray(v.criteria) ? v.criteria : []
   for (const c of items) seenIds.add(c.id)
+  // ADR-093: a suite the verifier held back is neither passed nor failed — kept out of lastSeen, so it is
+  // never unmet, never remediated and never "absence of evidence".
+  const heldItems = items.filter((c) => c && c.held === true && /^C\d+$/.test(c.id))
+  const heldNow = heldItems.map((c) => c.id)
+  heldSuite = heldNow
+  suiteNow = false
   // What this run actually covered. A narrowed plan whose verifier did not say otherwise was
   // narrowed — the safe reading, since only a declared full run can pass.
   const mode = v.broad === true && v.mode !== 'narrowed' ? 'full' : (v.mode || (plan.mode === 'narrowed' || plan.mode === 'targeted' ? plan.mode : 'full'))
@@ -2602,6 +2640,7 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, 
   }
   v.mode = mode
   for (const c of items) {
+    if (c.held === true) continue
     if (c.status === 'carried') {
       if (mode === 'targeted' && plan.floor.includes(c.id) && typeof c.receipt === 'string' && c.receipt) lastSeen.set(c.id, true)
       continue
@@ -2613,11 +2652,12 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, 
   // Absence of evidence is failure: a criterion this run should have covered but never reported
   // (and none ever has) stays unmet, so the comparison cannot shrink by omission.
   for (const id of [...plan.first, ...(mode === 'full' ? known : []), ...(mode === 'targeted' ? plan.floor : [])]) {
-    if (!lastSeen.has(id)) lastSeen.set(id, false)
+    if (!lastSeen.has(id) && !heldNow.includes(id)) lastSeen.set(id, false)
   }
 
   if (v.criteriaFound === false) return v
-  const checked = items.filter((c) => c.status !== 'carried' && /^C\d+$/.test(c.id))
+  const checked = items.filter((c) => c.status !== 'carried' && c.held !== true && /^C\d+$/.test(c.id))
+  const preRec = v.summary
   // ONE line when a checked criterion fell back to AI mutants; the reason is the evidence's own.
   const fb = checked.find((c) => c.mutation && c.mutation.fallback && c.mutation.fallback.reason)
   if (fb) log(`• ${fb.mutation.fallback.reason}`)
@@ -2630,6 +2670,7 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, 
         // A failed criterion carries the verifier's command and output (capped), so a human's
         // deferral can pre-fill its fix with the real reproduction.
         ...checked.map((c) => ({ id: c.id, passed: c.passed === true, ...(c.passed !== true && c.command ? { command: clip(c.command) } : {}), ...(c.passed !== true && c.output ? { output: clip(c.output) } : {}), ...(c.test_strength === true ? { test_strength: true } : {}), ...(c.suite === true ? { suite: true } : {}), ...(c.mutation ? { mutation: c.mutation } : {}) })),
+        ...heldNow.map((id) => ({ id, held: true, suite: true })),
         // A suite criterion carried by a receipt travels as a citation; every other carry is implicit.
         ...(mode === 'targeted'
           ? items.filter((c) => c.status === 'carried' && typeof c.receipt === 'string' && c.receipt && /^C\d+$/.test(c.id))
@@ -2660,6 +2701,14 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, 
     if (typeof rec.broad_refused === 'string' && rec.broad_refused) {
       v.summary = `${v.summary}\nbroad claim refused: ${rec.broad_refused} — recorded narrowed`
     }
+  }
+  // ADR-093: a non-PASS round with a held-back suite says so, in code, and names every unmet id; the
+  // verifier's own text (which may say anything about the suite) is dropped from the summary.
+  if (heldNow.length && !v.passed) {
+    const tail = typeof preRec === 'string' && typeof v.summary === 'string' && v.summary.startsWith(preRec) ? v.summary.slice(preRec.length) : ''
+    const unmetNow = [...new Set([...checked.filter((c) => c.passed !== true).map((c) => c.id), ...(rec && rec.recorded === true && Array.isArray(rec.failing) ? rec.failing : [])])].filter((id) => !heldNow.includes(id))
+    if (v.summary) log(`  verifier said: ${String(v.summary).split('\n')[0]}`)
+    v.summary = `FAIL — ${unmetNow.length ? `${unmetNow.length} unmet (${unmetNow.join(', ')})` : 'no criterion unmet'}; ${heldClause(heldNow)}${tail}`
   }
   if (mode === 'targeted' && plan.base) {
     const n = rec && Number.isInteger(rec.carried) ? rec.carried : Math.max(0, known.length - checked.length)
@@ -2774,7 +2823,10 @@ if (!integrationFailed) {
       // to fix, so no remediation is spawned; one forced-full verify runs instead, and it spends
       // this cycle of the budget so the loop still ends.
       if (beforeIds.size === 0) {
-        log('⚠ no unmet criterion to remediate — running one full verify instead')
+        log(heldSuite.length
+          ? `• every non-suite criterion passed; observing the held-back suite (${heldSuite.join(', ')}) now`
+          : '⚠ no unmet criterion to remediate — running one full verify instead')
+        suiteNow = heldSuite.length > 0
         remediationCycles++ // the forced verify spends this cycle's budget (and keeps the overlap cycle index in step)
         verdict = await verifyFullAgain()
         if (verdict.passed) {
@@ -2819,6 +2871,20 @@ if (!integrationFailed) {
             `(${beforeIds.size} → ${afterIds.size}) — bailing to human FAIL`,
         )
         break
+      }
+      // Nothing unmet (a withdrawn carried PASS, or every non-suite criterion passed with a slow suite
+      // held back): it is not "still failing", so say what comes next instead (C12, the debt
+      // 2026-10-15-after-a-withdrawn-carried-pass-the-loop).
+      if (afterIds.size === 0) {
+        // On the last cycle the budget allows, no further verify runs: say that, never promise one.
+        log(
+          cycle + 1 < maxCycles
+            ? `• remediation cycle ${cycle + 1}: nothing unmet (was ${beforeIds.size}) — ` +
+                `a full verify (with any held-back suite) comes next`
+            : `• remediation cycle ${cycle + 1}: nothing unmet (was ${beforeIds.size}), but the remediation ` +
+                `budget is spent — no further verify runs this time; re-run /astro-verify for a full verify`,
+        )
+        continue
       }
       log(
         `⚠ remediation cycle ${cycle + 1}: ${afterIds.size} criterion/criteria still failing ` +
