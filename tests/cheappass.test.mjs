@@ -36,6 +36,14 @@ function fixture(c = crit()) {
   commit(root, 'init');
   return { root, vfile: join(root, '.astrocode', 'phases', SLUG, 'VERDICT.json'), done: () => rmSync(root, { recursive: true, force: true }) };
 }
+// A recorded run of `command` that took `seconds`, from a fake commit so it is never reusable at HEAD.
+let seq = 0;
+async function seed(root, { seconds, command = OK, exit = 0, at = new Date(Date.UTC(2026, 0, 1, 0, seq)).toISOString() }) {
+  const { receiptDir, receiptKey } = await import('../lib/receipts.mjs');
+  const key = receiptKey({ commit: `seed${seq++}`, tree: 't', command });
+  mkdirSync(receiptDir(root), { recursive: true });
+  writeFileSync(join(receiptDir(root), `${key}.json`), JSON.stringify({ key, command, commit: 'seed', tree: 't', exit, seconds, at, started_at: at }));
+}
 const verdictOf = (f) => JSON.parse(readFileSync(f.vfile, 'utf8'));
 
 test('runCheapPass lists EVERY unmet id and records one narrowed cheap verdict naming exactly those', async () => {
@@ -46,15 +54,17 @@ test('runCheapPass lists EVERY unmet id and records one narrowed cheap verdict n
     assert.equal(r.clean, false);
     assert.deepEqual(r.unmet, ['C2', 'C3']);
     assert.deepEqual(r.unchecked, ['C5']);
-    assert.deepEqual(r.ran.map((x) => x.id), ['C1', 'C2', 'C3', 'C4']);
-    assert.equal(r.ran.find((x) => x.id === 'C4').kind, 'suite');
+    assert.deepEqual(r.ran.map((x) => x.id), ['C1', 'C2', 'C3']);
+    assert.deepEqual(r.held.map((h) => h.id), ['C4'], 'an untimed suite is held back, not run (ADR-093)');
     assert.equal(r.recorded.mode, 'narrowed');
     assert.equal(r.recorded.passed, false);
     assert.deepEqual(r.recorded.failing, ['C2', 'C3']);
+    assert.deepEqual(r.recorded.held, ['C4']);
     const v = verdictOf(f);
     assert.equal(v.stage, 'cheap');
     assert.deepEqual(v.criteria.filter((c) => c.status === 'failed').map((c) => c.id), ['C2', 'C3']);
     assert.deepEqual(v.criteria.filter((c) => c.last === 'unobserved').map((c) => c.id), ['C1', 'C4', 'C5']);
+    assert.equal(v.criteria.find((c) => c.id === 'C4').held, 'slow suite');
     assert.equal(v.criteria.find((c) => c.id === 'C2').command, BAD);
   } finally { f.done(); }
 });
@@ -99,10 +109,11 @@ test('the suite check reuses a valid receipt: a stub spawn counts zero suite run
   } finally { f.done(); }
 });
 
-test('with no receipt the suite runs once, through runSuite, and a failing suite is unmet', async () => {
+test('with a fast timing and no reusable receipt the suite runs once, through runSuite, and a failing suite is unmet', async () => {
   const { runCheapPass } = await import('../lib/cheappass.mjs');
   const f = fixture(crit({ c2: OK }).replace(`\`${OK}\`\n\n### C5`, `\`${BAD}\`\n\n### C5`));
   try {
+    await seed(f.root, { seconds: 30, command: BAD });
     const r = await runCheapPass(f.root, SLUG);
     assert.deepEqual(r.unmet, ['C4']);
     assert.match(r.ran.find((x) => x.id === 'C4').output, /suite exited 1/);
@@ -145,5 +156,84 @@ test('a failed cheap criterion later passed by a real full run is passed; unobse
     assert.equal(full.passed, true);
     assert.equal('stage' in verdictOf(f), false);
     assert.equal(verifiedGate(f.root, SLUG).ok, true);
+  } finally { f.done(); }
+});
+
+// ── phase 56 t3: a slow suite is held back (ADR-093) ──
+
+const counted = () => { const seen = []; return { seen, spawn: (cmd) => { seen.push(cmd); return { status: 0, stdout: '', stderr: '' }; } }; };
+
+test('no timing: the suite is held, runSuite is never called, unmet is exactly the failing cheap ids, the record marks it held', async () => {
+  const { runCheapPass } = await import('../lib/cheappass.mjs');
+  const f = fixture();
+  try {
+    const { seen, spawn } = counted();
+    const r = await runCheapPass(f.root, SLUG, { spawn: (cmd, o) => (cmd === BAD ? { status: 1, stdout: '', stderr: '' } : spawn(cmd, o)) });
+    assert.equal(r.held[0].id, 'C4');
+    assert.match(r.held[0].reason, /no recorded run/);
+    assert.deepEqual(r.unmet, ['C2']);
+    assert.equal(r.ran.some((x) => x.kind === 'suite'), false);
+    assert.equal(seen.filter((c) => c === OK).length, 2, 'only the OK Cheap lines of C1 and C3 ran; the suite did not');
+    const c4 = verdictOf(f).criteria.find((c) => c.id === 'C4');
+    assert.equal(c4.status, 'carried');
+    assert.equal(c4.held, 'slow suite');
+  } finally { f.done(); }
+});
+
+test('a 30s timing at an older commit runs the suite and writes a receipt at HEAD; exit 1 makes it unmet', async () => {
+  const { runCheapPass } = await import('../lib/cheappass.mjs');
+  const { reusableReceipt } = await import('../lib/receipts.mjs');
+  const f = fixture(crit({ c2: OK }));
+  try {
+    await seed(f.root, { seconds: 30 });
+    const r = await runCheapPass(f.root, SLUG);
+    assert.deepEqual(r.held, []);
+    assert.equal(r.ran.find((x) => x.id === 'C4').passed, true);
+    assert.equal(reusableReceipt(f.root, OK).ok, true, 'a fresh receipt at HEAD');
+  } finally { f.done(); }
+  const g = fixture(crit({ c2: OK }).replace(`\`${OK}\`\n\n### C5`, `\`${BAD}\`\n\n### C5`));
+  try {
+    await seed(g.root, { seconds: 30, command: BAD });
+    assert.deepEqual((await runCheapPass(g.root, SLUG)).unmet, ['C4']);
+  } finally { g.done(); }
+});
+
+test('a 900s timing is held', async () => {
+  const { runCheapPass } = await import('../lib/cheappass.mjs');
+  const f = fixture(crit({ c2: OK }));
+  try {
+    await seed(f.root, { seconds: 900 });
+    const r = await runCheapPass(f.root, SLUG);
+    assert.equal(r.held[0].seconds, 900);
+    assert.equal(r.held[0].threshold_seconds, 600);
+    assert.equal(r.clean, true, 'held is not unmet');
+    assert.equal(r.recorded, null, 'a clean pass with only a held suite records nothing');
+  } finally { f.done(); }
+});
+
+test('a reusable receipt at HEAD whose seconds is 900 is met through the receipt, not held and not run', async () => {
+  const { runCheapPass } = await import('../lib/cheappass.mjs');
+  const { runSuite, receiptDir } = await import('../lib/receipts.mjs');
+  const f = fixture(crit({ c2: OK }));
+  try {
+    const rc = runSuite(f.root, OK, { json: true });
+    const file = join(receiptDir(f.root), `${rc.key}.json`);
+    writeFileSync(file, JSON.stringify({ ...rc, seconds: 900 }));
+    const r = await runCheapPass(f.root, SLUG, { spawn: counted().spawn });
+    assert.deepEqual(r.held, []);
+    assert.equal(r.ran.find((x) => x.id === 'C4').receipt, rc.key);
+    assert.match(r.ran.find((x) => x.id === 'C4').output, /reused suite receipt/);
+  } finally { f.done(); }
+});
+
+test('a bad verify.slow_suite_minutes lands in warnings and the suite stays slow', async () => {
+  const { runCheapPass } = await import('../lib/cheappass.mjs');
+  const f = fixture(crit({ c2: OK }));
+  try {
+    await seed(f.root, { seconds: 900 });
+    writeFileSync(join(f.root, '.astrocode', 'config.json'), JSON.stringify({ verify: { slow_suite_minutes: 'abc' } }));
+    const r = await runCheapPass(f.root, SLUG);
+    assert.equal(r.held.length, 1);
+    assert.match(r.warnings[0], /verify\.slow_suite_minutes "abc" is not a positive number/);
   } finally { f.done(); }
 });

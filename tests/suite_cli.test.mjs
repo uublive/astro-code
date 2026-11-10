@@ -58,7 +58,7 @@ test('ac suite receipt --command reports reusable on the same clean tree and a r
     assert.match(q(OK), /^• no reusable receipt: no receipt for this command/);
     ac(p.dir, 'suite', 'run', '--command', OK);
     ac(p.dir, 'suite', 'run', '--command', BAD);
-    assert.match(q(OK), /^✓ reusable receipt [0-9a-f]{8} for "node -e \\?"process\.exit\(0\)\\?"" at [0-9a-f]{7}\n$/);
+    assert.match(q(OK), /^✓ reusable receipt [0-9a-f]{8} for "node -e \\?"process\.exit\(0\)\\?"" at [0-9a-f]{7}\n• fast suite \(last run [\d.]+s ≤ 600s threshold\) — run it in order\n$/);
     const j = JSON.parse(ac(p.dir, 'suite', 'receipt', '--command', OK, '--json').stdout);
     assert.equal(j.reusable, true);
     assert.equal(j.reason, null);

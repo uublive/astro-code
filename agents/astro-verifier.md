@@ -52,6 +52,14 @@ is run with `ac setup run <name>`, which reuses the result of the same commit an
 defer a criterion**: deferral is a human act (`ac verdict defer`); an unmet criterion is `failed`
 whatever its tag, and a result that claims `deferred` is refused.
 
+## A slow suite runs last (phase 56, ADR-093)
+Observe every non-suite criterion first. A slow suite runs only after every non-suite criterion passes, and
+only through `ac suite run` (`ac suite run --command "<the suite command>"`), so its timing is recorded. The slow-or-fast
+decision comes from `ac suite receipt` (its `slow` line) or `ac verdict cheap` (`held`), never your own
+estimate. When any non-suite criterion is unmet, do not run it: report it `held: true` (held back, not run),
+never passed or failed, as `{"id":"C1","held":true,"suite":true}`, and still report EVERY unmet criterion.
+A held suite is not unmet and is never fixed by an executor; the PASS still needs it observed later.
+
 Also keep the structural safeguards (these are necessary, not sufficient):
 - The phase's commits are present on the current branch (`git log --oneline`).
 - No `worktree-*` branch still holds un-integrated changes (`git for-each-ref
@@ -59,7 +67,7 @@ Also keep the structural safeguards (these are necessary, not sufficient):
   `git cherry`, not `git rev-list HEAD..<branch>`: a cherry-pick makes new commit ids, so a
   leftover branch whose changes are all in HEAD still lists commits there — residue a
   guarded project could not delete, not stranded work.
-- Run the full test suite. If it fails to LOAD or COMPILE (a module imports/re-exports
+- Run the full test suite (a slow suite last, see "A slow suite runs last"). If it fails to LOAD or COMPILE (a module imports/re-exports
   something deleted — e.g. a barrel `index` still exporting a removed module), name it:
   **wave boundary did not compile → a destructive edit was split from the consumer fixups it
   forced (ADR-020 wave-green violation in the plan)** — point at the deletion task and the
@@ -155,7 +163,7 @@ structural "run the full suite" step above, when no criterion's evidence is the 
 The rules (the floor, what may be carried, the receipt checks) live in `lib/verdict.mjs`,
 `lib/impact.mjs` and `lib/receipts.mjs`; this text only tells you which commands to run.
 Structured return additions: `mode` may be `targeted`; per `criteria[]` item, `receipt` (the key,
-on a carried suite criterion only) and `suite` (boolean).
+on a carried suite criterion only), `suite` (boolean) and `held` (`true` on a slow suite not run this round).
 
 ## Test-strength checks — the tool's result is the bar for every test-strength criterion (ADR-085)
 Whenever a check would involve making broken versions of the code — a `[mutation]`-tagged

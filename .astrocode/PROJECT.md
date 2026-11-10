@@ -120,6 +120,15 @@ skeleton, `ac mods` toggles) → canon-guard → git-guard → blindfold → spa
 witness (amends ADR-033) → brief-section → phase-band → live-capture. Research:
 https://claude.ai/artifact/7BSBvicXocd4gfuUkUBkq5
 
+## Milestone 16 — Verify speed
+
+A failing verify should cost the time of what failed, not the slowest thing in the project.
+Astrobot's full gate takes about 50 minutes, and today a verify round that fails one quick
+criterion still pays for it, because the suite runs in the cheap first pass. A suite measured
+as slow now runs last, only once every other criterion has passed. A PASS still needs the full
+suite on the verified commit (ADR-079/089/091 hold), and every unmet criterion is still
+reported, never just the first.
+
 ## Requirements
 
 <!-- One line per requirement. Use stable IDs (REQ-001) so phases can map to them. -->

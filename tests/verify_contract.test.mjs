@@ -20,6 +20,11 @@ const SAYS = [
   ['checked with ac verdict plan --broad-files', /ac verdict plan [^\n`]*--broad-files/],
   ['a verifier never defers', /never defers? a criterion/i],
   ['use ac setup run for declared setup', /ac setup run <name>/],
+  // Phase 56 (ADR-093): a slow suite runs last, and ac decides which suite is slow.
+  ['observe every non-suite criterion first', /observe every non-suite criterion first/i],
+  ['a slow suite only after they all pass, only through ac suite run', /a slow suite runs only after every non-suite criterion passes, and only through `ac suite run`/i],
+  ['the slow-or-fast decision comes from ac', /the slow-or-fast decision comes from `ac suite receipt` \(its `slow` line\) or `ac verdict cheap` \(`held`\)/i],
+  ['otherwise report it held, never passed or failed', /report it `held: true` \(held back, not run\), never passed or failed/],
 ];
 
 test('verifierContract() (the single marked block), the agent text and astro-verify.md each say every required rule', async () => {
@@ -58,4 +63,21 @@ test('the astro-verify.md report slots state their bound: deferrable in one line
   assert.match(slot, /\*\*one line per flagged id\*\*/);
   assert.match(slot, /say nothing when\s+there are none/i);
   assert.match(slot, /Never run it yourself/);
+});
+
+test('commands/astro-execute.md (the Agent-tool tier) states the same order, and held back is never remediated', () => {
+  const EXEC = squash(readFileSync(join(ROOT, 'commands', 'astro-execute.md'), 'utf8'));
+  assert.match(EXEC, /observe every non-suite criterion first/i);
+  assert.match(EXEC, /a slow suite runs only after every non-suite criterion passes, and only through `ac suite run`/);
+  assert.match(EXEC, /`ac verdict cheap` \(`held`\)/);
+  assert.match(EXEC, /held back is not unmet/i);
+  assert.match(EXEC, /never handed to (?:the )?(?:remediation|executor)/i);
+});
+
+test('no verify contract file tells the verifier to read PLAN.md', () => {
+  for (const f of [VERIFY_MD, AGENT_MD, readFileSync(join(ROOT, 'commands', 'astro-execute.md'), 'utf8')]) {
+    for (const line of f.split('\n').filter((l) => /PLAN\.md/.test(l) && /\bread\b/i.test(l))) {
+      assert.match(line, /\b(?:not|never|NOT|without|blind)\b/i, `a line tells the verifier to read PLAN.md: ${line.trim()}`);
+    }
+  }
 });

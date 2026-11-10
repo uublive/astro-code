@@ -528,7 +528,8 @@ test('the hook exits 0, silently and within budget: config missing, paused, serv
   };
   // Node's own cold start is most of the budget; measure a no-op process as the floor
   // so the assertion is about the hook's work, not this machine's speed.
-  const floor = runHook(tmp(), {}).ms;
+  // Under a loaded full suite one sample is noisy: take the slowest of three.
+  const floor = Math.max(...[1, 2, 3].map(() => runHook(tmp(), {}).ms));
   for (const [name, setup] of Object.entries(scenarios)) {
     const home = tmp();
     setup(join(home, '.astro'));
@@ -557,7 +558,10 @@ test('end to end: the hook queues, its detached flusher delivers to the fleet', 
   child.stdin.end(JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'E2E', cwd: FRAMEWORK, source: 'startup' }));
   await new Promise((r) => child.on('exit', r));
   for (let i = 0; i < 100 && !f.calls.length; i++) await new Promise((r) => setTimeout(r, 50));
-  await new Promise((r) => setTimeout(r, 100));
+  // the flusher empties the queue only after the fleet answered: under a loaded full suite that can lag
+  // the first call by more than a fixed pause, so wait (up to 5 s) for the queue itself to drain
+  const queue = join(home, '.astro', 'fleet-queue.jsonl');
+  for (let i = 0; i < 100 && readQueue(queue).length; i++) await new Promise((r) => setTimeout(r, 50));
   await f.close();
   assert.equal(f.calls.length, 1);
   const [e] = f.calls[0].body.events;

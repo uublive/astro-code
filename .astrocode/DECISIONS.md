@@ -610,3 +610,10 @@ _2026-11-09 · at 925511c_
 
 **Rejected:** Picker for every project by default (changes every existing user's interview); size-based switching between picker and text (the format would change from round to round)
 
+## ADR-093 — Verify runs a slow test suite last: a suite whose last recorded run exceeded a threshold (10 min default, project setting) or has no timing yet runs only once every other criterion passes; a failing round reports every unmet criterion and the held-back suite as not run (amends ADR-091)
+_2026-11-09 · at 6928236_
+
+**Why:** A verify round that fails one quick criterion paid for the whole suite (Astrobot's gate is ~50 min, phase 130 on its 8th run). Holding a slow suite back removes that cost from failing rounds only; a PASS still needs the full suite on the verified commit (ADR-079/089/091).
+
+**Rejected:** Running the race suite once per phase (weakens the full-suite PASS); a declared per-criterion slow tag (a measured duration needs no upkeep); running the suite last for every project (a fast suite would find its failures one round later)
+
