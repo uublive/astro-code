@@ -2,6 +2,10 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.58.0
+
+- The phase band's banner shows the current git branch (`── ✦ astro-code v0.58.0 ⎇ develop ──`): read from `.git/HEAD` with no `git` process, worktrees followed, refreshed at turn boundaries; a detached HEAD shows a short sha, no repo shows nothing, long names are truncated
+
 ## v0.57.0
 
 - Verify runs a slow test suite last (ADR-093): a suite whose newest recorded run took longer than `verify.slow_suite_minutes` (10 by default), or that has never been timed on this machine, is skipped by the cheap first pass and run only once every other criterion passes. A failing round still lists every unmet criterion and shows the suite as "held back, not run this round", never as passed or failed; a PASS still needs the full suite on the verified commit. `ac suite receipt` says whether a suite counts as slow and why

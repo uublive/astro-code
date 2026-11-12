@@ -20,7 +20,7 @@
 // The `.catch(failOpen)` in register.js stays as the backstop for a genuine hook bug.
 import { isOn } from '../lib/switches.js'
 import { badges, claimBadges } from '../lib/badges.js'
-import { readJsonResult, rootCandidates, signature, stalePaths, bandView, liveFrom, freshStatus, runOf, notifiedTask } from '../lib/band.js'
+import { readJsonResult, rootCandidates, signature, stalePaths, bandView, liveFrom, freshStatus, runOf, notifiedTask, gitCandidates, gitdirFrom, branchFrom } from '../lib/band.js'
 import { commandSource, completionRows } from '../lib/complete.js'
 
 export const FEATURE = 'phase-band'
@@ -47,6 +47,8 @@ function fresh() {
     agedOut: null, // the activityUntil already re-read for: one refresh per expiry, not one per boundary
     // astro workflow runs in flight, by runId: {taskId, kind, phase, agents: Map(agentId -> type), at}
     runs: new Map(),
+    gitdir: undefined, // the git dir found once at start (undefined: not looked yet, null: none)
+    branch: null, // `⎇` text for the banner, read from <gitdir>/HEAD at turn boundaries
   }
 }
 
@@ -124,6 +126,37 @@ async function load($) {
   st.sig = paths.join('|') === before.map((b) => b.path).join('|') ? signature(before) : signature(await stats($, paths))
 }
 
+const textOf = (r) => (typeof r === 'string' ? r : r && typeof r.text === 'string' ? r.text : '')
+
+/** Find the git dir once: `.git` as a dir, or a worktree's `.git` file pointing at one. */
+async function findGitdir($, cwd) {
+  for (const candidate of gitCandidates(cwd)) {
+    try {
+      const kind = (await $.fs.stat(candidate)).kind
+      if (kind === 'dir') return candidate
+      if (kind === 'file') return gitdirFrom(textOf(await $.fs.read(candidate)), candidate)
+    } catch {
+      // not here: keep walking up
+    }
+  }
+  return null
+}
+
+/** Re-read HEAD (one small file, no `git` process); redraws only when the branch changed. */
+async function readBranch($) {
+  try {
+    if (st.gitdir === undefined) st.gitdir = await findGitdir($, st.cwd)
+    const branch = st.gitdir ? branchFrom(textOf(await $.fs.read(`${st.gitdir}/HEAD`))) : null
+    if (branch === st.branch) return false
+    st.branch = branch
+    return true
+  } catch {
+    if (st.branch === null) return false
+    st.branch = null
+    return true
+  }
+}
+
 async function readAgents($) {
   try {
     const rows = await $.agent.list()
@@ -150,6 +183,7 @@ function refresh($) {
   st.busy = (async () => {
     try {
       await load($)
+      await readBranch($)
       await readAgents($)
     } catch (err) {
       st.status = null
@@ -170,6 +204,7 @@ function refresh($) {
 async function tick($, withAgents) {
   try {
     if (!active()) return
+    if (await readBranch($)) redraw($)
     const sig = signature(await stats($, stalePaths(st.cwd, st.status)))
     // a live verb ages out in `ac` with no file change: re-read once when its activityUntil passes
     const until = st.status && st.status.activity ? st.status.activityUntil : null
@@ -314,7 +349,7 @@ export async function phaseBandRender($, e, next) {
   return h(Box, { flexDirection: 'column', marginTop: 1 }, titleRule(Text, view, width), ...rows, ...actions)
 }
 
-// `── ✦ astro-code v0.50.0 ─────── M27 ▰▰▱▱▱ 2/5 ──`, `width` cells wide: the band's banner. The
+// `── ✦ astro-code v0.50.0 ⎇ develop ─────── M27 ▰▰▱▱▱ 2/5 ──`, `width` cells wide: the band's banner. The
 // version is here, so the statusline drops its own while the band draws (renderSegmentParts).
 function titleRule(Text, view, width) {
   const rule = { color: 'claude' }
@@ -324,7 +359,8 @@ function titleRule(Text, view, width) {
     [' ──', rule],
   ]
   const head = [['── ', rule], ['✦', { color: 'claude', bold: true }], [' astro-code ', { bold: true }],
-    ...(view.version ? [[`v${view.version} `, { dimColor: true }]] : [])]
+    ...(view.version ? [[`v${view.version} `, { dimColor: true }]] : []),
+    ...(st.branch ? [[`⎇ ${st.branch} `, { color: 'suggestion' }]] : [])]
   const used = [...head, ...tail].reduce((n, [t]) => n + t.length, 0)
   const pieces = [...head, ['─'.repeat(Math.max(1, width - used)), rule], ...tail]
   return h(Text, { wrap: 'truncate' }, ...pieces.map(([t, props]) => h(Text, props, t)))

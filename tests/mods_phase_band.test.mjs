@@ -259,3 +259,21 @@ test('bandView: a COUNTS row shows the open backlog, debt and fix counts on one 
   assert.ok(!bandView(STATUS, null, {}).lines.some((l) => l.startsWith('COUNTS')), 'no lists, no row');
   assert.ok(!bandView(STATUS, null, { lists: { backlog: null, debt: null, fix: null } }).lines.some((l) => l.startsWith('COUNTS')));
 });
+
+test('branch banner: HEAD → branch, detached → short sha, junk → null, long names truncated', async () => {
+  const { branchFrom, BRANCH_MAX } = await band();
+  assert.equal(branchFrom('ref: refs/heads/feature/v0-walk\n'), 'feature/v0-walk');
+  assert.equal(branchFrom('433c35e0d1f2a3b4c5d6e7f8091a2b3c4d5e6f70\n'), '433c35e');
+  for (const t of ['', null, undefined, 'garbage', 'ref: refs/remotes/origin/x']) assert.equal(branchFrom(t), null);
+  const long = branchFrom(`ref: refs/heads/feature/${'x'.repeat(60)}`);
+  assert.equal(long.length, BRANCH_MAX);
+  assert.ok(long.startsWith('feature/') && long.endsWith('…'));
+});
+
+test('branch banner: .git candidates walk up; a worktree .git file resolves its gitdir', async () => {
+  const { gitCandidates, gitdirFrom } = await band();
+  assert.deepEqual(gitCandidates('/a/b'), ['/a/b/.git', '/a/.git', '/.git']);
+  assert.equal(gitdirFrom('gitdir: /r/.git/worktrees/w\n', '/t/w/.git'), '/r/.git/worktrees/w');
+  assert.equal(gitdirFrom('gitdir: ../r/.git/worktrees/w', '/t/w/.git'), '/t/r/.git/worktrees/w');
+  assert.equal(gitdirFrom('nope', '/t/w/.git'), null);
+});
