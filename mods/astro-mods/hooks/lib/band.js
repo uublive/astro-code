@@ -279,3 +279,35 @@ export function liveFrom(agentRows, activity, workflowAgentsListed) {
   if (workflowAgentsListed) return { live, agents, source: 'agent.list' }
   return { live, agents: agents.length ? agents : null, source: 'activity' }
 }
+
+// ── git branch for the banner ─────────────────────────────────────────────────────────────────
+// Read straight from `.git/HEAD` (no `git` process): phase-band.js finds the git dir once, then
+// re-reads one small file at turn boundaries. A worktree's `.git` is a FILE (`gitdir: <path>`).
+export const BRANCH_MAX = 28
+
+/** `cwd/.git`, then each parent's, up to `/`. Pure path math. */
+export function gitCandidates(cwd) {
+  return rootCandidates(cwd).map((p) => p.slice(0, -'.astrocode'.length) + '.git')
+}
+
+/** The git dir a `.git` FILE points at (resolved against the file's dir), or `null`. */
+export function gitdirFrom(text, dotGitPath) {
+  const m = /^gitdir:\s*(.+?)\s*$/m.exec(String(text ?? ''))
+  if (!m) return null
+  if (m[1].startsWith('/')) return m[1]
+  const base = String(dotGitPath).slice(0, String(dotGitPath).lastIndexOf('/'))
+  const parts = []
+  for (const seg of `${base}/${m[1]}`.split('/')) {
+    if (seg === '..') parts.pop()
+    else if (seg && seg !== '.') parts.push(seg)
+  }
+  return `/${parts.join('/')}`
+}
+
+/** `HEAD` contents → branch name (truncated to `max` cells), short sha when detached, else `null`. */
+export function branchFrom(text, max = BRANCH_MAX) {
+  const s = String(text ?? '').trim()
+  const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(s)
+  if (ref) return ref[1].length > max ? `${ref[1].slice(0, max - 1)}…` : ref[1]
+  return /^[0-9a-f]{40,64}$/i.test(s) ? s.slice(0, 7) : null
+}
