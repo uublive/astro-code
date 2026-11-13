@@ -82,3 +82,53 @@ test('completionRows: malformed data yields [] and never throws', async () => {
   assert.deepEqual(completionRows('nope', [{ id: 'x' }], ''), []);
   assert.deepEqual(completionRows('debt', [{ id: 'ok', title: 'fine' }, null, { id: '' }], '').map(r => r.text), ['ok']);
 });
+
+// --- phase 58: the autocomplete rows follow the band's scope ------------------------------
+// Drives the real feature handlers with a fake `$` (fs and process only), as register.js would.
+async function bandFeature(status, headText) {
+  const sw = await import('../mods/astro-mods/hooks/lib/switches.js');
+  sw.setSwitches({ exitCode: 0, stdout: JSON.stringify({ switches: { 'phase-band': true } }) });
+  const f = await import('../mods/astro-mods/hooks/features/phase-band.js');
+  const calls = [];
+  const $ = {
+    fs: {
+      stat: async (p) => { if (p.endsWith('/.astrocode') || p.endsWith('/.git')) return { kind: 'dir', mtimeMs: 1 }; throw new Error('ENOENT'); },
+      read: async (p) => { if (p.endsWith('/HEAD')) return headText; throw new Error('ENOENT'); },
+    },
+    process: { run: async (argv) => { calls.push(argv.join(' ')); return { exitCode: 0, stdout: argv[1] === 'status' ? JSON.stringify(status) : '[]' }; } },
+    agent: { list: async () => [] },
+    ui: { invalidate() {} },
+  };
+  f.resetPhaseBand();
+  await f.phaseBandStart($, { isInteractive: true, cwd: '/proj' }, async () => undefined);
+  await f.phaseBandSettled();
+  const complete = async () => {
+    const r = await f.phaseBandComplete($, { text: '/astro-plan ', start: 12, token: '' }, async () => ({ suggestions: [] }));
+    return r.suggestions.map((x) => x.text);
+  };
+  return { complete, calls };
+}
+const prow = (number, o = {}) => ({ number, name: `P${number}`, slug: `${number}-p`, status: 'pending', planned: false, discussed: false, milestone: 1, ...o });
+const scoped = (registry) => ({
+  milestone: 1, next: null, siblings: [], registry,
+  phases: [
+    prow(1, { mine: true, feature_branch: 'feature/alpha', onBranch: true }),
+    prow(2, { mine: true }),
+    prow(3, { mine: false, owner_tag: 'a', feature_branch: 'feature/alpha' }),
+  ],
+});
+
+test('autocomplete phase rows: branch mode excludes a teammate\'s and an untied phase, full mode is unchanged', async () => {
+  const branch = await bandFeature(scoped(true), 'ref: refs/heads/feature/alpha\n');
+  assert.deepEqual(await branch.complete(), ['1']);
+  const full = await bandFeature(scoped(undefined), 'ref: refs/heads/feature/alpha\n');
+  assert.deepEqual(await full.complete(), ['1', '2', '3']);
+});
+
+test('autocomplete phase rows: mine mode off the branch, and a detached HEAD is mine mode; no extra process (C9)', async () => {
+  const dev = await bandFeature(scoped(true), 'ref: refs/heads/develop\n');
+  assert.deepEqual(await dev.complete(), ['1', '2']);
+  const det = await bandFeature(scoped(true), '0123456789abcdef0123456789abcdef01234567\n');
+  assert.deepEqual(await det.complete(), ['1', '2']);
+  assert.ok(dev.calls.every((c) => /^ac (status|debt|backlog|fix) /.test(c)), dev.calls.join(' | '));
+});
