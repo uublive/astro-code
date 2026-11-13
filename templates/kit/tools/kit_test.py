@@ -1654,6 +1654,352 @@ def check_named_query(source_id: str, file_name: str, text: str) -> tuple[list[t
     return errors, query
 
 
+# ── Data-change guard + declared writes (phase 141; mirrors sql-guard.ts
+# checkDataChange and source-write.ts, SRC-16..19) ──────────────────────────
+# A write body is one or more INSERT / UPDATE / DELETE / MERGE statements
+# (optionally behind WITH <cte> AS (...)), nothing else. Token-based on
+# tokenize_sql — line for line the TypeScript guard, so both validators give
+# the same verdict (the shared data_change corpus pins it).
+
+_MAX_DATA_CHANGE_STATEMENTS = 20
+_DML_VERBS = {"INSERT", "UPDATE", "DELETE", "MERGE"}
+_DATA_CHANGE_FORBIDDEN = {
+    "CREATE", "ALTER", "DROP", "TRUNCATE", "GRANT", "REVOKE", "DENY",
+    "EXEC", "EXECUTE", "SP_EXECUTESQL",
+    "OPENROWSET", "OPENQUERY", "OPENDATASOURCE", "OPENJSON", "BULK",
+    "OUTPUT",
+    "COMMIT", "ROLLBACK", "BEGIN", "SAVE", "TRAN", "TRANSACTION",
+    "USE", "DECLARE", "GO", "WAITFOR", "SHUTDOWN", "DBCC", "KILL", "RECONFIGURE", "BACKUP", "RESTORE",
+    "STATISTICS", "WRITETEXT", "UPDATETEXT", "READTEXT", "PRINT", "RAISERROR", "THROW",
+}
+_PROC_PREFIX_RE = re.compile(r"^(XP|SP)_", re.ASCII)
+
+
+def check_data_change(body: str):
+    """Returns (True, [{"verb", "hasWhere"}...]) or (False, reason)."""
+    tokens = tokenize_sql(body)
+    for t in tokens:
+        if t["flag"] == "unterminated":
+            return False, f"body has an unterminated {_UNTERMINATED_LABEL[t['kind']]}"
+        if t["flag"] == "ambiguous":
+            return False, "body has an ambiguous literal or line break"
+    sig = [t for t in tokens if t["kind"] != "ws" and t["kind"] != "comment"]
+    if len(sig) == 0:
+        return False, "empty write body"
+
+    statements: list[dict] = []
+    cur: dict | None = None
+    in_with = False
+    depth = 0
+    prev_word: str | None = None
+
+    def begin(verb: str) -> None:
+        nonlocal cur, in_with
+        cur = {"verb": verb, "hasWhere": False, "setSeen": False, "thenUpdate": False, "sawValues": False}
+        statements.append({"verb": verb, "hasWhere": False})
+        in_with = False
+
+    def finish() -> None:
+        nonlocal cur
+        if cur is not None:
+            statements[-1]["hasWhere"] = cur["hasWhere"] if cur["verb"] in ("UPDATE", "DELETE") else True
+        cur = None
+
+    for t in sig:
+        w = t["text"].upper() if t["kind"] == "word" else None
+        if w:
+            if w in _DATA_CHANGE_FORBIDDEN:
+                return False, f"{w} is not allowed in a write"
+            if _PROC_PREFIX_RE.match(w):
+                return False, f"procedure call {t['text']} is not allowed in a write"
+        is_p = t["kind"] == "punct"
+        if is_p and t["text"] == ")":
+            depth -= 1
+            if depth < 0:
+                return False, "unbalanced parentheses"
+        d = depth
+        if is_p and t["text"] == "(":
+            depth += 1
+
+        if d > 0:
+            if w == "INTO":
+                return False, "INTO is only allowed directly after INSERT or MERGE (SELECT … INTO is refused)"
+            if w == "SET":
+                return False, "SET is only allowed as the SET clause of an UPDATE"
+            prev_word = w
+            continue
+        if is_p and t["text"] == ";":
+            if in_with:
+                return False, "WITH must be followed by INSERT, UPDATE, DELETE or MERGE"
+            finish()
+            prev_word = None
+            continue
+        if cur is None:
+            if in_with:
+                if w and w in _DML_VERBS:
+                    begin(w)
+                elif w == "SELECT":
+                    return False, "a SELECT statement is not a data change"
+            elif w == "WITH":
+                in_with = True
+            elif w and w in _DML_VERBS:
+                begin(w)
+            else:
+                return False, f"a write statement must start with INSERT, UPDATE, DELETE or MERGE (found {t['text']})"
+        elif w:
+            c = cur
+            if w in _DML_VERBS:
+                if prev_word == "THEN" and c["verb"] == "MERGE":
+                    if w == "UPDATE":
+                        c["thenUpdate"] = True
+                else:
+                    finish()
+                    begin(w)
+            elif w == "WHERE":
+                c["hasWhere"] = True
+            elif w == "SELECT":
+                if c["verb"] != "INSERT" or c["sawValues"]:
+                    return False, "a SELECT statement is not a data change"
+            elif w == "VALUES":
+                c["sawValues"] = True
+            elif w == "INTO":
+                if prev_word != "INSERT" and prev_word != "MERGE":
+                    return False, "INTO is only allowed directly after INSERT or MERGE (SELECT … INTO is refused)"
+            elif w == "SET":
+                if not ((c["verb"] == "UPDATE" and not c["setSeen"]) or (c["verb"] == "MERGE" and c["thenUpdate"])):
+                    return False, "SET is only allowed as the SET clause of an UPDATE"
+                c["setSeen"] = True
+                c["thenUpdate"] = False
+        prev_word = w
+    if depth != 0:
+        return False, "unbalanced parentheses"
+    if in_with:
+        return False, "WITH must be followed by INSERT, UPDATE, DELETE or MERGE"
+    finish()
+    if len(statements) == 0:
+        return False, "empty write body"
+    if len(statements) > _MAX_DATA_CHANGE_STATEMENTS:
+        return False, f"a write may hold at most {_MAX_DATA_CHANGE_STATEMENTS} statements"
+    return True, statements
+
+
+_WRITES_MIN_CONTRACT = (1, 2, 0)
+_NUM_RE = r"(0|[1-9][0-9]*)"
+_WSC_SINGLE_COMPARATOR_RE = re.compile(rf"^(\^|~|>=|=)?{_NUM_RE}\.{_NUM_RE}\.{_NUM_RE}\Z", re.ASCII)
+_APPROVALS = {"automatic", "needs_approval"}
+
+
+def writes_contract_satisfied(range_str) -> bool:
+    """SRC-19 gate: one comparator on a version >= 1.2.0 (same grammar as SRC-03)."""
+    if not isinstance(range_str, str):
+        return False
+    m = _WSC_SINGLE_COMPARATOR_RE.match(_trim_ws(range_str))
+    if not m:
+        return False
+
+    def key(n: str) -> tuple[int, str]:
+        return (len(n), n)
+    version = tuple(key(m.group(i)) for i in (2, 3, 4))
+    return version >= tuple(key(str(n)) for n in _WRITES_MIN_CONTRACT)
+
+
+def check_named_write(source_id: str, file_name: str, text: str) -> tuple[list[tuple[str, str, str, str]], dict | None]:
+    """SRC-16/17 (+ SRC-09/10 reuse) for one writes/<name>.sql. Returns (errors, write)."""
+    errors: list[tuple[str, str, str, str]] = []
+
+    def err(check: str, message: str) -> None:
+        errors.append((check, source_id, f"writes/{file_name}", message))
+
+    stem = _SQL_SUFFIX_RE.sub("", file_name)
+    lines = _split_lines(text)
+    i = 0
+    header_lines: list[str] = []
+    while i < len(lines) and (_is_blank(lines[i]) or lines[i].startswith("--")):
+        header_lines.append(lines[i])
+        i += 1
+    body = "\n".join(lines[i:])
+
+    name_value: str | None = None
+    name_count = 0
+    description_value: str | None = None
+    description_count = 0
+    approval_value: str | None = None
+    approval_count = 0
+    params: list[dict] = []
+    param_names_seen: set[str] = set()
+
+    for line in header_lines:
+        m = _QTAG_LINE_RE.match(line)
+        if not m:
+            continue
+        tag, raw_rest = m.group(1), m.group(2)
+        rest = _trim_ws(raw_rest or "")
+        if tag == "name":
+            name_count += 1
+            name_value = rest
+        elif tag == "description":
+            description_count += 1
+            description_value = rest
+        elif tag == "approval":
+            approval_count += 1
+            approval_value = rest
+        elif tag == "param":
+            pm = _QPARAM_LINE_RE.match(rest)
+            if not pm:
+                err("SRC-10", f"malformed @param line: '{_trim_ws(line)}'")
+                continue
+            pname, sqltype, qualifier, trailer = pm.group(1), pm.group(2), pm.group(3), pm.group(4)
+            if not _QPARAM_NAME_PATTERN.match(pname):
+                err("SRC-10", f"@param name '{pname}' is not a valid identifier")
+                continue
+            key = pname.lower()
+            if key in param_names_seen:
+                err("SRC-10", f"duplicate @param name '{pname}'")
+                continue
+            param_names_seen.add(key)
+            ok_type, type_result = parse_sql_type(sqltype)
+            if not ok_type:
+                err("SRC-10", f"@param {pname}: {type_result}")
+                continue
+            ok_trailer, trailer_literal = _parse_default_trailer(trailer)
+            if not ok_trailer:
+                err("SRC-10", f"@param {pname}: malformed trailing text '{_trim_ws(trailer)}'")
+                continue
+            has_default = trailer_literal is not None
+            if has_default and qualifier == "required":
+                err("SRC-10", f"@param {pname}: default is only allowed on optional params")
+                continue
+            if has_default:
+                ok_lit, lit_result = parse_default_literal(sqltype, trailer_literal)
+                if not ok_lit:
+                    err("SRC-10", f"@param {pname}: default '{trailer_literal}' does not parse for {sqltype}: {lit_result}")
+                    continue
+            params.append({"name": pname, "sqlType": sqltype, "required": qualifier == "required"})
+        else:
+            err("SRC-16", f"unknown tag '@{tag}' in a write (writes take @name, @description, @param, @approval)")
+
+    if name_count == 0:
+        err("SRC-16", "missing @name")
+    elif name_count > 1:
+        err("SRC-16", "duplicate @name")
+    elif name_value != stem:
+        err("SRC-16", f"@name '{name_value}' must equal the file stem '{stem}'")
+    elif not _QNAME_PATTERN.match(name_value or ""):
+        err("SRC-16", f"@name '{name_value}' must match ^[a-z][a-z0-9_]{{0,63}}$")
+
+    if description_count == 0:
+        err("SRC-16", "missing @description")
+    elif description_count > 1:
+        err("SRC-16", "duplicate @description")
+    elif not description_value:
+        err("SRC-16", "@description must be non-empty")
+
+    if approval_count > 1:
+        err("SRC-16", "duplicate @approval")
+    elif approval_count == 1 and (approval_value or "") not in _APPROVALS:
+        err("SRC-16", f"@approval '{approval_value}' must be 'automatic' or 'needs_approval'")
+
+    ok_body, body_result = check_data_change(body)
+    if not ok_body:
+        err("SRC-17", str(body_result))
+
+    raw_body_params = scan_body_params(body)
+    body_param_keys = {p.lower() for p in raw_body_params}
+    declared_keys = {p["name"].lower() for p in params}
+    for bp in raw_body_params:
+        if bp.lower() not in declared_keys:
+            err("SRC-09", f"body references undeclared param '@{bp}'")
+    for p in params:
+        if p["name"].lower() not in body_param_keys:
+            err("SRC-09", f"declared @param '{p['name']}' is never used in the body")
+
+    if errors:
+        return errors, None
+    return errors, {"name": name_value, "params": params, "approval": approval_value if approval_count == 1 else "needs_approval"}
+
+
+def check_free_writes_json(source_id: str, raw: bytes) -> list[tuple[str, str, str, str]]:
+    """SRC-18 for src/sources/<id>/free-writes.json (strict JSON, closed shape)."""
+    def err(message: str) -> list[tuple[str, str, str, str]]:
+        return [("SRC-18", source_id, "free-writes.json", message)]
+
+    try:
+        data = load_source_schema_json(raw)
+    except SourceSchemaParseError as exc:
+        return err(f"free-writes.json {exc}")
+    except (ValueError, RecursionError) as exc:
+        return err(f"free-writes.json is not valid JSON: {exc}")
+    if not isinstance(data, dict):
+        return err("free-writes.json must be a JSON object")
+    for key in data:
+        if key not in ("approval", "description"):
+            return err(f"free-writes.json has an unknown key '{key}'")
+    approval = data.get("approval")
+    if not isinstance(approval, str) or approval not in _APPROVALS:
+        return err("free-writes.json 'approval' must be 'automatic' or 'needs_approval'")
+    if "description" in data:
+        d = data["description"]
+        if not isinstance(d, str) or _utf16_len(d) < 1 or _utf16_len(d) > 500:
+            return err("free-writes.json 'description' must be a string of 1..500 characters")
+    return []
+
+
+def check_source_writes(src_dir: Path, source_id: str, contract_version, rep: Report) -> None:
+    """SRC-16..19 for one source: named writes, free-writes.json and the contract gate."""
+    writes_dir = src_dir / "writes"
+    write_listing, w_err = _list_dir(writes_dir)
+    if w_err is not None:
+        rep.fail("sources", "SRC-16", f"{source_id}: writes/ cannot be read, so its writes cannot be checked: {w_err}")
+        return
+    query_listing, _q_err = _list_dir(src_dir / "queries")
+    query_names = set()
+    for qn in query_listing:
+        if _SQL_SUFFIX_RE.search(qn):
+            kind, _e = _file_kind(src_dir / "queries" / qn)
+            if kind != "missing":
+                query_names.add(_SQL_SUFFIX_RE.sub("", qn))
+    write_count = 0
+    for wname in sorted(n for n in write_listing if _SQL_SUFFIX_RE.search(n)):
+        kind, kind_err = _file_kind(writes_dir / wname)
+        if kind == "missing":
+            continue
+        write_count += 1
+        if kind == "error":
+            rep.fail("sources", "SRC-16", f"{source_id}: writes/{wname}: cannot be read: {kind_err}")
+            continue
+        try:
+            wtext = _read_text_like_server(writes_dir / wname)
+        except OSError as exc:
+            rep.fail("sources", "SRC-16", f"{source_id}: writes/{wname}: cannot be read: {exc}")
+            continue
+        werrors, _w = check_named_write(source_id, wname, wtext)
+        for check, sid, file, msg in werrors:
+            rep.fail("sources", check, f"{sid}: {file}: {msg}")
+        stem = _SQL_SUFFIX_RE.sub("", wname)
+        if stem in query_names:
+            rep.fail("sources", "SRC-16", f"{source_id}: writes/{wname}: write '{stem}' has the same name as a named query of {source_id}")
+
+    free_declared = False
+    src_listing, _s_err = _list_dir(src_dir)
+    if "free-writes.json" in src_listing:
+        kind, kind_err = _file_kind(src_dir / "free-writes.json")
+        if kind == "error":
+            free_declared = True
+            rep.fail("sources", "SRC-18", f"{source_id}: free-writes.json cannot be read: {kind_err}")
+        elif kind == "file":
+            free_declared = True
+            try:
+                raw_free = (src_dir / "free-writes.json").read_bytes()
+            except OSError as exc:
+                rep.fail("sources", "SRC-18", f"{source_id}: free-writes.json cannot be read: {exc}")
+            else:
+                for check, sid, file, msg in check_free_writes_json(source_id, raw_free):
+                    rep.fail("sources", check, f"{sid}: {file}: {msg}")
+
+    if (write_count > 0 or free_declared) and not writes_contract_satisfied(contract_version):
+        rep.fail("sources", "SRC-19", f"{source_id}: declares writes but contract_version does not satisfy >=1.2.0")
+
+
 def _read_text_like_server(path: Path) -> str:
     """Decode as astroport does (fflate strFromU8): one leading BOM dropped,
     invalid UTF-8 replaced with U+FFFD rather than rejected."""
@@ -1737,6 +2083,9 @@ def check_sources(root: Path, manifest: dict | None, rep: Report) -> None:
                 # "Empty" = only [ \t\n\r\f\v] and U+FEFF (text semantics above).
                 if _is_blank(source_md):
                     rep.fail("sources", "SRC-04", f"{source_id}: SOURCE.md is empty")
+
+        # ── SRC-16..19: declared writes (phase 141) ──
+        check_source_writes(src_dir, source_id, manifest.get("contract_version"), rep)
 
         # ── SRC-05..07: schema.json (ADR-016) ──
         # Only the exact name counts: a schema.yaml shipped instead is

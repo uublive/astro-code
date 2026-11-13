@@ -2538,6 +2538,292 @@
       "expect": {
         "ok": true
       }
+    },
+  {
+      "name": "writes-valid",
+      "criteria": "C7/C12",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @approval automatic\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;\n",
+        "src/sources/erp/free-writes.json": "{\"approval\": \"needs_approval\", \"description\": \"Fix order notes\"}\n"
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "writes-default-approval",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @param OrderId int required\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;\n"
+      },
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "writes-bad-approval",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @approval sometimes\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-16"
+      }
+    },
+    {
+      "name": "writes-returns-tag",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @returns OrderId int\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-16"
+      }
+    },
+    {
+      "name": "writes-name-stem-mismatch",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name other_name\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @approval automatic\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-16"
+      }
+    },
+    {
+      "name": "writes-missing-description",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @param OrderId int required\n-- @approval automatic\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-16"
+      }
+    },
+    {
+      "name": "writes-duplicate-approval",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @approval automatic\n-- @approval needs_approval\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-16"
+      }
+    },
+    {
+      "name": "writes-same-name-as-query",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/open_orders.sql": "-- @name open_orders\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @approval automatic\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-16"
+      }
+    },
+    {
+      "name": "writes-ddl-body",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @approval automatic\nDROP TABLE dbo.Orders; -- @OrderId\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-17"
+      }
+    },
+    {
+      "name": "writes-select-body",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @approval automatic\nSELECT * FROM dbo.Orders WHERE OrderId = @OrderId\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-17"
+      }
+    },
+    {
+      "name": "writes-chained-ddl-body",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @approval automatic\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId; TRUNCATE TABLE dbo.Orders\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-17"
+      }
+    },
+    {
+      "name": "writes-undeclared-param",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @approval automatic\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-09"
+      }
+    },
+    {
+      "name": "writes-unused-param",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @approval automatic\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = 1;\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-09"
+      }
+    },
+    {
+      "name": "free-writes-unknown-key",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/free-writes.json": "{\"approval\": \"automatic\", \"extra\": 1}"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-18"
+      }
+    },
+    {
+      "name": "free-writes-bad-approval",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/free-writes.json": "{\"approval\": \"maybe\"}"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-18"
+      }
+    },
+    {
+      "name": "free-writes-duplicate-key",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/free-writes.json": "{\"approval\": \"automatic\", \"approval\": \"needs_approval\"}"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-18"
+      }
+    },
+    {
+      "name": "free-writes-not-json",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/free-writes.json": "{approval: automatic}"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-18"
+      }
+    },
+    {
+      "name": "free-writes-empty-description",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": "^1.2.0"
+      },
+      "files": {
+        "src/sources/erp/free-writes.json": "{\"approval\": \"automatic\", \"description\": \"\"}"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-18"
+      }
+    },
+    {
+      "name": "writes-old-contract-named",
+      "criteria": "C7",
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @approval automatic\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;\n"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-19"
+      }
+    },
+    {
+      "name": "writes-old-contract-free",
+      "criteria": "C7",
+      "files": {
+        "src/sources/erp/free-writes.json": "{\"approval\": \"automatic\"}"
+      },
+      "expect": {
+        "ok": false,
+        "check": "SRC-19"
+      }
+    },
+    {
+      "name": "writes-contract-gte-1-3",
+      "criteria": "C7",
+      "manifest": {
+        "contract_version": ">=1.3.0"
+      },
+      "files": {
+        "src/sources/erp/writes/close_order.sql": "-- @name close_order\n-- @description Marks an order closed\n-- @param OrderId int required\n-- @approval automatic\nUPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;\n"
+      },
+      "expect": {
+        "ok": true
+      }
     }
   ],
   "default_literals": [
@@ -4257,6 +4543,671 @@
     {
       "sql": "(SELECT 1) UNION COMMIT",
       "ok": false
+    }
+  ],
+  "data_change": [
+    {
+      "sql": "INSERT INTO dbo.Orders (CustomerId) VALUES (1)",
+      "ok": true,
+      "verbs": [
+        "INSERT"
+      ]
+    },
+    {
+      "sql": "INSERT dbo.Orders (CustomerId) VALUES (@c)",
+      "ok": true,
+      "verbs": [
+        "INSERT"
+      ]
+    },
+    {
+      "sql": "INSERT INTO dbo.A (x) SELECT x FROM dbo.B",
+      "ok": true,
+      "verbs": [
+        "INSERT"
+      ]
+    },
+    {
+      "sql": "INSERT INTO dbo.A (x) VALUES (1), (2), (3);",
+      "ok": true,
+      "verbs": [
+        "INSERT"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ],
+      "hasWhere": [
+        true
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.Orders SET Status = 'Closed'",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ],
+      "hasWhere": [
+        false
+      ]
+    },
+    {
+      "sql": "UPDATE o SET o.Total = 0 FROM dbo.Orders o JOIN dbo.C c ON c.Id = o.CustomerId WHERE c.Id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ],
+      "hasWhere": [
+        true
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.T SET a = (SELECT MAX(x) FROM dbo.U) WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ],
+      "hasWhere": [
+        true
+      ]
+    },
+    {
+      "sql": "DELETE FROM dbo.Orders WHERE OrderId = @OrderId",
+      "ok": true,
+      "verbs": [
+        "DELETE"
+      ],
+      "hasWhere": [
+        true
+      ]
+    },
+    {
+      "sql": "DELETE FROM dbo.Orders",
+      "ok": true,
+      "verbs": [
+        "DELETE"
+      ],
+      "hasWhere": [
+        false
+      ]
+    },
+    {
+      "sql": "DELETE dbo.Orders",
+      "ok": true,
+      "verbs": [
+        "DELETE"
+      ],
+      "hasWhere": [
+        false
+      ]
+    },
+    {
+      "sql": "DELETE FROM dbo.Orders;",
+      "ok": true,
+      "verbs": [
+        "DELETE"
+      ],
+      "hasWhere": [
+        false
+      ]
+    },
+    {
+      "sql": "MERGE dbo.T AS t USING dbo.S AS s ON t.id = s.id WHEN MATCHED THEN UPDATE SET t.a = s.a WHEN NOT MATCHED THEN INSERT (id, a) VALUES (s.id, s.a);",
+      "ok": true,
+      "verbs": [
+        "MERGE"
+      ]
+    },
+    {
+      "sql": "MERGE dbo.T AS t USING (SELECT 1 AS id) AS s ON t.id = s.id WHEN MATCHED THEN DELETE;",
+      "ok": true,
+      "verbs": [
+        "MERGE"
+      ]
+    },
+    {
+      "sql": "WITH c AS (SELECT OrderId FROM dbo.Orders WHERE Total = 0) DELETE FROM dbo.Orders WHERE OrderId IN (SELECT OrderId FROM c)",
+      "ok": true,
+      "verbs": [
+        "DELETE"
+      ],
+      "hasWhere": [
+        true
+      ]
+    },
+    {
+      "sql": "WITH c AS (SELECT 1 AS x), d AS (SELECT 2 AS y) UPDATE dbo.T SET a = 1 WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "WITH c (x) AS (SELECT 1) INSERT INTO dbo.T (a) SELECT x FROM c",
+      "ok": true,
+      "verbs": [
+        "INSERT"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.A SET x = 1 WHERE id = 1; UPDATE dbo.B SET y = 2 WHERE id = 2",
+      "ok": true,
+      "verbs": [
+        "UPDATE",
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.A SET x = 1 WHERE id = 1 UPDATE dbo.B SET y = 2",
+      "ok": true,
+      "verbs": [
+        "UPDATE",
+        "UPDATE"
+      ],
+      "hasWhere": [
+        true,
+        false
+      ]
+    },
+    {
+      "sql": "INSERT INTO dbo.A (x) VALUES (1) DELETE FROM dbo.B WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "INSERT",
+        "DELETE"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.T SET [Set] = 1, [Drop] = 2 WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.[Drop] SET x = 1 WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "INSERT INTO dbo.T ([Delete], [Create]) VALUES (1, 2)",
+      "ok": true,
+      "verbs": [
+        "INSERT"
+      ]
+    },
+    {
+      "sql": "-- comment\nUPDATE dbo.T SET x = 1 WHERE id = 1 -- trailing",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "/* c */ UPDATE /* d */ dbo.T SET x = 1 WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "update dbo.t set x = 1 where id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.T SET Note = 'DROP TABLE x; EXEC y' WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.T SET Note = 'it''s' WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.T SET x = CASE WHEN y = 1 THEN 2 ELSE 3 END WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "INSERT INTO dbo.T (a, b) SELECT a, b FROM dbo.U UNION ALL SELECT a, b FROM dbo.V",
+      "ok": true,
+      "verbs": [
+        "INSERT"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.T WITH (ROWLOCK) SET x = 1 WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "DELETE TOP (10) FROM dbo.T WHERE x = 1",
+      "ok": true,
+      "verbs": [
+        "DELETE"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.T SET x = @a, y = @b WHERE id = @id",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "INSERT INTO dbo.T (a) VALUES (N'x')\n;\n",
+      "ok": true,
+      "verbs": [
+        "INSERT"
+      ]
+    },
+    {
+      "sql": "MERGE INTO dbo.T AS t USING dbo.S AS s ON t.id = s.id WHEN MATCHED AND s.a = 1 THEN DELETE WHEN MATCHED THEN UPDATE SET t.a = 2;",
+      "ok": true,
+      "verbs": [
+        "MERGE"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.T SET x = ISNULL(x, 0) + 1 WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "CREATE TABLE dbo.X (a int)",
+      "ok": false
+    },
+    {
+      "sql": "ALTER TABLE dbo.X ADD b int",
+      "ok": false
+    },
+    {
+      "sql": "DROP TABLE dbo.X",
+      "ok": false
+    },
+    {
+      "sql": "TRUNCATE TABLE dbo.X",
+      "ok": false
+    },
+    {
+      "sql": "GRANT SELECT ON dbo.X TO u",
+      "ok": false
+    },
+    {
+      "sql": "REVOKE SELECT ON dbo.X FROM u",
+      "ok": false
+    },
+    {
+      "sql": "DENY SELECT ON dbo.X TO u",
+      "ok": false
+    },
+    {
+      "sql": "CREATE INDEX i ON dbo.X (a)",
+      "ok": false
+    },
+    {
+      "sql": "drop table dbo.x",
+      "ok": false
+    },
+    {
+      "sql": "Drop Table dbo.x",
+      "ok": false
+    },
+    {
+      "sql": "CREATE PROCEDURE p AS SELECT 1",
+      "ok": false
+    },
+    {
+      "sql": "ALTER LOGIN u WITH PASSWORD = 'x'",
+      "ok": false
+    },
+    {
+      "sql": "EXEC sp_who",
+      "ok": false
+    },
+    {
+      "sql": "EXEC('DROP TABLE t')",
+      "ok": false
+    },
+    {
+      "sql": "EXECUTE dbo.proc",
+      "ok": false
+    },
+    {
+      "sql": "EXEC sp_executesql N'DROP TABLE t'",
+      "ok": false
+    },
+    {
+      "sql": "INSERT INTO dbo.T EXEC dbo.p",
+      "ok": false
+    },
+    {
+      "sql": "sp_executesql N'x'",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET x = 1; EXEC xp_cmdshell 'dir'",
+      "ok": false
+    },
+    {
+      "sql": "exec master..xp_cmdshell 'dir'",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1; DROP TABLE dbo.T",
+      "ok": false,
+      "reasonIncludes": "DROP"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 DROP TABLE dbo.T",
+      "ok": false,
+      "reasonIncludes": "DROP"
+    },
+    {
+      "sql": "DELETE FROM dbo.T WHERE id = 1; TRUNCATE TABLE dbo.U",
+      "ok": false,
+      "reasonIncludes": "TRUNCATE"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE id = 1; GRANT ALL TO u",
+      "ok": false
+    },
+    {
+      "sql": "dR/**/OP TABLE dbo.T",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1; dR/**/OP TABLE dbo.T",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1; DrOp TABLE dbo.T",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1;\nDROP\nTABLE dbo.T",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE id = 1eDROP TABLE t",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 -- x\rDROP TABLE t",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 --\u0085DROP TABLE t",
+      "ok": false
+    },
+    {
+      "sql": "SELECT * INTO dbo.New FROM dbo.Old",
+      "ok": false,
+      "reasonIncludes": "SELECT"
+    },
+    {
+      "sql": "SELECT 1",
+      "ok": false,
+      "reasonIncludes": "SELECT"
+    },
+    {
+      "sql": "SELECT * FROM dbo.T",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 SELECT * FROM dbo.U",
+      "ok": false,
+      "reasonIncludes": "SELECT"
+    },
+    {
+      "sql": "WITH c AS (SELECT 1 AS x) SELECT * FROM c",
+      "ok": false
+    },
+    {
+      "sql": "INSERT INTO dbo.T (a) VALUES (1) SELECT 1",
+      "ok": false
+    },
+    {
+      "sql": "SELECT * INTO #t FROM dbo.U",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 OUTPUT inserted.c",
+      "ok": false,
+      "reasonIncludes": "OUTPUT"
+    },
+    {
+      "sql": "DELETE FROM dbo.T OUTPUT deleted.* INTO dbo.Log",
+      "ok": false,
+      "reasonIncludes": "OUTPUT"
+    },
+    {
+      "sql": "INSERT INTO dbo.T (a) OUTPUT inserted.a VALUES (1)",
+      "ok": false
+    },
+    {
+      "sql": "COMMIT",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1; COMMIT",
+      "ok": false
+    },
+    {
+      "sql": "ROLLBACK",
+      "ok": false
+    },
+    {
+      "sql": "BEGIN TRAN",
+      "ok": false
+    },
+    {
+      "sql": "BEGIN TRANSACTION; UPDATE dbo.T SET c = 1",
+      "ok": false
+    },
+    {
+      "sql": "SAVE TRAN s1",
+      "ok": false
+    },
+    {
+      "sql": "SET IDENTITY_INSERT dbo.T ON; INSERT INTO dbo.T (id) VALUES (1)",
+      "ok": false,
+      "reasonIncludes": "SET"
+    },
+    {
+      "sql": "SET XACT_ABORT OFF; UPDATE dbo.T SET c = 1",
+      "ok": false,
+      "reasonIncludes": "SET"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 SET XACT_ABORT OFF",
+      "ok": false
+    },
+    {
+      "sql": "USE master",
+      "ok": false
+    },
+    {
+      "sql": "DECLARE @x int = 1; UPDATE dbo.T SET c = @x",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1\nGO\nDROP TABLE x",
+      "ok": false
+    },
+    {
+      "sql": "OPENROWSET('SQLNCLI', 'x', 'SELECT 1')",
+      "ok": false
+    },
+    {
+      "sql": "INSERT INTO dbo.T SELECT * FROM OPENROWSET(BULK 'f', SINGLE_BLOB) AS x",
+      "ok": false
+    },
+    {
+      "sql": "INSERT INTO dbo.T SELECT * FROM OPENQUERY(srv, 'select 1')",
+      "ok": false
+    },
+    {
+      "sql": "BULK INSERT dbo.T FROM 'f'",
+      "ok": false
+    },
+    {
+      "sql": "WAITFOR DELAY '00:00:10'",
+      "ok": false
+    },
+    {
+      "sql": "DBCC CHECKDB",
+      "ok": false
+    },
+    {
+      "sql": "SHUTDOWN",
+      "ok": false
+    },
+    {
+      "sql": "KILL 55",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE STATISTICS dbo.T",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE note = 'abc",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 /* open",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET [c = 1",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = (1",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1)",
+      "ok": false
+    },
+    {
+      "sql": "",
+      "ok": false
+    },
+    {
+      "sql": "   \n  ",
+      "ok": false
+    },
+    {
+      "sql": "-- only a comment",
+      "ok": false
+    },
+    {
+      "sql": ";",
+      "ok": false
+    },
+    {
+      "sql": "WITH c AS (SELECT 1 AS x)",
+      "ok": false
+    },
+    {
+      "sql": "WITH c AS (SELECT 1 AS x);",
+      "ok": false
+    },
+    {
+      "sql": "(UPDATE dbo.T SET c = 1)",
+      "ok": false
+    },
+    {
+      "sql": "1; UPDATE dbo.T SET c = 1",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = (SELECT 1 INTO dbo.X)",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE id IN (SELECT id FROM dbo.U); DROP TABLE dbo.T",
+      "ok": false
+    },
+    {
+      "sql": "MERGE dbo.T AS t USING dbo.S AS s ON t.id = s.id WHEN MATCHED THEN UPDATE SET t.a = 1; SET IDENTITY_INSERT dbo.T ON",
+      "ok": false
+    },
+    {
+      "sql": "MERGE dbo.T AS t USING dbo.S AS s ON t.id = s.id WHEN MATCHED THEN UPDATE SET t.a = 1 OUTPUT inserted.a",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 PRINT 'x'",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1; THROW 50000, 'x', 1",
+      "ok": false
+    },
+    {
+      "sql": "INSERT INTO dbo.T VALUES (1); CREATE TABLE dbo.X (a int)",
+      "ok": false
+    },
+    {
+      "sql": "EXEC('UPDATE dbo.T SET c = 1')",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1; SELECT 1",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 0 WHERE id = 1;UPDATE dbo.T SET c = 1 WHERE id = 1;UPDATE dbo.T SET c = 2 WHERE id = 1;UPDATE dbo.T SET c = 3 WHERE id = 1;UPDATE dbo.T SET c = 4 WHERE id = 1;UPDATE dbo.T SET c = 5 WHERE id = 1;UPDATE dbo.T SET c = 6 WHERE id = 1;UPDATE dbo.T SET c = 7 WHERE id = 1;UPDATE dbo.T SET c = 8 WHERE id = 1;UPDATE dbo.T SET c = 9 WHERE id = 1;UPDATE dbo.T SET c = 10 WHERE id = 1;UPDATE dbo.T SET c = 11 WHERE id = 1;UPDATE dbo.T SET c = 12 WHERE id = 1;UPDATE dbo.T SET c = 13 WHERE id = 1;UPDATE dbo.T SET c = 14 WHERE id = 1;UPDATE dbo.T SET c = 15 WHERE id = 1;UPDATE dbo.T SET c = 16 WHERE id = 1;UPDATE dbo.T SET c = 17 WHERE id = 1;UPDATE dbo.T SET c = 18 WHERE id = 1;UPDATE dbo.T SET c = 19 WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE",
+        "UPDATE"
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 0 WHERE id = 1;UPDATE dbo.T SET c = 1 WHERE id = 1;UPDATE dbo.T SET c = 2 WHERE id = 1;UPDATE dbo.T SET c = 3 WHERE id = 1;UPDATE dbo.T SET c = 4 WHERE id = 1;UPDATE dbo.T SET c = 5 WHERE id = 1;UPDATE dbo.T SET c = 6 WHERE id = 1;UPDATE dbo.T SET c = 7 WHERE id = 1;UPDATE dbo.T SET c = 8 WHERE id = 1;UPDATE dbo.T SET c = 9 WHERE id = 1;UPDATE dbo.T SET c = 10 WHERE id = 1;UPDATE dbo.T SET c = 11 WHERE id = 1;UPDATE dbo.T SET c = 12 WHERE id = 1;UPDATE dbo.T SET c = 13 WHERE id = 1;UPDATE dbo.T SET c = 14 WHERE id = 1;UPDATE dbo.T SET c = 15 WHERE id = 1;UPDATE dbo.T SET c = 16 WHERE id = 1;UPDATE dbo.T SET c = 17 WHERE id = 1;UPDATE dbo.T SET c = 18 WHERE id = 1;UPDATE dbo.T SET c = 19 WHERE id = 1;UPDATE dbo.T SET c = 20 WHERE id = 1",
+      "ok": false,
+      "reasonIncludes": "at most 20"
     }
   ]
 }
