@@ -71,8 +71,11 @@ points at, and its login) live in astroport, never here (ADR-012).
 src/sources/<id>/
 ├── SOURCE.md      # REQUIRED — what this source is, in prose
 ├── schema.json     # REQUIRED — tables/columns Astro can query (plain JSON)
-└── queries/         # OPTIONAL — named, deterministic SQL
-    └── <name>.sql
+├── queries/         # OPTIONAL — named, deterministic SQL
+│   └── <name>.sql
+├── writes/          # OPTIONAL — named data-change statements (needs contract >= 1.2.0)
+│   └── <name>.sql
+└── free-writes.json # OPTIONAL — lets the agent write its own data-change SQL (needs contract >= 1.2.0)
 ```
 
 ### `sources[]` in kit.json
@@ -173,6 +176,66 @@ SELECT OrderId, Total FROM dbo.Orders WHERE CustomerId = @CustomerId
   static guard — the real protection at run time is the read-only DB login (ADR-012) plus
   phase 104's own re-check.
 
+### Writes (`src/sources/<id>/writes/<name>.sql`, `free-writes.json`, phase 141)
+
+A source stays **read-only by default**. A kit that must change its customer's data
+declares it here, next to the named queries. Declarations live in the source folder, not
+in `kit.json` `sources[]` (that shape is closed and `access` stays `read_only`). **A kit
+that declares any write must state `contract_version` satisfying `>= 1.2.0`** (SRC-19); an
+instance whose runtime is older never sees it.
+
+**Allow writes is an instance admin switch, never part of the kit.** A write only runs on
+a source whose binding has the admin's "Allow writes" switch ON (off by default); the
+admin can also force approval for every write of a source. Reads are unchanged: a query
+always runs in a rolled-back, read-only transaction, even on a writes-enabled source.
+
+**Named write** — fixed statement(s) the agent (and kit scripts) call by name:
+
+```sql
+-- @name close_order
+-- @description Marks an order closed
+-- @param OrderId int required
+-- @approval automatic
+UPDATE dbo.Orders SET Status = 'Closed' WHERE OrderId = @OrderId;
+```
+
+- `-- @name` (the file stem) and `-- @description` follow the named-query rules.
+- `-- @param` uses the same grammar and checks as named queries (SRC-09, SRC-10): values
+  are always bound as parameters, never spliced into the SQL.
+- `-- @approval automatic|needs_approval` — optional, at most once. **When omitted the
+  default is `needs_approval`**: a person approves the exact statement on the job page
+  (or by email reply for a job started by email) before it runs. `automatic` runs when called.
+- `@returns` and `@max_rows` are unknown tags in a write (SRC-16).
+- A write must not share a name with a named query of the same source (SRC-16).
+- The body may hold one or more statements; **one call is one transaction** (all or
+  nothing; a later call never undoes an earlier committed one).
+
+**Free writes** — `free-writes.json`, strict JSON with a closed shape:
+
+```json
+{ "approval": "needs_approval", "description": "Fix up order notes" }
+```
+
+`approval` is `automatic` or `needs_approval` (required); `description` is optional,
+1..500 chars. Its presence is the declaration: without it free data-change SQL is refused
+for that source. A declaration on one source never enables another. `adhoc` (free reads)
+is independent.
+
+**What a write may contain (the data-change guard).** Only `INSERT`, `UPDATE`, `DELETE`
+and `MERGE` (optionally behind `WITH <cte> AS (...)`), at most 20 statements. Refused
+anywhere in the body: `CREATE ALTER DROP TRUNCATE GRANT REVOKE DENY`, `EXEC EXECUTE
+sp_executesql` and any `sp_`/`xp_` call, `OPENROWSET OPENQUERY OPENDATASOURCE BULK`,
+`OUTPUT`, `COMMIT ROLLBACK BEGIN SAVE TRAN`, `USE DECLARE GO WAITFOR SHUTDOWN DBCC KILL
+RECONFIGURE BACKUP RESTORE`, `SET` outside an `UPDATE`'s SET clause (so no
+`SET IDENTITY_INSERT`), and `INTO` outside `INSERT`/`MERGE` (so no `SELECT … INTO`).
+The server re-checks every write at call time, so a body that slipped past validation is
+still refused.
+
+**The guard is static.** It cannot see what a trigger or a cascading foreign key does, so
+the database login's own permissions remain the real boundary. Tell the DBA to grant
+`INSERT`, `UPDATE` and `DELETE` on the needed tables only — never `db_owner`, `db_datawriter`
+on everything, or `EXECUTE`.
+
 ### Supported SQL Server types (`schemas/sqlserver-types.v1.json`)
 
 Case-insensitive (`NVARCHAR(MAX)` = `nvarchar(max)`); a type is one token, no whitespace.
@@ -239,6 +302,10 @@ Every rejection names the check ID plus the source id, file, param or column inv
 | SRC-13 | FAIL | Body is not a single `SELECT`/`WITH…SELECT` |
 | SRC-14 | FAIL | `adhoc: false` on a source with zero named queries |
 | SRC-15 | FAIL | Body carries a locking/isolation hint (`WITH (NOLOCK)`, `(NOLOCK)`, `READUNCOMMITTED`, `READPAST`, `UPDLOCK`, …) or `SET TRANSACTION ISOLATION LEVEL` — queries always run READ COMMITTED. Comments and string literals are ignored; a column named like a hint must be bracketed (`[Snapshot]`) |
+| SRC-16 | FAIL | Malformed write header: `@name` missing or not the file stem, `@description` missing, an `@approval` other than `automatic`/`needs_approval`, a duplicate or unknown tag (including `@returns`/`@max_rows`), or a write named like a named query of the same source |
+| SRC-17 | FAIL | A write body is not data-change only (INSERT/UPDATE/DELETE/MERGE); the reason names the offending statement |
+| SRC-18 | FAIL | `free-writes.json` is not strict JSON (syntax, duplicate key), or has an unknown key, a bad `approval` or a bad `description` |
+| SRC-19 | FAIL | The kit declares a write (`writes/*.sql` or `free-writes.json`) but its `contract_version` does not satisfy `>= 1.2.0` |
 
 ### Writing a good source
 
