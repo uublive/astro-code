@@ -13,7 +13,9 @@ Execute phase `$ARGUMENTS`.
 2. Mark the phase active and surface the live status: `ac state set active_phase <slug>`
    then `ac activity '⚙ executing'` (the statusline/banner pick it up). Set it again
    whenever you launch or resume the workflow (a `resumeFromRunId` call included): the
-   status belongs to the run, so a resumed run must show it too.
+   status belongs to the run, so a resumed run must show it too. `ac state set
+   active_phase` also ties the phase to the current feature branch when gitflow is on:
+   relay a `⚠` tie line it prints on stderr in one line, and say nothing otherwise.
 2b. **Pre-flight the fork base:** run `ac preflight`. It prints nothing when local `HEAD`
    matches its upstream, and otherwise warns that parallel executor worktrees fork from the
    REMOTE, not from `HEAD` — so a whole wave can come back STALE, be re-run through the heal

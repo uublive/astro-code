@@ -622,3 +622,10 @@ _2026-11-13 · at 2897187_
 
 **Why:** Phase 56 spent ~2.5 h in 6 verify rounds, each paying a 10-15 min suite; measured 2026-11-12: targeted tests 80 s vs suite 11.7 min, an Opus fast verify 3.5-6.3 min caught 3/3 planted defects. Owner (phase 57 discuss) trades mid-milestone release safety for speed: fast-verified phases may be accepted and released, visibly marked 'full check pending'.
 
+## ADR-095 — Phases and milestones are tied to a feature branch through the registry claim's feature_branch field; the band shows only the current branch's work, else only mine
+_2026-11-13 · at d28d80c_
+
+**Why:** A tie is stored in the shared claim as a new field feature_branch beside the historic branch, which is never read as a tie (so old develop/main claims are untied and need no migration). Phase states: a string is tied, null is explicitly untied and overrides the milestone's tie, absent inherits the milestone's. ac flow link|unlink write it through transact (ADR-002). The tie is automatic on ac phase context <N> and ac state set active_phase while gitflow is on, HEAD is a feature/ branch, and the claim is mine and has no own key: it never overwrites, never creates or switches a branch (ADR-009), and reports on stderr only. Identity is the repo git email (else name) plus identity.aliases in ~/.astro/config.json, never in the project; a claim with no owner counts as mine. The band has three modes from ac status --json: branch (my rows tied here, +N elsewhere), mine (my open rows across milestones, +N by others; any other branch, gitflow on or off) and full (registry ref unreadable, ADR-043: unknown ownership is never read as nothing is mine). It starts no new process (ADR-071).
+
+**Rejected:** overwriting the branch field (historic claims would all read as tied to develop/main); inferring the tie from the branch name (free-form feature names); hiding work when the registry is unreadable; an automatic milestone tie (deferred)
+

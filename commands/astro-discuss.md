@@ -110,7 +110,9 @@ about — and to capture the answers so planning is grounded, not guessed.
    `captured` also matches the agent form). On `human`, apply
    `` `$(ac path templates)/principle-capture.md` `` in full: `--from-ref` is `phase <N>`,
    `--excerpt` is the user's answer with its reason. Report exactly one line, or say
-   nothing when nothing was proposed.
+   nothing when nothing was proposed. This command also ties the phase to the current
+   feature branch when gitflow is on (it never creates or switches a branch): relay a `⚠`
+   tie line it prints on stderr in one line, and say nothing otherwise.
 6. Clear the live status (`ac activity clear`) and suggest, **in one line**, `/astro-plan
    <number>` next (reference the phase by its number, e.g. `/astro-plan 1`) — it will
    read CONTEXT.md and plan against it.

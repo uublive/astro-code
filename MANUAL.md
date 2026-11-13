@@ -324,7 +324,8 @@ type. Optionally, on Claude Code, `ac mods enable phase-band` (off by default; h
 directory outside an astro-code project draw nothing):
 
 - The band, under a full-width `── ✦ astro-code ──── M<n> ▰▰▱▱▱ 3/5 ──` banner:
-  - `ROADMAP`: every phase of the milestone as a chip, `✓` done, `◉` verified (waiting for your
+  - `ROADMAP`: by default every phase of the milestone as a chip (see "What the band shows on a
+    branch" below for the scoped view), `✓` done, `◉` verified (waiting for your
     accept), `▸` planned, `◌` discussed, `○` to do, `✗` rejected, `⚙` being executed, `✎` being
     planned; the current phase is underlined, and more than three finished phases fold into `✓ N done`.
   - `RUNNING` (only while something runs): each astro-code workflow in flight with its live crew,
@@ -337,6 +338,23 @@ directory outside an astro-code project draw nothing):
     that names no phase, such as `/astro-milestone`, shows as `next › /astro-milestone`.
 - A button only **fills the composer**; you press Enter. It never submits or runs anything, so an
   accept started from a button is still typed by you.
+- **What the band shows on a branch** (phase 58). The band shows the work that is yours, here:
+  - On a feature branch with work of yours tied to it (`ac flow link`, below), `ROADMAP`, the meter,
+    the title and the buttons cover only that work. A milestone tied to the branch brings its phases.
+    Everything else sits behind one dim line, `+N elsewhere`.
+  - On `develop`, `main`, a detached HEAD, a branch nothing of yours is tied to, or a branch already
+    deleted on the remote, the band shows only your open work (claimed by you, not complete) across
+    every milestone, and one dim line `+N by others` counts other people's open phases. This applies
+    whether or not git flow is on.
+  - Whose phase is whose comes from the shared registry's claim owner (the git email), read from the
+    local registry ref: the band never fetches. If that ref cannot be read (never fetched, no
+    origin), ownership is unknown and the band shows the full view, with no hidden-count line.
+  - `ac status` (text) always lists every phase, other people's included.
+- **Your identity** is the repo's `git config user.email` plus personal aliases: other emails you have
+  claimed work under. Add one with `ac identity alias add old@example.com` and remove it with
+  `ac identity alias remove old@example.com`; `ac identity` shows both. Aliases live in
+  `~/.astro/config.json` (`identity.aliases`), never in the project, and add to your git email.
+  Claims with no owner count as yours.
 - Autocomplete: after `/astro-discuss`, `/astro-plan`, `/astro-execute`, `/astro-verify` and
   `/astro-accept` it offers phase numbers with their state; after `/astro-debt-pay`,
   `/astro-backlog-promote` and `/astro-fix-accept` it offers the open ids with short titles.
@@ -1440,7 +1458,19 @@ ac flow pr                     # push the feature branch, print the develop PR U
 ac flow release                # push develop, print the develop→main PR URL
 ac flow tag [version]          # tag origin/main once that PR merges
 ac flow hotfix start <name>    # branch off main; `finish` lands it in main+develop + tags
+ac flow link <phase|m<N>>      # tie a phase (number or slug) or a milestone to the feature branch you are on
+ac flow unlink <phase|m<N>>    # untie it
 ```
+
+**Tying work to a feature branch.** `ac flow link` records the current branch in the phase's (or
+milestone's) registry claim, so teammates' bars and `ac status --json` see it; link again from another
+branch to move it. It refuses on `main`, `develop`, the registry branch and a detached HEAD, and never
+creates or switches a branch. The tie happens by itself too: `/astro-discuss` (step 5b), `/astro-plan`
+(step 2) and `/astro-execute` (step 2) tie the phase to the feature branch you are on when git flow is
+on and the phase is yours. It never overwrites a tie (it prints one `⚠` line naming the other branch;
+`ac flow link <phase>` moves it), and an explicit `ac flow unlink <phase>` is respected. On `develop` or
+`main` nothing is tied. A claim made on `develop` in the past is not a tie. The band's use of the tie
+is described under **phase-band**.
 
 > **Run `ac flow` before `/astro-execute`.** Execution forks one worktree per task from
 > `HEAD`, so you must be on the feature branch first.
