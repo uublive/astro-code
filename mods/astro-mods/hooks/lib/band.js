@@ -49,16 +49,21 @@ export function stalePaths(root, status) {
   for (const p of (status && Array.isArray(status.phases)) ? status.phases : []) {
     if (p && p.status !== 'complete' && p.slug) paths.push(`${base}/phases/${p.slug}`)
   }
+  // the local registry ref (`ac status --json` → registry_ref): a fetch or `ac flow link` moves it, so
+  // the band re-reads ownership and ties at the next turn boundary
+  if (status && typeof status.registry_ref === 'string' && status.registry_ref) paths.push(status.registry_ref)
   return paths
 }
 
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1)
 
-function buttonsOf(status) {
+function buttonsOf(status, visible = null) {
   const seen = new Set()
   const out = []
   for (const command of [status.next, ...(Array.isArray(status.siblings) ? status.siblings : [])]) {
     if (typeof command !== 'string' || !BUTTON.test(command) || seen.has(command)) continue
+    // scoped bands keep a button only for a phase they show
+    if (visible && !visible.has(Number(command.match(/ (\d+)$/)[1]))) continue
     seen.add(command)
     const [, verb, n] = command.match(/^\/astro-(\w+) (\d+)$/)
     out.push({ key: command, label: `${cap(verb)} ${n}`, command })
@@ -111,13 +116,67 @@ export function openMilestones(status) {
   return [...by.values()].sort((a, b) => a.milestone - b.milestone)
 }
 
-export function meterOf(status) {
-  const phases = trackedPhases(status)
+export function meterOf(status, scoped = null) {
+  const phases = scoped || trackedPhases(status)
   if (!phases.length) return null
   const done = phases.filter(p => p && p.status === 'complete').length
   const cells = Math.min(phases.length, METER_MAX)
   const filled = Math.round((done / phases.length) * cells)
   return { done, total: phases.length, bar: '▰'.repeat(filled) + '▱'.repeat(cells - filled) }
+}
+
+const isOpen = p => p.status !== 'complete' && p.status !== 'rejected'
+// a roadmap row with no ownership key counts as mine: work that cannot be attributed is never hidden
+const isMineRow = p => p.mine !== false
+
+/**
+ * What the band shows (phase 58). Pure; anything it cannot read fails open to `full`.
+ *
+ * - `full`: `status.registry` is not `true` (the registry ref was unreadable, so ownership is
+ *   unknown): exactly today's tracked phases and no count line.
+ * - `branch`: at least one of my rows is tied to `branch` (a milestone-inherited tie included): only
+ *   those rows, plus phases with a run in flight; `+N elsewhere` counts what today's band would have
+ *   tracked and this one does not.
+ * - `mine`: any other branch (develop, main, detached, nothing of mine tied, deleted upstream): my open
+ *   rows across every milestone, plus phases with a run in flight; `+N by others` counts the open rows
+ *   that are someone else's. Same with git flow off.
+ *
+ * `title` is the milestone number to show (or null). `branch` falls back to `status.branch`.
+ */
+export function scopeOf(status, { branch, runs = [] } = {}) {
+  const baseline = trackedPhases(status, runs)
+  const fallbackTitle = status && status.milestone != null ? status.milestone : null
+  if (!status || status.registry !== true) return { mode: 'full', visible: baseline, hidden: null, title: fallbackTitle }
+  const here = typeof branch === 'string' && branch ? branch : (typeof status.branch === 'string' && status.branch ? status.branch : null)
+  const phases = Array.isArray(status.phases) ? status.phases.filter(p => p && typeof p.number === 'number') : []
+  const running = p => runs.some(r => r.phase === p.number)
+  const tied = here ? phases.filter(p => isMineRow(p) && p.feature_branch === here) : []
+  let mode = 'mine'
+  let visible
+  let hidden = null
+  if (tied.length) {
+    mode = 'branch'
+    visible = phases.filter(p => tied.includes(p) || running(p))
+    const n = baseline.filter(p => !visible.includes(p)).length
+    if (n > 0) hidden = { label: 'elsewhere', count: n }
+  } else {
+    visible = phases.filter(p => running(p) || (isMineRow(p) && isOpen(p)))
+    const n = phases.filter(p => p.mine === false && isOpen(p) && !visible.includes(p)).length
+    if (n > 0) hidden = { label: 'by others', count: n }
+  }
+  const viaMilestone = visible.find(p => p.tied_by === 'milestone' && p.milestone != null)
+  const ms = new Set(visible.map(p => p.milestone).filter(m => m != null))
+  const title = viaMilestone ? viaMilestone.milestone : ms.size === 1 ? [...ms][0] : fallbackTitle
+  return { mode, visible, hidden, title }
+}
+
+// the one button a scoped band falls back to, mirroring `ac`'s nextAction for the first open visible row
+function derivedButton(visible) {
+  const p = [...visible].filter(isOpen).sort((a, b) => a.number - b.number)[0]
+  if (!p) return null
+  const verb = p.status === 'verified' ? 'accept' : p.status === 'executing' ? 'execute'
+    : p.status === 'pending' ? (p.planned ? 'execute' : p.discussed ? 'plan' : 'discuss') : null
+  return verb ? { key: `/astro-${verb} ${p.number}`, label: `${cap(verb)} ${p.number}`, command: `/astro-${verb} ${p.number}` } : null
 }
 
 const ROLE = { 'astro-executor': 'executor', 'astro-verifier': 'verifier', 'astro-researcher': 'researcher', 'astro-planner': 'planner', 'astro-criteria-author': 'criteria author', 'astro-mapper': 'mapper', 'astro-integrator': 'integrator' }
@@ -165,12 +224,12 @@ function chipOf(p, runs, current) {
   else if (p.discussed) [glyph, tone] = ['◌', 'chip:discussed']
   // `○84(a)`: a teammate's phase, tagged with who; one not merged into this roadmap yet is dimmed.
   if (p.remote && !running) tone = 'chip:todo'
-  return { text: `${glyph}${p.number}${p.owner ? `(${p.owner})` : ''}`, tone, current: p.number === current }
+  // `owner` is now the claim's full email; only the short tag (set on rows that are not mine) is drawn
+  return { text: `${glyph}${p.number}${p.owner_tag ? `(${p.owner_tag})` : ''}`, tone, current: p.number === current }
 }
 
-function roadmapRow(status, runs) {
-  const phases = trackedPhases(status, runs)
-  if (!phases.length) return [{ text: 'no phases on the roadmap', tone: 'note' }]
+function roadmapRow(status, runs, phases = trackedPhases(status, runs), empty = 'no phases on the roadmap') {
+  if (!phases.length) return [{ text: empty, tone: 'note' }]
   const current = status.phase ? status.phase.number : null
   const done = phases.filter(p => p.status === 'complete' && !runs.some(r => r.phase === p.number))
   const shown = done.length > COLLAPSE_DONE ? phases.filter(p => !done.includes(p)) : phases
@@ -206,16 +265,21 @@ function runningRow(status, runs, live) {
  * `NEXT` (the buttons, or a hint). `lines` holds each content row's text, the label included, so
  * a reader (or a test) can take the band in as plain text. `runs` is `[{kind, phase, agents}]`.
  */
-export function bandView(status, live, { unavailable, runs = [], lists = null } = {}) {
+export function bandView(status, live, { unavailable, runs = [], lists = null, branch = null } = {}) {
   if (unavailable) {
     const text = `astro-code status unavailable (${String(unavailable).slice(0, REASON_MAX)})`
     return view([[{ text, tone: 'unavailable' }]], [], null, null, status)
   }
   if (status == null) return view([], [], null, null, status)
-  const rows = [[{ text: 'ROADMAP  ', tone: 'label' }, ...roadmapRow(status, runs)]]
+  const scope = scopeOf(status, { branch, runs })
+  const scoped = scope.mode !== 'full'
+  const rows = [[{ text: 'ROADMAP  ', tone: 'label' }, ...(scoped ? roadmapRow(status, runs, scope.visible, 'nothing open of yours here') : roadmapRow(status, runs))]]
+  // one dim line for what the scope hides, directly under ROADMAP; never one per phase
+  if (scope.hidden && scope.hidden.count > 0) rows.push([{ text: `         +${scope.hidden.count} ${scope.hidden.label}`, tone: 'note' }])
   // `M2 4 open · M4 6 to accept, 2 open`: other milestones still holding work, apart from the
   // roadmap row so it stays the current milestone alone.
-  const open = openMilestones(status)
+  // (full mode only: a scoped band already spans milestones, and OTHER tallies teammates' work)
+  const open = scoped ? [] : openMilestones(status)
   if (open.length) {
     const other = []
     for (const o of open) {
@@ -257,13 +321,21 @@ export function bandView(status, live, { unavailable, runs = [], lists = null } 
   }
   // a phase already being executed or planned is not offered again
   const busy = new Set(runs.map(r => `/astro-${r.kind} ${r.phase}`))
-  const buttons = buttonsOf(status).filter(b => !busy.has(b.command))
-  const hint = typeof status.next === 'string' && status.next && !busy.has(status.next) && !buttons.some(b => b.command === status.next) ? status.next : null
-  return view(rows, buttons, meterOf(status), hint, status)
+  const shown = scoped ? new Set(scope.visible.map(p => p.number)) : null
+  let buttons = buttonsOf(status, shown).filter(b => !busy.has(b.command))
+  if (scoped && !buttons.length) {
+    const d = derivedButton(scope.visible)
+    if (d && !busy.has(d.command)) buttons = [d]
+  }
+  const nextNumber = typeof status.next === 'string' ? /^\/astro-\w+ (\d+)$/.exec(status.next) : null
+  const nextHidden = shown && nextNumber && !shown.has(Number(nextNumber[1]))
+  const hint = typeof status.next === 'string' && status.next && !nextHidden && !busy.has(status.next) && !buttons.some(b => b.command === status.next) ? status.next : null
+  return view(rows, buttons, scoped ? meterOf(status, scope.visible) : meterOf(status), hint, status, scope.title)
 }
 
-function view(parts, buttons, meter, hint, status) {
-  const title = status && status.milestone != null ? `M${status.milestone}` : null
+function view(parts, buttons, meter, hint, status, milestone) {
+  const m = milestone === undefined ? (status && status.milestone != null ? status.milestone : null) : milestone
+  const title = m != null ? `M${m}` : null
   const version = status && typeof status.version === 'string' && status.version ? status.version : null
   return { lines: parts.map(p => p.map(t => t.text).join('')), parts, buttons, meter, hint, title, version }
 }
