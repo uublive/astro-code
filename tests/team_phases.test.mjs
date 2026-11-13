@@ -2,7 +2,7 @@
 // with who claimed them (`P84(a)`), never fetched. Real git repos, no stubs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -100,4 +100,89 @@ test('ac status --json carries the tags and the registry-only phases, never as a
     assert.deepEqual({ owner: p84.owner, remote: p84.remote }, { owner: 'a', remote: true });
     assert.ok(![s.next, ...s.siblings].some((c) => /\b84\b/.test(c ?? '')), 'a teammate\'s phase is never offered');
   } finally { done(root); }
+});
+
+// --- phase 58: ownership, ties, aliases, headBranch -------------------------------
+const scratchHome = () => mkdtempSync(join(tmpdir(), 'ac-team-home-'));
+
+test('the v2 cache keeps raw owner, tri-state tie and milestoneTies; an older cache is rebuilt', async () => {
+  const { teamClaims } = await import('../hooks/_astro-team.mjs');
+  const root = repo([
+    claim(47, 'Me@X.io', { feature_branch: 'feature/a', branch: 'develop' }),
+    claim(48, 'me@x.io', { feature_branch: null }),
+    claim(49, 'alex@team.io', { branch: 'develop' }),
+    { type: 'milestone', number: 13, owner: 'me@x.io', status: 'active', feature_branch: 'feature/m' },
+    { type: 'milestone', number: 12, owner: 'me@x.io', status: 'active' },
+  ]);
+  const home = scratchHome();
+  try {
+    const cache = join(root, '.astrocode', '.local', 'team-claims.json');
+    mkdirSync(join(root, '.astrocode', '.local'), { recursive: true });
+    writeFileSync(cache, JSON.stringify({ sha: 'x', claims: [{ number: 1 }], me: 'old', me_at: NOW }));
+    const t = teamClaims(root, NOW, { home });
+    assert.deepEqual(t.claims.map((c) => [c.number, c.owner, 'tie' in c ? c.tie : 'absent']), [[47, 'Me@X.io', 'feature/a'], [48, 'me@x.io', null], [49, 'alex@team.io', 'absent']]);
+    assert.deepEqual(t.milestoneTies, { 13: 'feature/m' });
+    assert.equal(JSON.parse(readFileSync(cache, 'utf8')).v, 2);
+    assert.ok(t.refPath.endsWith(join('refs', 'remotes', 'origin', 'astro-registry')));
+  } finally { done(root); done(home); }
+});
+
+test('ownership: git email plus aliases is me; an empty owner is mine; null with no ref', async () => {
+  const { ownership, isMine } = await import('../hooks/_astro-team.mjs');
+  const root = repo([claim(47, 'me@x.io'), claim(84, 'me-old@x.io')]);
+  const home = scratchHome();
+  try {
+    let o = ownership(root, NOW, { home });
+    assert.ok(isMine('ME@x.io ', o.me));
+    assert.ok(!isMine('me-old@x.io', o.me));
+    assert.ok(isMine('', o.me) && isMine(undefined, o.me), 'an unattributable claim is mine');
+    mkdirSync(join(home, '.astro'), { recursive: true });
+    writeFileSync(join(home, '.astro', 'config.json'), JSON.stringify({ identity: { aliases: ['Me-Old@x.io'] } }));
+    o = ownership(root, NOW + 1, { home });
+    assert.ok(isMine('me-old@x.io', o.me), 'an alias is re-read without waiting for the ttl');
+    assert.ok(isMine('me@x.io', o.me), 'the alias adds to the git email');
+    sh(root, 'update-ref', '-d', 'refs/remotes/origin/astro-registry');
+    assert.equal(ownership(root, NOW + 2, { home }), null);
+  } finally { done(root); done(home); }
+});
+
+test('a changed user.email is seen on the next call, without waiting for the ttl', async () => {
+  const { ownership } = await import('../hooks/_astro-team.mjs');
+  const root = repo([claim(47, 'me@x.io')]);
+  const home = scratchHome();
+  try {
+    assert.ok(ownership(root, NOW, { home }).me.has('me@x.io'));
+    sh(root, 'config', 'user.email', 'alex@team.io');
+    const me = ownership(root, NOW + 1, { home }).me;
+    assert.ok(me.has('alex@team.io') && !me.has('me@x.io'));
+  } finally { done(root); done(home); }
+});
+
+test('teamPhases does not tag my own phase claimed under an alias', async () => {
+  const { teamPhases } = await import('../hooks/_astro-team.mjs');
+  const root = repo([claim(84, 'me-old@x.io'), claim(85, 'alex@team.io')]);
+  const prev = process.env.HOME;
+  const home = scratchHome();
+  try {
+    mkdirSync(join(home, '.astro'), { recursive: true });
+    writeFileSync(join(home, '.astro', 'config.json'), JSON.stringify({ identity: { aliases: ['me-old@x.io'] } }));
+    process.env.HOME = home;
+    assert.deepEqual(Object.keys(teamPhases(root, 13, new Set([47, 48]), NOW).owners), ['85']);
+  } finally { process.env.HOME = prev; done(root); done(home); }
+});
+
+test('headBranch: slash names stay whole; detached is null; a worktree .git file reads its own HEAD', async () => {
+  const { headBranch } = await import('../hooks/_astro-team.mjs');
+  const root = repo([claim(47, 'me@x.io')]);
+  const wt = join(mkdtempSync(join(tmpdir(), 'ac-team-wt-')), 'wt');
+  try {
+    sh(root, 'switch', '-q', '-c', 'feature/v0-full-walk');
+    assert.equal(headBranch(root), 'feature/v0-full-walk');
+    sh(root, 'worktree', 'add', '-q', '-b', 'feature/other', wt);
+    assert.equal(headBranch(wt), 'feature/other');
+    assert.equal(headBranch(root), 'feature/v0-full-walk');
+    sh(root, 'checkout', '-q', '--detach');
+    assert.equal(headBranch(root), null);
+    assert.equal(headBranch(join(tmpdir(), 'ac-no-such-dir')), null);
+  } finally { sh(root, 'worktree', 'remove', '--force', wt); done(root); }
 });

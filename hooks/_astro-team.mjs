@@ -17,8 +17,9 @@
 // This file is imported by `_astro-ctx.mjs`, so like it, it must NOT import from ../lib (the
 // hooks are installed without lib/). Every failure returns null: the bar then shows only the
 // local roadmap, exactly as before.
-import { readFileSync, existsSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdirSync, renameSync, statSync } from 'node:fs';
 import { join, isAbsolute, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 
 const IDENTITY_TTL_SECONDS = 600;
@@ -27,35 +28,59 @@ const CLOSED = new Set(['complete', 'retired']);
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; } };
 const readText = (p) => { try { return readFileSync(p, 'utf8'); } catch { return null; } };
 
-/** The repository's common git dir (a linked worktree keeps its refs there), or null. */
-function commonGitDir(root) {
+/** This checkout's own git dir (a linked worktree has its own HEAD there), or null. */
+function ownGitDir(root) {
   const dotGit = join(root, '.git');
-  let gitDir = dotGit;
   const asFile = readText(dotGit);
   if (asFile !== null) {
     const m = /^gitdir:\s*(.+)$/m.exec(asFile);
     if (!m) return null;
-    gitDir = isAbsolute(m[1].trim()) ? m[1].trim() : resolve(root, m[1].trim());
-  } else if (!existsSync(dotGit)) {
-    return null;
+    return isAbsolute(m[1].trim()) ? m[1].trim() : resolve(root, m[1].trim());
   }
+  return existsSync(dotGit) ? dotGit : null;
+}
+
+/** The repository's common git dir (a linked worktree keeps its refs there), or null. */
+function commonGitDir(root) {
+  const gitDir = ownGitDir(root);
+  if (!gitDir) return null;
   const common = readText(join(gitDir, 'commondir'));
   return common ? resolve(gitDir, common.trim()) : gitDir;
 }
 
-/** The commit a remote-tracking ref points at, from the ref files alone, or null. */
-export function refCommit(root, remote, branch) {
+/**
+ * The full name of the branch HEAD is on, from `<this checkout's gitdir>/HEAD` (a worktree's own
+ * HEAD, not the common dir's), or null when detached or unreadable. The name is never truncated or
+ * split on `/`: `feature/v0-full-walk` is one name.
+ */
+export function headBranch(root) {
+  const gitDir = ownGitDir(root);
+  const text = gitDir && readText(join(gitDir, 'HEAD'));
+  const m = text && /^ref:\s*refs\/heads\/(.+?)\s*$/m.exec(text);
+  return m ? m[1] : null;
+}
+
+/** The commit a remote-tracking ref points at AND the file that held it, from the ref files alone, or null. */
+function refAt(root, remote, branch) {
   const common = commonGitDir(root);
   if (!common) return null;
   const name = `refs/remotes/${remote}/${branch}`;
-  const loose = readText(join(common, name));
-  if (loose && /^[0-9a-f]{40,64}\s*$/.test(loose)) return loose.trim();
-  const packed = readText(join(common, 'packed-refs')) || '';
+  const looseFile = join(common, name);
+  const loose = readText(looseFile);
+  if (loose && /^[0-9a-f]{40,64}\s*$/.test(loose)) return { sha: loose.trim(), file: looseFile };
+  const packedFile = join(common, 'packed-refs');
+  const packed = readText(packedFile) || '';
   for (const line of packed.split('\n')) {
     const [sha, ref] = line.trim().split(' ');
-    if (ref === name && /^[0-9a-f]{40,64}$/.test(sha)) return sha;
+    if (ref === name && /^[0-9a-f]{40,64}$/.test(sha)) return { sha, file: packedFile };
   }
   return null;
+}
+
+/** The commit a remote-tracking ref points at, from the ref files alone, or null. */
+export function refCommit(root, remote, branch) {
+  const at = refAt(root, remote, branch);
+  return at ? at.sha : null;
 }
 
 function git(root, args) {
@@ -77,20 +102,55 @@ function writeCache(root, data) {
   } catch { /* a read-only checkout just re-reads next time */ }
 }
 
+// Identity is the git email (else name) plus personal aliases. The alias key and the
+// normalisation duplicate lib/identity.mjs on purpose — hooks ship without lib/ — so change
+// them together. Aliases are one small file, re-read on every call; only the git identity (a
+// process spawn) is cached.
+const normalize = (s) => (typeof s === 'string' ? s.trim().toLowerCase() : '');
+function readAliases(home) {
+  const raw = (readJson(join(home, '.astro', 'config.json')) || {}).identity?.aliases;
+  return Array.isArray(raw) ? raw.map(normalize).filter(Boolean) : [];
+}
+
+// A changed `user.email` must take effect on the next call, not after the 10-minute TTL: the
+// cache is dropped when the mtime or size of any file git reads the identity from changes.
+function configFingerprint(root, home) {
+  const xdg = process.env.XDG_CONFIG_HOME || join(home, '.config');
+  const common = commonGitDir(root);
+  return [common && join(common, 'config'), join(home, '.gitconfig'), join(xdg, 'git', 'config')]
+    .map((f) => {
+      try { const st = f ? statSync(f) : null; return st ? `${st.mtimeMs}:${st.size}` : '-'; } catch { return '-'; }
+    })
+    .join('|');
+}
+
 /**
- * `{ me, claims }` from the local registry ref, cached; null when there is no repo, no ref or
- * no registry file. `me` is the owner key `ac` records: git `user.email`, else `user.name`.
+ * `{ me, claims, milestoneTies, refPath }` from the local registry ref, cached; null when there
+ * is no repo, no ref or no registry file. `me` is an array of normalised owner keys: git
+ * `user.email` (else `user.name`, as `ac` records) plus the personal aliases.
+ *
+ * Each phase claim keeps `number`, `milestone`, `name`, the raw `owner`, `status`, and `tie` —
+ * present only when the claim has a `feature_branch` key (`null` = explicitly untied, a string =
+ * tied); absent = inherits the milestone. `milestoneTies` maps a milestone number to its string
+ * `feature_branch`. The historic claim `branch` is never read as a tie.
  */
-export function teamClaims(root, nowSeconds = Math.floor(Date.now() / 1000)) {
+export function teamClaims(root, nowSeconds = Math.floor(Date.now() / 1000), { home = process.env.HOME || homedir() } = {}) {
   const cfg = readJson(join(root, '.astrocode', 'config.json')) || {};
-  const sha = refCommit(root, cfg.registry_remote || 'origin', cfg.registry_branch || 'astro-registry');
-  if (!sha) return null;
+  const at = refAt(root, cfg.registry_remote || 'origin', cfg.registry_branch || 'astro-registry');
+  if (!at) return null;
+  const { sha, file: refPath } = at;
   const cacheFile = join(root, '.astrocode', '.local', 'team-claims.json');
-  const cache = readJson(cacheFile);
-  if (cache && cache.sha === sha && typeof cache.me_at === 'number' && nowSeconds - cache.me_at < IDENTITY_TTL_SECONDS) {
-    return { me: cache.me, claims: cache.claims };
-  }
+  const raw = readJson(cacheFile);
+  const cache = raw && raw.v === 2 ? raw : null; // an older cache shape is rebuilt
+  const fp = configFingerprint(root, home);
+  const idFresh = cache && cache.fp === fp && typeof cache.id_at === 'number' && nowSeconds - cache.id_at < IDENTITY_TTL_SECONDS;
+  const withMe = (id, claims, milestoneTies) => {
+    const me = [normalize(id), ...readAliases(home)].filter(Boolean);
+    return { me: [...new Set(me)], claims, milestoneTies, refPath };
+  };
+  if (cache && cache.sha === sha && idFresh) return withMe(cache.id, cache.claims, cache.milestoneTies);
   let claims = cache && cache.sha === sha ? cache.claims : null;
+  let milestoneTies = cache && cache.sha === sha ? cache.milestoneTies : null;
   if (!claims) {
     const text = git(root, ['show', `${sha}:registry.json`]);
     let reg = null;
@@ -98,11 +158,33 @@ export function teamClaims(root, nowSeconds = Math.floor(Date.now() / 1000)) {
     if (!reg || !Array.isArray(reg.claims)) return null;
     claims = reg.claims
       .filter((c) => c && c.type === 'phase' && typeof c.number === 'number')
-      .map((c) => ({ number: c.number, milestone: c.milestone ?? null, name: c.name ?? '', owner: c.owner ?? '', status: c.status ?? 'active' }));
+      .map((c) => ({
+        number: c.number, milestone: c.milestone ?? null, name: c.name ?? '', owner: c.owner ?? '', status: c.status ?? 'active',
+        ...(Object.hasOwn(c, 'feature_branch') ? { tie: typeof c.feature_branch === 'string' ? c.feature_branch : null } : {}),
+      }));
+    milestoneTies = {};
+    for (const c of reg.claims) {
+      if (c && c.type === 'milestone' && typeof c.number === 'number' && typeof c.feature_branch === 'string') milestoneTies[c.number] = c.feature_branch;
+    }
   }
-  const me = (git(root, ['config', 'user.email']) || '').trim() || (git(root, ['config', 'user.name']) || '').trim();
-  writeCache(root, { sha, claims, me, me_at: nowSeconds });
-  return { me, claims };
+  const id = (git(root, ['config', 'user.email']) || '').trim() || (git(root, ['config', 'user.name']) || '').trim();
+  writeCache(root, { v: 2, sha, claims, milestoneTies, id, id_at: nowSeconds, fp });
+  return withMe(id, claims, milestoneTies);
+}
+
+/** An empty owner is mine (never hide work that cannot be attributed); otherwise exact normalised equality. */
+export function isMine(owner, me) {
+  const o = normalize(owner);
+  return !o || (me instanceof Set ? me.has(o) : (me || []).includes(o));
+}
+
+/**
+ * Ownership for the band and `ac status --json`: `{ me:Set, claims, milestoneTies, refPath }`, or
+ * null when there is no ref or no readable registry (the caller then shows the full view).
+ */
+export function ownership(root, nowSeconds, opts) {
+  const t = teamClaims(root, nowSeconds, opts);
+  return t ? { me: new Set(t.me), claims: t.claims, milestoneTies: t.milestoneTies, refPath: t.refPath } : null;
 }
 
 /**
@@ -132,7 +214,7 @@ export function teamPhases(root, milestone, localNumbers, nowSeconds) {
   if (milestone == null) return empty;
   const team = teamClaims(root, nowSeconds);
   if (!team) return empty;
-  const others = team.claims.filter((c) => c.milestone === milestone && c.owner && c.owner !== team.me);
+  const others = team.claims.filter((c) => c.milestone === milestone && c.owner && !isMine(c.owner, team.me));
   if (!others.length) return empty;
   const tags = ownerTags(others.map((c) => c.owner));
   const owners = Object.fromEntries(others.map((c) => [c.number, tags.get(c.owner)]));
