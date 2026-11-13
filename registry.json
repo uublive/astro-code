@@ -948,6 +948,15 @@
       "branch": "develop",
       "claimed_at": "2026-11-13T08:42:29.668Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-13-verify-loop-a-withdrawn-carried-pass",
+      "name": "verify loop: a withdrawn carried PASS with failing [] remediates the carried-only criterion (when plan ids include it) instead of forcing a full re-verify; tests/verify_loop.test.mjs stub plan ids ['C1'] hides it (phase 56 C12, found by Opus fast-verify experiment 2026-11-12)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-11-13T08:42:40.810Z",
+      "status": "active"
     }
   ]
 }
