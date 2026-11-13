@@ -97,7 +97,8 @@ test('ac status --json carries the tags and the registry-only phases, never as a
   try {
     const s = statusJson(root, NOW);
     const p84 = s.phases.find((p) => p.number === 84);
-    assert.deepEqual({ owner: p84.owner, remote: p84.remote }, { owner: 'a', remote: true });
+    // phase 58: `owner` is the claim's full email; the short tag moved to `owner_tag`
+    assert.deepEqual({ owner: p84.owner, owner_tag: p84.owner_tag, mine: p84.mine, remote: p84.remote }, { owner: 'alex@team.io', owner_tag: 'a', mine: false, remote: true });
     assert.ok(![s.next, ...s.siblings].some((c) => /\b84\b/.test(c ?? '')), 'a teammate\'s phase is never offered');
   } finally { done(root); }
 });
