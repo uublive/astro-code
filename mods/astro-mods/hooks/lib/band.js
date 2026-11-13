@@ -237,6 +237,11 @@ export function bandView(status, live, { unavailable, runs = [], lists = null } 
     }
     rows.push([{ text: 'DEFERRED ', tone: 'label' }, ...row])
   }
+  // `FULL CHECK pending 57 58`: phases verified in fast mode that no passing milestone full check covers yet
+  // (phase 57, ADR-094). The key is `full_check_pending` (phase numbers) from `ac status --json`; absent or
+  // empty draws no row.
+  const pending = Array.isArray(status.full_check_pending) ? status.full_check_pending.filter(n => Number.isInteger(n)) : []
+  if (pending.length) rows.push([{ text: 'FULL CHECK ', tone: 'label' }, { text: 'pending ', tone: 'note' }, { text: pending.join(' '), tone: 'id' }])
   const running = runningRow(status, runs, live)
   if (running.length) rows.push([{ text: 'RUNNING  ', tone: 'label' }, ...running])
   // `backlog 3 · debt 26 · fixes 2`, the last row: the open items of the lists the band already reads.
