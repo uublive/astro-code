@@ -1709,30 +1709,23 @@ _DATA_CHANGE_RESERVED_ALLOWED = {
 _DATA_CHANGE_FORBIDDEN = {"OUTPUT", "GO", "SP_EXECUTESQL"}
 
 
+_RECEIVE_OPERAND_PUNCT = frozenset([".", ",", "(", "=", "<", ">", "!", "+", "-", "*", "/", "%", "&", "|", "^", "~"])
+_RECEIVE_OPERAND_WORDS = frozenset(["SET", "SELECT", "BY", "ON", "WHERE", "AND", "OR", "NOT", "AS", "THEN", "ELSE", "WHEN", "CASE", "IN", "IS", "LIKE", "BETWEEN", "DISTINCT", "INTO", "UPDATE", "FROM", "JOIN", "MERGE", "USING", "DELETE", "ALL", "ANY", "SOME", "EXISTS", "HAVING", "PARTITION"])
+
+
 def _receive_starts_statement(sig: list, k: int) -> bool:
-    """A Service Broker RECEIVE statement, not a column named Receive. Mirrors
+    """A Service Broker RECEIVE statement, not a column/table named Receive: an unbracketed
+    RECEIVE is accepted only right after `.`, `,`, `(`, an operator, or a keyword that introduces
+    a name or operand; anywhere else it starts a statement. Write `[Receive]` elsewhere. Mirrors
     astroport's receiveStartsStatement in apps/backend/src/kits/sql-guard.ts."""
-    if _sig_punct(sig, k - 1, "."):
-        return False
-    if k + 1 >= len(sig):
-        return False
-    nxt = sig[k + 1]
-    if nxt["kind"] == "punct":
-        return nxt["text"] == "*"
-    if nxt["kind"] == "word":
-        n = nxt["text"].upper()
-        if n == "TOP" or n.startswith("@"):
-            return True
-        if n in _TSQL_RESERVED:
-            return False
-    elif nxt["kind"] != "qident":
-        return False
-    if k + 2 >= len(sig):
-        return False
-    after = sig[k + 2]
-    if after["kind"] == "punct":
-        return after["text"] in (",", "(", "=", ".")
-    return after["kind"] == "word" and after["text"].upper() == "FROM"
+    if k - 1 < 0:
+        return True
+    prev = sig[k - 1]
+    if prev["kind"] == "punct":
+        return prev["text"] not in _RECEIVE_OPERAND_PUNCT
+    if prev["kind"] == "word":
+        return prev["text"].upper() not in _RECEIVE_OPERAND_WORDS
+    return True
 
 
 def _data_change_word_refused(w: str) -> bool:
