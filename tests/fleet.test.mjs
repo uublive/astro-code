@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Astro Fleet connector — the client half of astro-fleet phase 36. The wire contract is
 // fixed by the fleet; these tests pin our side of it: what each hook event becomes,
 // that nothing sensitive leaks, that settings.json is merged and restored exactly, that
@@ -723,6 +724,8 @@ test('headCommit reads the short sha and subject of a real repo, null outside on
 async function acProject() {
   const root = tmp('ac-fleet-proj-');
   initPlanning(root, { name: 'shop' });
+  const cfgFile = join(root, '.astrocode', 'config.json');
+  writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(readFileSync(cfgFile, 'utf8')), verify: { full_suite: 'phase' } }));
   await addPhase(root, { number: 1, name: 'Checkout', milestone: 1 });
   await addPhase(root, { number: 2, name: 'Refunds', milestone: 1 });
   const dir = tmp();

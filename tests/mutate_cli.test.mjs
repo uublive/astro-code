@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 47 t9 — `ac mutate` through the real CLI (C1-C4, help). Real tmp git projects with ac
 // phases and stamped commits; the tools are tests/fixtures/mutate/stub.mjs on a restricted PATH,
 // so a real Stryker/Gremlins/mutmut on the dev machine can never be found (C11).
@@ -13,6 +14,7 @@ const AC = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ac.mjs');
 const ac = (p, args, o = {}) => spawnSync(process.execPath, [AC, ...args], { cwd: p.dir, encoding: 'utf8', env: p.env, input: '', timeout: 60000, ...o });
 const logLines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const done = (p) => rmSync(p.dir, { recursive: true, force: true });
+const pinPhase = (p) => { const f = join(p.dir, '.astrocode', 'config.json'); writeFileSync(f, JSON.stringify({ ...JSON.parse(readFileSync(f, 'utf8')), verify: { full_suite: 'phase' } })); };
 const strip = ({ started_at, duration_ms, log, flaky, ...rest }) => ({ ...rest, flaky: flaky && { ...flaky, duration_ms: 0 } });
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
@@ -145,6 +147,7 @@ test('ac help lists all four forms', () => {
 
 test('verdict record prints one stderr line per refused criterion', async () => {
   const p = await rig('js', { nodeModules: true });
+  pinPhase(p);
   try {
     writeFileSync(join(p.dir, '.astrocode', 'phases', p.slug1, 'CRITERIA.md'), '### C1 [mutation] — strong\n- **Observe:** y\n');
     const r = ac(p, ['verdict', 'record', '1', '--result', JSON.stringify({ mode: 'full', criteria: [{ id: 'C1', passed: true }] })]);

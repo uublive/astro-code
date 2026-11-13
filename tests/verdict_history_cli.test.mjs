@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 54 t15 (C1, C10, C11): `ac verdict history|show` and the flapping lines on `ac verdict record`,
 // driven through the real CLI in a real tmp git project.
 import { test } from 'node:test';
@@ -22,6 +23,7 @@ async function project() {
   sh(dir, 'config', 'user.email', 't@t');
   sh(dir, 'config', 'user.name', 't');
   initPlanning(dir, { name: 'vproj' });
+  ac(dir, 'config', 'set', 'verify.full_suite', 'phase');
   await addPhase(dir, { number: 1, name: 'Do a thing' });
   const ph = findPhase(dir, '1');
   writeFileSync(join(dir, '.astrocode', 'phases', ph.slug, 'CRITERIA.md'),

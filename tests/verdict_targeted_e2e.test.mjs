@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 52 t9 — end-to-end targeted-verify scenarios through the shipped CLI verbs, one test per
 // criterion of the phase (C1 to C12). Test-after, chosen explicitly: it only drives `ac`.
 // A full PASS is seeded straight into VERDICT.json (a recorded one would need mutation evidence for
@@ -37,6 +38,7 @@ async function project() {
   sh(dir, 'config', 'user.email', 't@t');
   sh(dir, 'config', 'user.name', 't');
   initPlanning(dir, { name: 'e2e' });
+  ac(dir, 'config', 'set', 'verify.full_suite', 'phase');
   await addPhase(dir, { number: 1, name: 'Do a thing' });
   const ph = findPhase(dir, '1');
   const pdir = join(dir, '.astrocode', 'phases', ph.slug);

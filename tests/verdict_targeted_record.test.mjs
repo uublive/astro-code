@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 52 t4 — recording a targeted verdict, the amended gate and carriedOf (amends ADR-079).
 // Real tmp git; receipts come from `runSuite` with a `node -e` command. Dynamic imports (ADR-018).
 import { test } from 'node:test';
@@ -33,6 +34,8 @@ function fixture(crit = CRIT()) {
   sh(root, 'init', '-q');
   sh(root, 'config', 'user.email', 't@t');
   sh(root, 'config', 'user.name', 't');
+  mkdirSync(join(root, '.astrocode'), { recursive: true });
+  writeFileSync(join(root, '.astrocode', 'config.json'), JSON.stringify({ verify: { full_suite: 'phase' } }));
   const dir = join(root, '.astrocode', 'phases', SLUG);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'CRITERIA.md'), crit);

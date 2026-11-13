@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 45 t1 — saved verdicts, the narrowing decision and the verified gate (ADR-079).
 // Real tmp dirs and real git; the module is reached by dynamic import (ADR-018).
 import { test } from 'node:test';
@@ -22,6 +23,8 @@ function sandbox(n = 9) {
   sh(root, 'init', '-q');
   sh(root, 'config', 'user.email', 't@t');
   sh(root, 'config', 'user.name', 't');
+  mkdirSync(join(root, '.astrocode'), { recursive: true });
+  writeFileSync(join(root, '.astrocode', 'config.json'), JSON.stringify({ verify: { full_suite: 'phase' } }));
   const dir = join(root, '.astrocode', 'phases', SLUG);
   mkdirSync(dir, { recursive: true });
   const crit = Array.from({ length: n }, (_, i) => `### C${i + 1} — thing ${i + 1}\n- **Observe:** x\n`).join('\n');

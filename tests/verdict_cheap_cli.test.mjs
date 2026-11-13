@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 54 t19 (C2, C7): `ac verdict plan --broad-files`, the broad refusal line on `ac verdict record`,
 // and `ac verdict cheap`, driven through the real CLI in a real tmp git project.
 import { test } from 'node:test';
@@ -23,6 +24,7 @@ async function project(crit) {
   sh(dir, 'config', 'user.email', 't@t');
   sh(dir, 'config', 'user.name', 't');
   initPlanning(dir, { name: 'vproj' });
+  ac(dir, 'config', 'set', 'verify.full_suite', 'phase');
   await addPhase(dir, { number: 1, name: 'Do a thing' });
   const ph = findPhase(dir, '1');
   put(dir, `.astrocode/phases/${ph.slug}/CRITERIA.md`, crit);

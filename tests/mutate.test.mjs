@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 47 t8 — lib/mutate.mjs: tool table, detection, scope, run under the cap, classify,
 // check, setup. Real tmp git projects with ac phases; the tools are the stub (no real
 // Stryker/Gremlins/mutmut is ever needed). Modules reached by dynamic import (ADR-018).
@@ -10,6 +11,7 @@ import { makeProject, installStub, restrictedEnv, commit, sh, FX } from './fixtu
 const fx = (n) => join(FX, n);
 const logLines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const done = (p) => rmSync(p.dir, { recursive: true, force: true });
+const pinPhase = (p) => { const f = join(p.dir, '.astrocode', 'config.json'); writeFileSync(f, JSON.stringify({ ...JSON.parse(readFileSync(f, 'utf8')), verify: { full_suite: 'phase' } })); };
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 // A project plus a stub installed the way the tool would be found, and the env to run it in.
@@ -649,6 +651,7 @@ test('C13 a tests-only phase with the tool installed is no-scope that licenses n
   const { runMutate } = await import('../lib/mutate.mjs');
   const { recordVerdict } = await import('../lib/verdict.mjs');
   const p = await rig('js', { report: 'stryker-mutation.json' });
+  pinPhase(p);
   try {
     await ap48(p.dir, { number: 3, name: 'Tests only' });
     writeFileSync(join(p.dir, 'tests', 'a.test.mjs'), '// stronger test\n');

@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 54 t16 (C4, C5, C6): `ac verdict defer`, the deferrable line, and the deferred surfaces in
 // `ac phase show`, `ac status` and `ac fix list`, driven through the real CLI in a real tmp project.
 // Fixture: C1 plain, C2 [edge], C3 [core], C4 untagged, C5 [suite]; PLAN.md committed after CRITERIA.md.
@@ -35,6 +36,7 @@ async function project() {
   sh(dir, 'config', 'user.email', 't@t');
   sh(dir, 'config', 'user.name', 't');
   initPlanning(dir, { name: 'vproj' });
+  ac(dir, 'config', 'set', 'verify.full_suite', 'phase');
   await addPhase(dir, { number: 1, name: 'Do a thing' });
   const ph = findPhase(dir, '1');
   const base = join(dir, '.astrocode', 'phases', ph.slug);

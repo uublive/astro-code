@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 54 t10 (C7, D6): a "broad fix" claim is accepted only when it names changed files that the
 // criteria file map ties to a criterion; otherwise the run stays narrowed and says why. `planReverify`
 // answers the same question as `recordVerdict`. Real tmp git; dynamic imports (ADR-018).
@@ -33,6 +34,8 @@ async function scenario() {
   sh(root, 'init', '-q');
   sh(root, 'config', 'user.email', 't@t');
   sh(root, 'config', 'user.name', 't');
+  mkdirSync(join(root, '.astrocode'), { recursive: true });
+  writeFileSync(join(root, '.astrocode', 'config.json'), JSON.stringify({ verify: { full_suite: 'phase' } }));
   put(root, `.astrocode/phases/${SLUG}/CRITERIA.md`, CRIT);
   for (const f of 'abcdef') put(root, `src/${f}.mjs`);
   put(root, 'README.md');
@@ -92,6 +95,8 @@ test('a broad claim on an already-full plan is a no-op', async () => {
     sh(root, 'init', '-q');
     sh(root, 'config', 'user.email', 't@t');
     sh(root, 'config', 'user.name', 't');
+    mkdirSync(join(root, '.astrocode'), { recursive: true });
+    writeFileSync(join(root, '.astrocode', 'config.json'), JSON.stringify({ verify: { full_suite: 'phase' } }));
     put(root, `.astrocode/phases/${SLUG}/CRITERIA.md`, CRIT);
     commit(root, 'init');
     const plain = planReverify(root, SLUG);

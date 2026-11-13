@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 52 t6 — the targeted `ac verdict plan` line, the carried list in `ac phase show` and the
 // phase verify gate, through the real CLI in a real tmp git project (amends ADR-079).
 import { test } from 'node:test';
@@ -24,6 +25,7 @@ async function project() {
   sh(dir, 'config', 'user.email', 't@t');
   sh(dir, 'config', 'user.name', 't');
   initPlanning(dir, { name: 'tproj' });
+  ac(dir, 'config', 'set', 'verify.full_suite', 'phase');
   await addPhase(dir, { number: 1, name: 'Do a thing' });
   const ph = findPhase(dir, '1');
   writeFileSync(join(dir, '.astrocode', 'phases', ph.slug, 'CRITERIA.md'),
