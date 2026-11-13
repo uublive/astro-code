@@ -1710,7 +1710,7 @@ _DATA_CHANGE_FORBIDDEN = {"OUTPUT", "GO", "SP_EXECUTESQL"}
 
 
 _RECEIVE_OPERAND_PUNCT = frozenset([".", ",", "(", "=", "<", ">", "!", "+", "-", "*", "/", "%", "&", "|", "^", "~"])
-_RECEIVE_OPERAND_WORDS = frozenset(["SET", "SELECT", "BY", "ON", "WHERE", "AND", "OR", "NOT", "AS", "THEN", "ELSE", "WHEN", "CASE", "IN", "IS", "LIKE", "BETWEEN", "DISTINCT", "INTO", "UPDATE", "FROM", "JOIN", "MERGE", "USING", "DELETE", "ALL", "ANY", "SOME", "EXISTS", "HAVING", "PARTITION"])
+_RECEIVE_OPERAND_WORDS = frozenset(["SET", "SELECT", "BY", "ON", "WHERE", "AND", "OR", "NOT", "AS", "THEN", "ELSE", "WHEN", "CASE", "IN", "IS", "LIKE", "BETWEEN", "DISTINCT", "INTO", "UPDATE", "FROM", "JOIN", "MERGE", "ALL", "ANY", "SOME", "EXISTS", "HAVING"])
 
 
 def _receive_starts_statement(sig: list, k: int) -> bool:
@@ -1755,7 +1755,7 @@ def check_data_change(body: str):
 
     def begin(verb: str) -> None:
         nonlocal cur, in_with
-        cur = {"verb": verb, "hasWhere": False, "setSeen": False, "thenUpdate": False, "sawValues": False}
+        cur = {"verb": verb, "hasWhere": False, "setSeen": False, "thenUpdate": False, "sawValues": False, "sawSelect": False}
         statements.append({"verb": verb, "hasWhere": False})
         in_with = False
 
@@ -1840,6 +1840,11 @@ def check_data_change(body: str):
             elif w == "SELECT":
                 if c["verb"] != "INSERT" or c["sawValues"]:
                     return False, "a SELECT statement is not a data change"
+                # One top-level SELECT feeds an INSERT; another only after UNION/EXCEPT/INTERSECT.
+                set_op = prev_word in ("UNION", "ALL", "EXCEPT", "INTERSECT")
+                if c["sawSelect"] and not set_op:
+                    return False, "a SELECT statement is not a data change"
+                c["sawSelect"] = True
             elif w == "VALUES":
                 c["sawValues"] = True
             elif w == "INTO":

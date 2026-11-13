@@ -5369,6 +5369,48 @@
       "ok": true
     },
     {
+      "sql": "UPDATE t SET c=1 WHERE id = Partition RECEIVE * FROM dbo.q",
+      "ok": false,
+      "reasonIncludes": "RECEIVE"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id = t.Partition RECEIVE * FROM dbo.q",
+      "ok": false,
+      "reasonIncludes": "RECEIVE"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id = Using RECEIVE * FROM dbo.q",
+      "ok": false,
+      "reasonIncludes": "RECEIVE"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id = t.Using/**/RECEIVE conversation_handle AS h FROM dbo.q",
+      "ok": false,
+      "reasonIncludes": "RECEIVE"
+    },
+    {
+      "sql": "MERGE dbo.T AS t USING dbo.S AS s ON t.Id = s.Id WHEN MATCHED THEN DELETE RECEIVE * FROM dbo.q;",
+      "ok": false,
+      "reasonIncludes": "RECEIVE"
+    },
+    {
+      "sql": "INSERT INTO t SELECT 1 SELECT * FROM secrets",
+      "ok": false,
+      "reasonIncludes": "SELECT"
+    },
+    {
+      "sql": "INSERT INTO t (a) SELECT a FROM s1 UNION ALL SELECT a FROM s2",
+      "ok": true
+    },
+    {
+      "sql": "INSERT INTO t (a) SELECT a FROM s1 EXCEPT SELECT a FROM s2",
+      "ok": true
+    },
+    {
+      "sql": "INSERT INTO t (a) SELECT a FROM s1 WHERE a IN (SELECT a FROM s3)",
+      "ok": true
+    },
+    {
       "sql": "UPDATE dbo.Flags SET Receive = 1 WHERE Id = 1",
       "ok": true
     },
