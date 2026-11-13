@@ -1671,6 +1671,9 @@ _DATA_CHANGE_FORBIDDEN = {
     "COMMIT", "ROLLBACK", "BEGIN", "SAVE", "TRAN", "TRANSACTION",
     "USE", "DECLARE", "GO", "WAITFOR", "SHUTDOWN", "DBCC", "KILL", "RECONFIGURE", "BACKUP", "RESTORE",
     "STATISTICS", "WRITETEXT", "UPDATETEXT", "READTEXT", "PRINT", "RAISERROR", "THROW",
+    # statement-start words T-SQL accepts with no `;` after a valid change (phase 141 remediate)
+    "DISABLE", "ENABLE", "ADD", "SETUSER", "REVERT", "OPEN", "CLOSE", "CHECKPOINT", "FETCH",
+    "DEALLOCATE", "GOTO", "IF", "WHILE", "RETURN", "BREAK", "CONTINUE", "LOAD", "RECEIVE", "SEND", "MOVE",
 }
 _PROC_PREFIX_RE = re.compile(r"^(XP|SP)_", re.ASCII)
 

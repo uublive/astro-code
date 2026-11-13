@@ -5208,6 +5208,34 @@
       "sql": "UPDATE dbo.T SET c = 0 WHERE id = 1;UPDATE dbo.T SET c = 1 WHERE id = 1;UPDATE dbo.T SET c = 2 WHERE id = 1;UPDATE dbo.T SET c = 3 WHERE id = 1;UPDATE dbo.T SET c = 4 WHERE id = 1;UPDATE dbo.T SET c = 5 WHERE id = 1;UPDATE dbo.T SET c = 6 WHERE id = 1;UPDATE dbo.T SET c = 7 WHERE id = 1;UPDATE dbo.T SET c = 8 WHERE id = 1;UPDATE dbo.T SET c = 9 WHERE id = 1;UPDATE dbo.T SET c = 10 WHERE id = 1;UPDATE dbo.T SET c = 11 WHERE id = 1;UPDATE dbo.T SET c = 12 WHERE id = 1;UPDATE dbo.T SET c = 13 WHERE id = 1;UPDATE dbo.T SET c = 14 WHERE id = 1;UPDATE dbo.T SET c = 15 WHERE id = 1;UPDATE dbo.T SET c = 16 WHERE id = 1;UPDATE dbo.T SET c = 17 WHERE id = 1;UPDATE dbo.T SET c = 18 WHERE id = 1;UPDATE dbo.T SET c = 19 WHERE id = 1;UPDATE dbo.T SET c = 20 WHERE id = 1",
       "ok": false,
       "reasonIncludes": "at most 20"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 DISABLE TRIGGER ALL ON dbo.Orders",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1\nENABLE TRIGGER ALL ON DATABASE",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 SETUSER 'dbo'",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 REVERT",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 CHECKPOINT",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 ADD SIGNATURE TO p BY CERTIFICATE c",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 OPEN SYMMETRIC KEY k DECRYPTION BY PASSWORD='x'",
+      "ok": false
     }
   ]
 }
