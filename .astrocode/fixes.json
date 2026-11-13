@@ -220,6 +220,12 @@
       "opened_at": "2026-11-09T10:29:00.814Z"
     },
     {
+      "id": "2026-11-13-execute-phase-workflow-crashes",
+      "title": "execute-phase workflow crashes (TypeError: null is not an object, evaluating 'v.criteria') when the verifier agent errors (e.g. API 403) instead of reporting a clean FAIL; seen on phase 57 run wf_3b54ba86-415",
+      "status": "open",
+      "opened_at": "2026-11-13T12:24:11.932Z"
+    },
+    {
       "id": "2026-11-13-verify-loop-a-withdrawn-carried-pass",
       "title": "verify loop: a withdrawn carried PASS with failing [] remediates the carried-only criterion (when plan ids include it) instead of forcing a full re-verify; tests/verify_loop.test.mjs stub plan ids ['C1'] hides it (phase 56 C12, found by Opus fast-verify experiment 2026-11-12)",
       "status": "open",
