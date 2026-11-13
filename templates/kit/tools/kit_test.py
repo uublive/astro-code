@@ -1709,6 +1709,32 @@ _DATA_CHANGE_RESERVED_ALLOWED = {
 _DATA_CHANGE_FORBIDDEN = {"OUTPUT", "GO", "SP_EXECUTESQL"}
 
 
+def _receive_starts_statement(sig: list, k: int) -> bool:
+    """A Service Broker RECEIVE statement, not a column named Receive. Mirrors
+    astroport's receiveStartsStatement in apps/backend/src/kits/sql-guard.ts."""
+    if _sig_punct(sig, k - 1, "."):
+        return False
+    if k + 1 >= len(sig):
+        return False
+    nxt = sig[k + 1]
+    if nxt["kind"] == "punct":
+        return nxt["text"] == "*"
+    if nxt["kind"] == "word":
+        n = nxt["text"].upper()
+        if n == "TOP" or n.startswith("@"):
+            return True
+        if n in _TSQL_RESERVED:
+            return False
+    elif nxt["kind"] != "qident":
+        return False
+    if k + 2 >= len(sig):
+        return False
+    after = sig[k + 2]
+    if after["kind"] == "punct":
+        return after["text"] in (",", "(", "=", ".")
+    return after["kind"] == "word" and after["text"].upper() == "FROM"
+
+
 def _data_change_word_refused(w: str) -> bool:
     return w in _DATA_CHANGE_FORBIDDEN or (w in _TSQL_RESERVED and w not in _DATA_CHANGE_RESERVED_ALLOWED)
 
@@ -1759,8 +1785,8 @@ def check_data_change(body: str):
                 return False, f"{w} CONVERSATION is not allowed in a write"
             if w == "SEND" and nxt == "ON" and _sig_word(sig, k + 2) == "CONVERSATION":
                 return False, "SEND ON CONVERSATION is not allowed in a write"
-            if w == "RECEIVE" and nxt == "TOP":
-                return False, "RECEIVE TOP is not allowed in a write"
+            if w == "RECEIVE" and _receive_starts_statement(sig, k):
+                return False, "RECEIVE is not allowed in a write"
         is_p = t["kind"] == "punct"
         if is_p and t["text"] == ")":
             if depth == 0:

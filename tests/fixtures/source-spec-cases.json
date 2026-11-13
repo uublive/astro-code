@@ -5283,6 +5283,38 @@
       "reasonIncludes": "RECEIVE"
     },
     {
+      "sql": "UPDATE t SET c=1 WHERE id=1 RECEIVE * FROM dbo.q",
+      "ok": false,
+      "reasonIncludes": "RECEIVE"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 RECEIVE message_body, conversation_handle FROM dbo.q",
+      "ok": false,
+      "reasonIncludes": "RECEIVE"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 RECEIVE @h = conversation_handle FROM dbo.q",
+      "ok": false,
+      "reasonIncludes": "RECEIVE"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 RECEIVE message_body FROM dbo.q",
+      "ok": false,
+      "reasonIncludes": "RECEIVE"
+    },
+    {
+      "sql": "UPDATE dbo.Flags SET Receive = 1 WHERE Id = 1",
+      "ok": true
+    },
+    {
+      "sql": "UPDATE f SET Receive = 0 FROM dbo.Flags AS f WHERE f.Receive = 1",
+      "ok": true
+    },
+    {
+      "sql": "INSERT INTO dbo.Log (Receive, Note) SELECT Receive, Note FROM dbo.Src",
+      "ok": true
+    },
+    {
       "sql": "UPDATE dbo.T SET c = 1 WHERE id = 1 BEGIN DIALOG @h FROM SERVICE s TO SERVICE 't'",
       "ok": false,
       "reasonIncludes": "BEGIN"
