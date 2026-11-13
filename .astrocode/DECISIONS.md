@@ -617,3 +617,8 @@ _2026-11-09 · at 6928236_
 
 **Rejected:** Running the race suite once per phase (weakens the full-suite PASS); a declared per-criterion slow tag (a measured duration needs no upkeep); running the suite last for every project (a fast suite would find its failures one round later)
 
+## ADR-094 — Phase verify is fast by default: no full test suite per phase, only an auto-picked targeted test set (phase's changed tests + tests of its changed files) plus criteria; the full suite + every phase's quick re-checks run once on the milestone tip, which blocks milestone close; a project setting restores the full suite per phase (amends ADR-079/089/091/093)
+_2026-11-13 · at 2897187_
+
+**Why:** Phase 56 spent ~2.5 h in 6 verify rounds, each paying a 10-15 min suite; measured 2026-11-12: targeted tests 80 s vs suite 11.7 min, an Opus fast verify 3.5-6.3 min caught 3/3 planted defects. Owner (phase 57 discuss) trades mid-milestone release safety for speed: fast-verified phases may be accepted and released, visibly marked 'full check pending'.
+
