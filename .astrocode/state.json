@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 16,
-  "active_phase": "57-fast-phase-verify-full-check-at",
+  "active_phase": "58-tie-phases-and-milestones-to-a-feature",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-11-13T12:24:06.014Z",
+  "updated_at": "2026-11-13T13:30:28.526Z",
   "activity": null
 }
