@@ -957,6 +957,16 @@
       "branch": "develop",
       "claimed_at": "2026-11-13T08:42:40.810Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 58,
+      "milestone": 16,
+      "name": "Tie phases and milestones to a feature branch; the band shows only what belongs to the current branch",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-11-13T09:19:40.423Z",
+      "status": "active"
     }
   ]
 }
