@@ -66,7 +66,7 @@ devs never collide.
 - on a **local model** (Claude Code pointed at e.g. Qwen) every agent runs on the session's model automatically — `ac status` shows it; `ASTRO_LOCAL_MODEL=1|0` forces it
 
 **The engine (CLI)** — run `ac help` for the full list. Common:
-`ac status` · `ac models [profile]` · `ac registry show` · `ac flow` (opt-in GitFlow) · `ac stats` (token usage)
+`ac status` · `ac models [profile]` · `ac registry show` · `ac flow` (opt-in GitFlow; `ac flow link|unlink <phase|m<N>>` ties work to a feature branch) · `ac identity` (your email aliases) · `ac stats` (token usage)
 
 **Two gates close a phase:** the AI verifier (goal-backward + full test suite) marks it
 *verified*; only human `/astro-accept` marks it *complete*. The AI never closes its own work.

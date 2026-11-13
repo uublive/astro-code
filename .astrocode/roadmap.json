@@ -11,6 +11,20 @@
       "accepted_by": "claude",
       "accepted_kind": "agent",
       "accepted_at": "2026-11-10T10:05:17.417Z"
+    },
+    {
+      "number": 57,
+      "name": "Fast phase verify, full check at milestone close",
+      "slug": "57-fast-phase-verify-full-check-at",
+      "status": "verified",
+      "milestone": 16
+    },
+    {
+      "number": 58,
+      "name": "Tie phases and milestones to a feature branch; the band shows only what belongs to the current branch",
+      "slug": "58-tie-phases-and-milestones-to-a-feature",
+      "status": "verified",
+      "milestone": 16
     }
   ]
 }

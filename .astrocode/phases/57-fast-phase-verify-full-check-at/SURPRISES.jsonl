@@ -1,0 +1,1 @@
+{"at":"2026-11-13T11:45:08.673Z","phase":"57-fast-phase-verify-full-check-at","signals":["remediation","no-progress"],"note":"workflow tier infers fast mode only from cheap.fast presence; per-phase output carries no mode"}

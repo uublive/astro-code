@@ -72,6 +72,10 @@ human accepts. This is the **human gate** after `/astro-verify` (the AI gate).
     itself in **one line** per that template's own reporting rule (§7); say nothing when
     it proposes nothing. This step never runs on the accept path — a plain acceptance
     never reaches it, so nothing here is printed then either.
+4c. **Propose the milestone full check.** Only when `ac phase accept` printed a `last phase of milestone`
+    line, relay it in **one line** with its command, `ac milestone verify` (`/astro-verify-milestone`); it is
+    started by the user or Comet, never by this command. Say nothing when it printed none (a non-last accept, or
+    a milestone with no fast-verified phase).
 5. On accept, close with an optional **one-line** context nudge: the phase is
    **complete** and all state is saved to `.astrocode/`, so running `/clear` before the
    next phase keeps the context lean and loses nothing (each command re-grounds from

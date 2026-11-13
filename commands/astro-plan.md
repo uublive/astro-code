@@ -17,7 +17,9 @@ Plan phase `$ARGUMENTS` by running the parallel planning workflow.
    strongly suggest running `/astro-discuss <number>` first to surface decisions/edge
    cases — but proceed if the user declines (trivial phases can skip). **Never create or
    seed `CONTEXT.md` yourself** — only `/astro-discuss` writes it; seeding a stub here is
-   exactly what defeats this gate. Refresh the team canon best-effort (`ac canon pull`) so
+   exactly what defeats this gate. This command also ties the phase to the current
+   feature branch when gitflow is on: relay a `⚠` tie line it prints on stderr in one
+   line, and say nothing otherwise. Refresh the team canon best-effort (`ac canon pull`) so
    the agents read the latest. A refusal or collision warning is **not** a failure to retry
    or force — report it in the run summary and continue, **in one line** naming the file and
    the two escapes (retry or force), never the diff; never pass `--force` from an agent. Then

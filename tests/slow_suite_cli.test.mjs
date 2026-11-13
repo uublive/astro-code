@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 56 t4 (C1-C9, C13): a slow suite is held back end to end, through the real CLI in a real tmp git
 // project. The suite command appends a line to a marker file OUTSIDE the repo, so a run is countable.
 // A timing is seeded exactly as CRITERIA.md describes: `ac suite run`, edit `seconds`, then commit.
@@ -30,6 +31,7 @@ async function project({ c2 = BAD } = {}) {
   sh(dir, 'config', 'user.email', 't@t');
   sh(dir, 'config', 'user.name', 't');
   initPlanning(dir, { name: 'vproj' });
+  ac(dir, 'config', 'set', 'verify.full_suite', 'phase');
   await addPhase(dir, { number: 1, name: 'Do a thing' });
   const ph = findPhase(dir, '1');
   const crit = (cmd, c2cmd) => [

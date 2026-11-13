@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 49 t11 — `ac mutate <n> --survivors`: re-test only the open survivors of the last full run,
 // on every tool, and never as a recordable verdict (D4, C5, C6). Stub tools; argv from MUTATE_STUB_LOG.
 // The Stryker `--mutate` span form is transcribed, not captured (Stryker is not installed here).
@@ -14,6 +15,7 @@ const REAL = join(FX, 'real');
 const ac = (p, args) => spawnSync(process.execPath, [AC, ...args], { cwd: p.dir, encoding: 'utf8', env: p.env, input: '', timeout: 60000 });
 const logLines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const done = (p) => rmSync(p.dir, { recursive: true, force: true });
+const pinPhase = (p) => { const f = join(p.dir, '.astrocode', 'config.json'); writeFileSync(f, JSON.stringify({ ...JSON.parse(readFileSync(f, 'utf8')), verify: { full_suite: 'phase' } })); };
 const runs = (p, name) => logLines(p.log).filter((l) => l.tool === name && (l.argv[0] === 'run' || l.argv[0] === 'unleash'));
 const json = (p, ...a) => JSON.parse(ac(p, ['mutate', '1', '--json', ...a]).stdout);
 const judge = (p, ids, flag, note) => {
@@ -84,6 +86,7 @@ test('C5 Stryker: --mutate holds the open survivors\' spans and a crafted increm
 test('C6: the kept full run is byte-identical after --survivors; the human output leads with the partial line; the partial evidence is refused; a fresh full run records', async () => {
   const { recordVerdict } = await import('../lib/verdict.mjs');
   const { p, j, at } = await judgedStryker();
+  pinPhase(p);
   try {
     const before = readFileSync(runFile(p), 'utf8');
     assert.equal(existsSync(partialFile(p)), false);

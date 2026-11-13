@@ -2,6 +2,13 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.59.0
+
+- Phase verify is fast by default (ADR-094): it no longer runs the full test suite. `ac verdict cheap <phase>` computes the phase's targeted tests in code (the test files its stamped commits changed, plus the tests that import or name a changed source file) and runs only those; a PASS needs that set green on the verified commit, a docs-only phase reports `no linked tests`, and a suite criterion is carried to the milestone full check. `verify.full_suite: phase` keeps the old behaviour. Fast-verified phases are marked `full check pending` in `ac status`, the band, accept output and release notes
+- `ac milestone verify` (`/astro-verify-milestone`) runs the full suite and every phase's `Cheap:` checks on the milestone tip, opens a fix tied to the phase that broke for each failure, and `ac milestone repair` bounds the repair of each fix (`verify.repair_attempts`, default 2). `ac milestone complete` now needs a passing full check on the current tip; `ac phase accept` of the last phase proposes it. New settings: `verify.full_suite`, `verify.repair_attempts`, `verify.targeted_command`, `verify.suite_command`
+- Phases and milestones tie to a feature branch (ADR-095): discussing, planning or executing a phase on a feature branch ties it in the team registry, and `ac flow link|unlink <phase|m<N>>` ties, moves or unties one by hand. On a feature branch the phase band shows only the work tied to it (`+N elsewhere` for the rest); on develop/main, or a branch with nothing tied, it shows only your open phases. Other people's phases are never in your rows or buttons (`+N by others`); `ac status` text still lists everything. `ac status --json` phase rows carry `owner`, `feature_branch`, `mine` and `onBranch`
+- `ac identity alias add|remove <email>` counts claims made under your other emails as yours (personal `~/.astro/config.json`, never committed); if the registry cannot be read, the band keeps the full view
+
 ## v0.58.0
 
 - The phase band's banner shows the current git branch (`── ✦ astro-code v0.58.0 ⎇ develop ──`): read from `.git/HEAD` with no `git` process, worktrees followed, refreshed at turn boundaries; a detached HEAD shows a short sha, no repo shows nothing, long names are truncated

@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 54 t19 (C2, C7): `ac verdict plan --broad-files`, the broad refusal line on `ac verdict record`,
 // and `ac verdict cheap`, driven through the real CLI in a real tmp git project.
 import { test } from 'node:test';
@@ -23,6 +24,7 @@ async function project(crit) {
   sh(dir, 'config', 'user.email', 't@t');
   sh(dir, 'config', 'user.name', 't');
   initPlanning(dir, { name: 'vproj' });
+  ac(dir, 'config', 'set', 'verify.full_suite', 'phase');
   await addPhase(dir, { number: 1, name: 'Do a thing' });
   const ph = findPhase(dir, '1');
   put(dir, `.astrocode/phases/${ph.slug}/CRITERIA.md`, crit);
@@ -48,7 +50,7 @@ test('ac verdict cheap exits 1 listing EVERY unmet id on a failing fixture, and 
     const j = ac(p.dir, 'verdict', 'cheap', '1', '--json');
     assert.equal(j.status, 1);
     const out = JSON.parse(j.stdout);
-    assert.deepEqual(Object.keys(out).sort(), ['clean', 'held', 'ran', 'recorded', 'unchecked', 'unmet', 'warnings']);
+    assert.deepEqual(Object.keys(out).sort(), ['clean', 'held', 'mode', 'ran', 'recorded', 'unchecked', 'unmet', 'warnings']);
     assert.deepEqual(out.unmet, ['C2', 'C3']);
     assert.equal(out.recorded.mode, 'narrowed');
     assert.equal(ac(p.dir, 'verdict', 'history', '1').stdout.includes('narrowed/cheap'), true, 'the cheap round is in the history');

@@ -141,6 +141,8 @@ import { stampedTaskIds, planIdCollisions } from '../lib/stamps.mjs';
 import { completeMilestone, belongsToMilestone, plannedMilestones } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate, carriedOf, readVerdict, verdictFile } from '../lib/verdict.mjs';
+import { pendingPhases, milestonePhases, fullCheckGate, runFullCheck } from '../lib/fullcheck.mjs';
+import { repairFix, repairReport } from '../lib/repair.mjs';
 import { VERDICTS_FILE, readHistory } from '../lib/verdicthistory.mjs';
 import { runSuite, reusableReceipt, suiteSpeed } from '../lib/receipts.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
@@ -148,7 +150,9 @@ import { planCalibration, runCalibration, renderSummary, renderBill, parseCalibr
 import { recordJudgements } from '../lib/survivors.mjs';
 import { REMINDER as MUTATE_REMINDER } from '../lib/mutnotice.mjs';
 import { milestoneHarvest } from '../lib/harvest.mjs';
-import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
+import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish, pendingNotes } from '../lib/flow.mjs';
+import { flowLink, flowUnlink, autoTie } from '../lib/flowlink.mjs';
+import { readUserAliases, addUserAlias, removeUserAlias, gitOwner } from '../lib/identity.mjs';
 import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME, refreshAgents, agentNames, republishHost } from '../lib/install.mjs';
 // Imported directly (not via getHost) for the model-mapping helpers, which are not part of the host contract.
 import opencodeHost, { resolveRoleModels, setOpencodeModel, TIERS as OPENCODE_TIERS, ROLES as OPENCODE_ROLES } from '../lib/hosts/opencode.mjs';
@@ -210,6 +214,13 @@ function parseArgs(args) {
 const die = (msg) => {
   console.error(`✖ ${msg}`);
   process.exit(1);
+};
+
+// Phase 58 — the automatic tie: best effort, one line on stderr (or none), never a change to stdout or the
+// exit code, because callers compare a command's stdout exactly. See lib/flowlink.mjs autoTie.
+const autoTieNote = (root, n) => {
+  const { line } = autoTie(root, n);
+  if (line) console.error(line);
 };
 
 // Every refusal `addDecision` can return, as one die — shared by `decision add` and `principles promote`.
@@ -348,6 +359,9 @@ const ALLOWED_FLAGS = {
   // #106 — a plain write that would drop an existing note is refused; these say what to do.
   'phase note': ['append', 'replace'],
   'milestone complete': ['force'],
+  // ADR-094 — the milestone full check and the bounded repair of the fixes it opened.
+  'milestone verify': ['json'],
+  'milestone repair': ['json'],
   // Phase 23 (P5) — read-only, but still allowlisted: a typo'd flag on the sweep's
   // own read must not silently degrade into the human-readable form when `--json`
   // was intended (or vice versa).
@@ -597,15 +611,18 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac milestone check "<name>"         see if a milestone with a similar name exists
   ac milestone complete [--force]     archive the current milestone + retire its claims
                                        (refuses while a phase is not complete; --force overrides)
+  ac milestone verify [--json]        the milestone full check on the tip: the full suite + every phase's Cheap: checks;
+                                        failures become fixes; close needs a passing check on the current tip
+  ac milestone repair [<fix>] [--json] re-check one check-created fix (bounded by verify.repair_attempts), or report fixed / still open
   ac milestone harvest [<n>] [--json] the retrospective sweep material for the principle sweep
                                        (defaults to the current milestone; read-only)
   ac phase add <name> [--milestone N] claim the next phase number + add it (+ dup-name check)
   ac phase check "<name>"             see if a phase with a similar name exists
   ac phase context <phase>            discuss-gate status: missing | stub | ready
   ac phase context <phase> --author   who captured it: human | agent <name> | none
-  ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full or valid targeted verdict)
+  ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; a full or valid targeted verdict; in fast mode its targeted tests must be green on the verdict commit)
   ac verdict plan <phase> [--full] [--broad-files a,b] [--json]  full, narrowed (after a FAIL) or targeted (after a full PASS)
-  ac verdict cheap <phase> [--json]    the cheap first pass: suite receipt + each criterion's Cheap: command; exits 1 on any unmet; a slow suite is held back, not run
+  ac verdict cheap <phase> [--json]    the cheap first pass: each criterion's Cheap: command, plus the phase's targeted tests (fast mode, no suite) or the suite receipt (verify.full_suite: phase); exits 1 on any unmet
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
   ac verdict history <phase> [--json]  every recorded verdict of the phase, oldest first (VERDICTS.jsonl)
   ac verdict show <phase> [--json]     the latest verdict: unmet ids, deferred ids, flapping flags
@@ -688,6 +705,10 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac flow tag [version]               tag origin/main as v<N> after the develop→main PR merges
   ac flow hotfix start <name>         branch hotfix/<name> off main (offline-safe)
   ac flow hotfix finish               merge hotfix into main+develop, tag v<N>.<k>, push
+  ac flow link <phase|m<N>>           tie a phase (number or slug) or a milestone to the feature branch you are on (shared via the registry)
+  ac flow unlink <phase|m<N>>         untie it (an explicit unlink also stops the automatic tie)
+  ac identity                         who counts as you for the phase band: git email + personal aliases
+  ac identity alias add|remove <email>  keep another email of yours (~/.astro/config.json, never the project)
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
                                        (stack override: ac config set stack '["rust"]' — replaces detection)
@@ -2007,6 +2028,7 @@ async function main() {
       }
       console.log('Phases:');
       if (!rm.phases.length) console.log('  (none)');
+      const fcPending = new Set(pendingPhases(r, rm.phases).map((p) => p.number));
       for (const ph of rm.phases) {
         const planned = isPhasePlanned(r, ph.slug) ? 'planned' : 'not planned';
         // Show the discuss state for open, unplanned phases — the signal that
@@ -2014,7 +2036,7 @@ async function main() {
         const discuss = ph.status !== 'complete' && !isPhasePlanned(r, ph.slug)
           ? (phaseContextStatus(r, ph.slug) === 'ready' ? ' · discussed' : ' · undiscussed')
           : '';
-        console.log(`  ${String(ph.number).padStart(2, '0')}  ${ph.status.padEnd(9)} ${ph.name}  (${planned}${discuss})`);
+        console.log(`  ${String(ph.number).padStart(2, '0')}  ${ph.status.padEnd(9)} ${ph.name}  (${planned}${discuss})${fcPending.has(ph.number) ? ' · fast-verified, full check pending' : ''}`);
       }
       if (st.blockers?.length) console.log(`Blockers:  ${st.blockers.length}`);
       // Passive visibility. A register you have to remember to open is a register you
@@ -2056,6 +2078,12 @@ async function main() {
         try { value = JSON.parse(raw); } catch { /* keep as string */ }
         const next = await updateState(r, (s) => ({ ...s, [key]: value }));
         json({ [key]: next[key] });
+        // Execute step 2 (and /astro-fast) record the active phase; on a feature branch that also ties it
+        // (phase 58). stderr only, so the JSON above and the exit code are untouched.
+        if (key === 'active_phase') {
+          const ap = findPhase(r, String(value));
+          if (ap) autoTieNote(r, ap.number);
+        }
       } else {
         die('usage: ac state <get|set> …');
       }
@@ -2212,6 +2240,44 @@ async function main() {
           console.log(`  milestone ${c.number}${c.name ? ` "${c.name}"` : ''} is waiting — start it with \`ac milestone activate ${c.number}\``);
         }
         console.log(waiting.length ? '  or claim a new one with `ac milestone new`' : '  start the next cycle with `ac milestone new`');
+      } else if (pos[0] === 'verify') {
+        // ADR-094 — the milestone full check. Runs the suite once and every phase's Cheap: commands at the
+        // tip, opens one fix per failure (deduplicated), never starts a verifier. Exit 1 on any failure.
+        checkFlags('milestone verify', flags);
+        let res;
+        try { res = await runFullCheck(r); } catch (e) { die(e.message); }
+        if (flags.json) json(res);
+        else {
+          const at = String(res.tip).slice(0, 7);
+          if (res.passed) console.log(`✓ milestone ${res.milestone} full check PASS on ${at}`);
+          else {
+            console.log(`✖ milestone ${res.milestone} full check FAIL on ${at} — ${res.failures.length} failure(s), ${res.fixes.length} fix(es) on file`);
+            for (const f of res.failures.slice(0, 10)) {
+              console.log(`  ${f.kind === 'criterion' ? `${f.criterion} (${String(f.phase).match(/^\d+/)?.[0] ?? f.phase})` : f.kind === 'test' ? f.test : 'suite'}: ${String(f.output).split('\n')[0].slice(0, 120)}`);
+            }
+            if (res.failures.length > 10) console.log(`  … ${res.failures.length - 10} more — see .astrocode/.local/full-checks/${res.tip}.json`);
+            if (res.flaky.length) console.log(`• flaky (passed alone, no fix): ${res.flaky.join(', ')}`);
+          }
+        }
+        for (const w of res.warnings ?? []) console.error(`⚠ ${w}`);
+        if (!res.passed) process.exitCode = 1;
+      } else if (pos[0] === 'repair') {
+        // ADR-094 — one bounded repair re-check of a check-created fix, or the morning report.
+        checkFlags('milestone repair', flags);
+        if (pos[1] !== undefined) {
+          let out;
+          try { out = await repairFix(r, pos[1]); } catch (e) { die(e.message); }
+          if (flags.json) json(out);
+          else if (out.exhausted) console.log(`• exhausted ${out.id} — ${out.limit}/${out.limit} attempts used, a human takes it from here`);
+          else console.log(out.passed ? `✓ fixed ${out.id} (attempt ${out.attempt}/${out.limit})` : `• still failing ${out.id} (attempt ${out.attempt}/${out.limit})`);
+        } else {
+          const rep = repairReport(r, { milestone: milestonePhases(r).milestone });
+          if (flags.json) json(rep);
+          else {
+            for (const f of rep.fixed) console.log(`✓ fixed ${f.id}`);
+            for (const f of rep.open) console.log(`• still open ${f.id} (${f.attempts}/${f.limit} attempts)`);
+          }
+        }
       } else if (pos[0] === 'harvest') {
         // Phase 23 (P5) — the retrospective sweep material for `/astro-complete-milestone`'s
         // principle sweep. Read-only: never mutates roadmap, state, or the principle store.
@@ -2256,7 +2322,7 @@ async function main() {
           console.log(`• skipped: ${skipped.agentContexts} agent-captured CONTEXT, ${skipped.agentRejections} agent-signed rejection(s)`);
         }
       } else {
-        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|rename <n> "<name>"|check "<name>"|complete|harvest [<n>]>');
+        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|rename <n> "<name>"|check "<name>"|complete|verify|repair [<fix>]|harvest [<n>]>');
       }
       return;
     }
@@ -2320,6 +2386,8 @@ async function main() {
           console.log(`• open a PR from "${res.head}" → "${res.base}" manually`);
         }
         if (res.advisory) console.log(`  ${res.advisory}`);
+        // ADR-094: one line per fast-verified phase whose milestone full check is still pending; nothing otherwise.
+        for (const l of String(res.notes ?? '').split('\n').filter((x) => x.startsWith('Full check pending'))) console.log(`• ${l}`);
       } else if (sub === 'tag') {
         // ac flow tag [version] — verify develop is in origin/main, then tag and
         // push. An optional version arg (pos[1]) passes a specific semver so the
@@ -2327,6 +2395,7 @@ async function main() {
         const version = pos[1] != null ? pos[1] : undefined;
         const res = flowTag(r, version);
         console.log(`✓ tagged "${res.tag}" on origin/main (${res.commit.slice(0, 8)})`);
+        for (const l of pendingNotes(r)) console.log(`• ${l}`);
       } else if (sub === 'hotfix') {
         // ac flow hotfix start <name>   — branch hotfix/<name> off main (local, offline-safe)
         // ac flow hotfix finish          — dual-land into main+develop, tag v<N>.<k>, push
@@ -2357,8 +2426,34 @@ async function main() {
         } else {
           die(`usage: ac flow hotfix <start <name> | finish>`);
         }
+      } else if (sub === 'link' || sub === 'unlink') {
+        // ac flow link <phase|m<N>>   — tie to the branch you are on (never creates or switches one, ADR-009)
+        // ac flow unlink <phase|m<N>> — untie; for a phase this is explicit, so the automatic tie leaves it alone
+        if (!pos[1]) die(`usage: ac flow ${sub} <phase|m<N>>  (a phase number or slug, or m<N> for a milestone)`);
+        let res;
+        try { res = sub === 'link' ? flowLink(r, pos[1]) : flowUnlink(r, pos[1]); } catch (e) { die(e.message); }
+        console.log(res.message);
       } else {
-        die(`unknown ac flow subcommand "${sub}" — usage: ac flow [init | pr | release | tag | hotfix start <name> | hotfix finish]`);
+        die(`unknown ac flow subcommand "${sub}" — usage: ac flow [init | pr | release | tag | link <phase|m<N>> | unlink <phase|m<N>> | hotfix start <name> | hotfix finish]`);
+      }
+      return;
+    }
+
+    // Who counts as "me" for the band's mine-only view: the repo's git email plus personal aliases kept in
+    // ~/.astro/config.json (never in the project). Prints only the email and the aliases, never the file.
+    case 'identity': {
+      const r = root();
+      if (pos[0] == null) {
+        const aliases = readUserAliases();
+        console.log(`me: ${gitOwner(r) || 'unknown'}`);
+        console.log(`aliases: ${aliases.length ? aliases.join(', ') : 'none'}`);
+      } else if (pos[0] === 'alias' && (pos[1] === 'add' || pos[1] === 'remove') && pos[2]) {
+        const res = pos[1] === 'add' ? addUserAlias({ email: pos[2] }) : removeUserAlias({ email: pos[2] });
+        if (!res.ok) die(res.error);
+        const e = pos[2].trim().toLowerCase();
+        console.log(pos[1] === 'add' ? (res.changed ? `✓ alias ${e} added` : `✓ alias ${e} already listed`) : (res.changed ? `✓ alias ${e} removed` : `✓ alias ${e} was not listed`));
+      } else {
+        die('usage: ac identity [alias add|remove <email>]');
       }
       return;
     }
@@ -2437,17 +2532,21 @@ async function main() {
         // ADR-037 trap: `captured` also matches the agent form
         // `<!-- astro-discuss: captured by agent: … -->`. Reuses phaseContextStatus
         // for missing/stub so "what counts as captured" stays defined once.
+        // Phase 58: both forms (discuss step 5b, plan step 2) also tie the phase to the current feature
+        // branch; the line goes to stderr so the answer on stdout stays byte-identical.
         if (flags.author) {
           const status = phaseContextStatus(r, ph.slug);
-          if (status !== 'ready') { console.log('none'); return; }
+          if (status !== 'ready') { console.log('none'); autoTieNote(r, ph.number); return; }
           const file = join(paths(r).phases, ph.slug, 'CONTEXT.md');
           // classifyContext decides: an empty agent name still DECLARES agent provenance
           // (`<!-- astro-discuss: captured by agent:  -->`), and only a line-1 human marker is human.
           const c = classifyContext(readFileSync(file, 'utf8'));
           console.log(c.kind === 'agent' ? `agent${c.author ? ` ${c.author}` : ''}` : c.kind === 'human' ? 'human' : 'none');
+          autoTieNote(r, ph.number);
           return;
         }
         console.log(phaseContextStatus(r, ph.slug));
+        autoTieNote(r, ph.number);
       } else if (sub === 'verify') {
         if (!ph) die('usage: ac phase verify <phase> [--force]');
         checkFlags('phase verify', flags);
@@ -2473,7 +2572,9 @@ async function main() {
         // Phase 54 (D3): the open fixes a human deferred this phase's criteria into; absent when none.
         const deferred = deferredFixes(r, { phases: [ph.slug] })
           .map((f) => ({ id: f.id, title: f.title, status: f.status, criterion: f.deferred_from.criterion }));
-        json({ ...ph, ...(carried.length ? { carried } : {}), ...(deferred.length ? { deferred_fixes: deferred } : {}) });
+        // ADR-094: fast-verified, full check pending; present only when pending.
+        const pendingFc = pendingPhases(r, [ph]).length > 0;
+        json({ ...ph, ...(carried.length ? { carried } : {}), ...(deferred.length ? { deferred_fixes: deferred } : {}), ...(pendingFc ? { full_check_pending: true } : {}) });
       } else if (sub === 'accept') {
         if (!ph) die('usage: ac phase accept <phase> [--by name | --agent name | --witnessed composer] [--evidence "<id or URL>"] [--force]');
         checkFlags('phase accept', flags);
@@ -2537,6 +2638,16 @@ async function main() {
         // off by hand.
         for (const b of await closeBacklogFor(r, { kind: 'phase', workRef: ph.slug })) {
           console.log(`✓ backlog ${b.id} absorbed`);
+        }
+        // ADR-094: a phase verified in fast mode is marked, and the LAST accept of a milestone proposes the
+        // milestone full check in ONE line. Never started here; a non-last accept proposes nothing.
+        if (pendingPhases(r, [findPhase(r, ph.slug)]).length) {
+          console.log(`• phase ${ph.number} is fast-verified — full check pending (runs on the milestone tip before close)`);
+        }
+        const ms = milestonePhases(r);
+        if (ms.phases.length && ms.phases.every((p) => p.status === 'complete')) {
+          const g = fullCheckGate(r, ms);
+          if (g.required && !g.ok) console.log(`• last phase of milestone ${ms.milestone} accepted — run the milestone full check: \`ac milestone verify\` (/astro-verify-milestone)`);
         }
       } else if (sub === 'reject') {
         if (!ph) die('usage: ac phase reject <phase> --reason "…" [--agent name | --witnessed composer] [--evidence "<id or URL>"]');
@@ -2847,6 +2958,7 @@ async function main() {
         // The cheap first pass (phase 54, D4): code runs every declared cheap check and lists EVERY
         // unmet id. Exit 1 on any unmet; a clean pass records nothing.
         const res = await runCheapPass(r, ph.slug);
+        const redNote = res.fast && res.fast.passed === false ? `targeted tests red (${res.fast.failing.join(', ')})` : '';
         if (flags.json) json(res);
         else if (!res.ran.length && !res.held.length) console.log('⊡ no cheap observation declared — nothing checked');
         else {
@@ -2856,7 +2968,14 @@ async function main() {
           for (const h of res.held) console.log(`• ${h.id} suite: held back — ${h.reason}; not run this round`);
           const heldN = res.held.length ? ` (${res.held.length} held back)` : '';
           console.log(res.clean ? `✓ cheap pass clean (${res.ran.length} checked${res.unchecked.length ? `, ${res.unchecked.length} left to the expensive stage` : ''})${heldN}`
-            : `✖ cheap pass: ${res.unmet.length} unmet — ${res.unmet.join(', ')}${heldN}`);
+            : `✖ cheap pass: ${[res.unmet.length ? `${res.unmet.length} unmet — ${res.unmet.join(', ')}` : '', redNote].filter(Boolean).join('; ')}${heldN}`);
+        }
+        // ADR-094 fast mode: ONE line for the targeted set (or `no linked tests`) and ONE for its limits.
+        if (!flags.json && res.fast) {
+          const carried = res.fast.milestone?.length ? ` — ${res.fast.milestone.join(', ')} carried to the milestone full check` : '';
+          if (res.fast.tests.length) console.log(`${res.fast.passed ? '•' : '✖'} fast mode: ${res.fast.passed ? 'targeted tests green' : redNote} (${res.fast.tests.join(', ')})${carried}`);
+          else console.log(`• fast mode: no linked tests — no tests run, criteria only${carried}`);
+          console.log(`• limits: ${res.fast.limits}`);
         }
         for (const w of res.warnings) console.error(`⚠ ${w}`);
         if (res.recorded && res.recorded.recorded === false) console.error(`⚠ the cheap verdict was not recorded: ${res.recorded.error}`);
@@ -2877,6 +2996,7 @@ async function main() {
         } else if (plan.mode === 'targeted') {
           console.log(`• targeted: ${plan.reason}: re-check ${plan.floor.join(', ') || 'none'}; carry ${plan.carry.length}`);
         } else console.log(`• full: ${plan.reason}`);
+        if (!flags.json && plan.fast) console.log(`• fast mode: ${plan.fast.tests.length ? `${plan.fast.tests.length} targeted test file(s) (${plan.fast.tests.join(', ')})` : 'no linked tests — no tests run, criteria only'}`);
         // ADR-093: the suite criteria go last, and only after every other criterion passes. One line, only
         // when the saved verdict actually held a suite back.
         if (!flags.json && plan.order?.last?.length && readVerdict(verdictFile(r, ph.slug)).verdict?.criteria.some((c) => c.held)) {
@@ -2893,6 +3013,8 @@ async function main() {
       for (const f of out.refused ?? []) console.error(`⚠ ${f.id} refused: ${f.reason}`);
       if (out.broad_refused) console.error(`⚠ broad claim refused: ${out.broad_refused} — recorded ${out.mode}`);
       for (const f of out.flapping ?? []) console.error(flappingLine(f));
+      // ADR-094: a fast PASS with no green targeted run on this commit is refused; exit 1 so no caller reads it as a pass.
+      if (out.fast_refused) { console.error(`⚠ fast PASS refused: ${out.fast_refused}`); process.exitCode = 1; }
       // A FAIL lists what a HUMAN may defer; code decided (canDefer), nothing here defers or asks.
       if (out.deferrable?.length) console.error(`• deferrable: ${out.deferrable.join(', ')} — a human may defer with \`ac verdict defer ${ph.number} ${out.deferrable.join(' ')}\``);
       json(out);

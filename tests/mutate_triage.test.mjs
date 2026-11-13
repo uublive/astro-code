@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 49 t10 — `ac mutate`: survivors grouped by function and kind with text-only changes apart,
 // judgements carried from the committed SURVIVORS.json, and `ac mutate judge` (D3, D6; C1-C4).
 // Stub Stryker reading tests/fixtures/mutate/stryker-triage.json; real tmp git repos. ADR-018.
@@ -12,6 +13,7 @@ import { makeProject, installStub, restrictedEnv, commit, sh, FX } from './fixtu
 const AC = join(dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'ac.mjs');
 const ac = (p, args, o = {}) => spawnSync(process.execPath, [AC, ...args], { cwd: p.dir, encoding: 'utf8', env: p.env, input: '', timeout: 60000, ...o });
 const done = (p) => rmSync(p.dir, { recursive: true, force: true });
+const pinPhase = (p) => { const f = join(p.dir, '.astrocode', 'config.json'); writeFileSync(f, JSON.stringify({ ...JSON.parse(readFileSync(f, 'utf8')), verify: { full_suite: 'phase' } })); };
 const fixture = () => JSON.parse(readFileSync(join(FX, 'stryker-triage.json'), 'utf8'));
 const SOURCE = fixture().files['src/a.mjs'].source;
 const survivorFile = (p) => join(p.dir, '.astrocode', 'phases', p.slug1, 'SURVIVORS.json');
@@ -203,6 +205,7 @@ test('mutmut 3: the show diff\'s + line is kept as replacement_line; kind and te
 test('the phase-47/48 binding is untouched: the kept run still matches the evidence fields, and the gate reads only them', async () => {
   const { recordVerdict } = await import('../lib/verdict.mjs');
   const p = await rig();
+  pinPhase(p);
   try {
     const j = run(p);
     writeFileSync(join(p.dir, '.astrocode', 'phases', p.slug1, 'CRITERIA.md'), '### C1 [mutation] — strong\n');

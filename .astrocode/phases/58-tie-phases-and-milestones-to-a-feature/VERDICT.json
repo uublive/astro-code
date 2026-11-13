@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "run": 1,
+  "mode": "full",
+  "reason": "no saved verdict",
+  "broad": false,
+  "commit": "e5a13285870727d30b734364c5b4fe5c3bdcdba6",
+  "criteria_sha": "sha256:92ca16acd3c90e9d0f6fe4e3a6aeb17139440bbd8f02de64f2e99d7cf7b1a7d6",
+  "at": "2026-11-13T13:30:18.217Z",
+  "base": {
+    "run": 1,
+    "commit": "e5a13285870727d30b734364c5b4fe5c3bdcdba6"
+  },
+  "criteria": [
+    {
+      "id": "C1",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C2",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C3",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C4",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C5",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C6",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C7",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C8",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C9",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C10",
+      "status": "passed",
+      "evidence": "observed"
+    },
+    {
+      "id": "C11",
+      "status": "passed",
+      "evidence": "observed",
+      "suite": true
+    }
+  ]
+}

@@ -649,6 +649,16 @@
       "found_at": "2026-11-09T13:17:06.555Z",
       "why": "Inside a Forge agent session ASTRO_SIGNER_AGENT is set, so tests/flags.test.mjs, the phase reject/accept and fix accept signer --agent claude tests and the fleet report tests fail (2026-11-09: 14 failures, all pass with the variable unset). The suite should unset it per test like it pins HOME and PATH.",
       "file": "tests/flags.test.mjs"
+    },
+    {
+      "id": "2026-11-13-healed-wave-test-gate-still-runs-the",
+      "title": "Healed-wave test gate still runs the full suite in fast mode",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-11-13T12:24:06.661Z",
+      "why": "runTestSuite tells an executor to run all tests whenever the heal ladder fires, even with verify.full_suite at its default milestone; execution-time gate outside C2, still pays the suite cost ADR-094 aims to cut.",
+      "phase": "57",
+      "file": "workflows/execute-phase.mjs"
     }
   ]
 }

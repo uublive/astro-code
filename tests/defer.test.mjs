@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 54 t9 (C3d, C4, C5, C13): deferral in the engine plus `deferCriteria`.
 // Scratch project, real git; CRITERIA.md has C1 (core by silence), C2 [edge], C3 [core], C4 untagged
 // and C5 [suite]; PLAN.md is committed after it. Dynamic imports (ADR-018).
@@ -31,6 +32,8 @@ function fixture(crit = CRIT, { plan = true } = {}) {
   sh(root, 'init', '-q');
   sh(root, 'config', 'user.email', 't@t');
   sh(root, 'config', 'user.name', 't');
+  mkdirSync(join(root, '.astrocode'), { recursive: true });
+  writeFileSync(join(root, '.astrocode', 'config.json'), JSON.stringify({ verify: { full_suite: 'phase' } }));
   const dir = join(root, '.astrocode', 'phases', SLUG);
   put(root, `.astrocode/phases/${SLUG}/CRITERIA.md`, crit);
   for (const f of 'abcd') put(root, `src/${f}.mjs`);

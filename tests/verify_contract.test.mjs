@@ -25,6 +25,12 @@ const SAYS = [
   ['a slow suite only after they all pass, only through ac suite run', /a slow suite runs only after every non-suite criterion passes, and only through `ac suite run`/i],
   ['the slow-or-fast decision comes from ac', /the slow-or-fast decision comes from `ac suite receipt` \(its `slow` line\) or `ac verdict cheap` \(`held`\)/i],
   ['otherwise report it held, never passed or failed', /report it `held: true` \(held back, not run\), never passed or failed/],
+  // Phase 57 (ADR-094): fast mode never runs the full suite; phase mode keeps it.
+  ['in fast mode never run the full suite', /in fast mode[^.]*never run the full (?:test )?suite/i],
+  ['run only the targeted tests ac verdict cheap ran', /the targeted tests `ac verdict cheap` ran \(`fast\.tests`\)/],
+  ['no linked tests', /no linked tests/],
+  ['a suite criterion is carried to the milestone full check', /carried to the milestone full check/i],
+  ['phase mode still runs the full suite', /with `verify\.full_suite: phase`[^.]*run the full suite/i],
 ];
 
 test('verifierContract() (the single marked block), the agent text and astro-verify.md each say every required rule', async () => {
@@ -80,4 +86,9 @@ test('no verify contract file tells the verifier to read PLAN.md', () => {
       assert.match(line, /\b(?:not|never|NOT|without|blind)\b/i, `a line tells the verifier to read PLAN.md: ${line.trim()}`);
     }
   }
+});
+
+test('commands/astro-execute.md says a remediation executor in fast mode runs only the targeted tests, never the full suite', () => {
+  const EXEC = squash(readFileSync(join(ROOT, 'commands', 'astro-execute.md'), 'utf8'));
+  assert.match(EXEC, /remediation executor runs only the targeted tests[\s\S]{0,120}never the full suite/i);
 });

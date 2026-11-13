@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 54 t8 (C1, C10, C11): recordVerdict lists every observed unmet id in ONE pass, appends one
 // history line per record (before VERDICT.json, committed with it), and reports flapping without
 // ever changing the verdict. Real tmp git; dynamic imports (ADR-018).
@@ -26,6 +27,8 @@ function fixture() {
   sh(root, 'init', '-q');
   sh(root, 'config', 'user.email', 't@t');
   sh(root, 'config', 'user.name', 't');
+  mkdirSync(join(root, '.astrocode'), { recursive: true });
+  writeFileSync(join(root, '.astrocode', 'config.json'), JSON.stringify({ verify: { full_suite: 'phase' } }));
   const dir = join(root, '.astrocode', 'phases', SLUG);
   put(root, '.astrocode/phases/' + SLUG + '/CRITERIA.md', CRIT);
   for (const n of [1, 2, 3, 4, 5]) put(root, `src/c${n}.mjs`);

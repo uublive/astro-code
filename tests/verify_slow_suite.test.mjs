@@ -22,7 +22,8 @@ async function run({ verifiers, records, plans = [], cheaps = [], args = {} }) {
   const agent = async (prompt, opts = {}) => {
     calls.push({ prompt, opts });
     const props = (opts.schema && opts.schema.properties) || {};
-    if (opts.label === 'verify:cheap') return cq.length ? cq.shift() : { clean: true, unmet: [], unchecked: [] };
+    // ADR-094: these tests are the per-phase (full suite) mode, which `ac` states as mode 'phase'.
+    if (opts.label === 'verify:cheap') return { mode: 'phase', ...(cq.length ? cq.shift() : { clean: true, unmet: [], unchecked: [] }) };
     if (opts.label === 'verdict:plan') return pq.length ? pq.shift() : { mode: 'full', first: [], reason: 'stub', ids: ['C1'] };
     if (opts.label === 'verdict:record') return rq.shift() || { recorded: true, run: 1, passed: false, failing: [] };
     if (opts.agentType === 'astro-verifier') return vq.shift();

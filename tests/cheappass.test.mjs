@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 54 t11 (C2, C3a): the cheap first pass and the engine rules that keep it from ever passing a
 // phase. Scratch project, real git. Dynamic imports (ADR-018).
 import { test } from 'node:test';
@@ -31,6 +32,8 @@ function fixture(c = crit()) {
   sh(root, 'init', '-q');
   sh(root, 'config', 'user.email', 't@t');
   sh(root, 'config', 'user.name', 't');
+  mkdirSync(join(root, '.astrocode'), { recursive: true });
+  writeFileSync(join(root, '.astrocode', 'config.json'), JSON.stringify({ verify: { full_suite: 'phase' } }));
   put(root, `.astrocode/phases/${SLUG}/CRITERIA.md`, c);
   put(root, 'src/a.mjs');
   commit(root, 'init');
@@ -231,7 +234,7 @@ test('a bad verify.slow_suite_minutes lands in warnings and the suite stays slow
   const f = fixture(crit({ c2: OK }));
   try {
     await seed(f.root, { seconds: 900 });
-    writeFileSync(join(f.root, '.astrocode', 'config.json'), JSON.stringify({ verify: { slow_suite_minutes: 'abc' } }));
+    writeFileSync(join(f.root, '.astrocode', 'config.json'), JSON.stringify({ verify: { full_suite: 'phase', slow_suite_minutes: 'abc' } }));
     const r = await runCheapPass(f.root, SLUG);
     assert.equal(r.held.length, 1);
     assert.match(r.warnings[0], /verify\.slow_suite_minutes "abc" is not a positive number/);

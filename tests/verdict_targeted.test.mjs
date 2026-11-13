@@ -1,3 +1,4 @@
+// ADR-094: this file pins per-phase verify; fast mode is covered by verify_fast*.test.mjs
 // Phase 52 t3 — the base, the targeted decision and the plan fields (amends ADR-079).
 // Pure chooseMode cases need no git; planReverify cases use a real tmp repo. Dynamic imports (ADR-018).
 // The base is seeded straight into VERDICT.json: the recorded targeted path lands in t4.
@@ -32,6 +33,8 @@ function fixture(crit = CRIT) {
   sh(root, 'init', '-q');
   sh(root, 'config', 'user.email', 't@t');
   sh(root, 'config', 'user.name', 't');
+  mkdirSync(join(root, '.astrocode'), { recursive: true });
+  writeFileSync(join(root, '.astrocode', 'config.json'), JSON.stringify({ verify: { full_suite: 'phase' } }));
   const dir = join(root, '.astrocode', 'phases', SLUG);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'CRITERIA.md'), crit);

@@ -39,7 +39,7 @@ const asJson = (dir) => {
   return JSON.parse(res.stdout);
 };
 
-const KEYS = ['activity', 'activityUntil', 'milestone', 'next', 'phase', 'phases', 'project', 'root', 'siblings', 'version'];
+const KEYS = ['activity', 'activityUntil', 'branch', 'milestone', 'next', 'phase', 'phases', 'project', 'root', 'siblings', 'version'];
 
 test('ac status --json prints exactly the contract keys and next is nextAction verbatim', async () => {
   const dir = mkProject();
@@ -208,4 +208,106 @@ test('while phase N executes, next is not /astro-execute N: the next phase\'s st
   assert.match(run(['status'], dir).stdout, /Next:\s+\/astro-plan 2/);
   run(['activity', 'clear'], dir);
   assert.equal(asJson(dir).next, '/astro-execute 1');
+});
+
+// --- phase 58: owner, effective tie, mine, onBranch, registry (offline) ---------------------
+import { readFileSync } from 'node:fs';
+import { initRegistry, claim, tieClaim, readRegistry } from '../lib/registry.mjs';
+
+function mkTeam() {
+  const bare = mkdtempSync(join(tmpdir(), 'ac-sj-origin-')) + '/origin.git';
+  git(['init', '--quiet', '--bare', bare]);
+  const home = mkdtempSync(join(tmpdir(), 'ac-sj-home-'));
+  const mk = (email) => {
+    const dir = mkProject(bare);
+    git(['config', 'user.email', email], { cwd: dir });
+    git(['commit', '--quiet', '--allow-empty', '-m', 'init'], { cwd: dir }); // a born HEAD, so claims record a real branch
+    return dir;
+  };
+  const a = mk('me@example.test');
+  const b = mk('alex@example.test');
+  assert.equal(initRegistry({ root: a }).ok, true);
+  return { bare, home, a, b };
+}
+const runH = (home, args, cwd) => spawnSync(process.execPath, [AC, ...args], { cwd, encoding: 'utf8', env: { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, '.config') } });
+const statusH = (home, dir) => {
+  const r = runH(home, ['status', '--json'], dir);
+  assert.equal(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout);
+};
+// claim a phase from `dir` and add it to that clone's own roadmap
+async function claimPhase(dir, name) {
+  const c = claim({ root: dir, type: 'phase', milestone: 1, name });
+  assert.equal(c.source, 'remote', c.error || '');
+  await addPhase(dir, { number: c.number, name });
+  return c.number;
+}
+
+test('rows carry the full owner email, mine, and registry-only rows; the tie is inherited, overridable, and never the historic branch', async () => {
+  const { home, a, b } = mkTeam();
+  const pa = await claimPhase(a, 'Alpha work');
+  const pb = await claimPhase(b, 'Bravo work');
+  const pa2 = await claimPhase(a, 'Alpha two');
+  // a claim made while on develop records `branch: develop`; that history is not a tie
+  git(['switch', '-q', '-c', 'develop'], { cwd: b });
+  const pd = await claimPhase(b, 'Made on develop');
+  assert.ok(readRegistry(b).registry.claims.some((c) => c.number === pd && c.branch === 'develop'));
+  readRegistry(a); readRegistry(b); // refresh both local refs (a fetch is allowed here, not in status)
+  git(['switch', '-q', '-c', 'feature/alpha'], { cwd: a });
+  const pre = statusH(home, a).phases.find((p) => p.number === pd);
+  assert.ok(!('feature_branch' in pre) && pre.onBranch === false, 'historic claim branch develop is untied');
+  assert.equal(tieClaim({ root: a, type: 'phase', number: pa, tie: 'feature/alpha' }).ok, true);
+  assert.equal(tieClaim({ root: a, type: 'milestone', number: 1, tie: 'feature/alpha' }).ok, true);
+  tieClaim({ root: a, type: 'phase', number: pa2, tie: null }); // explicit untie beats the milestone tie
+  readRegistry(a);
+
+  const j = statusH(home, a);
+  assert.equal(j.registry, true);
+  assert.equal(j.branch, 'feature/alpha');
+  assert.ok(j.registry_ref.endsWith('astro-registry') || j.registry_ref.endsWith('packed-refs'), j.registry_ref);
+  const row = (n) => j.phases.find((p) => p.number === n);
+  assert.deepEqual([row(pa).owner, row(pa).mine, row(pa).feature_branch, row(pa).onBranch], ['me@example.test', true, 'feature/alpha', true]);
+  assert.ok(!('tied_by' in row(pa)), 'its own tie, not inherited');
+  assert.deepEqual([row(pb).owner, row(pb).mine, row(pb).owner_tag, row(pb).remote], ['alex@example.test', false, 'a', true]);
+  assert.equal(row(pb).tied_by, 'milestone', 'B\'s untied phase inherits the milestone tie');
+  assert.equal(row(pb).feature_branch, 'feature/alpha');
+  assert.equal(row(pb).milestone, 1);
+  assert.equal(row(pb).status, 'pending');
+  assert.ok(!('feature_branch' in row(pa2)) && row(pa2).onBranch === false, 'a phase null overrides the milestone tie');
+  assert.ok(!('owner_tag' in row(pa)), 'a tag only on rows that are not mine');
+
+  git(['switch', '-q', '-c', 'develop'], { cwd: a });
+  const d = statusH(home, a);
+  assert.equal(d.branch, 'develop');
+  assert.ok(d.phases.every((p) => p.onBranch === false));
+  assert.ok(!('feature_branch' in statusH(home, b).phases.find((p) => p.number === pa2)));
+});
+
+test('B sees A\'s rows as not mine', async () => {
+  const { home, a, b } = mkTeam();
+  const pa = await claimPhase(a, 'Alpha work');
+  readRegistry(b);
+  const jb = statusH(home, b);
+  assert.equal(jb.phases.find((p) => p.number === pa).mine, false);
+  const ja = statusH(home, a);
+  assert.equal(ja.phases.find((p) => p.number === pa).mine, true);
+});
+
+test('with no registry ref there are no ownership keys and no registry key', async () => {
+  const dir = mkProject();
+  await addPhase(dir, { number: 1, name: 'First' });
+  const j = asJson(dir);
+  assert.ok(!('registry' in j) && !('registry_ref' in j));
+  for (const k of ['owner', 'mine', 'onBranch', 'feature_branch']) assert.ok(!(k in j.phases[0]), k);
+});
+
+test('status --json stays offline: an unreachable remote still succeeds and the local ref does not move', async () => {
+  const { home, a } = mkTeam();
+  await claimPhase(a, 'Alpha work');
+  readRegistry(a);
+  const before = readFileSync(statusH(home, a).registry_ref, 'utf8');
+  git(['remote', 'set-url', 'origin', join(a, 'nowhere.git')], { cwd: a });
+  const j = statusH(home, a);
+  assert.equal(j.registry, true);
+  assert.equal(readFileSync(j.registry_ref, 'utf8'), before);
 });

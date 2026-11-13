@@ -20,7 +20,7 @@
 // The `.catch(failOpen)` in register.js stays as the backstop for a genuine hook bug.
 import { isOn } from '../lib/switches.js'
 import { badges, claimBadges } from '../lib/badges.js'
-import { readJsonResult, rootCandidates, signature, stalePaths, bandView, liveFrom, freshStatus, runOf, notifiedTask, gitCandidates, gitdirFrom, branchFrom } from '../lib/band.js'
+import { readJsonResult, rootCandidates, signature, stalePaths, bandView, liveFrom, freshStatus, runOf, notifiedTask, gitCandidates, gitdirFrom, branchFrom, scopeOf } from '../lib/band.js'
 import { commandSource, completionRows } from '../lib/complete.js'
 
 export const FEATURE = 'phase-band'
@@ -49,6 +49,7 @@ function fresh() {
     runs: new Map(),
     gitdir: undefined, // the git dir found once at start (undefined: not looked yet, null: none)
     branch: null, // `⎇` text for the banner, read from <gitdir>/HEAD at turn boundaries
+    branchName: null, // the same read, untruncated and null on a detached HEAD: what the scope compares ties to
   }
 }
 
@@ -142,17 +143,26 @@ async function findGitdir($, cwd) {
   return null
 }
 
-/** Re-read HEAD (one small file, no `git` process); redraws only when the branch changed. */
+/**
+ * Re-read HEAD (one small file, no `git` process); redraws only when the branch changed. The same read
+ * also feeds the band's scope (phase 58, C9): `branchName` is the full, untruncated name, so a branch
+ * change re-scopes on the redraw that already happens, with no new process and no `ac` refetch.
+ */
 async function readBranch($) {
   try {
     if (st.gitdir === undefined) st.gitdir = await findGitdir($, st.cwd)
-    const branch = st.gitdir ? branchFrom(textOf(await $.fs.read(`${st.gitdir}/HEAD`))) : null
-    if (branch === st.branch) return false
+    const head = st.gitdir ? textOf(await $.fs.read(`${st.gitdir}/HEAD`)) : ''
+    const branch = st.gitdir ? branchFrom(head) : null
+    // a detached HEAD has no branch to tie to: only a `ref: refs/heads/…` line names one
+    const name = /^ref:\s*refs\/heads\//.test(head.trim()) ? branchFrom(head, Infinity) : null
+    if (branch === st.branch && name === st.branchName) return false
     st.branch = branch
+    st.branchName = name
     return true
   } catch {
-    if (st.branch === null) return false
+    if (st.branch === null && st.branchName === null) return false
     st.branch = null
+    st.branchName = null
     return true
   }
 }
@@ -316,7 +326,7 @@ export async function phaseBandRender($, e, next) {
   if (e.props.hasSurvey || !active()) return next(e) // a survey holds the band: yield
   const status = freshStatus(st.status, Date.now())
   const live = liveFrom(st.agentRows, status ? status.activity ?? null : null, WORKFLOW_AGENTS_LISTED)
-  const view = bandView(status, live, { unavailable: st.unavailable, runs: runsNow(), lists: st.lists })
+  const view = bandView(status, live, { unavailable: st.unavailable, runs: runsNow(), lists: st.lists, branch: st.branchName })
   if (!view.lines.length && !view.buttons.length) return next(e)
   const { Box, Text, Button } = $.ui.resolve(e)
   // `ac` failed: one dim line and nothing else (C7), so a broken read never looks like a state
@@ -396,7 +406,8 @@ export async function phaseBandComplete($, e, next) {
   if (!isOn(FEATURE)) return next(e)
   const source = commandSource(e.text, e.start)
   if (source === null || !active() || !st.status) return next(e)
-  const data = source === 'phases' ? st.status.phases : st.lists[source]
+  // the phase rows offered are the ones the band shows: the same scope, from memory
+  const data = source === 'phases' ? scopeOf(st.status, { branch: st.branchName, runs: runsNow() }).visible : st.lists[source]
   const rows = completionRows(source, data, e.token)
   const base = await next(e)
   if (!rows.length) return base

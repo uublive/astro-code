@@ -324,7 +324,8 @@ type. Optionally, on Claude Code, `ac mods enable phase-band` (off by default; h
 directory outside an astro-code project draw nothing):
 
 - The band, under a full-width `── ✦ astro-code ──── M<n> ▰▰▱▱▱ 3/5 ──` banner:
-  - `ROADMAP`: every phase of the milestone as a chip, `✓` done, `◉` verified (waiting for your
+  - `ROADMAP`: by default every phase of the milestone as a chip (see "What the band shows on a
+    branch" below for the scoped view), `✓` done, `◉` verified (waiting for your
     accept), `▸` planned, `◌` discussed, `○` to do, `✗` rejected, `⚙` being executed, `✎` being
     planned; the current phase is underlined, and more than three finished phases fold into `✓ N done`.
   - `RUNNING` (only while something runs): each astro-code workflow in flight with its live crew,
@@ -337,6 +338,23 @@ directory outside an astro-code project draw nothing):
     that names no phase, such as `/astro-milestone`, shows as `next › /astro-milestone`.
 - A button only **fills the composer**; you press Enter. It never submits or runs anything, so an
   accept started from a button is still typed by you.
+- **What the band shows on a branch** (phase 58). The band shows the work that is yours, here:
+  - On a feature branch with work of yours tied to it (`ac flow link`, below), `ROADMAP`, the meter,
+    the title and the buttons cover only that work. A milestone tied to the branch brings its phases.
+    Everything else sits behind one dim line, `+N elsewhere`.
+  - On `develop`, `main`, a detached HEAD, a branch nothing of yours is tied to, or a branch already
+    deleted on the remote, the band shows only your open work (claimed by you, not complete) across
+    every milestone, and one dim line `+N by others` counts other people's open phases. This applies
+    whether or not git flow is on.
+  - Whose phase is whose comes from the shared registry's claim owner (the git email), read from the
+    local registry ref: the band never fetches. If that ref cannot be read (never fetched, no
+    origin), ownership is unknown and the band shows the full view, with no hidden-count line.
+  - `ac status` (text) always lists every phase, other people's included.
+- **Your identity** is the repo's `git config user.email` plus personal aliases: other emails you have
+  claimed work under. Add one with `ac identity alias add old@example.com` and remove it with
+  `ac identity alias remove old@example.com`; `ac identity` shows both. Aliases live in
+  `~/.astro/config.json` (`identity.aliases`), never in the project, and add to your git email.
+  Claims with no owner count as yours.
 - Autocomplete: after `/astro-discuss`, `/astro-plan`, `/astro-execute`, `/astro-verify` and
   `/astro-accept` it offers phase numbers with their state; after `/astro-debt-pay`,
   `/astro-backlog-promote` and `/astro-fix-accept` it offers the open ids with short titles.
@@ -725,6 +743,45 @@ suite never timed is slow, so the first round on a new machine holds it back onc
   `ac verdict plan <phase> --json` gives `order: { first, last }`.
 - A PASS is unchanged: it still needs the suite observed on the verified commit (or a reusable receipt).
   A round with nothing unmet but a held suite runs it next.
+
+### Fast phase verify, full check at milestone close
+
+A phase verify used to run the full test suite in the cheap pass, again in the verifier and again in every
+remediation executor. By default (ADR-094, `verify.full_suite: milestone`, **fast mode**) a phase verify runs no
+full suite. It runs the phase's **targeted tests** instead, and the full suite runs once, on the milestone tip.
+
+- **What a phase verify runs.** In fast mode `ac verdict cheap <phase>` computes the targeted set in code, never by the
+  verifier's judgement: the test files the phase's stamped commits changed, plus the tracked test files that
+  import, name (a quoted path or file-name literal) or share a file stem with a source file it changed. A PASS needs
+  that set green on the verified commit (`ac verdict cheap <phase>` wrote the receipt; a new commit needs a new run). A
+  suite criterion is not run and not deferred: it is carried to the milestone full check. With
+  `verify.full_suite: phase` a phase verify runs the full suite as before (ADR-079, 089, 091, 093).
+- **No linked tests.** A docs-only or prompt-only phase has no linked test: nothing runs, the criteria alone are
+  verified, and the report says `no linked tests`. There is no fallback to the full suite.
+- **Limits.** The selection works by stamped commits, test-file names, import specifiers and quoted path or
+  file-name literals, one hop only. It cannot see a test that reaches a changed file through another module, a
+  spawned CLI or a computed path, and it selects only `*.test|spec.[cm]?[jt]sx?` files. `ac verdict cheap <phase>` prints
+  this as its `limits` line, and `verify.targeted_command` swaps the runner.
+- **Marked, not hidden.** A phase accepted after a fast verify is marked `fast-verified, full check pending` in
+  `ac status`, `ac status --json` (`full_check_pending`), the band, `ac phase show`, the accept output and the
+  release notes (`ac flow release`, the tag message), until a passing full check covers it.
+- **The full check.** `ac milestone verify` (`/astro-verify-milestone`) runs the full suite once and every phase's
+  `Cheap:` commands at the tip, collecting every failure. Each failure becomes a **fix** tied to the phase that
+  broke (a failing test is tied to the phase whose stamped commit last changed its subject, else to the
+  milestone); a re-run opens no duplicate, and a test that passes alone is reported as flaky and opens nothing.
+  Failures never start a verifier. The result is local (`.astrocode/.local/full-checks/<tip>.json`).
+- **Repair.** `/astro-verify-milestone` then tries to repair each open fix with an agent, at most
+  `verify.repair_attempts` times (default 2). `ac milestone repair <fix>` re-runs the fix's own check and counts the
+  attempt; `ac milestone repair` prints the report, one line per fix: fixed or still open.
+- **Closing.** `ac milestone complete` refuses unless a full check **passed on the current tip** (a new commit needs
+  a new check) with no open fix it created; `--force` does not bypass it. A milestone with no fast-verified phase
+  closes as before. `ac phase accept` of the last phase, and a refused close, propose the check in one line.
+
+Settings (`ac config set verify.<key> <value>`; a bad value falls back to the default with a warning):
+`verify.full_suite` (`milestone`, the default, or `phase`), `verify.repair_attempts` (an integer of 1 or more,
+default 2), `verify.targeted_command` (must contain `{files}`, default `node --test {files}`) and
+`verify.suite_command` (the full check's suite command; otherwise the first command a `[suite]` criterion names,
+otherwise `npm test` when package.json has a `test` script).
 
 ### Broad fixes must name files
 
@@ -1401,7 +1458,19 @@ ac flow pr                     # push the feature branch, print the develop PR U
 ac flow release                # push develop, print the develop→main PR URL
 ac flow tag [version]          # tag origin/main once that PR merges
 ac flow hotfix start <name>    # branch off main; `finish` lands it in main+develop + tags
+ac flow link <phase|m<N>>      # tie a phase (number or slug) or a milestone to the feature branch you are on
+ac flow unlink <phase|m<N>>    # untie it
 ```
+
+**Tying work to a feature branch.** `ac flow link` records the current branch in the phase's (or
+milestone's) registry claim, so teammates' bars and `ac status --json` see it; link again from another
+branch to move it. It refuses on `main`, `develop`, the registry branch and a detached HEAD, and never
+creates or switches a branch. The tie happens by itself too: `/astro-discuss` (step 5b), `/astro-plan`
+(step 2) and `/astro-execute` (step 2) tie the phase to the feature branch you are on when git flow is
+on and the phase is yours. It never overwrites a tie (it prints one `⚠` line naming the other branch;
+`ac flow link <phase>` moves it), and an explicit `ac flow unlink <phase>` is respected. On `develop` or
+`main` nothing is tied. A claim made on `develop` in the past is not a tie. The band's use of the tie
+is described under **phase-band**.
 
 > **Run `ac flow` before `/astro-execute`.** Execution forks one worktree per task from
 > `HEAD`, so you must be on the feature branch first.
