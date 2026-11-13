@@ -13,7 +13,7 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { git } from '../lib/git.mjs';
 import { initPlanning } from '../lib/planning.mjs';
 import { paths } from '../lib/paths.mjs';
-import { claim, readRegistry, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete } from '../lib/registry.mjs';
+import { claim, readRegistry, markComplete, findNameMatches, initRegistry, claimFix, markFixComplete, tieClaim, repointPhaseClaim } from '../lib/registry.mjs';
 import { addDecision, canonPull } from '../lib/canon.mjs';
 
 function mkBareRemote() {
@@ -487,4 +487,108 @@ test('two working copies on separate branches add concurrently and never collide
   const hs = headings(merged).map((h) => h[1]);
   assert.equal(new Set(hs).size, hs.length, 'no DECISIONS heading number is used twice');
   assert.ok(existsSync(join(merged, 'docs/adr', na[0])) && existsSync(join(merged, 'docs/adr', nb[0])));
+});
+
+// --- feature-branch ties (phase 58) ----------------------------------------------
+function tieFixture() {
+  const bare = mkBareRemote();
+  const alice = mkWorkdir(bare, 'alice');
+  const bob = mkWorkdir(bare, 'bob');
+  initRegistry({ root: alice });
+  const p = claim({ root: alice, type: 'phase', milestone: 1, name: 'one' }).number;
+  const q = claim({ root: bob, type: 'phase', milestone: 1, name: 'two' }).number;
+  return { bare, alice, bob, p, q };
+}
+const claimOf = (root, type, number) =>
+  readRegistry(root).registry.claims.find((c) => c.type === type && c.number === number);
+
+test('tieClaim: a link from one clone is visible in the other; a re-link moves it to one value', () => {
+  const { alice, bob, p } = tieFixture();
+  const r = tieClaim({ root: alice, type: 'phase', number: p, tie: 'feature/alpha' });
+  assert.equal(r.ok, true, r.error || '');
+  assert.equal(r.changed, 1);
+  assert.equal(claimOf(bob, 'phase', p).feature_branch, 'feature/alpha');
+  const mv = tieClaim({ root: alice, type: 'phase', number: p, tie: 'feature/beta' });
+  assert.equal(mv.from, 'feature/alpha');
+  assert.equal(claimOf(bob, 'phase', p).feature_branch, 'feature/beta');
+  // the historic `branch` field is never touched
+  assert.equal(claimOf(bob, 'phase', p).branch, claimOf(alice, 'phase', p).branch);
+  const same = tieClaim({ root: alice, type: 'phase', number: p, tie: 'feature/beta' });
+  assert.equal(same.changed, 0);
+});
+
+test('tieClaim: unlink gives null on a phase and deletes the key on a milestone', () => {
+  const { alice, bob, p } = tieFixture();
+  tieClaim({ root: alice, type: 'milestone', number: 1, tie: 'feature/alpha' });
+  tieClaim({ root: alice, type: 'phase', number: p, tie: 'feature/alpha' });
+  assert.equal(claimOf(bob, 'milestone', 1).feature_branch, 'feature/alpha');
+  tieClaim({ root: alice, type: 'phase', number: p, tie: null });
+  const ph = claimOf(bob, 'phase', p);
+  assert.ok(Object.hasOwn(ph, 'feature_branch') && ph.feature_branch === null);
+  tieClaim({ root: alice, type: 'milestone', number: 1, tie: null });
+  assert.ok(!Object.hasOwn(claimOf(bob, 'milestone', 1), 'feature_branch'));
+  assert.equal(tieClaim({ root: alice, type: 'milestone', number: 1, tie: null }).changed, 0);
+});
+
+test('tieClaim auto: never overwrites, skips not-mine, respects explicit null, yields to a milestone tie', () => {
+  const { alice, p, q } = tieFixture();
+  const me = ['alice@example.com'];
+  const a = tieClaim({ root: alice, type: 'phase', number: p, tie: 'feature/x', auto: true, me });
+  assert.equal(a.changed, 1);
+  assert.equal(tieClaim({ root: alice, type: 'phase', number: p, tie: 'feature/y', auto: true, me }).skipped, 'tied');
+  assert.equal(claimOf(alice, 'phase', p).feature_branch, 'feature/x');
+  assert.equal(tieClaim({ root: alice, type: 'phase', number: q, tie: 'feature/x', auto: true, me }).skipped, 'not-mine');
+  assert.ok(!Object.hasOwn(claimOf(alice, 'phase', q), 'feature_branch'));
+  // explicit unlink is respected
+  tieClaim({ root: alice, type: 'phase', number: p, tie: null });
+  assert.equal(tieClaim({ root: alice, type: 'phase', number: p, tie: 'feature/x', auto: true, me }).skipped, 'tied');
+  // a milestone tied elsewhere wins
+  const r2 = claim({ root: alice, type: 'phase', milestone: 1, name: 'three' }).number;
+  tieClaim({ root: alice, type: 'milestone', number: 1, tie: 'feature/other' });
+  const ms = tieClaim({ root: alice, type: 'phase', number: r2, tie: 'feature/x', auto: true, me });
+  assert.equal(ms.skipped, 'milestone-tied');
+  assert.equal(ms.from, 'feature/other');
+});
+
+test('tieClaim: links from both clones all land (CAS retry); siblings and other fields survive', async () => {
+  const { alice, bob, p, q } = tieFixture();
+  await addDecision(alice, { title: 'Sibling canon' });
+  const a = tieClaim({ root: alice, type: 'phase', number: p, tie: 'feature/a' });
+  const b = tieClaim({ root: bob, type: 'phase', number: q, tie: 'feature/b' }); // bob's ref is stale: push is rejected, then retried
+  assert.equal(a.ok && b.ok, true);
+  assert.equal(claimOf(alice, 'phase', p).feature_branch, 'feature/a');
+  assert.equal(claimOf(alice, 'phase', q).feature_branch, 'feature/b');
+  assert.match(readRegistry(bob).files['DECISIONS.md'], /Sibling canon/);
+  assert.equal(claimOf(bob, 'phase', p).name, 'one');
+});
+
+test('tieClaim: the field survives markComplete and repointPhaseClaim', () => {
+  const { alice, p } = tieFixture();
+  tieClaim({ root: alice, type: 'phase', number: p, tie: 'feature/keep' });
+  repointPhaseClaim({ root: alice, number: p, milestone: 2 });
+  assert.equal(claimOf(alice, 'phase', p).feature_branch, 'feature/keep');
+  markComplete({ root: alice, milestone: 2 });
+  const c = claimOf(alice, 'phase', p);
+  assert.equal(c.feature_branch, 'feature/keep');
+  assert.equal(c.status, 'complete');
+});
+
+test('tieClaim: an unreachable remote refuses; no registry is source local; unknown claim is found:false', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ac-tie-unreach-'));
+  git(['init', '--quiet'], { cwd: dir });
+  git(['config', 'user.email', 'x@example.com'], { cwd: dir });
+  git(['remote', 'add', 'origin', join(dir, 'does-not-exist.git')], { cwd: dir });
+  initPlanning(dir, { name: 'proj' });
+  const bad = tieClaim({ root: dir, type: 'phase', number: 1, tie: 'feature/x' });
+  assert.equal(bad.ok, false);
+  assert.match(bad.error, /cannot reach/i);
+
+  const bare = mkBareRemote();
+  const fresh = mkWorkdir(bare, 'carol');
+  const none = tieClaim({ root: fresh, type: 'phase', number: 1, tie: 'feature/x' });
+  assert.equal(none.ok, true);
+  assert.equal(none.source, 'local');
+
+  const { alice } = tieFixture();
+  assert.equal(tieClaim({ root: alice, type: 'phase', number: 999, tie: 'feature/x' }).found, false);
 });
