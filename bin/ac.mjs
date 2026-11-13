@@ -151,6 +151,8 @@ import { recordJudgements } from '../lib/survivors.mjs';
 import { REMINDER as MUTATE_REMINDER } from '../lib/mutnotice.mjs';
 import { milestoneHarvest } from '../lib/harvest.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish, pendingNotes } from '../lib/flow.mjs';
+import { flowLink, flowUnlink, autoTie } from '../lib/flowlink.mjs';
+import { readUserAliases, addUserAlias, removeUserAlias, gitOwner } from '../lib/identity.mjs';
 import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME, refreshAgents, agentNames, republishHost } from '../lib/install.mjs';
 // Imported directly (not via getHost) for the model-mapping helpers, which are not part of the host contract.
 import opencodeHost, { resolveRoleModels, setOpencodeModel, TIERS as OPENCODE_TIERS, ROLES as OPENCODE_ROLES } from '../lib/hosts/opencode.mjs';
@@ -212,6 +214,13 @@ function parseArgs(args) {
 const die = (msg) => {
   console.error(`✖ ${msg}`);
   process.exit(1);
+};
+
+// Phase 58 — the automatic tie: best effort, one line on stderr (or none), never a change to stdout or the
+// exit code, because callers compare a command's stdout exactly. See lib/flowlink.mjs autoTie.
+const autoTieNote = (root, n) => {
+  const { line } = autoTie(root, n);
+  if (line) console.error(line);
 };
 
 // Every refusal `addDecision` can return, as one die — shared by `decision add` and `principles promote`.
@@ -696,6 +705,10 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac flow tag [version]               tag origin/main as v<N> after the develop→main PR merges
   ac flow hotfix start <name>         branch hotfix/<name> off main (offline-safe)
   ac flow hotfix finish               merge hotfix into main+develop, tag v<N>.<k>, push
+  ac flow link <phase|m<N>>           tie a phase (number or slug) or a milestone to the feature branch you are on (shared via the registry)
+  ac flow unlink <phase|m<N>>         untie it (an explicit unlink also stops the automatic tie)
+  ac identity                         who counts as you for the phase band: git email + personal aliases
+  ac identity alias add|remove <email>  keep another email of yours (~/.astro/config.json, never the project)
   ac claim <milestone|phase> [m]      raw number claim (prints the number)
   ac config [get [k] | set k v | unset k]  read/update .astrocode/config.json (incl. models)
                                        (stack override: ac config set stack '["rust"]' — replaces detection)
@@ -2065,6 +2078,12 @@ async function main() {
         try { value = JSON.parse(raw); } catch { /* keep as string */ }
         const next = await updateState(r, (s) => ({ ...s, [key]: value }));
         json({ [key]: next[key] });
+        // Execute step 2 (and /astro-fast) record the active phase; on a feature branch that also ties it
+        // (phase 58). stderr only, so the JSON above and the exit code are untouched.
+        if (key === 'active_phase') {
+          const ap = findPhase(r, String(value));
+          if (ap) autoTieNote(r, ap.number);
+        }
       } else {
         die('usage: ac state <get|set> …');
       }
@@ -2407,8 +2426,34 @@ async function main() {
         } else {
           die(`usage: ac flow hotfix <start <name> | finish>`);
         }
+      } else if (sub === 'link' || sub === 'unlink') {
+        // ac flow link <phase|m<N>>   — tie to the branch you are on (never creates or switches one, ADR-009)
+        // ac flow unlink <phase|m<N>> — untie; for a phase this is explicit, so the automatic tie leaves it alone
+        if (!pos[1]) die(`usage: ac flow ${sub} <phase|m<N>>  (a phase number or slug, or m<N> for a milestone)`);
+        let res;
+        try { res = sub === 'link' ? flowLink(r, pos[1]) : flowUnlink(r, pos[1]); } catch (e) { die(e.message); }
+        console.log(res.message);
       } else {
-        die(`unknown ac flow subcommand "${sub}" — usage: ac flow [init | pr | release | tag | hotfix start <name> | hotfix finish]`);
+        die(`unknown ac flow subcommand "${sub}" — usage: ac flow [init | pr | release | tag | link <phase|m<N>> | unlink <phase|m<N>> | hotfix start <name> | hotfix finish]`);
+      }
+      return;
+    }
+
+    // Who counts as "me" for the band's mine-only view: the repo's git email plus personal aliases kept in
+    // ~/.astro/config.json (never in the project). Prints only the email and the aliases, never the file.
+    case 'identity': {
+      const r = root();
+      if (pos[0] == null) {
+        const aliases = readUserAliases();
+        console.log(`me: ${gitOwner(r) || 'unknown'}`);
+        console.log(`aliases: ${aliases.length ? aliases.join(', ') : 'none'}`);
+      } else if (pos[0] === 'alias' && (pos[1] === 'add' || pos[1] === 'remove') && pos[2]) {
+        const res = pos[1] === 'add' ? addUserAlias({ email: pos[2] }) : removeUserAlias({ email: pos[2] });
+        if (!res.ok) die(res.error);
+        const e = pos[2].trim().toLowerCase();
+        console.log(pos[1] === 'add' ? (res.changed ? `✓ alias ${e} added` : `✓ alias ${e} already listed`) : (res.changed ? `✓ alias ${e} removed` : `✓ alias ${e} was not listed`));
+      } else {
+        die('usage: ac identity [alias add|remove <email>]');
       }
       return;
     }
@@ -2487,17 +2532,21 @@ async function main() {
         // ADR-037 trap: `captured` also matches the agent form
         // `<!-- astro-discuss: captured by agent: … -->`. Reuses phaseContextStatus
         // for missing/stub so "what counts as captured" stays defined once.
+        // Phase 58: both forms (discuss step 5b, plan step 2) also tie the phase to the current feature
+        // branch; the line goes to stderr so the answer on stdout stays byte-identical.
         if (flags.author) {
           const status = phaseContextStatus(r, ph.slug);
-          if (status !== 'ready') { console.log('none'); return; }
+          if (status !== 'ready') { console.log('none'); autoTieNote(r, ph.number); return; }
           const file = join(paths(r).phases, ph.slug, 'CONTEXT.md');
           // classifyContext decides: an empty agent name still DECLARES agent provenance
           // (`<!-- astro-discuss: captured by agent:  -->`), and only a line-1 human marker is human.
           const c = classifyContext(readFileSync(file, 'utf8'));
           console.log(c.kind === 'agent' ? `agent${c.author ? ` ${c.author}` : ''}` : c.kind === 'human' ? 'human' : 'none');
+          autoTieNote(r, ph.number);
           return;
         }
         console.log(phaseContextStatus(r, ph.slug));
+        autoTieNote(r, ph.number);
       } else if (sub === 'verify') {
         if (!ph) die('usage: ac phase verify <phase> [--force]');
         checkFlags('phase verify', flags);
