@@ -18,6 +18,13 @@
       "slug": "57-fast-phase-verify-full-check-at",
       "status": "pending",
       "milestone": 16
+    },
+    {
+      "number": 58,
+      "name": "Tie phases and milestones to a feature branch; the band shows only what belongs to the current branch",
+      "slug": "58-tie-phases-and-milestones-to-a-feature",
+      "status": "pending",
+      "milestone": 16
     }
   ]
 }
