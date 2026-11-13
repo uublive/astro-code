@@ -17,6 +17,10 @@ Complete and archive the current milestone.
    - clears the active roadmap for the next cycle,
    - and flips this milestone's claims to `complete` in the shared registry (so the
      numbers are visibly retired for the whole team).
+2b. **Propose the milestone full check.** When `ac milestone complete` refuses because the milestone has no passing
+   full check on the current tip (or an open fix it created), do not archive anything: propose the check in
+   **one line** with its command, `ac milestone verify` (`/astro-verify-milestone`), then stop. `--force` does not
+   bypass it. Say nothing about it when the close went through.
 3. Report what was archived and where.
 3b. **Sweep the milestone for principles.** Run `ac milestone harvest --json` (it defaults
    to the milestone just archived) and read its four sources — the window's ADRs, human

@@ -222,6 +222,22 @@ only after every other criterion passes. Set it with `ac config set verify.slow_
 is not a number above zero is ignored with a warning and the default applies. The timing is machine-local: on
 a new machine the first round holds the suite back once, until `ac suite run` has timed it.
 
+# Verify mode and the milestone full check
+
+`verify.full_suite` (project, **`milestone`** by default, or `phase`) picks what a phase verify runs (phase 57,
+ADR-094). In `milestone` (fast mode) a phase verify never runs the full suite: it runs the phase's targeted tests,
+or none when there are no linked tests, and the full suite runs once at the milestone tip (`ac milestone verify`).
+With `phase` every phase PASS runs the full suite, as before. Set it with `ac config set verify.full_suite phase`;
+any other value is ignored with a warning and `milestone` applies.
+
+- `verify.repair_attempts` (default **2**): how many repair attempts one fix opened by the full check gets.
+- `verify.targeted_command` (default `node --test {files}`): the command that runs the targeted tests; it must
+  contain `{files}`, or the default applies with a warning.
+- `verify.suite_command` (no default): the full check's suite command, ahead of a `[suite]` criterion's command and `npm test`.
+
+Show the current values with `ac config get verify`, change one with `ac config set verify.<key> <value>`, and report
+what you changed in one line.
+
 # Statusline gauges
 
 The statusline draws four gauges: **ctx** (context fill), **5h** and **7d** (the rolling

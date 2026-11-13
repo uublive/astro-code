@@ -726,6 +726,45 @@ suite never timed is slow, so the first round on a new machine holds it back onc
 - A PASS is unchanged: it still needs the suite observed on the verified commit (or a reusable receipt).
   A round with nothing unmet but a held suite runs it next.
 
+### Fast phase verify, full check at milestone close
+
+A phase verify used to run the full test suite in the cheap pass, again in the verifier and again in every
+remediation executor. By default (ADR-094, `verify.full_suite: milestone`, **fast mode**) a phase verify runs no
+full suite. It runs the phase's **targeted tests** instead, and the full suite runs once, on the milestone tip.
+
+- **What a phase verify runs.** In fast mode `ac verdict cheap <phase>` computes the targeted set in code, never by the
+  verifier's judgement: the test files the phase's stamped commits changed, plus the tracked test files that
+  import, name (a quoted path or file-name literal) or share a file stem with a source file it changed. A PASS needs
+  that set green on the verified commit (`ac verdict cheap <phase>` wrote the receipt; a new commit needs a new run). A
+  suite criterion is not run and not deferred: it is carried to the milestone full check. With
+  `verify.full_suite: phase` a phase verify runs the full suite as before (ADR-079, 089, 091, 093).
+- **No linked tests.** A docs-only or prompt-only phase has no linked test: nothing runs, the criteria alone are
+  verified, and the report says `no linked tests`. There is no fallback to the full suite.
+- **Limits.** The selection works by stamped commits, test-file names, import specifiers and quoted path or
+  file-name literals, one hop only. It cannot see a test that reaches a changed file through another module, a
+  spawned CLI or a computed path, and it selects only `*.test|spec.[cm]?[jt]sx?` files. `ac verdict cheap <phase>` prints
+  this as its `limits` line, and `verify.targeted_command` swaps the runner.
+- **Marked, not hidden.** A phase accepted after a fast verify is marked `fast-verified, full check pending` in
+  `ac status`, `ac status --json` (`full_check_pending`), the band, `ac phase show`, the accept output and the
+  release notes (`ac flow release`, the tag message), until a passing full check covers it.
+- **The full check.** `ac milestone verify` (`/astro-verify-milestone`) runs the full suite once and every phase's
+  `Cheap:` commands at the tip, collecting every failure. Each failure becomes a **fix** tied to the phase that
+  broke (a failing test is tied to the phase whose stamped commit last changed its subject, else to the
+  milestone); a re-run opens no duplicate, and a test that passes alone is reported as flaky and opens nothing.
+  Failures never start a verifier. The result is local (`.astrocode/.local/full-checks/<tip>.json`).
+- **Repair.** `/astro-verify-milestone` then tries to repair each open fix with an agent, at most
+  `verify.repair_attempts` times (default 2). `ac milestone repair <fix>` re-runs the fix's own check and counts the
+  attempt; `ac milestone repair` prints the report, one line per fix: fixed or still open.
+- **Closing.** `ac milestone complete` refuses unless a full check **passed on the current tip** (a new commit needs
+  a new check) with no open fix it created; `--force` does not bypass it. A milestone with no fast-verified phase
+  closes as before. `ac phase accept` of the last phase, and a refused close, propose the check in one line.
+
+Settings (`ac config set verify.<key> <value>`; a bad value falls back to the default with a warning):
+`verify.full_suite` (`milestone`, the default, or `phase`), `verify.repair_attempts` (an integer of 1 or more,
+default 2), `verify.targeted_command` (must contain `{files}`, default `node --test {files}`) and
+`verify.suite_command` (the full check's suite command; otherwise the first command a `[suite]` criterion names,
+otherwise `npm test` when package.json has a `test` script).
+
 ### Broad fixes must name files
 
 A verifier that calls a fix "broad" must name the changed files (`broad_files`). `ac verdict plan <phase> --broad-files src/a.mjs,lib/b.mjs`

@@ -43,7 +43,7 @@ test('execPrompt, healPrompt, batchPrompt and remediatePrompt call principlesFor
 test('runVerify carries VERIFY_RULES (hard rules only, non-blocking)', () => {
   const idx = EXEC_SRC.indexOf('const runVerify');
   assert.ok(idx !== -1);
-  const body = EXEC_SRC.slice(idx, idx + 9000);
+  const body = EXEC_SRC.slice(idx, idx + 11000); // ADR-094: the fast-mode paragraph sits ahead of VERIFY_RULES
   assert.ok(body.includes('VERIFY_RULES'));
 });
 
