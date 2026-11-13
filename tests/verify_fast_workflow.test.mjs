@@ -112,3 +112,13 @@ test('(e) with no fast in the cheap result the verifier and remediation prompts 
   const rem = r2.calls.filter((c) => (c.opts.label || '').startsWith('remediate:'));
   assert.doesNotMatch(rem[0].prompt, /FAST MODE/);
 });
+
+test('(c1) cheap pass unavailable (null or note-only): fast mode is assumed, the verifier is never told to run the full suite', async () => {
+  for (const cheap of [null, { clean: true, unmet: [], note: 'boom' }]) {
+    const { calls } = await run({ cheaps: [cheap], verifiers: [PASS, PASS, PASS, PASS] });
+    const v = verifierOf(calls);
+    assert.ok(v.length >= 1);
+    assert.match(v[0].prompt, /never run the full suite|no test beyond the targeted set/i);
+    assert.doesNotMatch(v[0].prompt, /Run the full test suite/);
+  }
+});

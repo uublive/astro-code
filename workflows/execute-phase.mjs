@@ -2597,7 +2597,12 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, 
   try { cheap = await runCheapStage() } catch (e) { cheap = null }
   const cheapUnmet = cheap && Array.isArray(cheap.unmet) ? cheap.unmet.map((x) => (x && typeof x === 'object' ? x.id : x)).filter((id) => typeof id === 'string' && /^C\d+$/.test(id)) : []
   const heldIdOf = (x) => (x && typeof x === 'object' ? x.id : x)
-  fastInfo = cheap && cheap.fast && typeof cheap.fast === 'object' && cheap.fast.mode === 'milestone' ? cheap.fast : null
+  // A cheap pass that did not report (null, thrown, or "could not run" with a note and no fast object) cannot say
+  // which mode the project is in; fast mode is the default (ADR-094), so assume it with no targeted set: a verifier
+  // must never fall back to the full suite just because the clerk dropped the object.
+  const cheapUnavailable = !cheap || (cheap.fast === undefined && typeof cheap.note === 'string' && cheap.note.length > 0)
+  fastInfo = cheap && cheap.fast && typeof cheap.fast === 'object' && cheap.fast.mode === 'milestone' ? cheap.fast
+    : cheapUnavailable ? { mode: 'milestone', tests: [], command: null, reason: 'cheap pass unavailable', milestone: [] } : null
   targetedRed = fastInfo && fastInfo.passed === false && Array.isArray(fastInfo.failing) && fastInfo.failing.length
     ? { id: 'targeted-tests', command: fastInfo.command, output: `failing: ${fastInfo.failing.join(', ')}` }
     : null
