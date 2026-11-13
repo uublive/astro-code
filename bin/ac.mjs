@@ -141,6 +141,7 @@ import { stampedTaskIds, planIdCollisions } from '../lib/stamps.mjs';
 import { completeMilestone, belongsToMilestone, plannedMilestones } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate, carriedOf, readVerdict, verdictFile } from '../lib/verdict.mjs';
+import { pendingPhases, milestonePhases, fullCheckGate } from '../lib/fullcheck.mjs';
 import { VERDICTS_FILE, readHistory } from '../lib/verdicthistory.mjs';
 import { runSuite, reusableReceipt, suiteSpeed } from '../lib/receipts.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
@@ -603,9 +604,9 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac phase check "<name>"             see if a phase with a similar name exists
   ac phase context <phase>            discuss-gate status: missing | stub | ready
   ac phase context <phase> --author   who captured it: human | agent <name> | none
-  ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; needs a full or valid targeted verdict)
+  ac phase verify <phase> [--force]   mark a phase verified (AI gate passed; a full or valid targeted verdict; in fast mode its targeted tests must be green on the verdict commit)
   ac verdict plan <phase> [--full] [--broad-files a,b] [--json]  full, narrowed (after a FAIL) or targeted (after a full PASS)
-  ac verdict cheap <phase> [--json]    the cheap first pass: suite receipt + each criterion's Cheap: command; exits 1 on any unmet; a slow suite is held back, not run
+  ac verdict cheap <phase> [--json]    the cheap first pass: each criterion's Cheap: command, plus the phase's targeted tests (fast mode, no suite) or the suite receipt (verify.full_suite: phase); exits 1 on any unmet
   ac verdict record <phase> --result '<json>'  save + commit a verify verdict
   ac verdict history <phase> [--json]  every recorded verdict of the phase, oldest first (VERDICTS.jsonl)
   ac verdict show <phase> [--json]     the latest verdict: unmet ids, deferred ids, flapping flags
@@ -2007,6 +2008,7 @@ async function main() {
       }
       console.log('Phases:');
       if (!rm.phases.length) console.log('  (none)');
+      const fcPending = new Set(pendingPhases(r, rm.phases).map((p) => p.number));
       for (const ph of rm.phases) {
         const planned = isPhasePlanned(r, ph.slug) ? 'planned' : 'not planned';
         // Show the discuss state for open, unplanned phases — the signal that
@@ -2014,7 +2016,7 @@ async function main() {
         const discuss = ph.status !== 'complete' && !isPhasePlanned(r, ph.slug)
           ? (phaseContextStatus(r, ph.slug) === 'ready' ? ' · discussed' : ' · undiscussed')
           : '';
-        console.log(`  ${String(ph.number).padStart(2, '0')}  ${ph.status.padEnd(9)} ${ph.name}  (${planned}${discuss})`);
+        console.log(`  ${String(ph.number).padStart(2, '0')}  ${ph.status.padEnd(9)} ${ph.name}  (${planned}${discuss})${fcPending.has(ph.number) ? ' · fast-verified, full check pending' : ''}`);
       }
       if (st.blockers?.length) console.log(`Blockers:  ${st.blockers.length}`);
       // Passive visibility. A register you have to remember to open is a register you
@@ -2473,7 +2475,9 @@ async function main() {
         // Phase 54 (D3): the open fixes a human deferred this phase's criteria into; absent when none.
         const deferred = deferredFixes(r, { phases: [ph.slug] })
           .map((f) => ({ id: f.id, title: f.title, status: f.status, criterion: f.deferred_from.criterion }));
-        json({ ...ph, ...(carried.length ? { carried } : {}), ...(deferred.length ? { deferred_fixes: deferred } : {}) });
+        // ADR-094: fast-verified, full check pending; present only when pending.
+        const pendingFc = pendingPhases(r, [ph]).length > 0;
+        json({ ...ph, ...(carried.length ? { carried } : {}), ...(deferred.length ? { deferred_fixes: deferred } : {}), ...(pendingFc ? { full_check_pending: true } : {}) });
       } else if (sub === 'accept') {
         if (!ph) die('usage: ac phase accept <phase> [--by name | --agent name | --witnessed composer] [--evidence "<id or URL>"] [--force]');
         checkFlags('phase accept', flags);
@@ -2537,6 +2541,16 @@ async function main() {
         // off by hand.
         for (const b of await closeBacklogFor(r, { kind: 'phase', workRef: ph.slug })) {
           console.log(`✓ backlog ${b.id} absorbed`);
+        }
+        // ADR-094: a phase verified in fast mode is marked, and the LAST accept of a milestone proposes the
+        // milestone full check in ONE line. Never started here; a non-last accept proposes nothing.
+        if (pendingPhases(r, [findPhase(r, ph.slug)]).length) {
+          console.log(`• phase ${ph.number} is fast-verified — full check pending (runs on the milestone tip before close)`);
+        }
+        const ms = milestonePhases(r);
+        if (ms.phases.length && ms.phases.every((p) => p.status === 'complete')) {
+          const g = fullCheckGate(r, ms);
+          if (g.required && !g.ok) console.log(`• last phase of milestone ${ms.milestone} accepted — run the milestone full check: \`ac milestone verify\` (/astro-verify-milestone)`);
         }
       } else if (sub === 'reject') {
         if (!ph) die('usage: ac phase reject <phase> --reason "…" [--agent name | --witnessed composer] [--evidence "<id or URL>"]');
@@ -2847,6 +2861,7 @@ async function main() {
         // The cheap first pass (phase 54, D4): code runs every declared cheap check and lists EVERY
         // unmet id. Exit 1 on any unmet; a clean pass records nothing.
         const res = await runCheapPass(r, ph.slug);
+        const redNote = res.fast && res.fast.passed === false ? `targeted tests red (${res.fast.failing.join(', ')})` : '';
         if (flags.json) json(res);
         else if (!res.ran.length && !res.held.length) console.log('⊡ no cheap observation declared — nothing checked');
         else {
@@ -2856,7 +2871,14 @@ async function main() {
           for (const h of res.held) console.log(`• ${h.id} suite: held back — ${h.reason}; not run this round`);
           const heldN = res.held.length ? ` (${res.held.length} held back)` : '';
           console.log(res.clean ? `✓ cheap pass clean (${res.ran.length} checked${res.unchecked.length ? `, ${res.unchecked.length} left to the expensive stage` : ''})${heldN}`
-            : `✖ cheap pass: ${res.unmet.length} unmet — ${res.unmet.join(', ')}${heldN}`);
+            : `✖ cheap pass: ${[res.unmet.length ? `${res.unmet.length} unmet — ${res.unmet.join(', ')}` : '', redNote].filter(Boolean).join('; ')}${heldN}`);
+        }
+        // ADR-094 fast mode: ONE line for the targeted set (or `no linked tests`) and ONE for its limits.
+        if (!flags.json && res.fast) {
+          const carried = res.fast.milestone?.length ? ` — ${res.fast.milestone.join(', ')} carried to the milestone full check` : '';
+          if (res.fast.tests.length) console.log(`${res.fast.passed ? '•' : '✖'} fast mode: ${res.fast.passed ? 'targeted tests green' : redNote} (${res.fast.tests.join(', ')})${carried}`);
+          else console.log(`• fast mode: no linked tests — no tests run, criteria only${carried}`);
+          console.log(`• limits: ${res.fast.limits}`);
         }
         for (const w of res.warnings) console.error(`⚠ ${w}`);
         if (res.recorded && res.recorded.recorded === false) console.error(`⚠ the cheap verdict was not recorded: ${res.recorded.error}`);
@@ -2877,6 +2899,7 @@ async function main() {
         } else if (plan.mode === 'targeted') {
           console.log(`• targeted: ${plan.reason}: re-check ${plan.floor.join(', ') || 'none'}; carry ${plan.carry.length}`);
         } else console.log(`• full: ${plan.reason}`);
+        if (!flags.json && plan.fast) console.log(`• fast mode: ${plan.fast.tests.length ? `${plan.fast.tests.length} targeted test file(s) (${plan.fast.tests.join(', ')})` : 'no linked tests — no tests run, criteria only'}`);
         // ADR-093: the suite criteria go last, and only after every other criterion passes. One line, only
         // when the saved verdict actually held a suite back.
         if (!flags.json && plan.order?.last?.length && readVerdict(verdictFile(r, ph.slug)).verdict?.criteria.some((c) => c.held)) {
@@ -2893,6 +2916,8 @@ async function main() {
       for (const f of out.refused ?? []) console.error(`⚠ ${f.id} refused: ${f.reason}`);
       if (out.broad_refused) console.error(`⚠ broad claim refused: ${out.broad_refused} — recorded ${out.mode}`);
       for (const f of out.flapping ?? []) console.error(flappingLine(f));
+      // ADR-094: a fast PASS with no green targeted run on this commit is refused; exit 1 so no caller reads it as a pass.
+      if (out.fast_refused) { console.error(`⚠ fast PASS refused: ${out.fast_refused}`); process.exitCode = 1; }
       // A FAIL lists what a HUMAN may defer; code decided (canDefer), nothing here defers or asks.
       if (out.deferrable?.length) console.error(`• deferrable: ${out.deferrable.join(', ')} — a human may defer with \`ac verdict defer ${ph.number} ${out.deferrable.join(' ')}\``);
       json(out);
