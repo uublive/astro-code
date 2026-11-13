@@ -222,14 +222,25 @@ for that source. A declaration on one source never enables another. `adhoc` (fre
 is independent.
 
 **What a write may contain (the data-change guard).** Only `INSERT`, `UPDATE`, `DELETE`
-and `MERGE` (optionally behind `WITH <cte> AS (...)`), at most 20 statements. Refused
-anywhere in the body: `CREATE ALTER DROP TRUNCATE GRANT REVOKE DENY`, `EXEC EXECUTE
-sp_executesql` and any `sp_`/`xp_` call, `OPENROWSET OPENQUERY OPENDATASOURCE BULK`,
-`OUTPUT`, `COMMIT ROLLBACK BEGIN SAVE TRAN`, `USE DECLARE GO WAITFOR SHUTDOWN DBCC KILL
-RECONFIGURE BACKUP RESTORE`, `SET` outside an `UPDATE`'s SET clause (so no
-`SET IDENTITY_INSERT`), and `INTO` outside `INSERT`/`MERGE` (so no `SELECT … INTO`).
-The server re-checks every write at call time, so a body that slipped past validation is
-still refused.
+and `MERGE` (optionally behind `WITH <cte> AS (...)`), at most 20 statements. The word
+rule is an allowlist: every T-SQL **reserved** keyword (Microsoft's SQL Server list) is
+refused unless it is DML grammar — the verbs, `INTO VALUES DEFAULT SET FROM WHERE`, the
+operators (`AND OR NOT IN IS NULL LIKE BETWEEN EXISTS ESCAPE`), `CASE WHEN THEN ELSE END`,
+`AS ON`, joins, `SELECT DISTINCT TOP PERCENT ALL ANY SOME UNION EXCEPT INTERSECT`, `ORDER BY
+ASC DESC GROUP HAVING OVER WITHIN`, `WITH` (CTE, table hints), `OPTION`, `HOLDLOCK`,
+`COALESCE NULLIF CONVERT TRY_CONVERT COLLATE CONTAINS FREETEXT PIVOT UNPIVOT` and
+`CURRENT_TIMESTAMP CURRENT_DATE CURRENT_TIME CURRENT_USER SESSION_USER SYSTEM_USER USER`.
+So `CREATE ALTER DROP TRUNCATE TABLE GRANT EXEC BEGIN COMMIT DECLARE IF FOR IDENTITY
+TABLESAMPLE LINENO …` are refused (bracket a column named like one: `[Key]`). Also refused:
+`OUTPUT`, `GO`, `sp_executesql` and any `sp_`/`xp_` word; `END` that does not close a `CASE`
+(so no `END CONVERSATION`); `MOVE|GET CONVERSATION`, `SEND ON CONVERSATION`, `RECEIVE TOP`,
+and `THROW` where a statement starts; `SET` outside an `UPDATE`'s SET clause (so no
+`SET IDENTITY_INSERT`); and `INTO` outside `INSERT`/`MERGE` (so no `SELECT … INTO`). A
+non-reserved word alone is never refused, so `SET Enable = 1` is fine. Comments separate
+words (`dR/**/OP` is two words). The server re-checks every write at call time, so a body
+that slipped past validation is still refused, and astroport also has SQL Server compile
+the batch without running it (`SET SHOWPLAN_XML ON`) and refuses it unless every statement
+is an INSERT, UPDATE, DELETE or MERGE — so the login needs the `SHOWPLAN` permission.
 
 **The guard is static.** It cannot see what a trigger or a cascading foreign key does, so
 the database login's own permissions remain the real boundary. Tell the DBA to grant

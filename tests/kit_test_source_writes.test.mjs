@@ -79,6 +79,26 @@ test('a DDL named write fails with SRC-17 naming the write', { skip: !hasPython 
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('a named write smuggling END CONVERSATION after the change fails SRC-17 (remediate-c1)', { skip: !hasPython }, () => {
+  const dir = scratchKit({ manifest: V12, files: { [W]: GOOD_WRITE.replace(';\n', ' END CONVERSATION @OrderId WITH CLEANUP;\n') } });
+  const r = runKitTest(dir);
+  assert.notEqual(r.status, 0, r.out);
+  const row = r.rows.find((x) => x.id === 'SRC-17');
+  assert.ok(row, r.out);
+  assert.match(row.message, /writes\/close_order\.sql/);
+  assert.match(row.message, /END/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('a named write setting an unbracketed column named Enable passes (remediate-c1)', { skip: !hasPython }, () => {
+  const enable = '-- @name enable_flag\n-- @description Enables a flag\n-- @param Id int required\n-- @approval automatic\nUPDATE dbo.Flags SET Enable = 1 WHERE Id = @Id;\n';
+  const dir = scratchKit({ manifest: V12, files: { 'src/sources/erp/writes/enable_flag.sql': enable } });
+  const r = runKitTest(dir);
+  assert.equal(r.status, 0, r.out);
+  assert.deepEqual(r.failIds, []);
+  rmSync(dir, { recursive: true, force: true });
+});
+
 const FAILS = [
   ['an unknown @approval fails SRC-16', { [W]: GOOD_WRITE.replace('automatic', 'sometimes') }, 'SRC-16', V12],
   ['an undeclared param fails SRC-09', { [W]: GOOD_WRITE.replace('-- @param OrderId int required\n', '') }, 'SRC-09', V12],

@@ -5236,6 +5236,156 @@
     {
       "sql": "UPDATE t SET c=1 WHERE id=1 OPEN SYMMETRIC KEY k DECRYPTION BY PASSWORD='x'",
       "ok": false
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 END CONVERSATION @h WITH CLEANUP",
+      "ok": false,
+      "reasonIncludes": "END"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = CASE WHEN 1 = 1 THEN 1 END END CONVERSATION @h",
+      "ok": false,
+      "reasonIncludes": "END"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 dR/**/OP TABLE t",
+      "ok": false,
+      "reasonIncludes": "TABLE"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 LINENO 5",
+      "ok": false,
+      "reasonIncludes": "LINENO"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE id = 1;\nTHROW 51000, 'boom', 1;",
+      "ok": false,
+      "reasonIncludes": "THROW"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE id = 1 MOVE CONVERSATION @h TO @g",
+      "ok": false,
+      "reasonIncludes": "CONVERSATION"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE id = 1 GET CONVERSATION GROUP @g FROM dbo.q",
+      "ok": false,
+      "reasonIncludes": "CONVERSATION"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE id = 1 SEND ON CONVERSATION @h (N'x')",
+      "ok": false,
+      "reasonIncludes": "CONVERSATION"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE id = 1 RECEIVE TOP (1) * FROM dbo.q",
+      "ok": false,
+      "reasonIncludes": "RECEIVE"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE id = 1 BEGIN DIALOG @h FROM SERVICE s TO SERVICE 't'",
+      "ok": false,
+      "reasonIncludes": "BEGIN"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE CURRENT OF cur",
+      "ok": false,
+      "reasonIncludes": "CURRENT"
+    },
+    {
+      "sql": "INSERT INTO dbo.T (a) SELECT a FROM dbo.U TABLESAMPLE (10 PERCENT)",
+      "ok": false,
+      "reasonIncludes": "TABLESAMPLE"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = 1 WHERE id = 1 ALTER INDEX ALL ON dbo.T DISABLE",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = CASE WHEN 1 = 1 THEN 1 WHERE id = 1",
+      "ok": false,
+      "reasonIncludes": "CASE"
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = (CASE WHEN 1 = 1 THEN 1) END WHERE id = 1",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE dbo.Flags SET Enable = 1 WHERE Id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ],
+      "hasWhere": [
+        true
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.Flags SET Send = 1 WHERE Id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ],
+      "hasWhere": [
+        true
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.Flags SET Move = 2 WHERE Id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ],
+      "hasWhere": [
+        true
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.Flags SET Disable = 0, Receive = 1, Get = 2, Throw = 3 WHERE Id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ],
+      "hasWhere": [
+        true
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.T SET x = CASE WHEN y = 1 THEN CASE WHEN z = 2 THEN 1 END ELSE (CASE y WHEN 3 THEN 4 END) END WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ],
+      "hasWhere": [
+        true
+      ]
+    },
+    {
+      "sql": "MERGE dbo.T WITH (HOLDLOCK) AS t USING (VALUES (1, 'a')) AS s (id, a) ON t.id = s.id WHEN MATCHED THEN UPDATE SET t.a = s.a WHEN NOT MATCHED BY TARGET THEN INSERT (id, a) VALUES (s.id, s.a) WHEN NOT MATCHED BY SOURCE THEN DELETE;",
+      "ok": true,
+      "verbs": [
+        "MERGE"
+      ]
+    },
+    {
+      "sql": "WITH cte AS (SELECT Id FROM dbo.T WHERE x = 1) UPDATE dbo.T SET y = 2 WHERE Id IN (SELECT Id FROM cte)",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ],
+      "hasWhere": [
+        true
+      ]
+    },
+    {
+      "sql": "UPDATE dbo.T SET c = (SELECT TOP 1 x FROM dbo.U ORDER BY x DESC), d = COALESCE(d, CURRENT_TIMESTAMP) WHERE id = 1",
+      "ok": true,
+      "verbs": [
+        "UPDATE"
+      ],
+      "hasWhere": [
+        true
+      ]
     }
   ]
 }

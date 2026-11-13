@@ -1660,21 +1660,59 @@ def check_named_query(source_id: str, file_name: str, text: str) -> tuple[list[t
 # (optionally behind WITH <cte> AS (...)), nothing else. Token-based on
 # tokenize_sql — line for line the TypeScript guard, so both validators give
 # the same verdict (the shared data_change corpus pins it).
+#
+# Word rule (phase 141 remediate-c1) — an ALLOWLIST, not a denylist: every
+# T-SQL RESERVED keyword (Microsoft's list for SQL Server) is refused unless it
+# is DML grammar. Comments are separators, so `dR/**/OP TABLE t` holds the
+# reserved TABLE. Non-reserved words are never refused on their own (a column
+# may be named Enable, Send or Move); only MOVE|GET CONVERSATION, SEND ON
+# CONVERSATION, RECEIVE TOP and THROW where a statement starts are. END must
+# close a CASE opened at the same paren level. OUTPUT, GO, SP_EXECUTESQL and
+# any xp_/sp_ word stay refused (plan D2). astroport additionally asks SQL
+# Server to classify the batch (SHOWPLAN_XML) before it runs a write.
 
 _MAX_DATA_CHANGE_STATEMENTS = 20
 _DML_VERBS = {"INSERT", "UPDATE", "DELETE", "MERGE"}
-_DATA_CHANGE_FORBIDDEN = {
-    "CREATE", "ALTER", "DROP", "TRUNCATE", "GRANT", "REVOKE", "DENY",
-    "EXEC", "EXECUTE", "SP_EXECUTESQL",
-    "OPENROWSET", "OPENQUERY", "OPENDATASOURCE", "OPENJSON", "BULK",
-    "OUTPUT",
-    "COMMIT", "ROLLBACK", "BEGIN", "SAVE", "TRAN", "TRANSACTION",
-    "USE", "DECLARE", "GO", "WAITFOR", "SHUTDOWN", "DBCC", "KILL", "RECONFIGURE", "BACKUP", "RESTORE",
-    "STATISTICS", "WRITETEXT", "UPDATETEXT", "READTEXT", "PRINT", "RAISERROR", "THROW",
-    # statement-start words T-SQL accepts with no `;` after a valid change (phase 141 remediate)
-    "DISABLE", "ENABLE", "ADD", "SETUSER", "REVERT", "OPEN", "CLOSE", "CHECKPOINT", "FETCH",
-    "DEALLOCATE", "GOTO", "IF", "WHILE", "RETURN", "BREAK", "CONTINUE", "LOAD", "RECEIVE", "SEND", "MOVE",
+_TSQL_RESERVED = {
+    "ADD", "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "AUTHORIZATION", "BACKUP", "BEGIN", "BETWEEN",
+    "BREAK", "BROWSE", "BULK", "BY", "CASCADE", "CASE", "CHECK", "CHECKPOINT", "CLOSE", "CLUSTERED",
+    "COALESCE", "COLLATE", "COLUMN", "COMMIT", "COMPUTE", "CONSTRAINT", "CONTAINS", "CONTAINSTABLE",
+    "CONTINUE", "CONVERT", "CREATE", "CROSS", "CURRENT", "CURRENT_DATE", "CURRENT_TIME",
+    "CURRENT_TIMESTAMP", "CURRENT_USER", "CURSOR", "DATABASE", "DBCC", "DEALLOCATE", "DECLARE",
+    "DEFAULT", "DELETE", "DENY", "DESC", "DISK", "DISTINCT", "DISTRIBUTED", "DOUBLE", "DROP", "DUMP",
+    "ELSE", "END", "ERRLVL", "ESCAPE", "EXCEPT", "EXEC", "EXECUTE", "EXISTS", "EXIT", "EXTERNAL",
+    "FETCH", "FILE", "FILLFACTOR", "FOR", "FOREIGN", "FREETEXT", "FREETEXTTABLE", "FROM", "FULL",
+    "FUNCTION", "GOTO", "GRANT", "GROUP", "HAVING", "HOLDLOCK", "IDENTITY", "IDENTITY_INSERT",
+    "IDENTITYCOL", "IF", "IN", "INDEX", "INNER", "INSERT", "INTERSECT", "INTO", "IS", "JOIN", "KEY",
+    "KILL", "LEFT", "LIKE", "LINENO", "LOAD", "MERGE", "NATIONAL", "NOCHECK", "NONCLUSTERED", "NOT",
+    "NULL", "NULLIF", "OF", "OFF", "OFFSETS", "ON", "OPEN", "OPENDATASOURCE", "OPENQUERY",
+    "OPENROWSET", "OPENXML", "OPTION", "OR", "ORDER", "OUTER", "OVER", "PERCENT", "PIVOT", "PLAN",
+    "PRECISION", "PRIMARY", "PRINT", "PROC", "PROCEDURE", "PUBLIC", "RAISERROR", "READ", "READTEXT",
+    "RECONFIGURE", "REFERENCES", "REPLICATION", "RESTORE", "RESTRICT", "RETURN", "REVERT", "REVOKE",
+    "RIGHT", "ROLLBACK", "ROWCOUNT", "ROWGUIDCOL", "RULE", "SAVE", "SCHEMA", "SECURITYAUDIT", "SELECT",
+    "SEMANTICKEYPHRASETABLE", "SEMANTICSIMILARITYDETAILSTABLE", "SEMANTICSIMILARITYTABLE",
+    "SESSION_USER", "SET", "SETUSER", "SHUTDOWN", "SOME", "STATISTICS", "SYSTEM_USER", "TABLE",
+    "TABLESAMPLE", "TEXTSIZE", "THEN", "TO", "TOP", "TRAN", "TRANSACTION", "TRIGGER", "TRUNCATE",
+    "TRY_CONVERT", "TSEQUAL", "UNION", "UNIQUE", "UNPIVOT", "UPDATE", "UPDATETEXT", "USE", "USER",
+    "VALUES", "VARYING", "VIEW", "WAITFOR", "WHEN", "WHERE", "WHILE", "WITH", "WITHIN", "WRITETEXT",
 }
+_DATA_CHANGE_RESERVED_ALLOWED = {
+    "INSERT", "UPDATE", "DELETE", "MERGE", "INTO", "VALUES", "DEFAULT", "SET", "FROM", "WHERE",
+    "AND", "OR", "NOT", "IN", "IS", "NULL", "LIKE", "BETWEEN", "EXISTS", "ESCAPE",
+    "CASE", "WHEN", "THEN", "ELSE", "END", "AS", "ON",
+    "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "CROSS",
+    "SELECT", "DISTINCT", "TOP", "PERCENT", "ALL", "ANY", "SOME", "UNION", "EXCEPT", "INTERSECT",
+    "ORDER", "BY", "ASC", "DESC", "GROUP", "HAVING", "OVER", "WITHIN", "WITH", "OPTION", "HOLDLOCK",
+    "CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_USER", "SESSION_USER", "SYSTEM_USER", "USER",
+    "COALESCE", "NULLIF", "CONVERT", "TRY_CONVERT", "COLLATE", "CONTAINS", "FREETEXT", "PIVOT", "UNPIVOT",
+}
+_DATA_CHANGE_FORBIDDEN = {"OUTPUT", "GO", "SP_EXECUTESQL"}
+
+
+def _data_change_word_refused(w: str) -> bool:
+    return w in _DATA_CHANGE_FORBIDDEN or (w in _TSQL_RESERVED and w not in _DATA_CHANGE_RESERVED_ALLOWED)
+
+
 _PROC_PREFIX_RE = re.compile(r"^(XP|SP)_", re.ASCII)
 
 
@@ -1708,21 +1746,39 @@ def check_data_change(body: str):
             statements[-1]["hasWhere"] = cur["hasWhere"] if cur["verb"] in ("UPDATE", "DELETE") else True
         cur = None
 
-    for t in sig:
+    case_at = [0]  # open CASE expressions per paren level (index = depth)
+    for k, t in enumerate(sig):
         w = t["text"].upper() if t["kind"] == "word" else None
         if w:
-            if w in _DATA_CHANGE_FORBIDDEN:
+            if _data_change_word_refused(w):
                 return False, f"{w} is not allowed in a write"
             if _PROC_PREFIX_RE.match(w):
                 return False, f"procedure call {t['text']} is not allowed in a write"
+            nxt = _sig_word(sig, k + 1)
+            if w in ("MOVE", "GET") and nxt == "CONVERSATION":
+                return False, f"{w} CONVERSATION is not allowed in a write"
+            if w == "SEND" and nxt == "ON" and _sig_word(sig, k + 2) == "CONVERSATION":
+                return False, "SEND ON CONVERSATION is not allowed in a write"
+            if w == "RECEIVE" and nxt == "TOP":
+                return False, "RECEIVE TOP is not allowed in a write"
         is_p = t["kind"] == "punct"
         if is_p and t["text"] == ")":
-            depth -= 1
-            if depth < 0:
+            if depth == 0:
                 return False, "unbalanced parentheses"
+            if case_at[depth] != 0:
+                return False, "CASE without a matching END"
+            case_at.pop()
+            depth -= 1
         d = depth
         if is_p and t["text"] == "(":
             depth += 1
+            case_at.append(0)
+        if w == "CASE":
+            case_at[d] += 1
+        elif w == "END":
+            if case_at[d] == 0:
+                return False, "END is only allowed to close a CASE expression"
+            case_at[d] -= 1
 
         if d > 0:
             if w == "INTO":
@@ -1738,6 +1794,8 @@ def check_data_change(body: str):
             prev_word = None
             continue
         if cur is None:
+            if not in_with and w == "THROW":
+                return False, "THROW is not allowed in a write"
             if in_with:
                 if w and w in _DML_VERBS:
                     begin(w)
@@ -1776,6 +1834,8 @@ def check_data_change(body: str):
         prev_word = w
     if depth != 0:
         return False, "unbalanced parentheses"
+    if case_at[0] != 0:
+        return False, "CASE without a matching END"
     if in_with:
         return False, "WITH must be followed by INSERT, UPDATE, DELETE or MERGE"
     finish()
