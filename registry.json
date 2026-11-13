@@ -938,6 +938,16 @@
       "branch": "develop",
       "claimed_at": "2026-11-09T14:14:38.045Z",
       "status": "active"
+    },
+    {
+      "type": "phase",
+      "number": 57,
+      "milestone": 16,
+      "name": "Fast phase verify, full check at milestone close",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-11-13T08:42:29.668Z",
+      "status": "active"
     }
   ]
 }
