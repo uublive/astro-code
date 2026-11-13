@@ -2232,6 +2232,8 @@ const CHEAP_SCHEMA = {
       },
     },
     note: { type: 'string' },
+    // Phase 57 (ADR-094) — fast mode: the targeted test set `ac` computed and ran, instead of the full suite.
+    fast: { type: 'object', additionalProperties: true },
   },
   required: ['clean'],
 }
@@ -2267,7 +2269,8 @@ const runCheapStage = () =>
       `  ac verdict cheap ${phaseSlug} --json\n` +
       `It exits 1 when any check is unmet; that is a result, not an error. Return clean, unmet (every ` +
       `id), unchecked, held (each item's id, command, seconds, threshold_seconds, reason; omit when absent) ` +
-      `and ran (each item's id, kind, passed, command, output) from the JSON it prints. ` +
+      `and ran (each item's id, kind, passed, command, output) from the JSON it prints, plus fast (the whole ` +
+      `object, verbatim; omit it when the output has none). ` +
       `If it cannot run (non-zero exit with no JSON), return clean=true and put the first stderr line in note.`,
     { label: 'verify:cheap', phase: 'Verify', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: CHEAP_SCHEMA },
   )
@@ -2336,8 +2339,11 @@ const structuralChecks = () =>
   `Also confirm the phase's commits are present (\`git log --oneline\`) and that no \`worktree-*\` ` +
   `branch still holds un-integrated changes (\`git for-each-ref refs/heads/worktree-*\`, then ` +
   `\`git cherry HEAD <branch>\` must print no \`+\` line — a leftover branch whose changes are ` +
-  `all in HEAD is residue, not stranded work). Run the full test suite` +
-  (heldSuite.length ? ` LAST, only as the held-back-suite paragraph above says` : '') + `. Flag any project-canon ` +
+  `all in HEAD is residue, not stranded work). ` +
+  (fastInfo
+    ? `Run no test beyond the targeted set named above (fast mode, ADR-094)`
+    : `Run the full test suite` + (heldSuite.length ? ` LAST, only as the held-back-suite paragraph above says` : '')) +
+  `. Flag any project-canon ` +
   `violation.\n\n`
 
 // Phase 56 (ADR-093): a suite `ac` measured as slow is run LAST. `heldSuite` is the ids the cheap pass held
@@ -2346,6 +2352,26 @@ const structuralChecks = () =>
 // never the verifier's estimate (ADR-021).
 let heldSuite = []
 let suiteNow = false
+// Phase 57 (ADR-094): the cheap pass's `fast` object when the project is in fast mode (the default), else
+// null. In fast mode no verifier and no remediation executor runs the full suite: the targeted set is
+// computed by `ac`, never by the verifier's judgement (ADR-021), and a suite criterion is carried to the
+// milestone full check. `targetedRed` is a red targeted set: a failure that is no criterion id, so it never
+// enters `lastSeen` or the recorded criteria, only the remediation prompt.
+let fastInfo = null
+let targetedRed = null
+const targetedCmd = () => (fastInfo && fastInfo.command ? `\`${fastInfo.command}\`` : 'the targeted command')
+const fastParagraph = () => {
+  const carried = Array.isArray(fastInfo.milestone) && fastInfo.milestone.length
+    ? ` Suite criterion ${fastInfo.milestone.join(', ')} is left out of your report: ac carries it to the milestone full check.`
+    : ''
+  const tests = Array.isArray(fastInfo.tests) ? fastInfo.tests : []
+  return `FAST MODE (ADR-094): never run the full suite in this verify, for any criterion or structural check. ` +
+    (tests.length
+      ? `The phase's tests are the targeted set \`ac verdict cheap\` computed and ran green on this commit, not your judgement: ` +
+        `${targetedCmd()} over ${tests.join(', ')}. Re-run only that exact command, and only if a criterion's Observe: needs it.`
+      : `ac found no linked tests (${fastInfo.reason || 'no linked tests'}), so run no tests; verify the criteria only.`) +
+    carried + `\n\n`
+}
 const heldParagraph = () => {
   const ids = heldSuite.join(', ')
   const cmd = `\`ac suite run --command "<the suite command>"\``
@@ -2388,11 +2414,13 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = [], group = null) =>
           `fix is BROAD, do not target: first run \`ac verdict plan ${phaseSlug} --broad-files <the changed files that make it broad> --json\`; ` +
           `only when it plans \`full\`, run a FULL verify and return broad=true, mode='full' and broad_files (those files). ` +
           `A bare broad claim with no supporting files is refused by ac and the run stays targeted.\n` +
-          `3. A SUITE criterion (its evidence is the full test suite) is in the floor: FIRST run ` +
-          `\`ac suite receipt --command "<the suite command>" --json\`. When it is reusable, report that ` +
-          `criterion with status 'carried' and receipt set to the printed key; otherwise run the suite through ` +
-          `\`ac suite run --command "<the suite command>"\` and observe it. Set suite=true on a criterion whose ` +
-          `evidence is the full suite. The same receipt may stand in for the structural full-suite run below.\n` +
+          (fastInfo
+            ? `3. A SUITE criterion is not in the floor in fast mode: ac carries it to the milestone full check. Never run the full suite.\n`
+            : `3. A SUITE criterion (its evidence is the full test suite) is in the floor: FIRST run ` +
+              `\`ac suite receipt --command "<the suite command>" --json\`. When it is reusable, report that ` +
+              `criterion with status 'carried' and receipt set to the printed key; otherwise run the suite through ` +
+              `\`ac suite run --command "<the suite command>"\` and observe it. Set suite=true on a criterion whose ` +
+              `evidence is the full suite. The same receipt may stand in for the structural full-suite run below.\n`) +
           `4. Return mode='targeted'.\n\n`
         : plan.mode === 'narrowed'
         ? `THIS IS A NARROWED RE-VERIFY (ADR-079). The previous verdict (run ${plan.saved.run}, commit ` +
@@ -2410,8 +2438,10 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = [], group = null) =>
           `4. If they ALL now pass, continue in this SAME run and independently observe EVERY other ` +
           `criterion (a remediation may have broken one that passed before), then return mode='full' with ` +
           `every criterion status passed/failed. Never carry forward a previous PASS on trust.\n` +
-          `Run the full test suite only when step 4 applies or a previously unmet criterion's Observe: ` +
-          `needs it; the test-suite instruction further down applies from step 4.\n\n`
+          (fastInfo
+            ? `In fast mode never run the full suite; the targeted tests named below are the only tests.\n\n`
+            : `Run the full test suite only when step 4 applies or a previously unmet criterion's Observe: ` +
+              `needs it; the test-suite instruction further down applies from step 4.\n\n`)
         : focusIds.length
         ? `THIS IS A RE-VERIFY after a remediation pass that targeted: ${focusIds.join(', ')}. ` +
           `Spend your DEEPEST adversarial effort on those criteria — they are the ones just ` +
@@ -2421,6 +2451,7 @@ const runVerify = (plan = FULL_PLAN(''), focusIds = [], group = null) =>
           `introduced is invisible unless you check. Never carry forward a previous PASS on ` +
           `trust.\n\n`
         : '') +
+      (fastInfo ? fastParagraph() : '') +
       (heldSuite.length ? heldParagraph() : '') +
       `Your job is to PROVE THE WORK IS WRONG. A false PASS is the costliest error — assume the ` +
       `work is broken until you have run the evidence yourself.\n\n` +
@@ -2566,7 +2597,11 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, 
   try { cheap = await runCheapStage() } catch (e) { cheap = null }
   const cheapUnmet = cheap && Array.isArray(cheap.unmet) ? cheap.unmet.map((x) => (x && typeof x === 'object' ? x.id : x)).filter((id) => typeof id === 'string' && /^C\d+$/.test(id)) : []
   const heldIdOf = (x) => (x && typeof x === 'object' ? x.id : x)
-  if (cheap) heldSuite = Array.isArray(cheap.held) ? cheap.held.map(heldIdOf).filter((id) => typeof id === 'string' && /^C\d+$/.test(id)) : []
+  fastInfo = cheap && cheap.fast && typeof cheap.fast === 'object' && cheap.fast.mode === 'milestone' ? cheap.fast : null
+  targetedRed = fastInfo && fastInfo.passed === false && Array.isArray(fastInfo.failing) && fastInfo.failing.length
+    ? { id: 'targeted-tests', command: fastInfo.command, output: `failing: ${fastInfo.failing.join(', ')}` }
+    : null
+  if (cheap) heldSuite = fastInfo ? [] : Array.isArray(cheap.held) ? cheap.held.map(heldIdOf).filter((id) => typeof id === 'string' && /^C\d+$/.test(id)) : []
   const heldClause = (ids) => `held back: slow suite (${ids.join(', ')}), not run this round`
   if (cheapUnmet.length) {
     const ran = cheap && Array.isArray(cheap.ran) ? cheap.ran : []
@@ -2583,6 +2618,13 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, 
     return {
       passed: false, criteriaFound: true, mode: 'narrowed', criteria: items,
       summary: `FAIL — cheap first pass: ${cheapUnmet.length} unmet criterion/criteria (${cheapUnmet.join(', ')}); the expensive verifier was not run` + (heldSuite.length ? `; ${heldClause(heldSuite)}` : ''),
+    }
+  }
+  if (targetedRed && !cheapUnmet.length) {
+    log(`✖ cheap first pass: targeted tests red (${fastInfo.failing.join(', ')}) — no expensive verifier this round`)
+    return {
+      passed: false, criteriaFound: true, mode: 'narrowed', criteria: [],
+      summary: `FAIL — targeted tests red (${fastInfo.failing.join(', ')}); the expensive verifier was not run`,
     }
   }
   if (!cheap) log('⚠ cheap first pass unavailable — running the full verifier stage')
@@ -2744,6 +2786,11 @@ const remediatePrompt = (unmet, cycle) =>
     )
     .join('\n') +
   `\n\n` +
+  (fastInfo
+    ? `FAST MODE (ADR-094): run only the targeted tests (${targetedCmd()}), never the full suite; ac carries the ` +
+      `suite to the milestone full check.` +
+      (targetedRed ? ` The targeted set is RED: make ${targetedRed.output.replace(/^failing: /, '')} pass.` : '') + `\n\n`
+    : '') +
   `Stay plan-blind (ADR-021): do NOT read PLAN.md or SPEC.md, and do NOT widen scope beyond the ` +
   `criteria above. First run \`git rev-parse HEAD\` and report it as headBefore. Fix the gap ` +
   `test-first where it adds behavior, run the tests, then make ONE atomic commit whose subject ends ` +
@@ -2815,6 +2862,9 @@ if (!integrationFailed) {
       // narrowed run the carried criteria are part of it (ADR-031's cross-cycle comparison).
       const beforeIds = new Set([...lastSeen].filter(([, ok]) => !ok).map(([id]) => id))
       const unmet = [...beforeIds].map((id) => ({ id, ...(evidence.get(id) || {}) }))
+      // ADR-094: a red targeted set is remediated like an unmet id, but is no criterion id (kept out of lastSeen).
+      if (targetedRed) unmet.push(targetedRed)
+      const redBefore = targetedRed !== null
       log(
         `• remediation cycle ${cycle + 1}/${maxCycles}: ${beforeIds.size} unmet criterion/criteria` +
           (beforeIds.size ? ` (${[...beforeIds].join(', ')})` : ''),
@@ -2822,7 +2872,7 @@ if (!integrationFailed) {
       // C12: a withdrawn PASS can leave NOTHING unmet. An executor handed an empty list has nothing
       // to fix, so no remediation is spawned; one forced-full verify runs instead, and it spends
       // this cycle of the budget so the loop still ends.
-      if (beforeIds.size === 0) {
+      if (beforeIds.size === 0 && !redBefore) {
         log(heldSuite.length
           ? `• every non-suite criterion passed; observing the held-back suite (${heldSuite.join(', ')}) now`
           : '⚠ no unmet criterion to remediate — running one full verify instead')
@@ -2864,7 +2914,7 @@ if (!integrationFailed) {
       // but incidentally breaks a different one is net-no-progress and bails (safe over
       // fast). Fires even with budget remaining; keeps verdict.passed=false.
       const afterIds = new Set([...lastSeen].filter(([, ok]) => !ok).map(([id]) => id))
-      if (afterIds.size >= beforeIds.size) {
+      if (afterIds.size >= beforeIds.size && !(redBefore && !targetedRed)) { // a red targeted set that went green is progress
         stoppedReason = 'no-progress'
         log(
           `✖ remediation cycle ${cycle + 1}: failing-criteria set did not shrink ` +

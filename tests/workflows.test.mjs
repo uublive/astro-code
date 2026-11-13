@@ -2246,7 +2246,7 @@ test('t5 (phase 10): remediatePrompt scopes to ONLY unmet criteria, embeds faili
 
   const startIdx = wfSrc.indexOf('const remediatePrompt')
   assert.ok(startIdx !== -1, 'remediatePrompt not found in execute-phase.mjs')
-  const window = wfSrc.slice(startIdx, startIdx + 1400)
+  const window = wfSrc.slice(startIdx, startIdx + 2200) // ADR-094: the fast-mode paragraph sits before the plan-blind text
 
   // Scoped to ONLY the unmet criteria — do NOT re-attack passing ones.
   assert.ok(/unmet/.test(window), 'remediatePrompt must be built from the unmet criteria list')
