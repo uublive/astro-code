@@ -967,6 +967,15 @@
       "branch": "develop",
       "claimed_at": "2026-11-13T09:19:40.423Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-13-execute-phase-workflow-crashes",
+      "name": "execute-phase workflow crashes (TypeError: null is not an object, evaluating 'v.criteria') when the verifier agent errors (e.g. API 403) instead of reporting a clean FAIL; seen on phase 57 run wf_3b54ba86-415",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "develop",
+      "claimed_at": "2026-11-13T12:24:13.932Z",
+      "status": "active"
     }
   ]
 }
