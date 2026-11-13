@@ -1,90 +1,160 @@
 {
   "version": 1,
-  "run": 1,
-  "mode": "full",
-  "reason": "no saved verdict",
+  "run": 2,
+  "mode": "narrowed",
+  "reason": "1 of 16 unmet",
   "broad": false,
-  "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f",
+  "commit": "422e8b06cc2013a129de1af85f2ad8c5c19c7c11",
   "criteria_sha": "sha256:f84605c9363836a3b5492cbe7d471022ceccbbd490101ddb9742b40f7d91dcb4",
-  "at": "2026-11-13T11:37:23.239Z",
+  "at": "2026-11-13T11:44:55.588Z",
   "base": null,
   "criteria": [
     {
       "id": "C1",
       "status": "failed",
       "evidence": "observed",
-      "command": "node render2.mjs null (runs the real workflows/execute-phase.mjs with stub agents; cheap stage returns null / {clean:true,note:boom} in a fast-mode project)",
-      "output": "Cause: execute-phase.mjs:2600 derives fast mode only from cheap.fast (optional in CHEAP_SCHEMA); a missing/dropped fast object falls back to Run the full test suite + suite-in-floor. The main path is correct: in scratch project f1 with no verify setting, ac verdict cheap 1 --json ran tests/a + tests/d and no SUITE line was logged, fast.mode=milestone."
+      "command": "cd <scratchpad>/probe && node render.mjs droppedFast && node render.mjs emptyNote   # render.mjs evaluates the real /Users/buu/Development/astro-code/workflows/execute-phase.mjs with stub agents; verify:cheap returns {clean:true,unmet:[],unchecked:[],ran:[{id:'C1',kind:'cheap',passed:true}]} (fast object dropped) and {clean:true,note:''}. Also: node bin/ac.mjs verdict cheap 01-alpha --json in a scratch project with verify.full_suite=phase prints no `fast` key (keys: clean,ran,unmet,unchecked,held,warnings,recorded), so a dropped fast object is indistinguishable from per-phase mode.",
+      "output": "== droppedFast: verifiers=1 remediations=0\n  | A green suite is not evidence for a criterion unless it actually exercises that behavior.\n  | Run the full test suite.\n== emptyNote: verifiers=1 remediations=0\n  | A green suite is not evidence for a criterion unless it actually exercises that behavior.\n  | Run the full test suite.\n(For comparison, the null / throw / note:'boom' cases now render 'FAST MODE (ADR-094): never run the full suite'. The ac tier is correct: verdict cheap in a default-mode scratch project logged only 'TEST a', no SUITE, fast.mode=milestone, tests=[tests/a.test.mjs]. The failing case is the workflow tier: it infers fast mode only from the presence of cheap.fast, and per-phase output carries no mode at all. This live verify run of astro-code, which has no verify setting, was itself told 'Run the full test suite LAST'.)"
     },
     {
       "id": "C2",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C3",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C4",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C5",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C6",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C7",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C8",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C9",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C10",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C11",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C12",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C13",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C14",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C15",
-      "status": "passed",
-      "evidence": "observed"
+      "status": "carried",
+      "evidence": "carried",
+      "last": "passed",
+      "from": {
+        "run": 1,
+        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
+      }
     },
     {
       "id": "C16",
