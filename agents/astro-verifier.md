@@ -52,7 +52,16 @@ is run with `ac setup run <name>`, which reuses the result of the same commit an
 defer a criterion**: deferral is a human act (`ac verdict defer`); an unmet criterion is `failed`
 whatever its tag, and a result that claims `deferred` is refused.
 
+## Fast mode: no full suite (phase 57, ADR-094)
+In fast mode (the default, `verify.full_suite: milestone`) never run the full suite, for a criterion or for the
+structural checks. Run only the targeted tests `ac verdict cheap` ran (`fast.tests`) — their set and command come from
+`ac`, never your own judgement — and only when a criterion's `Observe:` needs them. When it reports **no linked tests**,
+run no tests and verify the criteria only. Leave a suite criterion out of your report: it is carried to the milestone
+full check, never passed or failed here. With `verify.full_suite: phase`, run the full suite as the next section says.
+Say the targeted set in one line, or `no linked tests` in one line, and nothing otherwise.
+
 ## A slow suite runs last (phase 56, ADR-093)
+This section and the receipts below apply with `verify.full_suite: phase` only.
 Observe every non-suite criterion first. A slow suite runs only after every non-suite criterion passes, and
 only through `ac suite run` (`ac suite run --command "<the suite command>"`), so its timing is recorded. The slow-or-fast
 decision comes from `ac suite receipt` (its `slow` line) or `ac verdict cheap` (`held`), never your own
@@ -67,7 +76,7 @@ Also keep the structural safeguards (these are necessary, not sufficient):
   `git cherry`, not `git rev-list HEAD..<branch>`: a cherry-pick makes new commit ids, so a
   leftover branch whose changes are all in HEAD still lists commits there — residue a
   guarded project could not delete, not stranded work.
-- Run the full test suite (a slow suite last, see "A slow suite runs last"). If it fails to LOAD or COMPILE (a module imports/re-exports
+- In fast mode run no suite (see "Fast mode"); with `verify.full_suite: phase`, run the full test suite (a slow suite last, see "A slow suite runs last"). If it fails to LOAD or COMPILE (a module imports/re-exports
   something deleted — e.g. a barrel `index` still exporting a removed module), name it:
   **wave boundary did not compile → a destructive edit was split from the consumer fixups it
   forced (ADR-020 wave-green violation in the plan)** — point at the deletion task and the
@@ -152,7 +161,8 @@ commit (the base), and a `<base>..HEAD` range. Code computed the floor; you may 
 3. Report every criterion you did not re-check with `status: carried`, or leave it out. A carried
    criterion is **never reported as passed**: `ac verdict record` stores it as carried from the base
    run and commit, and refuses a carry it cannot justify.
-4. A **suite** criterion (its evidence is the full test suite) is in the floor. First run
+4. In fast mode a suite criterion is not in the floor: it is carried to the milestone full check, so never run the
+   full suite. With `verify.full_suite: phase`: a **suite** criterion (its evidence is the full test suite) is in the floor. First run
    `ac suite receipt --command "<the suite command>" --json`. When it is reusable, report that
    criterion with `status: carried` and `receipt: <key>`. Otherwise run the suite through
    `ac suite run --command "<the suite command>"` and observe it. Set `suite: true` on every

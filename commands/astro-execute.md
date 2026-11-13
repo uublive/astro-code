@@ -132,6 +132,9 @@ Execute phase `$ARGUMENTS`.
      one atomic commit, then re-verify — up to the level's budget (`light`=0 / `standard`=1
      / `deep`=3 cycles) and **bailing early to FAIL on no-progress** (HEAD unchanged, or the
      failing-criteria set didn't shrink).
+     **Fast mode (ADR-094, the default):** a remediation executor runs only the targeted tests `ac verdict cheap`
+     reported (`fast.tests`, its command), never the full suite; a red targeted set is handed to it like an unmet id, and a
+     suite criterion is carried to the milestone full check, not remediated. With `verify.full_suite: phase` the rule below applies.
      **Slow suite last (ADR-093):** observe every non-suite criterion first; a slow suite runs only after every
      non-suite criterion passes, and only through `ac suite run`. Which suite is slow comes from
      `ac verdict cheap` (`held`) or `ac suite receipt` (its `slow` line), never the verifier's estimate; the

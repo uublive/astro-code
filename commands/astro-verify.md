@@ -13,6 +13,12 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    never pass one. When it reports any unmet criterion, **stop with a FAIL** that lists EVERY unmet
    id it printed (one line each, as in step 3), spawn no verifier, and do not record anything (it
    already recorded the narrowed cheap verdict); the expensive stage runs only when it is clean.
+   In fast mode (the default, `verify.full_suite: milestone`) it runs no suite: it computes the phase's targeted tests in
+   code and runs them, and prints `fast` (the mode, `fast.tests`, the command, and the limits line). A red targeted set is
+   a FAIL like an unmet id (no verifier, nothing recorded). Say the targeted set in **one line** (the files and the limits),
+   or `no linked tests` in **one line** when `fast.tests` is empty (no tests run, criteria only), and nothing otherwise. A
+   suite criterion is carried to the milestone full check (`fast.milestone`), never deferred and never run here.
+   With `verify.full_suite: phase` the paragraph below applies.
    A suite `ac` measured as slow is **not run** by the cheap pass: it prints it under `held` (held
    back, never unmet), and a reusable receipt still counts as met. Carry the held ids into step 2b.
 2b. **Plan the run.** Run `ac verdict plan <slug> --json` (add `--full` when the user
@@ -26,7 +32,9 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    prompt), so restate the contract when you spawn it: <!-- verifier-contract -->check goal + CRITERIA.md only;
    **do NOT read PLAN.md/SPEC.md or trust task/commit summaries**; per criterion, assume
    FAIL until you run its `Observe:` evidence yourself and cite the command output; run
-   the full suite; observe every non-suite criterion first; a slow suite runs only after every non-suite criterion
+   in fast mode (the default) never run the full suite: run only the targeted tests `ac verdict cheap` ran (`fast.tests`), or
+   none when it reports no linked tests, and leave a suite criterion out of your report (it is carried to the milestone full
+   check); with `verify.full_suite: phase`, run the full suite; observe every non-suite criterion first; a slow suite runs only after every non-suite criterion
    passes, and only through `ac suite run`; the slow-or-fast decision comes from `ac suite receipt` (its `slow` line)
    or `ac verdict cheap` (`held`), never your own estimate; otherwise report it `held: true` (held back, not run),
    never passed or failed; PASS only if **every** criterion independently passes. If CRITERIA.md
