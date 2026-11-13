@@ -99,18 +99,33 @@ test('(d) a fast-mode FAIL on C2 sends a remediation prompt naming the targeted 
   assert.match(rem[0].prompt, /- C2/);
 });
 
-test('(e) with no fast in the cheap result the verifier and remediation prompts carry no fast wording', async () => {
+test('(e) in per-phase mode (mode: phase) the verifier and remediation prompts carry no fast wording', async () => {
   const { calls } = await run({
-    cheaps: [{ clean: true, unmet: [] }],
+    cheaps: [{ clean: true, unmet: [], mode: 'phase' }],
     verifiers: [PASS],
     records: [{ recorded: true, run: 1, passed: true, failing: [] }],
   });
   const [v] = verifierOf(calls);
   assert.doesNotMatch(v.prompt, /FAST MODE|ADR-094/);
   assert.match(v.prompt, /Run the full test suite\. Flag any project-canon violation/);
-  const r2 = await run({ cheaps: [{ clean: false, unmet: ['C2'], ran: [] }] });
+  const r2 = await run({ cheaps: [{ clean: false, unmet: ['C2'], ran: [], mode: 'phase' }] });
   const rem = r2.calls.filter((c) => (c.opts.label || '').startsWith('remediate:'));
   assert.doesNotMatch(rem[0].prompt, /FAST MODE/);
+});
+
+// Phase 57 verify C1: a cheap result that lost its `fast` object (no mode, or an empty note) must NOT send the
+// verifier to the full suite; only an explicit mode 'phase' does.
+test('(f) a cheap result with no fast object and no phase mode keeps fast mode: never the full suite', async () => {
+  for (const cheap of [{ clean: true, unmet: [], unchecked: [], ran: [{ id: 'C1', kind: 'cheap', passed: true }] }, { clean: true, note: '' }, { clean: true, unmet: [], mode: 'milestone' }]) {
+    const { calls } = await run({
+      cheaps: [cheap],
+      verifiers: [PASS],
+      records: [{ recorded: true, run: 1, passed: true, failing: [] }],
+    });
+    const [v] = verifierOf(calls);
+    assert.match(v.prompt, /FAST MODE/, JSON.stringify(cheap));
+    assert.doesNotMatch(v.prompt, /Run the full test suite/, JSON.stringify(cheap));
+  }
 });
 
 test('(c1) cheap pass unavailable (null or note-only): fast mode is assumed, the verifier is never told to run the full suite', async () => {

@@ -51,6 +51,7 @@ test('C1: no suite runs, the covering tests run, the suite id is carried to the 
   assert.ok(!r.lines().includes('SUITE'));
   assert.deepEqual(r.lines().sort(), ['a.test', 'd.test']);
   assert.equal(res.fast.mode, 'milestone');
+  assert.equal(res.mode, 'milestone', 'the mode is stated at the top level too');
   assert.deepEqual(res.fast.tests, ['tests/a.test.mjs', 'tests/d.test.mjs']);
   assert.deepEqual(res.fast.milestone, ['C1']);
   assert.deepEqual(res.held, []);
@@ -94,6 +95,7 @@ test('C6: with verify.full_suite phase the suite path is unchanged (a reusable r
   assert.deepEqual(r.lines(), ['SUITE']);
   const res = await runCheapPass(r.dir, SLUG, { spawn });
   assert.equal(res.fast, undefined);
+  assert.equal(res.mode, 'phase', 'per-phase mode is stated, never left implicit');
   assert.deepEqual(res.held, []);
   assert.equal(res.ran.find((x) => x.id === 'C1').kind, 'suite');
   assert.deepEqual(r.lines(), ['SUITE'], 'the receipt was reused, the suite ran once');

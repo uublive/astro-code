@@ -2232,6 +2232,8 @@ const CHEAP_SCHEMA = {
       },
     },
     note: { type: 'string' },
+    // ADR-094: which mode `ac` says the project is in ('milestone' = fast, 'phase' = full suite per phase).
+    mode: { type: 'string' },
     // Phase 57 (ADR-094) — fast mode: the targeted test set `ac` computed and ran, instead of the full suite.
     fast: { type: 'object', additionalProperties: true },
   },
@@ -2269,7 +2271,7 @@ const runCheapStage = () =>
       `  ac verdict cheap ${phaseSlug} --json\n` +
       `It exits 1 when any check is unmet; that is a result, not an error. Return clean, unmet (every ` +
       `id), unchecked, held (each item's id, command, seconds, threshold_seconds, reason; omit when absent) ` +
-      `and ran (each item's id, kind, passed, command, output) from the JSON it prints, plus fast (the whole ` +
+      `and ran (each item's id, kind, passed, command, output) from the JSON it prints, plus mode (verbatim) and fast (the whole ` +
       `object, verbatim; omit it when the output has none). ` +
       `If it cannot run (non-zero exit with no JSON), return clean=true and put the first stderr line in note.`,
     { label: 'verify:cheap', phase: 'Verify', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: CHEAP_SCHEMA },
@@ -2600,9 +2602,11 @@ const verifyOnce = async (focusIds = [], expectFirst = null, forceFull = false, 
   // A cheap pass that did not report (null, thrown, or "could not run" with a note and no fast object) cannot say
   // which mode the project is in; fast mode is the default (ADR-094), so assume it with no targeted set: a verifier
   // must never fall back to the full suite just because the clerk dropped the object.
-  const cheapUnavailable = !cheap || (cheap.fast === undefined && typeof cheap.note === 'string' && cheap.note.length > 0)
+  // Only an explicit `mode: 'phase'` from `ac` turns fast mode off: a missing mode, a dropped `fast` object or an
+  // empty note all keep the default (phase 57 verify C1), so the verifier is never sent to the full suite by accident.
+  const perPhase = cheap && cheap.mode === 'phase'
   fastInfo = cheap && cheap.fast && typeof cheap.fast === 'object' && cheap.fast.mode === 'milestone' ? cheap.fast
-    : cheapUnavailable ? { mode: 'milestone', tests: [], command: null, reason: 'cheap pass unavailable', milestone: [] } : null
+    : perPhase ? null : { mode: 'milestone', tests: [], command: null, reason: cheap ? 'cheap pass gave no targeted set' : 'cheap pass unavailable', milestone: [] }
   targetedRed = fastInfo && fastInfo.passed === false && Array.isArray(fastInfo.failing) && fastInfo.failing.length
     ? { id: 'targeted-tests', command: fastInfo.command, output: `failing: ${fastInfo.failing.join(', ')}` }
     : null
