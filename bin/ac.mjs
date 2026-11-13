@@ -141,7 +141,8 @@ import { stampedTaskIds, planIdCollisions } from '../lib/stamps.mjs';
 import { completeMilestone, belongsToMilestone, plannedMilestones } from '../lib/milestone.mjs';
 import { recordSurprise } from '../lib/surprises.mjs';
 import { planReverify, recordVerdict, verifiedGate, carriedOf, readVerdict, verdictFile } from '../lib/verdict.mjs';
-import { pendingPhases, milestonePhases, fullCheckGate } from '../lib/fullcheck.mjs';
+import { pendingPhases, milestonePhases, fullCheckGate, runFullCheck } from '../lib/fullcheck.mjs';
+import { repairFix, repairReport } from '../lib/repair.mjs';
 import { VERDICTS_FILE, readHistory } from '../lib/verdicthistory.mjs';
 import { runSuite, reusableReceipt, suiteSpeed } from '../lib/receipts.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
@@ -149,7 +150,7 @@ import { planCalibration, runCalibration, renderSummary, renderBill, parseCalibr
 import { recordJudgements } from '../lib/survivors.mjs';
 import { REMINDER as MUTATE_REMINDER } from '../lib/mutnotice.mjs';
 import { milestoneHarvest } from '../lib/harvest.mjs';
-import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish } from '../lib/flow.mjs';
+import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish, pendingNotes } from '../lib/flow.mjs';
 import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME, refreshAgents, agentNames, republishHost } from '../lib/install.mjs';
 // Imported directly (not via getHost) for the model-mapping helpers, which are not part of the host contract.
 import opencodeHost, { resolveRoleModels, setOpencodeModel, TIERS as OPENCODE_TIERS, ROLES as OPENCODE_ROLES } from '../lib/hosts/opencode.mjs';
@@ -349,6 +350,9 @@ const ALLOWED_FLAGS = {
   // #106 — a plain write that would drop an existing note is refused; these say what to do.
   'phase note': ['append', 'replace'],
   'milestone complete': ['force'],
+  // ADR-094 — the milestone full check and the bounded repair of the fixes it opened.
+  'milestone verify': ['json'],
+  'milestone repair': ['json'],
   // Phase 23 (P5) — read-only, but still allowlisted: a typo'd flag on the sweep's
   // own read must not silently degrade into the human-readable form when `--json`
   // was intended (or vice versa).
@@ -598,6 +602,9 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac milestone check "<name>"         see if a milestone with a similar name exists
   ac milestone complete [--force]     archive the current milestone + retire its claims
                                        (refuses while a phase is not complete; --force overrides)
+  ac milestone verify [--json]        the milestone full check on the tip: the full suite + every phase's Cheap: checks;
+                                        failures become fixes; close needs a passing check on the current tip
+  ac milestone repair [<fix>] [--json] re-check one check-created fix (bounded by verify.repair_attempts), or report fixed / still open
   ac milestone harvest [<n>] [--json] the retrospective sweep material for the principle sweep
                                        (defaults to the current milestone; read-only)
   ac phase add <name> [--milestone N] claim the next phase number + add it (+ dup-name check)
@@ -2214,6 +2221,44 @@ async function main() {
           console.log(`  milestone ${c.number}${c.name ? ` "${c.name}"` : ''} is waiting — start it with \`ac milestone activate ${c.number}\``);
         }
         console.log(waiting.length ? '  or claim a new one with `ac milestone new`' : '  start the next cycle with `ac milestone new`');
+      } else if (pos[0] === 'verify') {
+        // ADR-094 — the milestone full check. Runs the suite once and every phase's Cheap: commands at the
+        // tip, opens one fix per failure (deduplicated), never starts a verifier. Exit 1 on any failure.
+        checkFlags('milestone verify', flags);
+        let res;
+        try { res = await runFullCheck(r); } catch (e) { die(e.message); }
+        if (flags.json) json(res);
+        else {
+          const at = String(res.tip).slice(0, 7);
+          if (res.passed) console.log(`✓ milestone ${res.milestone} full check PASS on ${at}`);
+          else {
+            console.log(`✖ milestone ${res.milestone} full check FAIL on ${at} — ${res.failures.length} failure(s), ${res.fixes.length} fix(es) on file`);
+            for (const f of res.failures.slice(0, 10)) {
+              console.log(`  ${f.kind === 'criterion' ? `${f.criterion} (${String(f.phase).match(/^\d+/)?.[0] ?? f.phase})` : f.kind === 'test' ? f.test : 'suite'}: ${String(f.output).split('\n')[0].slice(0, 120)}`);
+            }
+            if (res.failures.length > 10) console.log(`  … ${res.failures.length - 10} more — see .astrocode/.local/full-checks/${res.tip}.json`);
+            if (res.flaky.length) console.log(`• flaky (passed alone, no fix): ${res.flaky.join(', ')}`);
+          }
+        }
+        for (const w of res.warnings ?? []) console.error(`⚠ ${w}`);
+        if (!res.passed) process.exitCode = 1;
+      } else if (pos[0] === 'repair') {
+        // ADR-094 — one bounded repair re-check of a check-created fix, or the morning report.
+        checkFlags('milestone repair', flags);
+        if (pos[1] !== undefined) {
+          let out;
+          try { out = await repairFix(r, pos[1]); } catch (e) { die(e.message); }
+          if (flags.json) json(out);
+          else if (out.exhausted) console.log(`• exhausted ${out.id} — ${out.limit}/${out.limit} attempts used, a human takes it from here`);
+          else console.log(out.passed ? `✓ fixed ${out.id} (attempt ${out.attempt}/${out.limit})` : `• still failing ${out.id} (attempt ${out.attempt}/${out.limit})`);
+        } else {
+          const rep = repairReport(r, { milestone: milestonePhases(r).milestone });
+          if (flags.json) json(rep);
+          else {
+            for (const f of rep.fixed) console.log(`✓ fixed ${f.id}`);
+            for (const f of rep.open) console.log(`• still open ${f.id} (${f.attempts}/${f.limit} attempts)`);
+          }
+        }
       } else if (pos[0] === 'harvest') {
         // Phase 23 (P5) — the retrospective sweep material for `/astro-complete-milestone`'s
         // principle sweep. Read-only: never mutates roadmap, state, or the principle store.
@@ -2258,7 +2303,7 @@ async function main() {
           console.log(`• skipped: ${skipped.agentContexts} agent-captured CONTEXT, ${skipped.agentRejections} agent-signed rejection(s)`);
         }
       } else {
-        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|rename <n> "<name>"|check "<name>"|complete|harvest [<n>]>');
+        die('usage: ac milestone <new [--name …] [--planned]|activate <n>|rename <n> "<name>"|check "<name>"|complete|verify|repair [<fix>]|harvest [<n>]>');
       }
       return;
     }
@@ -2322,6 +2367,8 @@ async function main() {
           console.log(`• open a PR from "${res.head}" → "${res.base}" manually`);
         }
         if (res.advisory) console.log(`  ${res.advisory}`);
+        // ADR-094: one line per fast-verified phase whose milestone full check is still pending; nothing otherwise.
+        for (const l of String(res.notes ?? '').split('\n').filter((x) => x.startsWith('Full check pending'))) console.log(`• ${l}`);
       } else if (sub === 'tag') {
         // ac flow tag [version] — verify develop is in origin/main, then tag and
         // push. An optional version arg (pos[1]) passes a specific semver so the
@@ -2329,6 +2376,7 @@ async function main() {
         const version = pos[1] != null ? pos[1] : undefined;
         const res = flowTag(r, version);
         console.log(`✓ tagged "${res.tag}" on origin/main (${res.commit.slice(0, 8)})`);
+        for (const l of pendingNotes(r)) console.log(`• ${l}`);
       } else if (sub === 'hotfix') {
         // ac flow hotfix start <name>   — branch hotfix/<name> off main (local, offline-safe)
         // ac flow hotfix finish          — dual-land into main+develop, tag v<N>.<k>, push
