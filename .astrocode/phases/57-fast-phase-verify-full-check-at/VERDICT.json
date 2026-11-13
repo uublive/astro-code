@@ -1,167 +1,93 @@
 {
   "version": 1,
-  "run": 2,
-  "mode": "narrowed",
-  "reason": "1 of 16 unmet",
+  "run": 3,
+  "mode": "full",
+  "reason": "verifier ran full (plan: narrowed: 1 of 16 unmet)",
   "broad": false,
-  "commit": "422e8b06cc2013a129de1af85f2ad8c5c19c7c11",
+  "commit": "9c035425ef26e3ef2e5b8d97ad0a74751ceec6e2",
   "criteria_sha": "sha256:f84605c9363836a3b5492cbe7d471022ceccbbd490101ddb9742b40f7d91dcb4",
-  "at": "2026-11-13T11:44:55.588Z",
+  "at": "2026-11-13T12:05:59.320Z",
   "base": null,
   "criteria": [
     {
       "id": "C1",
-      "status": "failed",
-      "evidence": "observed",
-      "command": "cd <scratchpad>/probe && node render.mjs droppedFast && node render.mjs emptyNote   # render.mjs evaluates the real /Users/buu/Development/astro-code/workflows/execute-phase.mjs with stub agents; verify:cheap returns {clean:true,unmet:[],unchecked:[],ran:[{id:'C1',kind:'cheap',passed:true}]} (fast object dropped) and {clean:true,note:''}. Also: node bin/ac.mjs verdict cheap 01-alpha --json in a scratch project with verify.full_suite=phase prints no `fast` key (keys: clean,ran,unmet,unchecked,held,warnings,recorded), so a dropped fast object is indistinguishable from per-phase mode.",
-      "output": "== droppedFast: verifiers=1 remediations=0\n  | A green suite is not evidence for a criterion unless it actually exercises that behavior.\n  | Run the full test suite.\n== emptyNote: verifiers=1 remediations=0\n  | A green suite is not evidence for a criterion unless it actually exercises that behavior.\n  | Run the full test suite.\n(For comparison, the null / throw / note:'boom' cases now render 'FAST MODE (ADR-094): never run the full suite'. The ac tier is correct: verdict cheap in a default-mode scratch project logged only 'TEST a', no SUITE, fast.mode=milestone, tests=[tests/a.test.mjs]. The failing case is the workflow tier: it infers fast mode only from the presence of cheap.fast, and per-phase output carries no mode at all. This live verify run of astro-code, which has no verify setting, was itself told 'Run the full test suite LAST'.)"
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C2",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C3",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C4",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C5",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C6",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C7",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C8",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C9",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C10",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C11",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C12",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C13",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C14",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C15",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "passed",
-      "from": {
-        "run": 1,
-        "commit": "8739d7eade8cc8e310e624ee08a2fb7f3ae29f9f"
-      }
+      "status": "passed",
+      "evidence": "observed"
     },
     {
       "id": "C16",
-      "status": "carried",
-      "evidence": "carried",
-      "last": "unobserved",
-      "held": "slow suite",
+      "status": "failed",
+      "evidence": "observed",
       "suite": true
     }
   ]
