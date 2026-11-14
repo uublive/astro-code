@@ -1752,6 +1752,8 @@ def _query_bracket_allowed(sig: list, k: int, cur) -> bool:
     w = prev["text"].upper()
     if w == "USING":
         return cur is not None and cur["verb"] == "MERGE" and cur["usingSeen"] == 1
+    if w == "APPLY":
+        return _sig_word(sig, k - 2) in ("CROSS", "OUTER")
     return w in _QUERY_BRACKET_WORDS
 
 
@@ -1795,6 +1797,13 @@ def check_data_change(body: str):
     case_at = [0]  # open CASE expressions per paren level (index = depth)
     for k, t in enumerate(sig):
         w = t["text"].upper() if t["kind"] == "word" else None
+        # SQL Server reads `xéupdate` as one identifier; the lexer splits at non-ASCII. In a write,
+        # non-ASCII is only allowed inside a string, a comment or a [bracketed]/"quoted" name.
+        if t["kind"] == "other":
+            return False, "a non-ASCII character outside a string, comment or [bracketed] name is not allowed in a write"
+        # A reserved word after `.` (`t.case`) is a name only when bracketed.
+        if w and _sig_punct(sig, k - 1, ".") and w in _TSQL_RESERVED:
+            return False, f"reserved word {w} after '.' must be bracketed ([{t['text']}]) in a write"
         if w:
             if _data_change_word_refused(w):
                 return False, f"{w} is not allowed in a write"

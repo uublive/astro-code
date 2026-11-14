@@ -5479,6 +5479,58 @@
       "ok": true
     },
     {
+      "sql": "UPDATE t SET c=1 FROM t AS éupdate SET NOCOUNT ON",
+      "ok": false,
+      "reasonIncludes": "non-ASCII"
+    },
+    {
+      "sql": "UPDATE t SET c=1 FROM dbo.T AS xéupdate SET IMPLICIT_TRANSACTIONS ON",
+      "ok": false,
+      "reasonIncludes": "non-ASCII"
+    },
+    {
+      "sql": "UPDATE t SET c=1 FROM dbo.T AS xéupdate RECEIVE * FROM dbo.q",
+      "ok": false,
+      "reasonIncludes": "non-ASCII"
+    },
+    {
+      "sql": "DELETE FROM dbo.T WHERE id = 1 AND xéupdate.c = 1 SET NOCOUNT ON",
+      "ok": false,
+      "reasonIncludes": "non-ASCII"
+    },
+    {
+      "sql": "UPDATE t SET c=1 FROM dbo.T AS xécase WHERE id = 1 END CONVERSATION @h",
+      "ok": false,
+      "reasonIncludes": "non-ASCII"
+    },
+    {
+      "sql": "UPDATE t SET c=1 FROM dbo.T AS 更新update SET NOCOUNT ON",
+      "ok": false,
+      "reasonIncludes": "non-ASCII"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id = t.case END CONVERSATION @h",
+      "ok": false,
+      "reasonIncludes": "after '.'"
+    },
+    {
+      "sql": "UPDATE t SET [Café] = N'crème' WHERE id = 1",
+      "ok": true
+    },
+    {
+      "sql": "UPDATE t SET c = 1 WHERE t.[case] = 1",
+      "ok": true
+    },
+    {
+      "sql": "UPDATE d SET c = 1 FROM dbo.T AS d CROSS APPLY (SELECT TOP 1 v FROM s WHERE s.id = d.id) x",
+      "ok": true
+    },
+    {
+      "sql": "UPDATE t SET c = 1 WHERE id = Apply (SELECT * FROM secrets)",
+      "ok": false,
+      "reasonIncludes": "bracketed query"
+    },
+    {
       "sql": "UPDATE dbo.Flags SET Receive = 1 WHERE Id = 1",
       "ok": true
     },
