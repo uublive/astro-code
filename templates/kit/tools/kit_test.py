@@ -1728,6 +1728,33 @@ def _receive_starts_statement(sig: list, k: int) -> bool:
     return True
 
 
+_QUERY_BRACKET_PUNCT = frozenset([",", "(", "=", "<", ">", "!", "+", "-", "*", "/", "%", "&", "|", "^", "~"])
+_QUERY_BRACKET_WORDS = frozenset(["IN", "EXISTS", "ANY", "ALL", "SOME", "FROM", "JOIN", "AS", "SELECT", "THEN", "ELSE", "WHEN", "WHERE", "AND", "OR", "NOT", "ON", "HAVING", "BY", "UNION", "EXCEPT", "INTERSECT", "LIKE", "BETWEEN", "VALUES"])
+
+
+def _bracket_opens_query(sig: list, k: int) -> bool:
+    j = k + 1
+    while _sig_punct(sig, j, "("):
+        j += 1
+    return _sig_word(sig, j) in ("SELECT", "WITH")
+
+
+def _query_bracket_allowed(sig: list, k: int, cur) -> bool:
+    """A bracketed query is a sub-query only where a value or row source is expected. Mirrors
+    astroport's queryBracketAllowed in apps/backend/src/kits/sql-guard.ts."""
+    if k - 1 < 0:
+        return False
+    prev = sig[k - 1]
+    if prev["kind"] == "punct":
+        return prev["text"] in _QUERY_BRACKET_PUNCT
+    if prev["kind"] != "word":
+        return False
+    w = prev["text"].upper()
+    if w == "USING":
+        return cur is not None and cur["verb"] == "MERGE" and cur["usingSeen"] == 1
+    return w in _QUERY_BRACKET_WORDS
+
+
 def _data_change_word_refused(w: str) -> bool:
     return w in _DATA_CHANGE_FORBIDDEN or (w in _TSQL_RESERVED and w not in _DATA_CHANGE_RESERVED_ALLOWED)
 
@@ -1755,7 +1782,7 @@ def check_data_change(body: str):
 
     def begin(verb: str) -> None:
         nonlocal cur, in_with
-        cur = {"verb": verb, "hasWhere": False, "setSeen": False, "thenUpdate": False, "sawValues": False, "sawSelect": False}
+        cur = {"verb": verb, "hasWhere": False, "setSeen": False, "thenUpdate": False, "sawValues": False, "sawSelect": False, "usingSeen": 0}
         statements.append({"verb": verb, "hasWhere": False})
         in_with = False
 
@@ -1790,6 +1817,8 @@ def check_data_change(body: str):
             depth -= 1
         d = depth
         if is_p and t["text"] == "(":
+            if not _sig_punct(sig, k - 1, "(") and _bracket_opens_query(sig, k) and not _query_bracket_allowed(sig, k, cur):
+                return False, "a bracketed query is only allowed where a value or sub-query is expected"
             depth += 1
             case_at.append(0)
         if w == "CASE":
@@ -1828,6 +1857,8 @@ def check_data_change(body: str):
                 return False, f"a write statement must start with INSERT, UPDATE, DELETE or MERGE (found {t['text']})"
         elif w:
             c = cur
+            if w == "USING" and c["verb"] == "MERGE":
+                c["usingSeen"] += 1
             if w in _DML_VERBS:
                 if prev_word == "THEN" and c["verb"] == "MERGE":
                     if w == "UPDATE":

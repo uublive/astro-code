@@ -5411,6 +5411,74 @@
       "ok": true
     },
     {
+      "sql": "UPDATE t SET c=1 WHERE id=1 (SELECT * FROM secrets)",
+      "ok": false,
+      "reasonIncludes": "bracketed query"
+    },
+    {
+      "sql": "DELETE FROM t WHERE id=1 (SELECT name, password_hash FROM sys.sql_logins)",
+      "ok": false,
+      "reasonIncludes": "bracketed query"
+    },
+    {
+      "sql": "INSERT INTO t VALUES (1) (SELECT * FROM secrets)",
+      "ok": false,
+      "reasonIncludes": "bracketed query"
+    },
+    {
+      "sql": "INSERT INTO t SELECT a FROM s WHERE a=1 (SELECT * FROM secrets)",
+      "ok": false,
+      "reasonIncludes": "bracketed query"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 ((SELECT * FROM secrets))",
+      "ok": false,
+      "reasonIncludes": "bracketed query"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id=1 (SELECT 1) UNION (SELECT * FROM secrets)",
+      "ok": false,
+      "reasonIncludes": "bracketed query"
+    },
+    {
+      "sql": "MERGE t USING s ON t.id=s.id WHEN MATCHED THEN DELETE (SELECT * FROM secrets);",
+      "ok": false,
+      "reasonIncludes": "bracketed query"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id = Using (SELECT * FROM secrets)",
+      "ok": false,
+      "reasonIncludes": "bracketed query"
+    },
+    {
+      "sql": "UPDATE t SET c = (SELECT MAX(v) FROM s) WHERE id = 1",
+      "ok": true
+    },
+    {
+      "sql": "UPDATE t SET c = 1 WHERE id IN (SELECT id FROM s) AND EXISTS (SELECT 1 FROM u WHERE u.id = t.id)",
+      "ok": true
+    },
+    {
+      "sql": "UPDATE d SET c = 1 FROM (SELECT id FROM s) AS x JOIN dbo.T AS d ON d.id = x.id",
+      "ok": true
+    },
+    {
+      "sql": "MERGE dbo.T AS t USING (SELECT id, v FROM s) AS src ON t.id = src.id WHEN MATCHED THEN UPDATE SET v = src.v;",
+      "ok": true
+    },
+    {
+      "sql": "WITH cte AS (SELECT id FROM s) DELETE FROM t WHERE id IN (SELECT id FROM cte)",
+      "ok": true
+    },
+    {
+      "sql": "INSERT INTO t (a) VALUES ((SELECT MAX(a) FROM s))",
+      "ok": true
+    },
+    {
+      "sql": "INSERT INTO t (a) SELECT a FROM s1 UNION (SELECT a FROM s2)",
+      "ok": true
+    },
+    {
       "sql": "UPDATE dbo.Flags SET Receive = 1 WHERE Id = 1",
       "ok": true
     },
