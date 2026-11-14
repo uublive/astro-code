@@ -1772,6 +1772,11 @@ def check_data_change(body: str):
             return False, f"body has an unterminated {_UNTERMINATED_LABEL[t['kind']]}"
         if t["flag"] == "ambiguous":
             return False, "body has an ambiguous literal or line break"
+        # Whitespace in a write is space, tab, CR and LF only (U+FEFF, control characters …
+        # may be part of an identifier to SQL Server while the lexer splits on them).
+        if (t["kind"] == "ws" and any(ch not in " \t\r\n" for ch in t["text"])) or (
+                t["kind"] == "punct" and any((ord(ch) < 32 and ch not in "\t\r\n") or ord(ch) == 127 for ch in t["text"])):
+            return False, "only space, tab, CR and LF may separate words in a write (found an invisible or control character)"
     sig = [t for t in tokens if t["kind"] != "ws" and t["kind"] != "comment"]
     if len(sig) == 0:
         return False, "empty write body"
@@ -1816,6 +1821,12 @@ def check_data_change(body: str):
                 return False, "SEND ON CONVERSATION is not allowed in a write"
             if w == "RECEIVE" and _receive_starts_statement(sig, k):
                 return False, "RECEIVE is not allowed in a write"
+            # THROW as a statement takes a number, a variable, or nothing — never `=` or `,`.
+            if w == "THROW" and not _sig_punct(sig, k - 1, "."):
+                nx = sig[k + 1] if k + 1 < len(sig) else None
+                if (nx is None or (nx["kind"] == "punct" and nx["text"] == ";") or nx["kind"] == "number"
+                        or (nx["kind"] == "word" and nx["text"].startswith("@"))):
+                    return False, "THROW is not allowed in a write"
         is_p = t["kind"] == "punct"
         if is_p and t["text"] == ")":
             if depth == 0:

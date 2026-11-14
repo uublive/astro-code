@@ -5531,6 +5531,48 @@
       "reasonIncludes": "bracketed query"
     },
     {
+      "sql": "UPDATE o SET c=1 FROM dbo.Orders x\ufeffupdate SET NOCOUNT ON",
+      "ok": false,
+      "reasonIncludes": "invisible or control"
+    },
+    {
+      "sql": "UPDATE o SET c=1 FROM dbo.Orders x\ufeffupdate SET IMPLICIT_TRANSACTIONS ON",
+      "ok": false,
+      "reasonIncludes": "invisible or control"
+    },
+    {
+      "sql": "UPDATE o SET c=1 FROM dbo.Orders x\ufeffupdate SET CONTEXT_INFO 0x01",
+      "ok": false,
+      "reasonIncludes": "invisible or control"
+    },
+    {
+      "sql": "UPDATE o SET c=1 FROM t x\u0001update SET NOCOUNT ON",
+      "ok": false,
+      "reasonIncludes": "invisible or control"
+    },
+    {
+      "sql": "UPDATE o SET c=1 FROM t x\u000bupdate SET NOCOUNT ON",
+      "ok": false
+    },
+    {
+      "sql": "UPDATE t SET c=1 THROW 50000, 'x', 1",
+      "ok": false,
+      "reasonIncludes": "THROW"
+    },
+    {
+      "sql": "UPDATE t SET c=1 WHERE id = 1 THROW",
+      "ok": false,
+      "reasonIncludes": "THROW"
+    },
+    {
+      "sql": "UPDATE t SET Throw = 1 WHERE t.Throw = 0",
+      "ok": true
+    },
+    {
+      "sql": "UPDATE t\tSET c = 1\r\nWHERE id = 1",
+      "ok": true
+    },
+    {
       "sql": "UPDATE dbo.Flags SET Receive = 1 WHERE Id = 1",
       "ok": true
     },
