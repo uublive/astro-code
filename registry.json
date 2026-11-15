@@ -909,7 +909,7 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "fix/replan-reuses-stamped-ids",
       "claimed_at": "2026-11-09T12:51:09.307Z",
-      "status": "active"
+      "status": "complete"
     },
     {
       "type": "fix",
