@@ -153,7 +153,7 @@ import { milestoneHarvest } from '../lib/harvest.mjs';
 import { flowInit, flowBranch, flowPR, flowRelease, flowTag, flowHotfixStart, flowHotfixFinish, pendingNotes } from '../lib/flow.mjs';
 import { flowLink, flowUnlink, autoTie } from '../lib/flowlink.mjs';
 import { readUserAliases, addUserAlias, removeUserAlias, gitOwner } from '../lib/identity.mjs';
-import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME, refreshAgents, agentNames, republishHost } from '../lib/install.mjs';
+import { installClaude, uninstallClaude, installStatusline, baseConfigDir, ASTRO_HOME, refreshAgents, agentNames, republishHost, pinPluginCaches } from '../lib/install.mjs';
 // Imported directly (not via getHost) for the model-mapping helpers, which are not part of the host contract.
 import opencodeHost, { resolveRoleModels, setOpencodeModel, TIERS as OPENCODE_TIERS, ROLES as OPENCODE_ROLES } from '../lib/hosts/opencode.mjs';
 import { readAgentTools, updateAgentTools } from '../lib/agenttools.mjs';
@@ -3798,6 +3798,7 @@ async function main() {
       reportGuards(res);
       if (claudeMeetsModFloor()) {
         reportPluginEnsure(ensurePlugin());
+        pinPluginCaches(FRAMEWORK_ROOT, [...configTargets().keys()]);
         console.log('• optional on Claude Code: enforcement mods — see `ac mods status`, turn one on with `ac mods enable <feature>`');
       }
       console.log('  after pulling updates, refresh the global CLI: npm install -g .');
@@ -4065,6 +4066,7 @@ async function main() {
           if (r.outcome === 'updated') console.log(`✓ astro-mods refreshed → ${r.dir} [${r.label}]`);
           else if (r.outcome === 'failed') console.error(`⚠ astro-mods refresh failed in ${r.dir} [${r.label}]: ${r.message}`);
         }
+        pinPluginCaches(clone, [...configTargets().keys()]);
       }
       let version = '?';
       try { version = (JSON.parse(readFileSync(join(clone, 'package.json'), 'utf8')) || {}).version || '?'; } catch { /* ignore */ }
