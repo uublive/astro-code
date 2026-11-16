@@ -37,6 +37,7 @@
 //
 // The validator follows `$` only through functions declared in the same file (F6), so every
 // `$.*` call is spelled here and `$` is never handed to an import.
+import { AC } from '../lib/ac.js'
 import { isOn, getPrefixes } from '../lib/switches.js'
 import { isMachineTyped } from '../lib/machine.js'
 import { setBadge, badgesClaimed, releaseBadges } from '../lib/badges.js'
@@ -227,7 +228,7 @@ function parseJson(text) {
 }
 
 async function offer($, s, v, text) {
-  const matched = await acJson($, ['ac', 'principles', 'match', '--json', '--', v.lifted])
+  const matched = await acJson($, [...AC, 'principles', 'match', '--json', '--', v.lifted])
   const exact = Array.isArray(matched.exact) ? matched.exact : []
   const overlap = Array.isArray(matched.overlap) ? matched.overlap : []
   if (exact.length > 0) {
@@ -238,7 +239,7 @@ async function offer($, s, v, text) {
   if (overlap.length > 0) {
     const same = await sameAs($, s, v, overlap.slice(0, MAX_CANDIDATES))
     if (same) {
-      await evidence($, s, ['ac', 'principles', 'sight', same], text)
+      await evidence($, s, [...AC, 'principles', 'sight', same], text)
       return
     }
   }
@@ -260,7 +261,7 @@ async function sameAs($, s, v, candidates) {
     if (!c || typeof c.id !== 'string') continue
     let statement = null
     try {
-      const shown = await $.process.run(['ac', 'principles', 'show', c.id, '--json', '--no-sync'], { timeoutMs: AC_TIMEOUT_MS })
+      const shown = await $.process.run([...AC, 'principles', 'show', c.id, '--json', '--no-sync'], { timeoutMs: AC_TIMEOUT_MS })
       statement = shown.exitCode === 0 ? JSON.parse(shown.stdout).statement : null
     } catch {
       statement = null
@@ -285,7 +286,7 @@ async function sameAs($, s, v, candidates) {
 
 // `add --propose`; counted only when ac says a NEW entry was proposed
 async function add($, s, v, text, reserved) {
-  const out = await evidence($, s, ['ac', 'principles', 'add', '--kind', v.kind, `--why=${v.why}`, '--propose'], text, v.lifted)
+  const out = await evidence($, s, [...AC, 'principles', 'add', '--kind', v.kind, `--why=${v.why}`, '--propose'], text, v.lifted)
   const minted = out.includes('✓ principle') && out.includes('(proposed)')
   if (minted) {
     s.proposed++
@@ -312,7 +313,7 @@ async function evidence($, s, head, text, statement) {
 // the Project: line of `ac status`; null when there is none, it is `?`, or the call fails
 async function projectOf($) {
   try {
-    const r = await $.process.run(['ac', 'status'], { timeoutMs: AC_TIMEOUT_MS })
+    const r = await $.process.run([...AC, 'status'], { timeoutMs: AC_TIMEOUT_MS })
     if (r.exitCode !== 0) return null
     const line = r.stdout.split('\n').find((l) => l.startsWith('Project:'))
     const name = line ? line.slice('Project:'.length).trim() : ''

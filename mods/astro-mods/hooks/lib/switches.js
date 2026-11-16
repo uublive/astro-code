@@ -19,7 +19,9 @@
 // at the head of a prompt. `ac` validates the list (lib/mods.mjs); this module only keeps what it
 // was handed, behind a shape guard, and a bad or missing field means no prefixes and never touches
 // the switches (fail soft). The match itself lives in machine.js.
-export const SWITCHES_ARGV = ['ac', 'mods', 'status', '--json', '--switches-only']
+import { AC } from './ac.js'
+
+export const SWITCHES_ARGV = [...AC, 'mods', 'status', '--json', '--switches-only']
 export const SWITCHES_TIMEOUT_MS = 5000
 
 let state = {}

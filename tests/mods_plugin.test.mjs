@@ -200,12 +200,13 @@ test('no module reads an event field the PROBE.md files do not record as observe
 
 // ── Claude Code's own checks, when a qualifying claude is on PATH ───────────
 
+// fix 2026-11-16-astro-mods-hooks-run-bare-ac-which: the argvs spread lib/ac.js's AC (`[...AC, 'status', …]`), never a bare 'ac'.
 test('phase-band source: no submit, run, tool or state write; every ac argv is a read-only query (C3)', () => {
  const raw = readFileSync(join(HOOKS, 'features', 'phase-band.js'), 'utf8');
  for (const forbidden of ['prompt.submit', 'command.run', '$.tool', '$.state.set', '$.state.']) {
   assert.ok(!raw.includes(forbidden), `phase-band.js mentions ${forbidden}`);
 }
- const argvs = [...raw.matchAll(/\[\s*'ac'\s*,([^\]]*)\]/g)].map((m) => [...m[1].matchAll(/'([^']*)'/g)].map((x) => x[1]).join(' '));
+ const argvs = [...raw.matchAll(/\[\s*\.\.\.AC\s*,([^\]]*)\]/g)].map((m) => [...m[1].matchAll(/'([^']*)'/g)].map((x) => x[1]).join(' '));
  assert.ok(argvs.length >= READ_ONLY_BAND_ARGV.length, `found ${argvs.length} ac argv literals`);
  for (const a of argvs) assert.ok(READ_ONLY_BAND_ARGV.includes(a), `ac ${a} is not a read-only band query`);
  for (const a of READ_ONLY_BAND_ARGV) assert.ok(argvs.includes(a), `missing ac ${a}`);
