@@ -58,3 +58,20 @@ test('ac install pins the installed hooks/lib/ac.js to absolute node + bin/ac.mj
     }
   }
 });
+
+// Follow-up (found releasing v0.59.1): Claude Code loads the plugin from each config dir's CACHE
+// (installed_plugins.json `installPath`), and an update that keeps the version leaves that cache as it
+// was. `pinPluginCaches` pins every cached copy too, so the next `ac update` heals one the last missed.
+test('pinPluginCaches pins hooks/lib/ac.js in every config dir\'s cached astro-mods copy', async () => {
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const cfg = mkdtempSync(join(tmpdir(), 'ac-cfg-'));
+  const cache = join(cfg, 'plugins', 'cache', 'astro-code', 'astro-mods', '9.9.9');
+  mkdirSync(join(cache, 'hooks', 'lib'), { recursive: true });
+  writeFileSync(join(cache, 'hooks', 'lib', 'ac.js'), "export const AC = ['ac']\n");
+  writeFileSync(join(cfg, 'plugins', 'installed_plugins.json'), JSON.stringify({ version: 2, plugins: { 'astro-mods@astro-code': [{ installPath: cache, version: '9.9.9' }] } }));
+  const other = mkdtempSync(join(tmpdir(), 'ac-cfg-none-')); // no plugin installed: left alone
+  const { pinPluginCaches } = await import('../lib/install.mjs');
+  assert.deepEqual(pinPluginCaches(FRAMEWORK, [cfg, other]), [cache]);
+  const { AC } = await import(`${pathToFileURL(join(cache, 'hooks', 'lib', 'ac.js')).href}?t=${Date.now()}`);
+  assert.deepEqual(AC, [process.execPath, join(FRAMEWORK, 'bin', 'ac.mjs')]);
+});
