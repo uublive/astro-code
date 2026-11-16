@@ -183,20 +183,32 @@
     {
       "id": "2026-11-09-a-done-task-mid-chain-makes-its",
       "title": "a done task mid-chain makes its dependents ready before their pending predecessors (GitHub #187)",
-      "status": "verified",
-      "opened_at": "2026-11-09T10:16:57.046Z"
+      "status": "accepted",
+      "opened_at": "2026-11-09T10:16:57.046Z",
+      "accepted_at": "2026-11-15T20:10:24.914Z",
+      "accepted_kind": "agent",
+      "accepted_by": "Claude Opus 5.5 (astro-code session, Comet job 7df69033)",
+      "cited_evidence": "Telegram #5642: fai tutto tranne twyd e astrobot"
     },
     {
       "id": "2026-11-09-a-re-plan-that-reuses-task-ids-is",
       "title": "a re-plan that reuses task ids is skipped as already done (GitHub #186)",
-      "status": "verified",
-      "opened_at": "2026-11-09T12:51:06.630Z"
+      "status": "accepted",
+      "opened_at": "2026-11-09T12:51:06.630Z",
+      "accepted_at": "2026-11-15T20:10:20.143Z",
+      "accepted_kind": "agent",
+      "accepted_by": "Claude Opus 5.5 (astro-code session, Comet job 7df69033)",
+      "cited_evidence": "Telegram #5642: fai tutto tranne twyd e astrobot"
     },
     {
       "id": "2026-11-09-ac-mutate-cannot-bound-mutmut-s-worker",
       "title": "ac mutate cannot bound mutmut's worker count, so a run uses every CPU (GitHub #188)",
-      "status": "verified",
-      "opened_at": "2026-11-09T13:17:15.829Z"
+      "status": "accepted",
+      "opened_at": "2026-11-09T13:17:15.829Z",
+      "accepted_at": "2026-11-15T20:10:15.288Z",
+      "accepted_kind": "agent",
+      "accepted_by": "Claude Opus 5.5 (astro-code session, Comet job 7df69033)",
+      "cited_evidence": "Telegram #5642: fai tutto tranne twyd e astrobot"
     },
     {
       "id": "2026-11-09-ac-mutate-errors-when-the-go-module-is",
@@ -210,14 +222,22 @@
     {
       "id": "2026-11-09-executor-prompts-amend-a-missing-stamp",
       "title": "executor prompts amend a missing stamp even when the commit is already pushed (GitHub #180)",
-      "status": "verified",
-      "opened_at": "2026-11-09T10:40:18.317Z"
+      "status": "accepted",
+      "opened_at": "2026-11-09T10:40:18.317Z",
+      "accepted_at": "2026-11-15T20:10:10.564Z",
+      "accepted_kind": "agent",
+      "accepted_by": "Claude Opus 5.5 (astro-code session, Comet job 7df69033)",
+      "cited_evidence": "Telegram #5642: fai tutto tranne twyd e astrobot"
     },
     {
       "id": "2026-11-09-git-guard-refuses-a-command-run-by-an",
       "title": "git-guard refuses a command run by an expanded path ($HOME/...) when an argument is switch/stash/reset (GitHub #169)",
-      "status": "verified",
-      "opened_at": "2026-11-09T10:29:00.814Z"
+      "status": "accepted",
+      "opened_at": "2026-11-09T10:29:00.814Z",
+      "accepted_at": "2026-11-15T20:10:05.869Z",
+      "accepted_kind": "agent",
+      "accepted_by": "Claude Opus 5.5 (astro-code session, Comet job 7df69033)",
+      "cited_evidence": "Telegram #5642: fai tutto tranne twyd e astrobot"
     },
     {
       "id": "2026-11-13-execute-phase-workflow-crashes",
@@ -230,6 +250,12 @@
       "title": "verify loop: a withdrawn carried PASS with failing [] remediates the carried-only criterion (when plan ids include it) instead of forcing a full re-verify; tests/verify_loop.test.mjs stub plan ids ['C1'] hides it (phase 56 C12, found by Opus fast-verify experiment 2026-11-12)",
       "status": "open",
       "opened_at": "2026-11-13T08:42:38.557Z"
+    },
+    {
+      "id": "2026-11-16-astro-mods-hooks-run-bare-ac-which",
+      "title": "astro-mods hooks run bare 'ac', which macOS resolves to /usr/sbin/ac under Claude Code's minimal PATH",
+      "status": "verified",
+      "opened_at": "2026-11-16T12:02:30.597Z"
     }
   ]
 }

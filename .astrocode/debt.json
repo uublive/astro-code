@@ -659,6 +659,14 @@
       "why": "runTestSuite tells an executor to run all tests whenever the heal ladder fires, even with verify.full_suite at its default milestone; execution-time gate outside C2, still pays the suite cost ADR-094 aims to cut.",
       "phase": "57",
       "file": "workflows/execute-phase.mjs"
+    },
+    {
+      "id": "2026-11-16-cli-tests-break-when-the-checkout-path",
+      "title": "CLI tests break when the checkout path contains a space: URL.pathname keeps %20",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-11-16T12:13:20.111Z",
+      "why": "Reported by Andrea (2026-11-16): tests that turn import.meta.url into a path with URL.pathname get %20 for a space, so a checkout under a folder with a space fails them. fileURLToPath is the fix."
     }
   ]
 }
