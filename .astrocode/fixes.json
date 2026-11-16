@@ -230,6 +230,12 @@
       "title": "verify loop: a withdrawn carried PASS with failing [] remediates the carried-only criterion (when plan ids include it) instead of forcing a full re-verify; tests/verify_loop.test.mjs stub plan ids ['C1'] hides it (phase 56 C12, found by Opus fast-verify experiment 2026-11-12)",
       "status": "open",
       "opened_at": "2026-11-13T08:42:38.557Z"
+    },
+    {
+      "id": "2026-11-16-astro-mods-hooks-run-bare-ac-which",
+      "title": "astro-mods hooks run bare 'ac', which macOS resolves to /usr/sbin/ac under Claude Code's minimal PATH",
+      "status": "verified",
+      "opened_at": "2026-11-16T12:02:30.597Z"
     }
   ]
 }

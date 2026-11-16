@@ -40,13 +40,14 @@
 // and after a reload, the next compaction was taken for the reload's partner the same way.
 // A /reload-plugins registers afresh and does not re-fire session.start (F21), so the next
 // classic.SessionStart starts a load of its own; until then the hooks deliver.
+import { AC } from '../lib/ac.js'
 import { isOn, setSwitches, SWITCHES_ARGV, SWITCHES_TIMEOUT_MS } from '../lib/switches.js'
 import { forgetTurn } from './witness.js'
 
 export const FEATURE = 'brief-section'
 export const SECTION_ID = 'astro-mods:brief'
-export const BRIEF_ARGV = ['ac', 'principles', 'brief', '--stage', 'session', '--by', 'session']
-export const FEED_ARGV = ['ac', 'mods', 'feed', 'brief-section']
+export const BRIEF_ARGV = [...AC, 'principles', 'brief', '--stage', 'session', '--by', 'session']
+export const FEED_ARGV = [...AC, 'mods', 'feed', 'brief-section']
 export const POSITION_ARGV = [...FEED_ARGV, '--position']
 // SWITCHES_TIMEOUT_MS (5 s) + FEED + BRIEF stay 1 s under session.start's 10 s budget (F19)
 export const FEED_TIMEOUT_MS = 1500
