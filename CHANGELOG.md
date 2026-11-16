@@ -2,6 +2,10 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.59.2
+
+- Fix: `ac install`/`ac update` also pin `ac` in each Claude config's cached astro-mods copy (the one Claude Code actually loads). v0.59.1 pinned only `~/.astro/code/mods`, so after updating to it the mods could still run a bare `ac`; run `ac update` once more after installing this release
+
 ## v0.59.1
 
 - Fix: the astro-mods hooks run `ac` by absolute path. On macOS, Claude Code can start them with a minimal PATH where a bare `ac` is `/usr/sbin/ac` (login accounting, "total 0.00"), so every mod switched off with "ac printed output that is not JSON". `ac install`/`ac update` pin the installed copy to this node and the checkout's `bin/ac.mjs`. Reported by Andrea (@topastro73-it)
