@@ -18,6 +18,7 @@
 // Failures. failOpen resets EVERY switch (F6), so a flaky `ac` read for the band must not switch
 // off witness or blindfold: refreshes catch their own errors and set an `unavailable` reason.
 // The `.catch(failOpen)` in register.js stays as the backstop for a genuine hook bug.
+import { AC } from '../lib/ac.js'
 import { isOn } from '../lib/switches.js'
 import { badges, claimBadges } from '../lib/badges.js'
 import { readJsonResult, rootCandidates, signature, stalePaths, bandView, liveFrom, freshStatus, runOf, notifiedTask, gitCandidates, gitdirFrom, branchFrom, scopeOf } from '../lib/band.js'
@@ -105,10 +106,10 @@ async function ask($, argv) {
 async function load($) {
   const before = await stats($, stalePaths(st.cwd, st.status))
   const [s, debt, backlog, fix] = await Promise.all([
-    ask($, ['ac', 'status', '--json']),
-    ask($, ['ac', 'debt', 'list', '--json']),
-    ask($, ['ac', 'backlog', 'list', '--json']),
-    ask($, ['ac', 'fix', 'list', '--json']),
+    ask($, [...AC, 'status', '--json']),
+    ask($, [...AC, 'debt', 'list', '--json']),
+    ask($, [...AC, 'backlog', 'list', '--json']),
+    ask($, [...AC, 'fix', 'list', '--json']),
   ])
   const status = s.ran ? readJsonResult(s.ran) : null
   if (!status) {
