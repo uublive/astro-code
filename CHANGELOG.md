@@ -2,6 +2,10 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.59.1
+
+- Fix: the astro-mods hooks run `ac` by absolute path. On macOS, Claude Code can start them with a minimal PATH where a bare `ac` is `/usr/sbin/ac` (login accounting, "total 0.00"), so every mod switched off with "ac printed output that is not JSON". `ac install`/`ac update` pin the installed copy to this node and the checkout's `bin/ac.mjs`. Reported by Andrea (@topastro73-it)
+
 ## v0.59.0
 
 - Phase verify is fast by default (ADR-094): it no longer runs the full test suite. `ac verdict cheap <phase>` computes the phase's targeted tests in code (the test files its stamped commits changed, plus the tests that import or name a changed source file) and runs only those; a PASS needs that set green on the verified commit, a docs-only phase reports `no linked tests`, and a suite criterion is carried to the milestone full check. `verify.full_suite: phase` keeps the old behaviour. Fast-verified phases are marked `full check pending` in `ac status`, the band, accept output and release notes
