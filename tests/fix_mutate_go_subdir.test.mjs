@@ -41,14 +41,16 @@ test('ac mutate runs Gremlins and go test from a subfolder Go module and maps pa
     const res = JSON.parse(r.stdout);
     assert.notEqual(res.outcome, 'error', res.error);
     assert.deepEqual(res.scope, ['host/a.go']);
-    assert.equal(res.scope_detail.narrowed, 'files');
+    // Phase 59: the module is below the root and the scratch-repo proof holds, so Gremlins runs --diff in a scratch copy;
+    // file mode (the exclusion list) now remains only as the stated fallback (tests/mutate_subdir_diff.test.mjs).
+    assert.equal(res.scope_detail.narrowed, 'diff', res.scope_detail.why);
 
     const calls = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     const unleash = calls.find((c) => c.tool === 'gremlins' && c.argv[0] === 'unleash');
     assert.ok(unleash, 'gremlins unleash ran');
-    assert.equal(unleash.cwd.replace(/^\/private/, ''), join(dir, 'host').replace(/^\/private/, ''), 'Gremlins runs from the module');
-    assert.ok(!unleash.argv.includes('--diff'), 'no --diff for a subfolder module');
-    assert.deepEqual(unleash.argv.filter((a, i) => unleash.argv[i - 1] === '--exclude-files'), ['^c\\.go$'], 'exclusions are module-relative');
+    assert.match(unleash.cwd, /\/runs\/ac-run-[^/]+\/mod$/, 'Gremlins runs from the module\'s scratch copy');
+    assert.ok(unleash.argv.includes('--diff'), '--diff against the scratch base for a subfolder module');
+    assert.ok(!unleash.argv.includes('--exclude-files'), 'no exclusion list in diff mode');
     const goTest = calls.find((c) => c.tool === 'go' && c.argv[0] === 'test');
     assert.ok(goTest, 'the go test baseline ran');
     assert.equal(goTest.cwd.replace(/^\/private/, ''), join(dir, 'host').replace(/^\/private/, ''), 'go test runs from the module');
