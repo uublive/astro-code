@@ -222,6 +222,16 @@ only after every other criterion passes. Set it with `ac config set verify.slow_
 is not a number above zero is ignored with a warning and the default applies. The timing is machine-local: on
 a new machine the first round holds the suite back once, until `ac suite run` has timed it.
 
+# Heavy jobs: the worker budget and the Go cache
+
+`ac suite run` and `ac mutate` are heavy jobs (phase 59, ADR-096): one runs at a time per machine, under a
+worker budget. By default the budget is **adaptive**: about a quarter of the CPUs, fewer when the memory free
+right now is tight, never under 1. `heavy.workers` (project, an integer of 1 or more) overrides it; anything
+else is ignored with a warning. `heavy.go_cache_max_mb` (project, default **5120**) caps the private Go build
+cache a mutation run keeps, oldest entries evicted first. Set them with `ac config set heavy.workers 2` and
+`ac config set heavy.go_cache_max_mb 2048`. The lock, the per-run folders and the cache live in
+`ASTRO_HEAVY_DIR` (default `~/.astro/heavy`), per user and outside any project. Report what you changed in one line.
+
 # Verify mode and the milestone full check
 
 `verify.full_suite` (project, **`milestone`** by default, or `phase`) picks what a phase verify runs (phase 57,

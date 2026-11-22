@@ -30,9 +30,9 @@ test('the MANUAL explains the keys, the dismissal, where the memory lives and th
   assert.match(manual, /local, never committed/);
   const at = manual.indexOf('## Mutation testing (test-strength criteria)');
   const lines = manual.slice(at, manual.indexOf('\n## ', at + 5)).split('\n').length;
-  // widened from 60 to 75 in phase 48 and to 110 in phase 49 (judging, --survivors, flaky, the mark): line scope, phase tests, the settings, the install variants and the
+  // widened from 60 to 75 in phase 48 and to 110 in phase 49 and to 135 in phase 59 (the worker budget, the machine lock, the private cache, the subfolder --diff path; judging, --survivors, flaky, the mark): line scope, phase tests, the settings, the install variants and the
   // output files are each a sentence the reader needs, and a MANUAL that omits them sends people to the code
-  assert.ok(lines >= 30 && lines <= 110, `section is ${lines} lines`);
+  assert.ok(lines >= 30 && lines <= 135, `section is ${lines} lines`);
 });
 
 test('phase 48: the MANUAL names the settings, the run files, the outcomes, the per-tool narrowing and the verifier rule', () => {
