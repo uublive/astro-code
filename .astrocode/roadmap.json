@@ -33,6 +33,13 @@
       "accepted_kind": "agent",
       "accepted_at": "2026-11-15T20:09:45.393Z",
       "cited_evidence": "Telegram #5642: fai tutto tranne twyd e astrobot"
+    },
+    {
+      "number": 59,
+      "name": "Resource-safe verify and mutation: bounded workers by default, one heavy job per machine, changed lines only, caches cleaned",
+      "slug": "59-resource-safe-verify-and-mutation",
+      "status": "pending",
+      "milestone": 16
     }
   ]
 }
