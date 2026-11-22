@@ -887,7 +887,38 @@ const TESTGATE_SCHEMA = {
   required: ['ranSuite', 'passed', 'testsRun'],
 }
 
-// runTestSuite — run the full test suite in `root` via an executor agent.
+// GATEPLAN_SCHEMA — what the healed-wave gate runs (phase 59, debt healed-wave-test-gate-still-runs-the).
+// The plan is computed in CODE by `ac suite targeted <phase> --json` (lib/targeted.mjs testGatePlan), never
+// by an agent's judgement (ADR-021): fast mode (ADR-094) gates a healed wave on the phase's targeted test
+// set, `verify.full_suite: phase` or an empty targeted set gates on the full suite. `command` is the empty
+// string when there is none. The plan agent only relays it, so a failed or malformed reply is read as "no
+// plan" and the gate falls back to the full suite: it never gets weaker than before.
+const GATEPLAN_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    mode: { type: 'string', enum: ['targeted', 'full'] },
+    command: { type: 'string' },
+    tests: { type: 'array', items: { type: 'string' } },
+    reason: { type: 'string' },
+  },
+  required: ['mode', 'command', 'tests', 'reason'],
+}
+
+const planTestGate = async () => {
+  let plan = null
+  try {
+    plan = await agent(
+      `Run \`ac suite targeted ${phaseSlug} --json\` in ${root} and return its JSON fields unchanged ` +
+        `(mode, command, tests, reason). Use an empty string for a null command or reason. Run nothing else.`,
+      { label: 'testgate-plan', phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: GATEPLAN_SCHEMA },
+    )
+  } catch (e) { plan = null }
+  const ok = plan && plan.mode === 'targeted' && typeof plan.command === 'string' && plan.command.trim() && Array.isArray(plan.tests) && plan.tests.length
+  return ok ? plan : null
+}
+
+// runTestSuite — run the healed-wave test gate in `root` via an executor agent.
 //
 // Why an agent (not a direct shell call): Workflow scripts cannot run processes
 // directly (the Workflow-tool sandbox has no `exec`/`spawn`); an astro-executor
@@ -896,28 +927,43 @@ const TESTGATE_SCHEMA = {
 // 'astro-executor'` + `phase:'Execute'` keeps the gate in the execution phase
 // rather than the verify phase (the verifier runs goal-backward; this is a
 // pure regression gate for the healed wave's diff).
-const runTestSuite = () =>
-  agent(
-    `Run the full test suite for the project at ${root}.\n` +
-      `Use \`node --test\` (or the equivalent test command for this project) to run ` +
-      `all tests under ${root}. Do NOT skip any tests.\n` +
-      `FIRST decide whether a runnable suite EXISTS at all (a test runner/config, a tests ` +
-      `directory, a \`test\` script — anything that defines tests for this project).\n` +
-      `- No runnable suite exists → ranSuite:false, passed:true. Say so in output. This is ` +
-      `NOT a failure; some projects legitimately have no tests yet.\n` +
-      `- A suite exists → ranSuite:true, and passed:true only if every test passed.\n` +
-      `- testsRun is the number of tests that actually EXECUTED — skipped and todo tests ` +
-      `excluded — read from the runner's own summary, never estimated. A suite that runs ` +
-      `zero tests (a glob matching no file, an emptied test directory) proves nothing: report ` +
-      `testsRun:0 and the gate treats it as a failure. With no runnable suite, testsRun is 0.\n` +
-      `CRITICAL: a suite that EXISTS but fails to load, collect, or compile (an import error, ` +
-      `a missing module, a collection error) is ranSuite:true + passed:false — a REAL failure. ` +
-      `Do NOT report that as "no suite". The distinction is between "there are no tests here" ` +
-      `and "the tests are broken"; only the first is benign.\n` +
-      `If passed:false, populate output with the failure summary (test names + error messages) ` +
-      `so the caller can surface it in the integration-failure report.`,
+//
+// Two prompts, ONE schema and ONE fail-closed rule (ADR-066/028, #79): `plan` is a targeted plan (fast mode,
+// ADR-094) or null (full suite). Both run through `ac suite run --command`, so the job waits for the machine
+// lock and takes the worker budget (ADR-096) instead of starting beside a mutation run.
+const runTestSuite = (plan) => {
+  const tail =
+    `- testsRun is the number of tests that actually EXECUTED — skipped and todo tests ` +
+    `excluded — read from the runner's own summary, never estimated. A suite that runs ` +
+    `zero tests (a glob matching no file, an emptied test directory) proves nothing: report ` +
+    `testsRun:0 and the gate treats it as a failure. With no runnable suite, testsRun is 0.\n` +
+    `CRITICAL: a suite that EXISTS but fails to load, collect, or compile (an import error, ` +
+    `a missing module, a collection error) is ranSuite:true + passed:false — a REAL failure. ` +
+    `Do NOT report that as "no suite". The distinction is between "there are no tests here" ` +
+    `and "the tests are broken"; only the first is benign.\n` +
+    `If passed:false, populate output with the failure summary (test names + error messages) ` +
+    `so the caller can surface it in the integration-failure report.`
+  return agent(
+    plan
+      ? `Run the phase's targeted tests for the project at ${root}, as the post-heal test gate.\n` +
+          `Run exactly this command, nothing wider: \`ac suite run --command ${JSON.stringify(plan.command)} --json\` ` +
+          `in ${root}. It runs ${plan.tests.length} test file(s): ${plan.tests.join(', ')}. ` +
+          `Do NOT run the full suite.\n` +
+          `- The command ran → ranSuite:true, and passed:true only if every test passed.\n` +
+          tail
+      : `Run the full test suite for the project at ${root}.\n` +
+          `Use \`node --test\` (or the equivalent test command for this project) to run ` +
+          `all tests under ${root}, and run it through \`ac suite run --command "<cmd>" --json\` ` +
+          `so it waits for the machine lock and takes the worker budget. Do NOT skip any tests.\n` +
+          `FIRST decide whether a runnable suite EXISTS at all (a test runner/config, a tests ` +
+          `directory, a \`test\` script — anything that defines tests for this project).\n` +
+          `- No runnable suite exists → ranSuite:false, passed:true. Say so in output. This is ` +
+          `NOT a failure; some projects legitimately have no tests yet.\n` +
+          `- A suite exists → ranSuite:true, and passed:true only if every test passed.\n` +
+          tail,
     { label: 'testgate', phase: 'Execute', agentType: 'astro-executor', model: models.executor, effort: reasoning.executor, schema: TESTGATE_SCHEMA },
   )
+}
 
 // #25 — cleanup is BEST-EFFORT, one command at a time. It used to be a fixed three-verb
 // chain (remove the worktree, delete the branch, prune); a project whose guard denied
@@ -1818,7 +1864,7 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
   // merge before it poisoned later waves.  A project with NO suite is a third
   // outcome the gate reports separately (ADR-028) — see below.
   if ((ladderFired || overflowFlagged) && !integrationFailed) {
-    const gate = await runTestSuite()
+    const gate = await runTestSuite(await planTestGate())
     // ADR-028 — three outcomes, not two. `ranSuite:false` means the project has no
     // suite to run: the gate can prove nothing, but it also has nothing to report,
     // so the wave proceeds UNPROVEN behind a loud advisory rather than aborting a
