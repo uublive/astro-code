@@ -115,7 +115,7 @@ test('C3 (mutmut 3): only the functions holding changed lines are selected, by e
   const p = rigWith(await pyHistory(), 'mutmut', { version: 'mutmut, version 3.8.0' });
   try {
     const r = await runMutate(p.dir, p.slug5, { env: p.env });
-    assert.deepEqual(argvOf(p, 'run'), ['run', 'pkg.mod.xǁKǁm__mutmut_*', 'pkg.mod.x_b__mutmut_*']);
+    assert.deepEqual(argvOf(p, 'run'), ['run', '--max-children', String(r.workers.n), 'pkg.mod.xǁKǁm__mutmut_*', 'pkg.mod.x_b__mutmut_*']);
     assert.equal(r.scope_detail.narrowed, 'functions');
     assert.deepEqual(r.scope_detail.functions, { 'pkg/mod.py': ['K.m', 'b'] });
   } finally { done(p); }
@@ -158,8 +158,8 @@ test('C3: a package __init__.py added by mutation.files is globbed as the packag
   const p = rigWith(await pyHistory(), 'mutmut', { version: 'mutmut, version 3.8.0' });
   try {
     await cfgSet(p.dir, { files: ['pkg/__init__.py'] });
-    await runMutate(p.dir, p.slug5, { env: p.env });
-    assert.deepEqual(argvOf(p, 'run'), ['run', 'pkg.mod.xǁKǁm__mutmut_*', 'pkg.mod.x_b__mutmut_*', 'pkg.*']);
+    const r = await runMutate(p.dir, p.slug5, { env: p.env });
+    assert.deepEqual(argvOf(p, 'run'), ['run', '--max-children', String(r.workers.n), 'pkg.mod.xǁKǁm__mutmut_*', 'pkg.mod.x_b__mutmut_*', 'pkg.*']);
   } finally { done(p); }
 });
 

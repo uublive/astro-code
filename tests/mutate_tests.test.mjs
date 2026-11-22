@@ -81,7 +81,7 @@ test('C5 (Gremlins): GOFLAGS -run holds the phase\'s Test functions; an existing
   const p = rigWith(await history('go'), 'gremlins', { extra: { GOFLAGS: '-mod=mod' } });
   try {
     const r = await runMutate(p.dir, p.slug5, { env: p.env });
-    assert.equal(runCall(p, 'unleash').env.GOFLAGS, '-mod=mod -run=^(TestB)$');
+    assert.equal(runCall(p, 'unleash').env.GOFLAGS, `-mod=mod -p=${r.workers.n} -run=^(TestB)$`);
     assert.deepEqual(r.tests, { source: 'phase-commits', files: ['b_test.go'], mechanism: 'GOFLAGS -run=^(TestB)$' });
   } finally { done(p); }
 });
@@ -138,7 +138,7 @@ test('C5 fallback: a phase that changed no test file says so, uses the full suit
       assert.deepEqual(r.tests.files, []);
       const call = logLines(p.log).find((l) => l.argv[0] === (kind === 'go' ? 'unleash' : 'run'));
       assert.equal(call.configText, undefined);
-      assert.equal(call.env.GOFLAGS, null); assert.equal(call.env.PYTEST_ADDOPTS, null);
+      assert.equal(call.env.GOFLAGS, `-p=${r.workers.n}`); assert.equal(call.env.PYTEST_ADDOPTS, null);
       assert.ok(!call.argv.some((a) => /stryker\.config\.mjs/.test(a)));
     } finally { done(p); }
   }

@@ -183,7 +183,7 @@ test('C5 mutmut 3: run plus exactly the open names; the equivalent one is not re
     p.env.MUTATE_STUB_REPORT = join(p.dir, 'results2.txt'); writeFileSync(p.env.MUTATE_STUB_REPORT, results);
     const r = await runMutate(p.dir, p.slug1, { env: p.env, survivors: true });
     const call = runs(p, 'mutmut').at(-1).argv;
-    assert.deepEqual(call, ['run', 'pkg.mod.xǁKǁm__mutmut_1']);
+    assert.deepEqual(call, ['run', '--max-children', String(r.workers.n), 'pkg.mod.xǁKǁm__mutmut_1']);
     assert.equal(r.rerun.narrowing.narrowed, 'mutants');
     assert.deepEqual([r.rerun.open, r.rerun.executed, r.rerun.killed_now, r.rerun.still_open, r.rerun.extra_executed], [1, 1, 1, 0, 0]);
     assert.ok(r.rerun.executed < 13);

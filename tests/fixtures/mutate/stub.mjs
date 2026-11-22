@@ -21,12 +21,16 @@
 //                        (go prints `--- FAIL: <name>`, pytest prints `FAILED <name>`; exit 1)
 //   MUTATE_STUB_BROKEN=<name>   fails <name> on every invocation
 //   MUTATE_STUB_TEST_SLEEP=<s>  sleeps per invocation, for the cap tests
+// Phase 59 knob:
+//   MUTATE_STUB_TMPWRITE=1  writes `stub-was-here` into $TMPDIR and logs `tmpdir` (os.tmpdir()), so a test can
+//                        see that the tool and its tests share the run's private temp folder
 // Every log line also carries `at` (epoch ms), so a test can see when a tool started.
 // The log line also records env {GOFLAGS, PYTEST_ADDOPTS}, and `configText` (the content) when
 // `run`'s first operand is a file path (the Stryker config ac generates).
 import { appendFileSync, readFileSync, writeFileSync, mkdirSync, existsSync, statSync, cpSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { basename, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const name = basename(process.argv[1]).replace(/\.(cmd|exe)$/, '');
 const argv = process.argv.slice(2);
@@ -35,8 +39,16 @@ if (env.MUTATE_STUB_LOG) {
   const configs = ['stryker.config.json', '.gremlins.yaml', 'setup.cfg'].filter((f) => existsSync(f));
   const entry = {
     tool: name, argv, cwd: process.cwd(), configs, at: Date.now(),
-    env: { GOFLAGS: env.GOFLAGS ?? null, PYTEST_ADDOPTS: env.PYTEST_ADDOPTS ?? null },
+    env: {
+      GOFLAGS: env.GOFLAGS ?? null, PYTEST_ADDOPTS: env.PYTEST_ADDOPTS ?? null,
+      GOMAXPROCS: env.GOMAXPROCS ?? null, GOCACHE: env.GOCACHE ?? null, TMPDIR: env.TMPDIR ?? null,
+      GOTMPDIR: env.GOTMPDIR ?? null, ASTRO_WORKERS: env.ASTRO_WORKERS ?? null,
+    },
   };
+  if (env.MUTATE_STUB_TMPWRITE === '1' && env.TMPDIR) {
+    writeFileSync(`${env.TMPDIR}/stub-was-here`, 'x');
+    entry.tmpdir = tmpdir();
+  }
   if (argv[0] === 'run' && argv[1] && existsSync(argv[1]) && statSync(argv[1]).isFile()) entry.configText = readFileSync(argv[1], 'utf8');
   appendFileSync(env.MUTATE_STUB_LOG, JSON.stringify(entry) + '\n');
 }
