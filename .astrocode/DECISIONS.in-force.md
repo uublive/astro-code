@@ -620,6 +620,13 @@ _2026-11-13 · at d28d80c_
 
 **Rejected:** overwriting the branch field (historic claims would all read as tied to develop/main); inferring the tie from the branch name (free-form feature names); hiding work when the registry is unreadable; an automatic milestone tie (deferred)
 
+## ADR-096 — Heavy jobs (ac mutate, ac suite run) take a bounded share of the machine by default and run one at a time per machine: an adaptive worker budget from CPUs and free memory, a machine-wide lock that makes a second job wait, a private capped Go build cache and a per-run temp folder for mutation
+_2026-11-22 · at 60d8994_
+
+**Why:** Two kernel panics on the owner's Mac (2026-11-20, 2026-11-22) during Gremlins runs: with no config Gremlins starts a worker per CPU, each running go test on every CPU, and ac passed no bound; mutation left 89 GB in the Go build cache. Slower is acceptable, a crashed machine is not. What a PASS means is unchanged.
+
+**Rejected:** A fixed 2 workers (wastes an idle big machine); no default limit (what crashed the Mac); refusing a second job (fails unattended runs); an early stop on survivors (partial lists cost more verify rounds)
+
 ## Not in force
 
 These decisions no longer apply — follow the decision each one names. They are listed so a citation still resolves; the full text is in DECISIONS.md.
