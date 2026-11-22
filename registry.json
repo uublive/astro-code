@@ -994,7 +994,8 @@
       "owner": "matteo.alvazzi@gmail.com",
       "branch": "develop",
       "claimed_at": "2026-11-22T22:36:36.747Z",
-      "status": "active"
+      "status": "active",
+      "feature_branch": "feature/m16-59-resource-safe-verify"
     }
   ]
 }
