@@ -111,3 +111,20 @@ test('phase 48: tailBytes bounds the returned stdout to its tail; the default ke
     assert.equal(all.stdout.length, 1024 * 1024 + 3);
   } finally { rmSync(d, { recursive: true, force: true }); }
 });
+
+test('liveGroups holds a running child, killLiveGroups ends it and its grandchild, and the set empties on close', async () => {
+  const { runCapped, liveGroups, killLiveGroups } = await import('../lib/caprun.mjs');
+  const d = tmp();
+  const gc = join(d, 'gc.pid');
+  const script = `const {spawn}=require('node:child_process');const g=spawn(process.execPath,['-e','setTimeout(()=>{},30000)'],{stdio:'ignore'});require('node:fs').writeFileSync(${JSON.stringify(gc)},String(g.pid));setTimeout(()=>{},30000)`;
+  try {
+    const run = runCapped([process.execPath, '-e', script], { cwd: d, capMs: 0 });
+    assert.ok(await until(() => existsSync(gc)));
+    assert.equal(liveGroups().length, 1);
+    const grandchild = Number(readFileSync(gc, 'utf8'));
+    killLiveGroups('SIGTERM');
+    await run;
+    assert.ok(await until(() => !alive(grandchild)), 'the grandchild must die with the group');
+    assert.deepEqual(liveGroups(), []);
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});
