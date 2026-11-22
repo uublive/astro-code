@@ -145,6 +145,7 @@ import { pendingPhases, milestonePhases, fullCheckGate, runFullCheck } from '../
 import { repairFix, repairReport } from '../lib/repair.mjs';
 import { VERDICTS_FILE, readHistory } from '../lib/verdicthistory.mjs';
 import { runSuite, reusableReceipt, suiteSpeed } from '../lib/receipts.mjs';
+import { testGatePlan } from '../lib/targeted.mjs';
 import { runMutate, checkMutate, setupFor, dismissTool } from '../lib/mutate.mjs';
 import { planCalibration, runCalibration, renderSummary, renderBill, parseCalibrateFlags, publicDefect, CALIBRATE_USAGE } from '../lib/calibrate.mjs';
 import { recordJudgements } from '../lib/survivors.mjs';
@@ -309,6 +310,8 @@ const ALLOWED_FLAGS = {
   // Phase 52 (D6) — a typo'd `--command` must not run, or reuse a receipt for, the wrong command.
   'suite run': ['command', 'json'],
   'suite receipt': ['command', 'json'],
+  // Phase 59 — what the healed-wave test gate runs (read-only); a typo'd flag must not print the wrong plan.
+  'suite targeted': ['json'],
   // Phase 47 (ADR-083) — a typo'd flag must not degrade `--check` into a real run, or a
   // `setup` into a write the user did not ask for.
   // Phase 51 — spends money: a typo'd flag (`--run 5`) must not fall back to the default and bill it.
@@ -630,8 +633,15 @@ const HELP = `astro-code — lean, multi-developer planning for Claude Code
   ac setup run <name> [--commit <ref>] [--json]  run a declared setup step, or reuse its result for the same commit + command (ac config set setup.steps.<name>)
   ac setup list [--json]               declared setup steps and the cached results (.astrocode/.local/setup-cache)
   ac suite run --command "<cmd>" [--json]   run the project's suite and write a local receipt (exits with the suite's status)
+  ac suite targeted <phase> [--json]  what the healed-wave test gate runs: the phase's targeted tests (fast mode) or the full suite, and why (read-only)
   ac suite receipt --command "<cmd>" [--json]  is there a reusable receipt for this exact command on HEAD's clean tree, and is the suite slow (held back) or fast? (read-only)
   ac mutate <phase> [--json]          run the project's mutation tool on the lines the phase changed (ADR-083, ADR-084)
+                                       heavy jobs (ac suite run, ac mutate) take ONE machine-wide lock and a worker budget (ADR-096):
+                                       budget = adaptive (about a quarter of the CPUs, fewer when memory is tight), or
+                                       ac config set heavy.workers <n>; it reaches the job as ASTRO_WORKERS, GOMAXPROCS and
+                                       GOFLAGS -p=<n> (node --test and go test commands also get --test-concurrency / -p).
+                                       A mutation run keeps its own Go build cache (cap: ac config set heavy.go_cache_max_mb <mb>,
+                                       default 5120); the lock, run folders and cache live in ASTRO_HEAVY_DIR (default ~/.astro/heavy)
   ac mutate <phase> --survivors [--json]  re-test only the open survivors of the last full run (partial; never a verdict)
   ac mutate --check [<phase>] [--json]  which tool applies, is it installed, how to install it (read-only)
   ac mutate setup                     write a minimal tool config if absent (the only writer; installs nothing)
@@ -2820,8 +2830,19 @@ async function main() {
     // receipt, `receipt` is a read-only query (exit 0 either way). Never prompts (5116).
     case 'suite': {
       const sub = pos[0];
-      if (sub !== 'run' && sub !== 'receipt') die('usage: ac suite <run|receipt> --command "<cmd>" [--json]');
+      if (sub !== 'run' && sub !== 'receipt' && sub !== 'targeted') die('usage: ac suite <run|receipt> --command "<cmd>" [--json] | ac suite targeted <phase> [--json]');
       checkFlags(`suite ${sub}`, flags);
+      if (sub === 'targeted') {
+        // Phase 59: what the healed-wave test gate runs, decided in code (lib/targeted.mjs testGatePlan). Read-only.
+        const r = root();
+        const ph = pos[1] !== undefined ? findPhase(r, pos[1]) : null;
+        if (!ph) die(pos[1] === undefined ? 'usage: ac suite targeted <phase> [--json]' : `unknown phase "${pos[1]}" — usage: ac suite targeted <phase> [--json]`);
+        const plan = testGatePlan(r, ph.slug);
+        if (flags.json) json(plan);
+        else if (plan.mode === 'targeted') console.log(`• targeted: ${plan.tests.length} test file(s) — ${plan.command}`);
+        else console.log(`• full suite: ${plan.reason}${plan.command ? ` — ${plan.command}` : ''}`);
+        return;
+      }
       if (typeof flags.command !== 'string' || !flags.command.trim()) die(`usage: ac suite ${sub} --command "<cmd>" [--json]`);
       const r = root();
       const cmd = flags.command;
@@ -2832,6 +2853,11 @@ async function main() {
         if (flags.json) json({ ...rc, reusable: reuse.ok, reason: reuse.reason });
         else if (reuse.ok) console.log(`✓ suite receipt ${rc.key.slice(0, 8)}: exit 0 on a clean tree at ${short(rc.commit)} (reusable)`);
         else console.log(`⚠ suite receipt ${rc.key.slice(0, 8)}: not reusable — ${reuse.reason}`);
+        // Phase 59 (ADR-096): the budget in one line, and the sweep of dead runs' folders in one line only when it removed something.
+        if (!flags.json) {
+          console.log(`• workers: ${rc.workers.n} (${rc.workers.reason})`);
+          if (rc.cleaned) console.log(`• cleaned ${rc.cleaned.count} dead run folder(s), ${(rc.cleaned.bytes / (1024 * 1024)).toFixed(1)} MB`);
+        }
         process.exitCode = rc.exit;
         return;
       }
@@ -2977,6 +3003,8 @@ async function main() {
           else console.log(`• fast mode: no linked tests — no tests run, criteria only${carried}`);
           console.log(`• limits: ${res.fast.limits}`);
         }
+        // Phase 59: one budget line, only when this pass ran a suite (a reused receipt ran nothing).
+        if (!flags.json && res.workers) console.log(`• workers: ${res.workers.n} (${res.workers.reason})`);
         for (const w of res.warnings) console.error(`⚠ ${w}`);
         if (res.recorded && res.recorded.recorded === false) console.error(`⚠ the cheap verdict was not recorded: ${res.recorded.error}`);
         if (!res.clean) process.exitCode = 1;
@@ -3166,6 +3194,12 @@ async function main() {
           const t = res.tests;
           const shown = t.files.length ? `${t.files.slice(0, 5).join(', ')}${t.files.length > 5 ? `, +${t.files.length - 5}` : ''}` : 'all tests';
           console.log(`tests: ${t.source} — ${shown} (${t.mechanism})${t.note ? ` — ${t.note}` : ''}`);
+        }
+        if (res.workers) {
+          // Phase 59: one budget line (with the tool's own cap note when there is one), and one cleaned line only when something was swept.
+          const tw = res.tool_workers;
+          console.log(`• workers: ${res.workers.n} (${res.workers.reason})${tw?.note ? ` — ${tw.flag ?? 'tool'}: ${tw.note}` : ''}`);
+          if (res.cleaned) console.log(`• cleaned ${res.cleaned.count} dead run folder(s), ${(res.cleaned.bytes / (1024 * 1024)).toFixed(1)} MB`);
         }
         if (res.flaky) {
           // One line, bounded (e618): names capped at 5; the full list is in --json (`flaky`).
