@@ -5,5 +5,6 @@
 - [x] Phase 56 — Run a slow test suite last in verify, only once every other criterion has passed `complete` · planned
 - [x] Phase 57 — Fast phase verify, full check at milestone close `complete` · planned
 - [x] Phase 58 — Tie phases and milestones to a feature branch; the band shows only what belongs to the current branch `complete` · planned
+- [ ] Phase 59 — Resource-safe verify and mutation: bounded workers by default, one heavy job per machine, changed lines only, caches cleaned `verified` · planned
 
 <!-- generated from roadmap.json — edits here are overwritten; use `ac phase note <phase> "<text>"` -->

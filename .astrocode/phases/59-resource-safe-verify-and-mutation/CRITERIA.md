@@ -1,0 +1,82 @@
+# Criteria — phase 59: resource-safe verify and mutation
+
+> Pre-registered, plan-blind (ADR-021). Derived from the phase goal, CONTEXT.md decisions D1-D6 and
+> constraints, and ADR-096 / ADR-066 / ADR-094. What a PASS means does not change.
+>
+> Shared technique for the tool criteria: a **recording stub** is an executable placed first on `PATH`
+> in a scratch project (`mktemp -d`) under the real tool's name (`gremlins`, `mutmut`, `npx`/`stryker`,
+> `go`), which appends its full argv (one argument per line, so a split or merged argument is visible)
+> and its environment (`env`) to a log file, then exits. The criteria read that log, never ac's own
+> claim about what it passed. Where a criterion needs the real tool, it says so.
+
+### C1 [core] — Every heavy job computes an adaptive, conservative worker budget by default and states it with its reason
+- **Observe:** In a scratch project with no budget setting, run `ac suite run --command "node --test" --json` (and `ac mutate <phase> --json` with a recording stub tool). The result states a worker budget and why (CPU count and free memory read). On this Mac (11 CPUs) it is 2 or 3, never 0, never more than `ceil(cpus/4)`. Then drive the budget computation with fixed inputs (through the CLI if it exposes them, else the same entry the tests use, from `lib/`): 11 CPUs + ample free memory → 2-3; 11 CPUs + very little free memory (e.g. 1 GB) → strictly fewer than the ample case and ≥ 1; 1 CPU → 1; 64 CPUs with free memory unreadable → the CPU-only rule (about 16) and the reason says memory could not be read. The cheap verify pass's suite run (`ac verdict cheap`) reports a budget too. Files: `bin/ac.mjs`, `lib/`.
+- **Fails if:** no budget is applied unless configured; the budget is a fixed constant regardless of CPUs or memory; tight memory does not lower it; any input yields 0 or a budget above a quarter of the cores (rounded up); unreadable free memory crashes or yields 0 instead of falling back to CPUs; or the result does not say which budget was used and why.
+
+### C2 [core] — A project setting overrides the adaptive budget, and the result says so
+- **Observe:** In the scratch project set the budget to a number through the project's config (`ac config set …`, the documented key), then run `ac suite run --command "node --test" --json` and `ac mutate <phase> --json` with a recording stub: the stated budget equals the setting, the reason names the project setting, and the stub's log shows that number reaching the tool. With a Python project whose `mutation.max_children` is set, mutmut's stub receives `mutation.max_children`, not the adaptive value. Files: `bin/ac.mjs`, `lib/`, `.astrocode/config.json`.
+- **Fails if:** the setting is ignored, only partly applied (stated but not passed to the tool), rejected, or reported as adaptive; or the adaptive budget overrides an explicit `mutation.max_children`.
+
+### C3 [core] — Gremlins and its `go test` calls receive the budget in Gremlins' own way, never `--test-cpu`, and a project's `.gremlins.yaml` workers is respected when lower and capped when higher
+- **Observe:** Scratch Go module fixture with a phase change, `gremlins` recording stub first on `PATH`, budget forced to N (setting from C2, e.g. 2). Run `ac mutate <phase> --json`. The stub's argv has `--workers` with value N (as `--workers N` or `--workers=N`), and no argument containing `test-cpu`; its env has `GOMAXPROCS=N` and `GOFLAGS` containing `-p=N` (existing GOFLAGS content preserved). Repeat with `.gremlins.yaml` `workers: 1` → the tool runs with 1 worker; with `workers: 8` → it runs with N and the result says the project value was capped. Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** Gremlins is started with no worker bound, `GOMAXPROCS`/`GOFLAGS -p` are missing or a different number, any `--test-cpu` form appears, a lower project value is raised to the budget, a higher one runs uncapped, or the cap happens silently.
+
+### C4 [core] — mutmut and Stryker receive the budget in their own way, with project config lower respected and higher capped
+- **Observe:** Python fixture with a `mutmut` recording stub, budget N, no `mutation.max_children`: argv carries `--max-children` N. JS fixture with a Stryker recording stub (whatever command ac uses to start Stryker): argv carries `--concurrency` N; with a Stryker config `concurrency: 1` the run uses 1, with `concurrency: 16` it uses N and the result says it was capped. Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** either tool starts without the bound, with a different number, with a higher project value left uncapped, with a lower project value raised, or with the cap unreported.
+
+### C5 [core] — A suite run that ac shapes is bounded: `go test` gets `-p`, `node --test` gets `--test-concurrency`, and any other command sees the budget through documented environment variables
+- **Observe:** `ac suite run --command "node --test" --json` in a scratch node project whose test file writes `process.execArgv`/`process.argv` of the runner and `process.env` to a log (or a `node` wrapper stub): the runner is started with `--test-concurrency=N` (or `--test-concurrency N`). Same with `--command "go test ./..."` and a `go` recording stub: argv carries `-p N`/`-p=N`. With an opaque command (`--command "sh ./run-tests.sh"` whose script dumps `env`), the environment carries the budget in the variables the docs for `ac suite run` name (e.g. `GOMAXPROCS`, a documented ac budget variable), and those docs name them. The suite's own pass/fail and exit code are unchanged from a run without the budget. Files: `lib/`, `bin/ac.mjs`, `commands/`.
+- **Fails if:** a shaped command runs unbounded, the flag is malformed so the runner rejects it or runs zero tests, an opaque command gets no budget signal or an undocumented one, or the budget alters which tests run or the exit code.
+
+### C6 [core] — Only one heavy job runs per machine: a second one waits, says what it waits for, and starts when the first ends
+- **Observe:** Two separate scratch projects A and B (different roots, so a per-project lock cannot pass). In A start `ac suite run --command "sh -c 'date +%s.%N > $SCRATCH/a.start; sleep 8; date +%s.%N > $SCRATCH/a.end'"` in the background; one second later in B run `ac suite run --command "sh -c 'date +%s.%N > $SCRATCH/b.start'"`. B prints, while waiting, a line naming A's project, A's command and how long A has held the lock; `b.start` ≥ `a.end`; B then completes normally with exit 0. Repeat with A running `ac mutate <phase>` (stub tool that sleeps) and B running `ac suite run`, and vice versa: still serialized. Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** B's work overlaps A's (`b.start` < `a.end`), B refuses or exits non-zero instead of waiting, the wait message omits the holder's project, command or age, the lock is per project only, or mutation and suite runs use separate locks that let them overlap.
+
+### C7 [core] — A lock whose holder died is taken over, not waited on forever
+- **Observe:** Start a heavy job in project A (as in C6, long sleep), `kill -9` the ac process (and its child), then run `ac suite run --command true` in B: it starts within a few seconds (no indefinite wait), says it took over a lock left by a dead holder (or simply proceeds), and exits 0. A live holder is never taken over: during C6, B kept waiting the whole 8 s. Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** B waits indefinitely or until a long timeout after the holder died, B fails with a lock error, or B takes over a lock whose holder is still alive.
+
+### C8 [core] — Time spent waiting for the lock does not count against a mutation run's cap
+- **Observe:** Set a short mutation cap (the documented setting) of T seconds. Hold the machine lock with a suite job in project A for longer than T (e.g. `sleep` 1.5×T). Meanwhile start `ac mutate <phase> --json` in B with a stub tool that finishes well inside T. After A ends, B runs to completion: the result is not capped / not marked as having hit the time limit, and lists the stub's full mutant results. Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** B is reported capped, partial, or timed out because its wait was counted against the cap.
+
+### C9 [core] — For a Go module below the repo root, Gremlins tests only the mutants on the phase's changed lines, or ac states a sound fallback that never counts an unrun mutant
+- **Observe:** Requires real `gremlins` and `go` on `PATH`. Fixture git repo with a Go module at `svc/` (go.mod there, not at the root), one file with many mutable lines and tests that kill all of them; a phase commit changes exactly one mutable line. Run `ac mutate <phase> --json` from the repo root. Either (a) the mutants tested are only those on the changed line(s) — the total tested is the small per-line count, not the whole-file count (compare with the same fixture with the change spread over the whole file, or the file's mutant count reported by a plain `gremlins unleash` in `svc/`) — and the killed/survived result for those mutants equals the result for the same module placed at the repo root; or (b) the result explicitly says it fell back to whole-file mode and why, and every mutant it reports as killed, survived or covered lies on the phase's lines and was actually run. Any scratch copy or git repo ac creates for this is gone after the run. Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** a subfolder module still tests every line of the changed files without saying so; the diff-scoped run tests mutants off the phase's lines or misses mutants on them (different set from the root-module case); a mutant that was not run is reported killed or covered; or the scratch copy is left behind.
+
+### C10 [core] — Under the budget, the mutation verdict is honest: a mutant no test exercises is never reported killed, and the same phase yields the same mutant outcomes at any budget
+- **Observe:** Requires real `gremlins` and `go`. Go fixture (root and subfolder variants) where the phase changes one function covered by tests and one function no test calls. `ac mutate <phase> --json` with the default budget, then with the setting forced to 1 and to 3: the uncovered function's mutants are survived / not covered (never KILLED); the covered function's mutants are killed; the set of mutants and their outcomes are identical across the three budgets. Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** any mutant of the untested function reads KILLED (the `--test-cpu` failure mode where the test binary refuses to start), or outcomes differ by budget.
+
+### C11 [core] — Mutation always finishes: one run gives the complete survivor list
+- **Observe:** A fixture (any installed tool, or a stub that emits the tool's result format) whose phase lines produce at least 4 survivors spread across the run, including survivors among the very first mutants tested. `ac mutate <phase> --json` reports every one of those survivors and a tested count equal to the total number of mutants on the phase's lines; there is no option or default that stops on the first survivor(s). Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** the run stops early after survivors appear, reports a partial survivor list, or reports fewer mutants tested than exist on the phase's lines (with no cap hit).
+
+### C12 [core] — A mutation run uses its own size-capped Go build cache, and the user's Go build cache does not grow
+- **Observe:** With a `gremlins` recording stub: the env it received has `GOCACHE` set to a path that is not `go env GOCACHE` of the user and is not under it. With real `gremlins`+`go` on a Go fixture: `du -sk "$(go env GOCACHE)"` before and after `ac mutate <phase>` is unchanged (within a few KB of unrelated noise; stop other Go work during the check). Pre-fill the private cache (at the location the run reports or documents) with files whose total exceeds its cap and whose mtimes are staggered; after the next run its size is at or below the cap and the files removed are the oldest ones. Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** Go tools under mutation write to the user's `go-build` cache; the private cache has no cap or grows past it; eviction removes newest files first or removes everything every run (which would make every run rebuild from cold, adding time on an idle machine).
+
+### C13 [core] — A mutation run's temp folder is removed when the run ends: on success, failure, cap and Ctrl-C
+- **Observe:** A `gremlins` (or `mutmut`) recording stub that logs `$TMPDIR` and writes a file into it, in four variants: exits 0; exits 1; sleeps past a short mutation cap; and a run where the `ac mutate` process is sent SIGINT mid-run (`kill -INT <pid>`). In every variant `$TMPDIR` was set to a run-specific folder (not the system temp root, not shared across two runs), the tool's tests inherit it (a test that logs `os.tmpdir()` shows the same folder), and after ac exits that folder no longer exists. Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** TMPDIR is not set for the tool, two runs share a folder, or the folder (or anything the tool wrote in it) survives any of the four endings.
+
+### C14 [core] — Leftovers of dead mutation runs are removed at the next run, and a live run's are not
+- **Observe:** Start `ac mutate <phase>` with a stub that writes into its temp folder and sleeps; `kill -9` the ac process and the stub, leaving the temp folder (and any private-cache scratch or scratch module copy) behind. Run `ac mutate <phase>` again (any outcome): the dead run's leftovers are gone afterwards, the result says what it cleaned in at most a line, and the user's own files outside ac's run folders are untouched. A folder belonging to a run whose process is still alive is not deleted. Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** the dead run's folder survives the next run, cleanup deletes a live run's folder, or cleanup removes anything ac did not create.
+
+### C15 [edge] — `ac suite run` runs the suite in its own temp folder and removes it afterwards
+- **Observe:** `ac suite run --command "node --test"` in a scratch project whose test writes `os.tmpdir()` to a log and creates a file there: the logged folder is run-specific and gone after the run, on a passing and on a failing suite; the suite's pass/fail, test count and exit code are the same as running `node --test` directly. If the implementation decides a project's suite would test differently with a private TMPDIR and leaves it alone, the result says so. Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** the folder survives the run, or a private TMPDIR changes the suite's outcome without the result saying it was skipped.
+
+### C16 [edge] — An uncontended heavy job on an idle machine starts without added delay
+- **Observe:** With no other heavy job running, `time ac suite run --command true` completes in about the same wall time as before this phase (well under 2 s on this Mac; no fixed sleep or polling delay before the first attempt to take the lock). Files: `lib/`, `bin/ac.mjs`.
+- **Fails if:** taking a free lock, computing the budget or the cleanup sweep adds a noticeable fixed delay (seconds) to every run.
+
+### C17 [core] — In fast mode the healed-wave test gate runs the phase's targeted test set, not the full suite; with the full-suite-per-phase setting it still runs the full suite, and it still fails closed
+- **Observe:** Drive `workflows/execute-phase.mjs` with the Workflow hooks stubbed (the way `tests/workflows.test.mjs` loads it) through a run where a wave is healed, once in the default fast mode (ADR-094) and once with the project setting that restores the full suite per phase. Capture the test-gate agent's instruction (or whatever command the gate runs): in fast mode it names the targeted set (the phase's changed tests + tests of its changed files, the same set `ac verdict cheap` computes) and does not tell the agent to run all tests; in full-suite mode it runs the full suite. In both modes a gate return with `testsRun: 0` or a failure still stops the phase (ADR-066), and a project with no runner keeps the unproven path (ADR-028). Files: `workflows/execute-phase.mjs`, `lib/`.
+- **Fails if:** the gate still asks for the full suite in fast mode, runs the targeted set in full-suite mode, or a zero-test / failed targeted gate lets the next wave proceed.
+
+### C18 [suite] [core] — The project's full test suite passes
+- **Observe:** `node --test` at the repo root (`tests/`) exits 0 with zero failing tests and a non-zero test count.
+- **Fails if:** any test fails, the suite fails to load, or it runs zero tests.

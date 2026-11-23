@@ -31,10 +31,10 @@ test('ac suite run --command exits with the suite\'s status and prints one recei
   try {
     const ok = ac(p.dir, 'suite', 'run', '--command', OK);
     assert.equal(ok.status, 0, ok.stderr);
-    assert.match(ok.stdout, /^✓ suite receipt [0-9a-f]{8}: exit 0 on a clean tree at [0-9a-f]{7} \(reusable\)\n$/);
+    assert.match(ok.stdout, /^✓ suite receipt [0-9a-f]{8}: exit 0 on a clean tree at [0-9a-f]{7} \(reusable\)\n• workers: \d+ \(.+\)\n$/); // phase 59: one budget line follows the receipt line
     const bad = ac(p.dir, 'suite', 'run', '--command', BAD);
     assert.equal(bad.status, 4);
-    assert.match(bad.stdout, /^⚠ suite receipt [0-9a-f]{8}: not reusable — suite exit status was 4\n$/);
+    assert.match(bad.stdout, /^⚠ suite receipt [0-9a-f]{8}: not reusable — suite exit status was 4\n• workers: \d+ \(.+\)\n$/);
   } finally { p.done(); }
 });
 

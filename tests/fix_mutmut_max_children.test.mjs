@@ -32,8 +32,9 @@ test('#188: mutation.max_children reaches mutmut 3 as --max-children, and the ph
   const { runMutate } = await import('../lib/mutate.mjs');
   const { p, slug } = await rig('mutmut, version 3.8.0');
   try {
-    await runMutate(p.dir, slug, { env: p.env });
-    assert.ok(runArgv(p).every((a) => !a.includes('--max-children')), 'no key, no flag: mutmut keeps its default');
+    const first = await runMutate(p.dir, slug, { env: p.env });
+    // Phase 59: with no key mutmut gets the adaptive worker budget instead of one worker per CPU.
+    assert.deepEqual(runArgv(p).at(-1).slice(0, 3), ['run', '--max-children', String(first.workers.n)], 'no key: the budget bounds mutmut');
     await cfgSet(p.dir, { max_children: 3 });
     await runMutate(p.dir, slug, { env: p.env });
     let a = runArgv(p).at(-1);
@@ -53,7 +54,7 @@ test('#188: a bad value is ignored with a warning; mutmut 2 says the key does no
   try {
     await cfgSet(p.dir, { max_children: 'lots' });
     const r = await runMutate(p.dir, slug, { env: p.env });
-    assert.ok(runArgv(p).every((a) => !a.includes('--max-children')));
+    assert.deepEqual(runArgv(p).at(-1).slice(0, 3), ['run', '--max-children', String(r.workers.n)], 'a bad value is ignored: the budget applies');
     assert.ok(r.warnings.some((w) => /mutation\.max_children/.test(w)), JSON.stringify(r.warnings));
   } finally { rmSync(p.dir, { recursive: true, force: true }); }
   ({ p, slug } = await rig('2.4.4', { MUTATE_STUB_V2_REAL: '1', MUTATE_STUB_REPORT: join(FX, 'mutmut2-junit.xml') }));

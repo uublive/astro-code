@@ -725,6 +725,18 @@ workflow run it before any expensive stage; an unmet result ends the round with 
 evidence can only **fail** a run: it records a narrowed verdict marked `cheap`, never a pass, and `ac phase verify` refuses
 it. `ac verdict cheap <phase> --json` prints the same result as data.
 
+### Heavy jobs: the budget, the lock and the temp folder
+
+`ac suite run` and `ac mutate` are heavy jobs (ADR-096). Each takes a **worker budget**: adaptive by default
+(about a quarter of the CPUs, fewer when the memory free right now is tight, never under 1), or
+`ac config set heavy.workers <n>`. A command that starts with `node --test` gets `--test-concurrency`, one that
+starts with `go test` runs as `go test -p <n>`, and every command sees `ASTRO_WORKERS`, `GOMAXPROCS` and `GOFLAGS -p=<n>`
+(an existing `-p` stays when it is lower). The receipt keeps the original command, so reuse is unaffected, and adds
+`workers`. The suite runs in a private `TMPDIR` removed afterwards. Only **one heavy job runs per machine**: a
+second waits behind the machine lock and prints what it waits for (the holder's project, command and age); a lock
+whose holder died is taken over. The lock, the run folders and the Go cache live in `ASTRO_HEAVY_DIR`
+(default `~/.astro/heavy`), per user.
+
 ### A slow suite runs last
 
 A verify that fails should cost the time of what it checked, not of the slowest thing in the project. A suite
@@ -853,7 +865,10 @@ lock-managed Python environment adds a warning that an install may change nothin
   counted and warned about); mutmut 2 whole files, with the reason, and results filtered to the
   changed lines. Nothing changed means `no-scope`. The result says which scope applied and why.
   `ac config set mutation.files '["src/x.js"]'` adds whole files and `mutation.exclude` skips paths
-  (a trailing `/` is a directory); Gremlins falls back to excluding other files when files are added.
+  (a trailing `/` is a directory); Gremlins falls back to excluding other files when files are added. A Go
+  module below the repo root runs `--diff` in a scratch git repo of the module (so only the changed lines are
+  mutated; the copy is removed with the run), or, when that cannot be proven sound (a `go.work`, a `replace`
+  or `go:embed` that reaches outside the module), falls back to whole-file mode and the result says why.
 - **Tests: the phase's own.** The test files the phase's commits wrote; with none the full suite runs
   and the result says so. `mutation.tests` (project) or `mutation.phases.<n>.tests` (one phase) names
   others. Each tool is handed them its own way (a generated Stryker config, Gremlins `GOFLAGS -run`,
@@ -865,9 +880,16 @@ lock-managed Python environment adds a warning that an install may change nothin
   `ac config set mutation.phases.<n>.cap_seconds 1800` for one phase. At the cap the whole process
   group is killed and the result names the step it was in, how many mutants were tested and the key
   to raise. A capped run is never "all killed".
-- **Workers (mutmut 3).** One per CPU by default; `mutation.max_children` (or
-  `mutation.phases.<n>.max_children`) bounds it, passed as mutmut's own `--max-children`. mutmut 2 has
-  no such flag, so the key is reported as ignored there.
+- **Workers.** One heavy job per machine: a second `ac mutate` or `ac suite run` waits behind the machine
+  lock, and the wait does not count against the cap. The run takes the adaptive budget (`heavy.workers`
+  overrides it) its tool's own way: Gremlins `--workers` plus `GOMAXPROCS` and `GOFLAGS -p` (never `--test-cpu`),
+  Stryker `--concurrency`, mutmut 3 `--max-children` (`mutation.max_children` or
+  `mutation.phases.<n>.max_children` wins when set; mutmut 2 has no such flag). A project's own lower value
+  (`.gremlins.yaml` `workers`, a Stryker `concurrency`) is respected; a higher one is capped and the result says so.
+- **Cleanup.** The run uses its own Go build cache in `ASTRO_HEAVY_DIR` (`heavy.go_cache_max_mb`, default 5120, oldest entries
+  evicted first) so the user's `go-build` does not grow, and its own temp folder, removed on success, failure,
+  cap and Ctrl-C; the next run removes a dead run's leftovers. There is no early stop: one run gives the
+  complete survivor list.
 - **Outcomes.** `clean`, `survivors`, `incomplete` (capped or not every mutant ran), `no-scope`,
   `tool-missing`, `no-tool`, `not-configured` (mutmut 3 installed but without configuration: run
   `ac mutate setup`), `error`. Timeouts count as killed. A dirty scope is an `error`: the result

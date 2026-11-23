@@ -52,7 +52,9 @@ test('runSuite on a clean tree writes a receipt with command, commit, tree, clea
     for (const k of ['started_at', 'at']) assert.ok(!Number.isNaN(Date.parse(rc[k])));
     assert.equal(typeof rc.seconds, 'number');
     const onDisk = JSON.parse(readFileSync(join(receiptDir(r.root), `${rc.key}.json`), 'utf8'));
-    assert.deepEqual(onDisk, rc);
+    // `lock` and `cleaned` (phase 59) describe the run and are returned, never stored.
+    const { lock, cleaned, ...stored } = rc;
+    assert.deepEqual(onDisk, stored);
   } finally { r.done(); }
 });
 

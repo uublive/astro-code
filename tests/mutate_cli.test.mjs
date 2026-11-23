@@ -15,7 +15,7 @@ const ac = (p, args, o = {}) => spawnSync(process.execPath, [AC, ...args], { cwd
 const logLines = (f) => (existsSync(f) ? readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 const done = (p) => rmSync(p.dir, { recursive: true, force: true });
 const pinPhase = (p) => { const f = join(p.dir, '.astrocode', 'config.json'); writeFileSync(f, JSON.stringify({ ...JSON.parse(readFileSync(f, 'utf8')), verify: { full_suite: 'phase' } })); };
-const strip = ({ started_at, duration_ms, log, flaky, ...rest }) => ({ ...rest, flaky: flaky && { ...flaky, duration_ms: 0 } });
+const strip = ({ started_at, duration_ms, log, flaky, tmpdir, workers, lock, go_cache, ...rest }) => ({ ...rest, flaky: flaky && { ...flaky, duration_ms: 0 } });
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 async function rig(kind, { report, version, extra = {}, nodeModules = false } = {}) {

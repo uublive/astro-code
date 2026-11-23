@@ -123,7 +123,10 @@ export function restrictedEnv(binDirs, extra = {}) {
   const only = mkdtempSync(join(tmpdir(), 'ac-mutate-only-'));
   symlinkSync(process.execPath, join(only, 'node'));
   symlinkSync(GIT_BIN, join(only, 'git'));
-  const env = { ...process.env, PATH: [...binDirs, only].join(delimiter), HOME: mkdtempSync(join(tmpdir(), 'ac-mutate-home-')) };
-  delete env.GOBIN; delete env.GOPATH;
+  const home = mkdtempSync(join(tmpdir(), 'ac-mutate-home-'));
+  // Phase 59: each call gets its own heavy-job home (lock, run folders, Go cache) unless `extra` names one,
+  // so a test never touches the owner's real lock and two tests never wait on each other.
+  const env = { ...process.env, PATH: [...binDirs, only].join(delimiter), HOME: home, ASTRO_HEAVY_DIR: join(home, 'heavy') };
+  delete env.GOBIN; delete env.GOPATH; delete env.ASTRO_HEAVY_LOCK;
   return { ...env, ...extra };
 }

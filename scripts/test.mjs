@@ -16,7 +16,9 @@ let status = 1;
 try {
   const r = spawnSync(process.execPath, ['--test', ...process.argv.slice(2)], {
     stdio: 'inherit',
-    env: { ...process.env, TMPDIR: dir, TMP: dir, TEMP: dir },
+    // Phase 59: the machine lock and run folders live under ASTRO_HEAVY_DIR; pinned inside the scratch
+    // dir so `npm test` never touches (or waits on) the owner's real heavy-job lock.
+    env: { ...process.env, TMPDIR: dir, TMP: dir, TEMP: dir, ASTRO_HEAVY_DIR: join(dir, 'heavy') },
   });
   status = r.status ?? 1;
 } finally {

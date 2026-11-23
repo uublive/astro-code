@@ -2864,6 +2864,7 @@ test('t2 (phase 14, C1): the wave integrator floors to sonnet when models.integr
   assert.strictEqual(byLabel(calls, 'integrate:w1').opts.model, 'sonnet', 'no models.integrator key -> the integrate call must floor to sonnet (an unset key is never moved to haiku)')
   assert.strictEqual(byLabel(calls, 'heal:t2').opts.model, 'sonnet', 'heal re-runs must stay at models.executor')
   assert.strictEqual(byLabel(calls, 'testgate').opts.model, 'sonnet', 'the post-heal test gate must stay at models.executor')
+  assert.strictEqual(byLabel(calls, 'testgate-plan').opts.model, 'sonnet', 'the test-gate plan relay must stay at models.executor (phase 59)')
   assert.strictEqual(byLabel(calls, 'teardown:w1').opts.model, 'sonnet', 'teardown must stay at models.executor')
 
   const overrideArgs = { ...baseArgs, models: { ...baseArgs.models, integrator: 'sonnet' } }
@@ -3016,7 +3017,7 @@ test('t2 (phase 14): source guard — the integrate agent() options line reads m
     'the integrate call must read models.integrator, floored to \'sonnet\' except on a local-model session',
   )
 
-  for (const needle of ["label: taskLabel('heal', t)", "label: 'testgate'", 'label: `teardown:w']) {
+  for (const needle of ["label: taskLabel('heal', t)", "label: 'testgate'", "label: 'testgate-plan'", 'label: `teardown:w']) {
     const line = lines.find((l) => l.includes(needle))
     assert.ok(line, `${needle} agent() options line not found`)
     assert.ok(line.includes('model: models.executor'), `${needle} must still read model: models.executor`)
@@ -3178,7 +3179,7 @@ test('ADR-028: the gate prompt distinguishes "no suite exists" from "the suite i
   const wfSrc = readFileSync(WF_FILE, 'utf8')
   const startIdx = wfSrc.indexOf('const runTestSuite')
   assert.ok(startIdx !== -1, 'runTestSuite not found')
-  const window = wfSrc.slice(startIdx, startIdx + 2000)
+  const window = wfSrc.slice(startIdx, startIdx + 4000)
 
   assert.ok(/ranSuite:false/.test(window), 'the prompt must tell the agent when to return ranSuite:false')
   // The load/compile carve-out is the whole point: a suite that EXISTS but cannot be
