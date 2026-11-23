@@ -112,9 +112,10 @@ test('real Gremlins on a Go module in a subfolder: runs from the module, survivo
     assert.equal(r.status, 0, r.stderr);
     const res = JSON.parse(r.stdout);
     common(res, dir);
-    // Gremlins' --diff cannot map a subfolder module (it skips every mutant), so the module's other files are excluded.
-    assert.equal(res.scope_detail.narrowed, 'files');
-    assert.match(res.command, /--exclude-files \^p1\/p1\\\.go\$/);
+    // Phase 59: Gremlins' own --diff cannot map a subfolder module, so it runs --diff in a scratch git repo of the
+    // module instead; no exclusion list is needed (the whole-file fallback is covered in mutate_subdir_diff.test.mjs).
+    assert.equal(res.scope_detail.narrowed, 'diff', res.scope_detail.why);
+    assert.doesNotMatch(res.command, /--exclude-files/);
     assert.deepEqual(res.scope, ['host/p2/p2.go']);
     assert.equal(res.flaky.checked, true, res.flaky.reason);
     assert.equal(res.flaky.command, 'go test -count=1 -v ./p2');
@@ -216,4 +217,77 @@ test('real Gremlins: tool.version is the module version of the binary (go versio
       }
     }
   } finally { rmSync(dir, { recursive: true, force: true }); rmSync(home, { recursive: true, force: true }); }
+});
+
+// ---- Phase 59 t12 — the subfolder module under the budget, on the real tools (C9, C10, C12) ----
+// One file of ten one-line functions. `tests` call only the first `covered` of them. The phase commit changes the
+// given functions' bodies (a different constant), so each changed line holds exactly one arithmetic mutant.
+const GO_FUNCS = (n, changed = []) => `package svc\n\n${Array.from({ length: n }, (_, i) => `func F${i}(a int) int { return a + ${changed.includes(i) ? i + 100 : i} }\n`).join('\n')}`;
+const GO_TESTS = (covered, changed = []) => `package svc\n\nimport "testing"\n\n${Array.from({ length: covered }, (_, i) => `func TestF${i}(t *testing.T) {\n\tif F${i}(1) != ${1 + (changed.includes(i) ? i + 100 : i)} {\n\t\tt.Fatal("f${i}")\n\t}\n}\n`).join('\n')}`;
+
+async function goLayout(prefix, { covered = 10, changed = [0], workers } = {}) {
+  const dir = await scratch();
+  const home = mkdtempSync(join(tmpdir(), 'ac-mutate-gohome-'));
+  const heavy = mkdtempSync(join(tmpdir(), 'ac-mutate-heavy-'));
+  put(dir, `${prefix}go.mod`, 'module example.com/real\n\ngo 1.22\n');
+  put(dir, `${prefix}svc.go`, GO_FUNCS(10));
+  put(dir, `${prefix}svc_test.go`, GO_TESTS(covered));
+  commit(dir, 'baseline');
+  put(dir, `${prefix}svc.go`, GO_FUNCS(10, changed));
+  put(dir, `${prefix}svc_test.go`, GO_TESTS(covered, changed));
+  commit(dir, 'work (phase 5 t1)');
+  const cfgFile = join(dir, '.astrocode/config.json');
+  const cfg = JSON.parse(readFileSync(cfgFile, 'utf8'));
+  writeFileSync(cfgFile, JSON.stringify({ ...cfg, mutation: { tool: 'gremlins' }, ...(workers ? { heavy: { workers } } : {}) }));
+  return { dir, home, heavy, cleanup: () => { for (const d of [dir, home, heavy]) rmSync(d, { recursive: true, force: true }); } };
+}
+const runReal = (l, extra = {}) => {
+  const r = ac(l.dir, ['mutate', '5', '--json'], { HOME: l.home, GOFLAGS: '-mod=mod', ASTRO_HEAVY_DIR: l.heavy, ...extra });
+  assert.equal(r.status, 0, r.stderr);
+  const res = JSON.parse(r.stdout);
+  assert.notEqual(res.outcome, 'error', res.error);
+  return res;
+};
+const total = (res) => Object.values(res.counts).reduce((a, b) => a + b, 0);
+
+test('real Gremlins, C9: a subfolder module tests only the changed line, like the same module at the root', { skip: !REAL || !which('gremlins') || !which('go') }, async () => {
+  const root = await goLayout('');
+  const sub = await goLayout('svc/');
+  try {
+    const a = runReal(root);
+    const b = runReal(sub);
+    assert.equal(b.scope_detail.narrowed, 'diff', b.scope_detail.why);
+    assert.equal(total(b), total(a), 'the same number of mutants as the root layout');
+    assert.ok(total(b) > 0 && total(b) <= 3, `per-line count, not the whole-file count (${total(b)})`);
+    assert.deepEqual([b.counts.killed, b.counts.survived], [a.counts.killed, a.counts.survived]);
+  } finally { root.cleanup(); sub.cleanup(); }
+});
+
+test('real Gremlins, C10: an uncovered function is never KILLED, and the outcomes are the same at every budget', { skip: !REAL || !which('gremlins') || !which('go') }, async () => {
+  const outcomes = [];
+  for (const prefix of ['', 'svc/']) {
+    for (const workers of [1, 3, undefined]) {
+      const l = await goLayout(prefix, { covered: 5, changed: [0, 7], workers });
+      try {
+        const res = runReal(l);
+        outcomes.push({ prefix, workers, counts: res.counts, survivors: res.survivors.map((s) => `${s.file.replace(/^svc\//, '')}:${s.line}:${s.status}`).sort() });
+        assert.ok(res.counts['no-coverage'] + res.counts.survived >= 1, 'the uncovered function F7 is not covered, never killed');
+        assert.ok(!res.survivors.some((s) => s.status === 'killed'));
+      } finally { l.cleanup(); }
+    }
+  }
+  for (const o of outcomes) assert.deepEqual(o.counts, outcomes[0].counts, `${o.prefix || 'root'} workers ${o.workers}`);
+  for (const o of outcomes) assert.deepEqual(o.survivors, outcomes[0].survivors);
+});
+
+test('real Gremlins, C12: the user\'s own Go build cache does not grow', { skip: !REAL || !which('gremlins') || !which('go') }, async () => {
+  const gocache = spawnSync('go', ['env', 'GOCACHE'], { encoding: 'utf8' }).stdout.trim();
+  const du = () => Number(spawnSync('du', ['-sk', gocache], { encoding: 'utf8' }).stdout.split('\t')[0]) || 0;
+  const l = await goLayout('svc/');
+  try {
+    const before = du();
+    runReal(l, { HOME: process.env.HOME });
+    assert.ok(du() - before < 256, `GOCACHE grew by ${du() - before} KB`);
+    assert.ok(existsSync(join(l.heavy, 'gocache')), 'the run used its own cache');
+  } finally { l.cleanup(); }
 });

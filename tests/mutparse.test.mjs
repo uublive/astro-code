@@ -18,7 +18,7 @@ const CASES = [
   { fn: 'parseStryker', file: 'stryker-partial.json', scope: ['src/a.mjs'], total: 9,
     counts: { killed: 1, survived: 1, timeout: 1, 'no-coverage': 1, error: 2 }, not_run: 1, ignored: 1 },
   { fn: 'parseGremlins', file: 'gremlins.json', scope: ['a.go'], total: 8,
-    counts: { killed: 1, survived: 1, timeout: 1, 'no-coverage': 1, error: 1 }, not_run: 1, ignored: 1 },
+    counts: { killed: 1, survived: 1, timeout: 1, 'no-coverage': 1, error: 1 }, not_run: 2, ignored: 0 },
   { fn: 'parseMutmutJunit', file: 'mutmut2-junit.xml', scope: ['src/a.py'], total: 7,
     counts: { killed: 1, survived: 1, timeout: 2, 'no-coverage': 0, error: 0 }, not_run: 1, ignored: 1 },
   { fn: 'parseMutmutResults', file: 'mutmut3-results.txt', scope: ['src/a.py'], total: 9,

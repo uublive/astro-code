@@ -130,9 +130,10 @@ test('C1/C2 runMutate (stryker): every mutant present, statuses counted, argv ca
     const [call] = logLines(p.log).filter((l) => l.argv[0] === 'run');
     assert.equal(call.argv[call.argv.indexOf('--mutate') + 1], 'src/a.mjs:1-30');
     // phase 1 wrote tests/a.test.mjs, so the run goes through the generated config (D2)
-    assert.equal(r.command, `stryker run .astrocode/.local/mutate-runs/${p.slug1}.stryker.config.mjs --mutate src/a.mjs:1-30 --reporters json`);
+    assert.equal(r.command, `stryker run .astrocode/.local/mutate-runs/${p.slug1}.stryker.config.mjs --mutate src/a.mjs:1-30 --reporters json --concurrency ${r.workers.n}`);
     const again = await runMutate(p.dir, p.slug1, { env: p.env });
-    const strip = ({ started_at, duration_ms, log, flaky, ...rest }) => ({ ...rest, flaky: flaky && { ...flaky, duration_ms: 0 } });
+    // phase 59: the run's own temp folder and the memory read are per-run facts, not part of the result
+    const strip = ({ started_at, duration_ms, log, flaky, tmpdir, workers, lock, go_cache, ...rest }) => ({ ...rest, flaky: flaky && { ...flaky, duration_ms: 0 } });
     assert.deepEqual(strip(again), strip(r));
   } finally { done(p); }
 });
@@ -159,7 +160,7 @@ test('C2 gremlins gets --diff against the phase base; mutmut 2.x gets --paths-to
   p = await rig('py', { report: 'mutmut3-results.txt', version: 'mutmut, version 3.2.0' });
   try {
     const r = await runMutate(p.dir, p.slug1, { env: p.env });
-    assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'run').argv, ['run', 'a.x_add__mutmut_*', 'a.x_mul__mutmut_*', 'a.x_sub__mutmut_*']);
+    assert.deepEqual(logLines(p.log).find((l) => l.argv[0] === 'run').argv, ['run', '--max-children', String(r.workers.n), 'a.x_add__mutmut_*', 'a.x_mul__mutmut_*', 'a.x_sub__mutmut_*']);
     assert.deepEqual(r.counts, { killed: 1, survived: 1, timeout: 2, 'no-coverage': 1, error: 1 });
     assert.equal(r.complete, false, 'a "not checked" mutant means the run is not complete');
     assert.equal(r.not_run_count, 1);

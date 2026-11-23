@@ -1,0 +1,1 @@
+{"at":"2026-11-23T07:23:06.623Z","phase":"59-resource-safe-verify-and-mutation","signals":["remediation"],"note":"Gremlins --diff silently skips mutants on later lines of a merged hunk, so changed-lines mode needed a second whole-file pass; a targeted gate could pass as unproven"}

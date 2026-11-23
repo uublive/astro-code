@@ -35,7 +35,9 @@ Verify phase `$ARGUMENTS` — the **AI gate** (the human UAT gate is `/astro-acc
    in fast mode (the default) never run the full suite: run only the targeted tests `ac verdict cheap` ran (`fast.tests`), or
    none when it reports no linked tests, and leave a suite criterion out of your report (it is carried to the milestone full
    check); with `verify.full_suite: phase`, run the full suite; observe every non-suite criterion first; a slow suite runs only after every non-suite criterion
-   passes, and only through `ac suite run`; the slow-or-fast decision comes from `ac suite receipt` (its `slow` line)
+   passes, and only through `ac suite run` (it takes the one machine lock, so it may wait behind another heavy job, and the
+   worker budget: `node --test` gets `--test-concurrency`, `go test -p <n>`, any other command sees `ASTRO_WORKERS`,
+   `GOMAXPROCS` and `GOFLAGS -p=<n>`, in a private `TMPDIR` removed afterwards); the slow-or-fast decision comes from `ac suite receipt` (its `slow` line)
    or `ac verdict cheap` (`held`), never your own estimate; otherwise report it `held: true` (held back, not run),
    never passed or failed; PASS only if **every** criterion independently passes. If CRITERIA.md
    is absent, self-derive goal criteria and open the verdict with a provenance line — never
