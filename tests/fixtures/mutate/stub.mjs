@@ -91,7 +91,9 @@ if (argv[0] === '--version') {
   console.log(env.MUTATE_STUB_VERSION ?? DEFAULT_VERSION[name]);
   process.exit(0);
 }
-const report = () => (env.MUTATE_STUB_REPORT ? readFileSync(env.MUTATE_STUB_REPORT, 'utf8') : '');
+// MUTATE_STUB_REPORT_NODIFF: the report a gremlins run WITHOUT --diff emits (a second, whole-file pass).
+const reportFile = () => (env.MUTATE_STUB_REPORT_NODIFF && !argv.includes('--diff') ? env.MUTATE_STUB_REPORT_NODIFF : env.MUTATE_STUB_REPORT);
+const report = () => (reportFile() ? readFileSync(reportFile(), 'utf8') : '');
 const hang = () => {
   if (env.MUTATE_STUB_OUT) process.stdout.write(env.MUTATE_STUB_OUT);
   if (env.MUTATE_STUB_ERR) process.stderr.write(env.MUTATE_STUB_ERR);

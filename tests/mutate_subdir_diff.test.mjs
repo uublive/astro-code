@@ -72,3 +72,32 @@ test('with a go.work the run falls back to whole-file mode and says why', async 
     assert.ok(r.survivors.every((s) => s.file === 'svc/a.go'));
   } finally { rmSync(p.dir, { recursive: true, force: true }); }
 });
+
+// Phase 59 remediate (C11): real Gremlins v0.6.0 `--diff` SKIPS the mutants on changed lines after the first
+// ones of a merged hunk. A skipped mutant on a phase line is run by a second, whole-file pass over the files
+// that hold one, and its result replaces the first pass's for those files, so one run ends complete.
+test('mutants Gremlins --diff skipped on phase lines are run by a second whole-file pass, and the run ends complete', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig();
+  const rep = (status) => JSON.stringify({ go_module: 'example.com/svc', files: [{ file_name: 'a.go', mutations: [
+    { line: 5, column: 3, type: 'ARITHMETIC_BASE', status },
+    { line: 9, column: 3, type: 'ARITHMETIC_BASE', status: 'LIVED' }, // off the phase's lines: out of scope either way
+  ] }] });
+  const first = join(p.dir, 'first.json'); const second = join(p.dir, 'second.json');
+  writeFileSync(first, rep('SKIPPED')); writeFileSync(second, rep('LIVED'));
+  try {
+    const r = await runMutate(p.dir, p.slug, { env: { ...p.env, MUTATE_STUB_REPORT: first, MUTATE_STUB_REPORT_NODIFF: second } });
+    const calls = logLines(p.log).filter((l) => l.tool === 'gremlins' && l.argv[0] === 'unleash');
+    assert.equal(calls.length, 2, 'a second pass ran');
+    assert.ok(calls[0].argv.includes('--diff') && !calls[1].argv.includes('--diff'));
+    assert.deepEqual(calls[1].argv.filter((a, i) => calls[1].argv[i - 1] === '--exclude-files'), ['^c\\.go$'], 'the second pass keeps only the file holding a skipped mutant');
+    assert.equal(calls[1].cwd, calls[0].cwd, 'same module copy');
+    assert.equal(r.not_run_count, 0);
+    assert.equal(r.counts.survived, 1);
+    assert.deepEqual(r.survivors.map((s) => `${s.file}:${s.line}`), ['svc/a.go:5']);
+    assert.equal(r.outcome, 'survivors');
+    assert.equal(r.complete, true);
+    assert.ok(r.warnings.some((w) => /--diff skipped 1 mutant/.test(w)), JSON.stringify(r.warnings));
+    assert.deepEqual(runs(p.env), []);
+  } finally { rmSync(p.dir, { recursive: true, force: true }); }
+});
