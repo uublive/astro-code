@@ -1,13 +1,17 @@
 {
   "version": 1,
-  "run": 3,
+  "run": 4,
   "mode": "full",
   "reason": "verifier ran full (plan: narrowed: 1 of 18 unmet)",
   "broad": false,
-  "commit": "64f6b93cc906e1c0b107f917b33dd4f9e520ba5e",
+  "commit": "a091022cfb683a1b2db5dacd059374d7c233c99a",
   "criteria_sha": "sha256:1de5214dffdac7cced7ce1a36b767cc1580efd5ea4b984ea15cd2252b82113f9",
-  "at": "2026-11-23T06:49:01.683Z",
-  "base": null,
+  "at": "2026-11-23T07:22:56.742Z",
+  "base": {
+    "run": 4,
+    "commit": "a091022cfb683a1b2db5dacd059374d7c233c99a",
+    "fast": true
+  },
   "fast": {
     "mode": "milestone",
     "tests": [
@@ -158,8 +162,8 @@
     ],
     "command": "node --test 'tests/adr_cli.test.mjs' 'tests/adr_e2e.test.mjs' 'tests/agent_tools.test.mjs' 'tests/backlog_cli.test.mjs' 'tests/backlog_drain.test.mjs' 'tests/branch_scope_e2e.test.mjs' 'tests/brand.test.mjs' 'tests/budget.test.mjs' 'tests/calibrate_cli.test.mjs' 'tests/calibrate_docs.test.mjs' 'tests/calibrate_e2e.test.mjs' 'tests/canon.test.mjs' 'tests/canon_guard.test.mjs' 'tests/caprun.test.mjs' 'tests/capture_cli.test.mjs' 'tests/challenge.test.mjs' 'tests/cheappass.test.mjs' 'tests/cheappass_fast.test.mjs' 'tests/cli.test.mjs' 'tests/commands.test.mjs' 'tests/config_codex.test.mjs' 'tests/config_cursor.test.mjs' 'tests/contracts.test.mjs' 'tests/debt.test.mjs' 'tests/debt_cli.test.mjs' 'tests/decision_revisions.test.mjs' 'tests/defer_cli.test.mjs' 'tests/doctor_cli.test.mjs' 'tests/doctor_command.test.mjs' 'tests/doctor_leanctx.test.mjs' 'tests/effort.test.mjs' 'tests/evidence_cli.test.mjs' 'tests/execute_blocked_dependency.test.mjs' 'tests/execute_testgate_fast.test.mjs' 'tests/fix_canon_collision_fixes.test.mjs' 'tests/fix_canon_pull_prose.test.mjs' 'tests/fix_install_other_checkout.test.mjs' 'tests/fix_mods_bare_ac.test.mjs' 'tests/fix_mutate_go_subdir.test.mjs' 'tests/fix_mutmut_max_children.test.mjs' 'tests/fix_no_amend_pushed_stamp.test.mjs' 'tests/fix_replan_stamped_ids.test.mjs' 'tests/fixes.test.mjs' 'tests/fixtures.test.mjs' 'tests/flags.test.mjs' 'tests/fleet.test.mjs' 'tests/flow.test.mjs' 'tests/flow_cli.test.mjs' 'tests/flow_link_cli.test.mjs' 'tests/forge_standalone.test.mjs' 'tests/fullcheck_docs.test.mjs' 'tests/git_guard.test.mjs' 'tests/gocache.test.mjs' 'tests/heavy.test.mjs' 'tests/heavy_cli.test.mjs' 'tests/heavy_docs.test.mjs' 'tests/hooks-update.test.mjs' 'tests/hooks_principles.test.mjs' 'tests/hostile-env.test.mjs' 'tests/install.test.mjs' 'tests/install_cursor.test.mjs' 'tests/kit_convert.test.mjs' 'tests/kit_source_command.test.mjs' 'tests/local_model.test.mjs' 'tests/machinelock.test.mjs' 'tests/milestone_deferred.test.mjs' 'tests/milestone_fullcheck_cli.test.mjs' 'tests/milestone_lifecycle.test.mjs' 'tests/milestone_registry_sync.test.mjs' 'tests/mine_cli.test.mjs' 'tests/mods_cli.test.mjs' 'tests/mods_feed.test.mjs' 'tests/mods_lifecycle.test.mjs' 'tests/mods_live_capture.test.mjs' 'tests/mods_plugin.test.mjs' 'tests/mutate.test.mjs' 'tests/mutate_agents.test.mjs' 'tests/mutate_budget.test.mjs' 'tests/mutate_cli.test.mjs' 'tests/mutate_cli_quiet.test.mjs' 'tests/mutate_docs.test.mjs' 'tests/mutate_flags.test.mjs' 'tests/mutate_flaky.test.mjs' 'tests/mutate_plantfields.test.mjs' 'tests/mutate_real.test.mjs' 'tests/mutate_rerun_exact.test.mjs' 'tests/mutate_scope.test.mjs' 'tests/mutate_subdir_diff.test.mjs' 'tests/mutate_survivors.test.mjs' 'tests/mutate_tests.test.mjs' 'tests/mutate_triage.test.mjs' 'tests/mutparse.test.mjs' 'tests/notes.test.mjs' 'tests/opencode.test.mjs' 'tests/phase_milestone.test.mjs' 'tests/principle_capture.test.mjs' 'tests/principles_behaviour_guards.test.mjs' 'tests/principles_cli.test.mjs' 'tests/principles_contract.test.mjs' 'tests/principles_nosync_cli.test.mjs' 'tests/principles_promote.test.mjs' 'tests/principles_prompts.test.mjs' 'tests/principles_retrieval_cli.test.mjs' 'tests/principles_review.test.mjs' 'tests/principles_review_cli.test.mjs' 'tests/principles_sync_cli.test.mjs' 'tests/receipts.test.mjs' 'tests/registry.test.mjs' 'tests/rundir.test.mjs' 'tests/scratchmod.test.mjs' 'tests/setup_cli.test.mjs' 'tests/slow_suite.test.mjs' 'tests/slow_suite_cli.test.mjs' 'tests/smallest_change.test.mjs' 'tests/status_json.test.mjs' 'tests/statusline.test.mjs' 'tests/statusline_gauges.test.mjs' 'tests/suite_budget.test.mjs' 'tests/suite_cli.test.mjs' 'tests/targeted.test.mjs' 'tests/targeted_gate.test.mjs' 'tests/targeted_run.test.mjs' 'tests/test_runner.test.mjs' 'tests/tune.test.mjs' 'tests/user_role_defaults.test.mjs' 'tests/verdict.test.mjs' 'tests/verdict_cheap_cli.test.mjs' 'tests/verdict_cli.test.mjs' 'tests/verdict_history_cli.test.mjs' 'tests/verdict_targeted_cli.test.mjs' 'tests/verdict_targeted_e2e.test.mjs' 'tests/verdict_targeted_record.test.mjs' 'tests/verify.test.mjs' 'tests/verify_contract.test.mjs' 'tests/verify_fast.test.mjs' 'tests/verify_fast_cli.test.mjs' 'tests/verify_fast_workflow.test.mjs' 'tests/verify_loop.test.mjs' 'tests/verify_overlap.test.mjs' 'tests/verify_slow_suite.test.mjs' 'tests/verify_speed_docs.test.mjs' 'tests/verifyrun.test.mjs' 'tests/waves.test.mjs' 'tests/workflows.test.mjs'",
     "receipt": {
-      "key": "5eeb75cb8be7d835f363a83e9420ed78ee5b9fe4a68e4ada52d34e60e30fd389",
-      "commit": "64f6b93cc906e1c0b107f917b33dd4f9e520ba5e",
+      "key": "bc3d95af884d1d1b0b74519aa8dfe4368cd5ce91aabc8a158253dbe039acdf07",
+      "commit": "a091022cfb683a1b2db5dacd059374d7c233c99a",
       "exit": 0
     }
   },
@@ -247,11 +251,9 @@
     },
     {
       "id": "C17",
-      "status": "failed",
+      "status": "passed",
       "evidence": "observed",
-      "suite": true,
-      "command": "workflows/execute-phase.mjs with stubbed hooks, healed wave, targeted gate plan, gate return {ranSuite:false, passed:true, testsRun:0}",
-      "output": "FAST/nosuite: stopped=false; wave 1 test gate SKIPPED, the healed wave is UNPROVEN: the next wave proceeds on a zero-test targeted gate"
+      "suite": true
     },
     {
       "id": "C18",
