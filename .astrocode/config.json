@@ -5,7 +5,7 @@
   "registry_branch": "astro-registry",
   "registry_remote": "origin",
   "models": {
-    "planner": "opus",
+    "planner": "fable",
     "researcher": "sonnet",
     "executor": "sonnet",
     "verifier": "opus",
