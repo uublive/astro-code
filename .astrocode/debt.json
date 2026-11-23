@@ -667,6 +667,26 @@
       "cost": "small",
       "found_at": "2026-11-16T12:13:20.111Z",
       "why": "Reported by Andrea (2026-11-16): tests that turn import.meta.url into a path with URL.pathname get %20 for a space, so a checkout under a folder with a space fails them. fileURLToPath is the fix."
+    },
+    {
+      "id": "2026-11-23-a-stryker-config-named-stryker-conf",
+      "title": "A Stryker config named stryker.conf.json / stryker.conf.mjs is not recognised, so its concurrency is not respected",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-11-23T07:23:06.299Z",
+      "why": "With concurrency: 1 in stryker.conf.json, ac ran Stryker with --concurrency 2 (the budget) and generated a config with an empty base, dropping the project config. Recognised names (stryker.config.json/.mjs/.js/.cjs, .stryker.conf.json) work. The budget bound still holds. Not confirmed against a real Stryker, which is not installed here.",
+      "phase": "59",
+      "file": "lib/mutate.mjs"
+    },
+    {
+      "id": "2026-11-23-an-invalid-heavy-workers-value-is",
+      "title": "An invalid heavy.workers value is ignored without a visible warning on ac suite run",
+      "status": "open",
+      "cost": "small",
+      "found_at": "2026-11-23T07:23:06.408Z",
+      "why": "After ac config set heavy.workers 0, ac suite run printed only the adaptive workers line. commands/astro-config.md says invalid values are ignored with a warning.",
+      "phase": "59",
+      "file": "lib/budget.mjs"
     }
   ]
 }

@@ -38,7 +38,7 @@
       "number": 59,
       "name": "Resource-safe verify and mutation: bounded workers by default, one heavy job per machine, changed lines only, caches cleaned",
       "slug": "59-resource-safe-verify-and-mutation",
-      "status": "pending",
+      "status": "verified",
       "milestone": 16
     }
   ]

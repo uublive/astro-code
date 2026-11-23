@@ -2,10 +2,10 @@
   "version": 1,
   "project": "astro-code",
   "active_milestone": 16,
-  "active_phase": null,
+  "active_phase": "59-resource-safe-verify-and-mutation",
   "status": "planning",
   "decisions": [],
   "blockers": [],
-  "updated_at": "2026-11-22T22:39:35.955Z",
+  "updated_at": "2026-11-23T07:22:55.868Z",
   "activity": null
 }
