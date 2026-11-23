@@ -193,6 +193,7 @@ test('Ctrl-C mid-run removes the temp folder and the tool group, and exits 130',
 test('after a kill -9 the next run sweeps the dead run folder and reports it; a live run folder survives', async () => {
   const { runMutate } = await import('../lib/mutate.mjs');
   const p = await rig('go', { report: 'gremlins.json', extra: { MUTATE_STUB_TMPWRITE: '1', MUTATE_STUB_SLEEP: '60', MUTATE_STUB_CHILD: '1' } });
+  const sleeperStart = Date.now(); // its real start: ownerAlive compares it with the process's own, within 2 s
   const sleeper = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
   try {
     const child = spawn(process.execPath, [AC, 'mutate', '1', '--json'], { cwd: p.dir, env: p.env, stdio: 'ignore' });
@@ -207,7 +208,7 @@ test('after a kill -9 the next run sweeps the dead run folder and reports it; a 
     // A run whose owner is still alive: never swept.
     const live = join(p.env.ASTRO_HEAVY_DIR, 'runs', `ac-run-${sleeper.pid}-aaaaaa`);
     mkdirSync(join(live, 'tmp'), { recursive: true });
-    writeFileSync(join(live, 'owner.json'), JSON.stringify({ pid: sleeper.pid, started_ms: Date.now() }));
+    writeFileSync(join(live, 'owner.json'), JSON.stringify({ pid: sleeper.pid, started_ms: sleeperStart }));
     const fast = { ...p.env, MUTATE_STUB_SLEEP: '', MUTATE_STUB_CHILD: '' };
     const r = await runMutate(p.dir, p.slug1, { env: fast });
     assert.equal(r.cleaned.count, 1);

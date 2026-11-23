@@ -2,6 +2,15 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.60.0
+
+- Heavy jobs take a bounded share of the machine by default (ADR-096). `ac mutate`, `ac suite run` and the cheap pass compute a worker budget from the CPUs and the memory free right now (about a quarter of the cores, fewer when memory is tight, never under 1) and hand it to Gremlins (`--workers`, `GOMAXPROCS`, `GOFLAGS -p`; never `--test-cpu`), mutmut, Stryker, `go test` and `node --test`; any other suite command sees `ASTRO_WORKERS`. `ac config set heavy.workers <n>` overrides it; a project tool config that asks for less is respected, one that asks for more is capped and the result says so
+- One heavy job runs per machine: a second mutation run or suite run waits its turn, says what it waits for, and takes over a lock whose holder died. Waiting never counts against a mutation cap
+- Mutation cleans up: its own Go build cache under `~/.astro/heavy`, capped (5 GB, `heavy.go_cache_max_mb`) and trimmed oldest-first, and a per-run temp folder removed when the run ends, on success, failure, cap or Ctrl-C; leftovers of killed runs go at the next run. `ac suite run` gets the same per-run temp folder
+- Gremlins mutates only the phase's changed lines for a Go module below the repo root too (it runs `--diff` in a scratch git copy of the module), and when its `--diff` skips mutants on changed lines a second whole-file pass runs them, so one run ends complete. It always passes `-count=1`, so a cached `go test` result never stands in for a mutant
+- In fast mode the healed-wave test gate runs the phase's targeted tests instead of the full suite, and a gate that ran nothing stops the phase
+- Kits: `kit_test` mirrors the data-change guard and checks declared writes (SRC-16..19), and KIT-CONTRACT documents writes, free writes and approval
+
 ## v0.59.2
 
 - Fix: `ac install`/`ac update` also pin `ac` in each Claude config's cached astro-mods copy (the one Claude Code actually loads). v0.59.1 pinned only `~/.astro/code/mods`, so after updating to it the mods could still run a bare `ac`; run `ac update` once more after installing this release
