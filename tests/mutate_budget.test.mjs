@@ -49,7 +49,7 @@ test('Gremlins gets --workers N, GOMAXPROCS N and GOFLAGS -p=N (existing flags k
     assert.equal(c.argv[c.argv.indexOf('--workers') + 1], '2');
     assert.ok(!c.argv.some((a) => a.includes('test-cpu')));
     assert.equal(c.env.GOMAXPROCS, '2');
-    assert.equal(c.env.GOFLAGS, '-short -p=2');
+    assert.equal(c.env.GOFLAGS, '-short -p=2 -count=1');
     assert.equal(c.env.ASTRO_WORKERS, '2');
     assert.deepEqual(r.tool_workers, { flag: '--workers', value: 2, project: null, capped: false, note: null, source: 'setting' });
   } finally { done(p); }
@@ -259,5 +259,14 @@ test('mutation always finishes: every survivor and a tested count equal to the t
     assert.equal(Object.values(r.counts).reduce((a, b) => a + b, 0), 6);
     assert.equal(r.complete, true);
     assert.ok(!unleash(p).argv.filter((a) => a.startsWith('--')).some((a) => /stop|fail-fast|first|bail/i.test(a)));
+  } finally { done(p); }
+});
+
+test('Gremlins always runs with -count=1 so a warm Go test cache cannot zero its timeout baseline', async () => {
+  const { runMutate } = await import('../lib/mutate.mjs');
+  const p = await rig('go', { report: 'gremlins.json' });
+  try {
+    await runMutate(p.dir, p.slug1, { env: p.env });
+    assert.match(unleash(p).env.GOFLAGS, /(^|\s)-count=1(\s|$)/);
   } finally { done(p); }
 });
