@@ -1864,7 +1864,8 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
   // merge before it poisoned later waves.  A project with NO suite is a third
   // outcome the gate reports separately (ADR-028) — see below.
   if ((ladderFired || overflowFlagged) && !integrationFailed) {
-    const gate = await runTestSuite(await planTestGate())
+    const gatePlan = await planTestGate()
+    const gate = await runTestSuite(gatePlan)
     // ADR-028 — three outcomes, not two. `ranSuite:false` means the project has no
     // suite to run: the gate can prove nothing, but it also has nothing to report,
     // so the wave proceeds UNPROVEN behind a loud advisory rather than aborting a
@@ -1875,10 +1876,14 @@ for (let w = 0; w < waves.length && !integrationFailed && !leanBatch; w++) {
     // that branch owns healed-branch teardown. Short-circuiting before it would
     // strand `worktree-*` branches and then false-FAIL the verifier's
     // `git rev-list HEAD..worktree-*` check — re-opening the phase-05 UAT gap.
-    const noSuite = !!gate && gate.ranSuite === false
+    // A targeted plan exists only when ac found the phase's test files and built their command, so
+    // "no runnable suite" cannot be true for it: that answer is a gate that ran nothing, and it fails
+    // closed like any other zero-test gate (phase 59 C17). The unproven path stays for the full-suite plan.
+    const targetedGate = !!gatePlan
+    const noSuite = !!gate && gate.ranSuite === false && !targetedGate
     // #79 — fail closed: only a positive integer count of executed tests proves anything.
     const testsRun = gate && Number.isInteger(gate.testsRun) && gate.testsRun > 0 ? gate.testsRun : 0
-    const ranNothing = !noSuite && !!gate && gate.passed && testsRun === 0
+    const ranNothing = !noSuite && !!gate && (gate.passed || (targetedGate && gate.ranSuite === false)) && testsRun === 0
     if (!noSuite && (!gate || !gate.passed || ranNothing)) {
       integrationFailed = {
         wave: w + 1,

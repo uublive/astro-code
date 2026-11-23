@@ -76,3 +76,14 @@ test('(d) in targeted mode a zero-test or failed gate stops the phase; no suite 
   assert.ok(!none.result.integrationFailed, 'no runner in full mode keeps the unproven path (ADR-028)')
   assert.ok(none.logs.some((l) => l.includes('UNPROVEN')))
 })
+
+// Phase 59 remediate (C17): a targeted plan exists only when ac found test files and built their command,
+// so a gate that answers "no runnable suite" there ran nothing. It stops the phase like any zero-test gate
+// and never lets the next wave through as UNPROVEN.
+test('(e) in targeted mode a "no runnable suite" answer stops the phase, never UNPROVEN', async () => {
+  for (const gate of [{ ranSuite: false, passed: true, testsRun: 0 }, { ranSuite: false, passed: false, testsRun: 0 }]) {
+    const r = await run({ plan: TARGETED, gate })
+    assert.ok(r.result.integrationFailed, JSON.stringify(gate))
+    assert.ok(!r.logs.some((l) => l.includes('UNPROVEN')), r.logs.join('\n'))
+  }
+})
