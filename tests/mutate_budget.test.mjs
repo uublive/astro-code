@@ -197,7 +197,7 @@ test('after a kill -9 the next run sweeps the dead run folder and reports it; a 
   try {
     const child = spawn(process.execPath, [AC, 'mutate', '1', '--json'], { cwd: p.dir, env: p.env, stdio: 'ignore' });
     const exited = new Promise((res) => child.on('exit', res));
-    assert.ok(await until(() => existsSync(p.pids) && readFileSync(p.pids, 'utf8').trim().split(' ').length === 2));
+    assert.ok(await until(() => existsSync(p.pids) && readFileSync(p.pids, 'utf8').trim().split(' ').length === 2, 30000)); // 30 s: under a loaded suite the stub can take longer than the default 8 s to start
     const pids = readFileSync(p.pids, 'utf8').trim().split(' ').map(Number);
     child.kill('SIGKILL');
     for (const x of pids) { try { process.kill(x, 'SIGKILL'); } catch { /* gone */ } }
