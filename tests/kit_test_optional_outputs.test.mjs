@@ -145,3 +145,36 @@ test('the Tier 2 runner reports a missing optional output as skipped, never as a
     assert.match(res.stdout, /answer \[\('_report\/gaps\.json', False\), \('_report\/change_set\.json', True\)\]/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// Halo 0.8.3 (confirmed by astro-port-6e): the object form needs Halo 0.8.3 or later, paths are literal, and only a
+// regular file counts as a produced output.
+for (const [parser, builtin] of PARSERS) {
+  test(`[${parser}] a recipe using the object form is warned that it needs Halo 0.8.3+; a strings-only recipe is not`, { skip: !hasPython && 'no python3' }, () => {
+    let dir = scratchKit(GAPS, ['_report/gaps.json']);
+    try { assert.ok(runKitTest(dir, { builtin }).has('WARN', 'R-07', /Halo 0\.8\.3/)); } finally { rmSync(dir, { recursive: true, force: true }); }
+    dir = scratchKit([{ name: 'prepare', output: ['_report/state.json'] }], ['_report/state.json']);
+    try { assert.ok(!runKitTest(dir, { builtin }).has('WARN', 'R-07', /Halo 0\.8\.3/)); } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test(`[${parser}] an output path with a glob character is warned: Halo reads paths literally`, { skip: !hasPython && 'no python3' }, () => {
+    const dir = scratchKit([{ name: 'prepare', output: ['_report/state.json', { path: '_report/*.json', optional: true }] }], ['_report/state.json']);
+    try { assert.ok(runKitTest(dir, { builtin }).has('WARN', 'R-09', /glob/)); } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+}
+
+test('the Tier 2 output check counts only a regular file: a directory fails, a missing optional is skipped', { skip: !hasPython && 'no python3' }, () => {
+  const dir = scratchKit(GAPS, ['_report/gaps.json']);
+  try {
+    const py = [
+      'import sys, os; sys.path.insert(0, "tools"); import kit_run_local as k; from pathlib import Path',
+      'w = Path("work"); (w / "_report").mkdir(parents=True); (w / "_report/state.json").write_text("{}"); (w / "_report/gaps.json").mkdir()',
+      'for o, opt in [("_report/state.json", False), ("_report/gaps.json", False), ("_report/change_set.json", True), ("_report/missing.json", False)]: print(o, k.output_status(w, o, opt))',
+    ].join('\n');
+    const res = spawnSync('python3', ['-c', py], { cwd: dir, encoding: 'utf8' });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(res.stdout, /_report\/state\.json \('✓', '', False\)/);
+    assert.match(res.stdout, /_report\/gaps\.json \('✗', '  \(not a regular file\)', True\)/);
+    assert.match(res.stdout, /_report\/change_set\.json \('–', '  \(optional, not produced this run\)', False\)/);
+    assert.match(res.stdout, /_report\/missing\.json \('✗', '', True\)/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

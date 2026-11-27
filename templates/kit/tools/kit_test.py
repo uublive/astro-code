@@ -2632,6 +2632,7 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
             continue
 
         seen_names: set[str] = set()
+        uses_object_form = False
         produced: set[str] = set()  # outputs of all PRECEDING phases
         all_outputs: set[str] = set()
 
@@ -2674,6 +2675,8 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
                     "or astro cannot tell the phase completed",
                 )
             outputs = [path for path, _ in entries]
+            if any(isinstance(o, dict) for o in (ph.get("output") or []) if isinstance(ph.get("output"), list)):
+                uses_object_form = True
 
             inputs = ph.get("input") or []
             if not isinstance(inputs, list):
@@ -2683,6 +2686,11 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
             for out in outputs:
                 if escapes_root(str(out)):
                     rep.fail("recipe", "R-09", f"{label}: output {out!r} escapes the work dir")
+                elif _WILDCARD.search(str(out)):
+                    rep.warn(
+                        "recipe", "R-09",
+                        f"{label}: output {out!r} has a glob character — Halo reads output paths literally",
+                    )
             for inp in inputs:
                 if escapes_root(str(inp)):
                     rep.fail("recipe", "R-09", f"{label}: input {inp!r} escapes the work dir")
@@ -2705,6 +2713,12 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
             produced.update(str(o) for o in outputs)
             all_outputs.update(str(o) for o in outputs)
 
+        if uses_object_form:
+            rep.warn(
+                "recipe", "R-07",
+                f"{rel}: uses the {{path, optional}} output form, which needs Halo 0.8.3 or later — "
+                "an older Halo cannot parse this recipe",
+            )
         rep.ok(
             "recipe", "R-04",
             f"{rel}: {len(phases)} phase(s) well-formed "

@@ -139,6 +139,19 @@ def declared_outputs(kit_root: Path) -> list[tuple[str, list[tuple[str, bool]]]]
     return found
 
 
+def output_status(work: Path, rel: str, optional: bool) -> tuple[str, str, bool]:
+    """(mark, note, failed) for one declared output after a run. Like Halo 0.8.3, only a regular
+    file counts: a directory at that path is not the output. A missing optional output is skipped."""
+    p = work / rel
+    if p.is_file():
+        return ("✓", "", False)
+    if p.exists():
+        return ("✗", "  (not a regular file)", True)
+    if optional:
+        return ("–", "  (optional, not produced this run)", False)
+    return ("✗", "", True)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         prog="kit_run_local.py",
@@ -291,11 +304,9 @@ def main() -> int:
             print("  declared phase outputs:")
             for phase, outs in phases:
                 for o, optional in outs:
-                    hit = (work / o).exists()
-                    mark = '✓' if hit else ('–' if optional else '✗')
-                    note = '' if hit or not optional else '  (optional, not produced this run)'
+                    mark, note, failed = output_status(work, o, optional)
                     print(f"    {mark} {phase:<20} {o}{note}")
-                    if not hit and not optional:
+                    if failed:
                         rc = 1
         print()
         print("  Tier 2 " + ("PASSED" if rc == 0 else "FAILED"))
