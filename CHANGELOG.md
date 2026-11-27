@@ -2,6 +2,11 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.61.0
+
+- Kits: a recipe phase output may be marked optional, `{path: <path>, optional: true}`, beside the plain path string (required). `kit_test` R-11 counts a declared artifact as produced when any phase lists it, required or optional; R-07 needs at least one REQUIRED output per phase and refuses a malformed entry (only `path` and `optional` are allowed); R-09 and R-10 read both forms, and R-09 warns on a glob character (paths are literal). The Tier 2 local run reports a missing optional output as skipped and counts only a regular file as produced. **The object form needs Halo 0.8.3 or later**: an older Halo cannot parse the recipe, and `kit_test` warns when a recipe uses it. Existing kits carry their own `tools/kit_test.py`, so take the new copy to use the form
+- The planner role runs on Fable in this repo's own config
+
 ## v0.60.0
 
 - Heavy jobs take a bounded share of the machine by default (ADR-096). `ac mutate`, `ac suite run` and the cheap pass compute a worker budget from the CPUs and the memory free right now (about a quarter of the cores, fewer when memory is tight, never under 1) and hand it to Gremlins (`--workers`, `GOMAXPROCS`, `GOFLAGS -p`; never `--test-cpu`), mutmut, Stryker, `go test` and `node --test`; any other suite command sees `ASTRO_WORKERS`. `ac config set heavy.workers <n>` overrides it; a project tool config that asks for less is respected, one that asks for more is capped and the result says so
