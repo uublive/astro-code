@@ -146,8 +146,8 @@ def _unquote(v: str) -> str:
     return v
 
 
-# An output mapping's keys (`path`, `optional`) start a mapping item; anything else stays a scalar.
-_MAP_KEY = re.compile(r"^(path|optional)\s*:(\s|$)")
+# An output mapping's keys (`path`, `optional`, quoted or not) start a mapping item; anything else stays a scalar.
+_MAP_KEY = re.compile(r"""^(["']?)(path|optional)\1\s*:(\s|$)""")
 
 
 def _scalar(v: str):
@@ -162,19 +162,118 @@ def _scalar(v: str):
     return _unquote(v)
 
 
-def _flow_map(text: str, line_no: int) -> dict:
-    """A one-line flow mapping `{path: x, optional: true}` (no nesting, no commas inside values)."""
-    if not text.endswith("}"):
-        raise RecipeParseError(f"line {line_no}: unterminated '{{' mapping: {text[:60]!r}")
-    out: dict = {}
-    for part in text[1:-1].split(","):
-        if not part.strip():
-            continue
-        if ":" not in part:
-            raise RecipeParseError(f"line {line_no}: expected 'key: value' in {text[:60]!r}")
-        k, _, v = part.partition(":")
-        out[k.strip()] = _scalar(v)
-    return out
+def _flow(text: str, line_no: int):
+    """Parse a one-line YAML flow value: `[a, "b", {"path": "x", optional: true}]` or `{path: x}`.
+    Quoted strings (with commas, colons or escapes inside), nested [ ] and { }, bare scalars.
+    Anything unbalanced or left over raises RecipeParseError, never a guessed value."""
+    pos = 0
+    n = len(text)
+
+    def fail(msg: str):
+        raise RecipeParseError(f"line {line_no}: {msg} in {text[:80]!r}")
+
+    def ws():
+        nonlocal pos
+        while pos < n and text[pos] in " \t":
+            pos += 1
+
+    def quoted():
+        nonlocal pos
+        q = text[pos]
+        pos += 1
+        out = []
+        while pos < n:
+            c = text[pos]
+            if q == '"' and c == "\\" and pos + 1 < n:
+                out.append({"n": "\n", "t": "\t", '"': '"', "\\": "\\", "/": "/"}.get(text[pos + 1], text[pos + 1]))
+                pos += 2
+                continue
+            if c == q:
+                if q == "'" and pos + 1 < n and text[pos + 1] == "'":
+                    out.append("'")
+                    pos += 2
+                    continue
+                pos += 1
+                return "".join(out)
+            out.append(c)
+            pos += 1
+        fail("unterminated quoted string")
+
+    def bare(stops: str):
+        nonlocal pos
+        begin = pos
+        while pos < n and text[pos] not in stops:
+            pos += 1
+        return text[begin:pos].strip()
+
+    def value(stops: str):
+        ws()
+        if pos >= n:
+            fail("missing value")
+        c = text[pos]
+        if c == "[":
+            return seq()
+        if c == "{":
+            return mapping()
+        if c in "\"'":
+            return quoted()
+        return _scalar(bare(stops))
+
+    def seq():
+        nonlocal pos
+        pos += 1
+        items = []
+        ws()
+        if pos < n and text[pos] == "]":
+            pos += 1
+            return items
+        while True:
+            items.append(value(",]"))
+            ws()
+            if pos >= n:
+                fail("unterminated '['")
+            if text[pos] == ",":
+                pos += 1
+                continue
+            if text[pos] == "]":
+                pos += 1
+                return items
+            fail(f"expected ',' or ']' at column {pos + 1}")
+
+    def mapping():
+        nonlocal pos
+        pos += 1
+        out = {}
+        ws()
+        if pos < n and text[pos] == "}":
+            pos += 1
+            return out
+        while True:
+            ws()
+            if pos >= n:
+                fail("unterminated '{'")
+            key = quoted() if text[pos] in "\"'" else bare(":,}")
+            ws()
+            if pos >= n or text[pos] != ":":
+                fail(f"expected ':' after key {key!r}")
+            pos += 1
+            out[str(key)] = value(",}")
+            ws()
+            if pos >= n:
+                fail("unterminated '{'")
+            if text[pos] == ",":
+                pos += 1
+                continue
+            if text[pos] == "}":
+                pos += 1
+                return out
+            fail(f"expected ',' or '}}' at column {pos + 1}")
+
+    result = value("")
+    ws()
+    if pos != n:
+        fail(f"unexpected text after the value at column {pos + 1}")
+    return result
 
 
 def phase_outputs(raw) -> tuple[list[tuple[str, bool]], list[str]]:
@@ -274,23 +373,23 @@ def parse_recipe_min(text: str) -> dict:
                 )
             body = s[2:].strip()
             if maps and body.startswith("{"):
-                items.append(_flow_map(body, j + 1))
+                items.append(_flow(body, j + 1))
                 j += 1
                 continue
             if maps and _MAP_KEY.match(body):
                 entry: dict = {}
-                k, _, v = body.partition(":")
-                entry[k.strip()] = _scalar(v)
+                m = _MAP_KEY.match(body)
+                entry[m.group(2)] = _scalar(body[m.end(0) - len(m.group(3)):])
                 j += 1
                 while j < n:
                     raw2 = _strip_comment(lines[j])
                     if not raw2.strip():
                         j += 1
                         continue
-                    if indent_of(raw2) <= ind or not _MAP_KEY.match(raw2.strip()):
+                    m = _MAP_KEY.match(raw2.strip())
+                    if indent_of(raw2) <= ind or not m:
                         break
-                    k, _, v = raw2.strip().partition(":")
-                    entry[k.strip()] = _scalar(v)
+                    entry[m.group(2)] = _scalar(raw2.strip()[m.end(0) - len(m.group(3)):])
                     j += 1
                 items.append(entry)
                 continue
@@ -362,6 +461,11 @@ def parse_recipe_min(text: str) -> dict:
                     continue
                 if v2 == "[]":
                     cur[k2] = []
+                    i += 1
+                    continue
+                if v2.startswith("["):
+                    # an inline flow list (`output: ["a", {"path": "b", "optional": true}]`)
+                    cur[k2] = _flow(v2, i + 1)
                     i += 1
                     continue
                 if v2 == "":

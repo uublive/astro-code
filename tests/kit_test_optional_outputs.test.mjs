@@ -178,3 +178,56 @@ test('the Tier 2 output check counts only a regular file: a directory fails, a m
     assert.match(res.stdout, /_report\/missing\.json \('✗', '', True\)/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// Reported by the EnviroTech kit session (fix/gaps-recipe-output, d9181e9): its real recipe writes the output list
+// inline, as a flow sequence with JSON-quoted keys. Halo reads it with a real YAML loader, so the builtin fallback
+// parser must too, in both forms; the line below is the kit's own.
+const ENVIRO_FLOW = 'output: ["_report/run_log.json", {"path": "_report/change_set.json", "optional": true}]';
+function recipeText(outputBlock, inputBlock = 'input: []') {
+  return ['name: commit-digest', 'description: >', '  A test recipe.', 'version: 1', 'phases:',
+    '  - name: prepare', '    goal: >', '      Prepare.', '    input: []', '    output:', '      - _report/state.json',
+    '  - name: answer', '    goal: >', '      Answer.', `    ${inputBlock}`, ...outputBlock.map((l) => `    ${l}`), ''].join('\n');
+}
+function kitWithRecipe(text, artifacts) {
+  const dir = scratchKit([{ name: 'prepare', output: ['_report/state.json'] }], artifacts);
+  writeFileSync(join(dir, RECIPE), text);
+  return dir;
+}
+
+for (const [parser, builtin] of PARSERS) {
+  test(`[${parser}] the EnviroTech flow line: an inline output list mixing a string and a quoted-key mapping`, { skip: !hasPython && 'no python3' }, () => {
+    const dir = kitWithRecipe(recipeText([ENVIRO_FLOW]), ['_report/run_log.json', '_report/change_set.json']);
+    try {
+      const r = runKitTest(dir, { builtin });
+      assert.deepEqual(r.fails.map((f) => f.id), [], r.out);
+      assert.ok(r.has('PASS', 'R-11', /2\/2/), r.out);
+      assert.ok(r.has('WARN', 'R-07', /Halo 0\.8\.3/), 'the object form is recognised');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test(`[${parser}] the block form: a list item that is a mapping, path then optional on the next line`, { skip: !hasPython && 'no python3' }, () => {
+    const dir = kitWithRecipe(recipeText(['output:', '  - _report/run_log.json', '  - path: _report/change_set.json', '    optional: true']), ['_report/run_log.json', '_report/change_set.json']);
+    try {
+      const r = runKitTest(dir, { builtin });
+      assert.deepEqual(r.fails.map((f) => f.id), [], r.out);
+      assert.ok(r.has('PASS', 'R-11', /2\/2/), r.out);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test(`[${parser}] block mapping items with quoted keys and values, and an inline input list, read the same`, { skip: !hasPython && 'no python3' }, () => {
+    const dir = kitWithRecipe(recipeText(['output:', '  - "_report/run_log.json"', '  - "path": "_report/change_set.json"', '    "optional": true'], 'input: ["_report/state.json"]'), ['_report/change_set.json']);
+    try {
+      const r = runKitTest(dir, { builtin });
+      assert.deepEqual(r.fails.map((f) => f.id), [], r.out);
+      assert.ok(!r.warns.some((w) => w.id === 'R-10'), `the inline input list is read: ${r.out}`);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test(`[${parser}] a malformed inline list is refused, never read as one literal path`, { skip: !hasPython && 'no python3' }, () => {
+    const dir = kitWithRecipe(recipeText(['output: ["_report/run_log.json", {"path": "_report/x.json", "optional": true]']), ['_report/run_log.json']);
+    try {
+      const r = runKitTest(dir, { builtin });
+      assert.ok(r.fails.length > 0, `an unbalanced line must fail, not pass: ${r.out}`);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+}
