@@ -55,9 +55,11 @@ Declare only tools OUTSIDE this list (semgrep, gitleaks, weasyprint, …).
 ### outputs.artifacts[] — the email_attachment tag
 
 Artifacts are objects `{ "path": "<relative path>", "tags": ["email_attachment"] }`.
-**At most ONE artifact** may carry `"email_attachment"` — it marks the single file
-Astro attaches when replying by email. Zero tagged artifacts = text-only reply.
-Many equally-primary files? Bundle them into one zip and tag the zip.
+Any number of artifacts may carry `"email_attachment"`: Astro (Halo 0.8.3 or later)
+attaches every tagged file when replying by email, each by its **literal path**. Zero
+tagged artifacts = text-only reply. A tagged path must be literal, with no glob and no
+placeholder (`*`, `{month}`, `<x>`, `$X`), and no two tagged artifacts may share a path
+(M-02, R-12). A file whose name changes per run? Write it to a fixed name and tag that.
 
 ## Data sources (`sources[]`, manifest phase 102)
 

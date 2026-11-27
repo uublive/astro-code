@@ -31,8 +31,8 @@ The scaffold source of truth is `$(ac path templates)/kit/` — referred to as
    - **category** — one of: security, compliance, quality, performance,
      documentation, infrastructure, data, testing, operations;
    - **triggers** — the natural-language phrases a user would say to invoke it;
-   - **deliverables** — the artifacts the kit produces, and which **single one** (or
-     none) is the email deliverable (`email_attachment` tag);
+   - **deliverables** — the artifacts the kit produces, and which of them (none, one or
+     several) Astro attaches to its email reply (`email_attachment` tag, each a literal path);
    - **tool dependencies** known up front (apt/pip/npm/url — exact version pins), the
      runtime (usually `python3`), and **estimated duration**;
    - anything domain-specific the kit needs (reference data, external services,
@@ -87,7 +87,7 @@ The scaffold source of truth is `$(ac path templates)/kit/` — referred to as
    artifacts actually produced); **constraints** from the interview.
 
 5. **Seed the canon.** Write `.astrocode/CONVENTIONS.md` from `KIT-CONTRACT.md`: the
-   manifest v4 rules (exact pins, base-image allowlist, 0-or-1 `email_attachment`),
+   manifest v4 rules (exact pins, base-image allowlist, 0..N `email_attachment` artifacts, each a literal, unique path),
    the recipe phase style (`goal`/`constraints`/`input`/`output`, runtime output
    under `_report/`, resumable state in `_report/state.json`), EXAMPLES.md required
    sections, and "deliverables come from scripts, never hand-made". If the kit has
