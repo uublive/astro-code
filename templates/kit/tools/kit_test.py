@@ -146,6 +146,68 @@ def _unquote(v: str) -> str:
     return v
 
 
+# An output mapping's keys (`path`, `optional`) start a mapping item; anything else stays a scalar.
+_MAP_KEY = re.compile(r"^(path|optional)\s*:(\s|$)")
+
+
+def _scalar(v: str):
+    """A mapping value: true/false become booleans, a bare integer an int, anything else a string."""
+    v = v.strip()
+    if v in ("true", "True"):
+        return True
+    if v in ("false", "False"):
+        return False
+    if re.fullmatch(r"-?\d+", v):
+        return int(v)
+    return _unquote(v)
+
+
+def _flow_map(text: str, line_no: int) -> dict:
+    """A one-line flow mapping `{path: x, optional: true}` (no nesting, no commas inside values)."""
+    if not text.endswith("}"):
+        raise RecipeParseError(f"line {line_no}: unterminated '{{' mapping: {text[:60]!r}")
+    out: dict = {}
+    for part in text[1:-1].split(","):
+        if not part.strip():
+            continue
+        if ":" not in part:
+            raise RecipeParseError(f"line {line_no}: expected 'key: value' in {text[:60]!r}")
+        k, _, v = part.partition(":")
+        out[k.strip()] = _scalar(v)
+    return out
+
+
+def phase_outputs(raw) -> tuple[list[tuple[str, bool]], list[str]]:
+    """A phase's `output`, normalised: ([(path, optional)], [problem, ...]). An entry is a string (a
+    required output) or a mapping {path: <non-empty string>, optional: <boolean>, default false}."""
+    if raw is None:
+        return ([], [])
+    if not isinstance(raw, list):
+        return ([], ["'output' must be a list"])
+    entries: list[tuple[str, bool]] = []
+    problems: list[str] = []
+    for o in raw:
+        if isinstance(o, str):
+            if o.strip():
+                entries.append((o, False))
+            else:
+                problems.append("an output entry is an empty string")
+        elif isinstance(o, dict):
+            path, optional = o.get("path"), o.get("optional", False)
+            extra = sorted(set(o) - {"path", "optional"})
+            if not isinstance(path, str) or not path.strip():
+                problems.append(f"output {o!r}: 'path' must be a non-empty string")
+            elif not isinstance(optional, bool):
+                problems.append(f"output {path!r}: 'optional' must be true or false, got {optional!r}")
+            elif extra:
+                problems.append(f"output {path!r}: unknown key(s) {', '.join(extra)} (only path, optional)")
+            else:
+                entries.append((path, optional))
+        else:
+            problems.append(f"output {o!r} is neither a path string nor a {{path, optional}} mapping")
+    return (entries, problems)
+
+
 def parse_recipe_min(text: str) -> dict:
     """Parse the recipe subset the kit template emits:
 
@@ -192,9 +254,10 @@ def parse_recipe_min(text: str) -> dict:
             j += 1
         return ("\n".join(parts).strip(), j)
 
-    def read_list(start: int, base_indent: int) -> tuple[list[str], int]:
-        """Consume a block sequence of scalars."""
-        items: list[str] = []
+    def read_list(start: int, base_indent: int, maps: bool = False) -> tuple[list, int]:
+        """Consume a block sequence of scalars. With `maps` (a phase's `output`), an item may also be
+        a mapping, block (`- path: x` then `  optional: true`) or flow (`- {path: x, optional: true}`)."""
+        items: list = []
         j = start
         while j < n:
             raw = _strip_comment(lines[j])
@@ -209,7 +272,29 @@ def parse_recipe_min(text: str) -> dict:
                 raise RecipeParseError(
                     f"line {j + 1}: expected a '- ' list item, got: {s[:60]!r}"
                 )
-            items.append(_unquote(s[2:]))
+            body = s[2:].strip()
+            if maps and body.startswith("{"):
+                items.append(_flow_map(body, j + 1))
+                j += 1
+                continue
+            if maps and _MAP_KEY.match(body):
+                entry: dict = {}
+                k, _, v = body.partition(":")
+                entry[k.strip()] = _scalar(v)
+                j += 1
+                while j < n:
+                    raw2 = _strip_comment(lines[j])
+                    if not raw2.strip():
+                        j += 1
+                        continue
+                    if indent_of(raw2) <= ind or not _MAP_KEY.match(raw2.strip()):
+                        break
+                    k, _, v = raw2.strip().partition(":")
+                    entry[k.strip()] = _scalar(v)
+                    j += 1
+                items.append(entry)
+                continue
+            items.append(_unquote(body))
             j += 1
         return (items, j)
 
@@ -280,7 +365,7 @@ def parse_recipe_min(text: str) -> dict:
                     i += 1
                     continue
                 if v2 == "":
-                    items, i = read_list(i + 1, ind2)
+                    items, i = read_list(i + 1, ind2, maps=(k2 == "output"))
                     cur[k2] = items
                     continue
                 cur[k2] = _unquote(v2)
@@ -2570,8 +2655,11 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
             if not str(ph.get("goal", "")).strip():
                 rep.fail("recipe", "R-06", f"{label}: 'goal' is required and non-empty")
 
-            outputs = ph.get("output") or []
-            if not isinstance(outputs, list) or not outputs:
+            # An output is a path string (required) or {path, optional: true} (the run may skip it).
+            entries, problems = phase_outputs(ph.get("output"))
+            for problem in problems:
+                rep.fail("recipe", "R-07", f"{label}: {problem}")
+            if not entries and not problems:
                 # astro's schema: output.min(1). A phase with no output can
                 # never be validated as complete by the recipe executor.
                 rep.fail(
@@ -2579,7 +2667,13 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
                     f"{label}: must declare at least one 'output' "
                     "(astro validates phase completion by output existence)",
                 )
-                outputs = []
+            elif entries and all(opt for _, opt in entries):
+                rep.fail(
+                    "recipe", "R-07",
+                    f"{label}: every output is optional — at least one must be REQUIRED, "
+                    "or astro cannot tell the phase completed",
+                )
+            outputs = [path for path, _ in entries]
 
             inputs = ph.get("input") or []
             if not isinstance(inputs, list):
