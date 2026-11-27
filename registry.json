@@ -1005,6 +1005,15 @@
       "branch": "fix/kit-optional-outputs",
       "claimed_at": "2026-11-27T06:55:47.120Z",
       "status": "active"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-27-kit-tests-allow-only-one-artifact",
+      "name": "kit tests allow only one artifact tagged email_attachment; Halo 0.8.3 attaches every tagged artifact",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "fix/kit-multiple-email-attachments",
+      "claimed_at": "2026-11-27T15:53:25.237Z",
+      "status": "active"
     }
   ]
 }
