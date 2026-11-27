@@ -653,12 +653,18 @@
     {
       "id": "2026-11-13-healed-wave-test-gate-still-runs-the",
       "title": "Healed-wave test gate still runs the full suite in fast mode",
-      "status": "open",
+      "status": "paid",
       "cost": "small",
       "found_at": "2026-11-13T12:24:06.661Z",
       "why": "runTestSuite tells an executor to run all tests whenever the heal ladder fires, even with verify.full_suite at its default milestone; execution-time gate outside C2, still pays the suite cost ADR-094 aims to cut.",
       "phase": "57",
-      "file": "workflows/execute-phase.mjs"
+      "file": "workflows/execute-phase.mjs",
+      "paid_by": {
+        "kind": "phase",
+        "ref": "59-resource-safe-verify-and-mutation"
+      },
+      "paying_since": "2026-11-23T10:22:42.320Z",
+      "paid_at": "2026-11-23T10:22:42.325Z"
     },
     {
       "id": "2026-11-16-cli-tests-break-when-the-checkout-path",

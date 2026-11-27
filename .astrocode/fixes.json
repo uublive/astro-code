@@ -256,6 +256,12 @@
       "title": "astro-mods hooks run bare 'ac', which macOS resolves to /usr/sbin/ac under Claude Code's minimal PATH",
       "status": "verified",
       "opened_at": "2026-11-16T12:02:30.597Z"
+    },
+    {
+      "id": "2026-11-27-kit-test-r-11-fails-a-recipe-whose",
+      "title": "kit_test R-11 fails a recipe whose artifact only an optional phase output produces (optional outputs not understood)",
+      "status": "verified",
+      "opened_at": "2026-11-27T06:55:45.316Z"
     }
   ]
 }

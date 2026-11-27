@@ -376,6 +376,29 @@ The recipe is the kit's execution contract: `name`, `description`, `version`, an
 - `constraints` — hard rules the phase must obey (quoted strings)
 - `input` / `output` — the files the phase reads/writes (typically under `_report/`)
 
+An `output` entry is a path string, which the phase must produce, or a mapping
+`{path: <path>, optional: true}` for a file a run may legitimately skip (e.g. a
+`_report/change_set.json` that a gaps-only run never writes):
+
+```yaml
+    output:
+      - _report/gaps.json
+      - path: _report/change_set.json
+        optional: true
+```
+
+The mapping is strict: only `path` (a non-empty string) and `optional` (true or false;
+omitted means required), and one list may mix strings and mappings. **The mapping form
+needs Halo 0.8.3 or later**: an older Halo cannot parse the recipe, and `kit_test` warns
+(R-07) when a recipe uses it. Paths are literal, never globs (R-09 warns on a glob
+character), and a produced output must be a regular file, not a directory.
+
+Every phase needs at least one REQUIRED output (R-07): astro tells a phase completed
+by its required outputs existing. A declared artifact (`outputs.artifacts[]`) counts as
+produced when any phase lists it, required or optional (R-11). The Tier 2 local run
+reports a missing optional output as skipped, never as a failure, and fails an output
+that exists only as a directory.
+
 Conventions: runtime output goes under `_report/`; state travels through
 `_report/state.json`; deliverables are produced by `scripts/*.py` — **NEVER
 hand-written** ("if script fails, debug and fix — do NOT create the artifact

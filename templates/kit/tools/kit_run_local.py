@@ -64,7 +64,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
-    from kit_test import load_recipe, RecipeParseError  # reuse the recipe reader
+    from kit_test import load_recipe, RecipeParseError, phase_outputs  # reuse the recipe reader
 except ImportError:  # pragma: no cover - kit_test.py should sit beside us
     load_recipe = None
     RecipeParseError = Exception
@@ -121,12 +121,13 @@ def serve(directory: Path) -> tuple[socketserver.TCPServer, int]:
     return httpd, port
 
 
-def declared_outputs(kit_root: Path) -> list[tuple[str, list[str]]]:
-    """[(phase_name, [output, ...])] across every recipe — what a real run
-    must produce for the recipe executor to consider each phase complete."""
+def declared_outputs(kit_root: Path) -> list[tuple[str, list[tuple[str, bool]]]]:
+    """[(phase_name, [(output, optional), ...])] across every recipe — what a real run
+    must produce for the recipe executor to consider each phase complete. An optional
+    output ({path, optional: true}) may be absent: the run is not failed for it."""
     if load_recipe is None:
         return []
-    found: list[tuple[str, list[str]]] = []
+    found: list[tuple[str, list[tuple[str, bool]]]] = []
     for rp in sorted((kit_root / "src" / "recipes").glob("*.yaml")):
         try:
             recipe, _ = load_recipe(rp)
@@ -134,8 +135,21 @@ def declared_outputs(kit_root: Path) -> list[tuple[str, list[str]]]:
             continue
         for ph in recipe.get("phases") or []:
             if isinstance(ph, dict):
-                found.append((str(ph.get("name", "?")), [str(o) for o in (ph.get("output") or [])]))
+                found.append((str(ph.get("name", "?")), phase_outputs(ph.get("output"))[0]))
     return found
+
+
+def output_status(work: Path, rel: str, optional: bool) -> tuple[str, str, bool]:
+    """(mark, note, failed) for one declared output after a run. Like Halo 0.8.3, only a regular
+    file counts: a directory at that path is not the output. A missing optional output is skipped."""
+    p = work / rel
+    if p.is_file():
+        return ("✓", "", False)
+    if p.exists():
+        return ("✗", "  (not a regular file)", True)
+    if optional:
+        return ("–", "  (optional, not produced this run)", False)
+    return ("✗", "", True)
 
 
 def main() -> int:
@@ -289,10 +303,10 @@ def main() -> int:
         else:
             print("  declared phase outputs:")
             for phase, outs in phases:
-                for o in outs:
-                    hit = (work / o).exists()
-                    print(f"    {'✓' if hit else '✗'} {phase:<20} {o}")
-                    if not hit:
+                for o, optional in outs:
+                    mark, note, failed = output_status(work, o, optional)
+                    print(f"    {mark} {phase:<20} {o}{note}")
+                    if failed:
                         rc = 1
         print()
         print("  Tier 2 " + ("PASSED" if rc == 0 else "FAILED"))

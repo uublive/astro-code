@@ -146,6 +146,167 @@ def _unquote(v: str) -> str:
     return v
 
 
+# An output mapping's keys (`path`, `optional`, quoted or not) start a mapping item; anything else stays a scalar.
+_MAP_KEY = re.compile(r"""^(["']?)(path|optional)\1\s*:(\s|$)""")
+
+
+def _scalar(v: str):
+    """A mapping value: true/false become booleans, a bare integer an int, anything else a string."""
+    v = v.strip()
+    if v in ("true", "True"):
+        return True
+    if v in ("false", "False"):
+        return False
+    if re.fullmatch(r"-?\d+", v):
+        return int(v)
+    return _unquote(v)
+
+
+def _flow(text: str, line_no: int):
+    """Parse a one-line YAML flow value: `[a, "b", {"path": "x", optional: true}]` or `{path: x}`.
+    Quoted strings (with commas, colons or escapes inside), nested [ ] and { }, bare scalars.
+    Anything unbalanced or left over raises RecipeParseError, never a guessed value."""
+    pos = 0
+    n = len(text)
+
+    def fail(msg: str):
+        raise RecipeParseError(f"line {line_no}: {msg} in {text[:80]!r}")
+
+    def ws():
+        nonlocal pos
+        while pos < n and text[pos] in " \t":
+            pos += 1
+
+    def quoted():
+        nonlocal pos
+        q = text[pos]
+        pos += 1
+        out = []
+        while pos < n:
+            c = text[pos]
+            if q == '"' and c == "\\" and pos + 1 < n:
+                out.append({"n": "\n", "t": "\t", '"': '"', "\\": "\\", "/": "/"}.get(text[pos + 1], text[pos + 1]))
+                pos += 2
+                continue
+            if c == q:
+                if q == "'" and pos + 1 < n and text[pos + 1] == "'":
+                    out.append("'")
+                    pos += 2
+                    continue
+                pos += 1
+                return "".join(out)
+            out.append(c)
+            pos += 1
+        fail("unterminated quoted string")
+
+    def bare(stops: str):
+        nonlocal pos
+        begin = pos
+        while pos < n and text[pos] not in stops:
+            pos += 1
+        return text[begin:pos].strip()
+
+    def value(stops: str):
+        ws()
+        if pos >= n:
+            fail("missing value")
+        c = text[pos]
+        if c == "[":
+            return seq()
+        if c == "{":
+            return mapping()
+        if c in "\"'":
+            return quoted()
+        return _scalar(bare(stops))
+
+    def seq():
+        nonlocal pos
+        pos += 1
+        items = []
+        ws()
+        if pos < n and text[pos] == "]":
+            pos += 1
+            return items
+        while True:
+            items.append(value(",]"))
+            ws()
+            if pos >= n:
+                fail("unterminated '['")
+            if text[pos] == ",":
+                pos += 1
+                continue
+            if text[pos] == "]":
+                pos += 1
+                return items
+            fail(f"expected ',' or ']' at column {pos + 1}")
+
+    def mapping():
+        nonlocal pos
+        pos += 1
+        out = {}
+        ws()
+        if pos < n and text[pos] == "}":
+            pos += 1
+            return out
+        while True:
+            ws()
+            if pos >= n:
+                fail("unterminated '{'")
+            key = quoted() if text[pos] in "\"'" else bare(":,}")
+            ws()
+            if pos >= n or text[pos] != ":":
+                fail(f"expected ':' after key {key!r}")
+            pos += 1
+            out[str(key)] = value(",}")
+            ws()
+            if pos >= n:
+                fail("unterminated '{'")
+            if text[pos] == ",":
+                pos += 1
+                continue
+            if text[pos] == "}":
+                pos += 1
+                return out
+            fail(f"expected ',' or '}}' at column {pos + 1}")
+
+    result = value("")
+    ws()
+    if pos != n:
+        fail(f"unexpected text after the value at column {pos + 1}")
+    return result
+
+
+def phase_outputs(raw) -> tuple[list[tuple[str, bool]], list[str]]:
+    """A phase's `output`, normalised: ([(path, optional)], [problem, ...]). An entry is a string (a
+    required output) or a mapping {path: <non-empty string>, optional: <boolean>, default false}."""
+    if raw is None:
+        return ([], [])
+    if not isinstance(raw, list):
+        return ([], ["'output' must be a list"])
+    entries: list[tuple[str, bool]] = []
+    problems: list[str] = []
+    for o in raw:
+        if isinstance(o, str):
+            if o.strip():
+                entries.append((o, False))
+            else:
+                problems.append("an output entry is an empty string")
+        elif isinstance(o, dict):
+            path, optional = o.get("path"), o.get("optional", False)
+            extra = sorted(set(o) - {"path", "optional"})
+            if not isinstance(path, str) or not path.strip():
+                problems.append(f"output {o!r}: 'path' must be a non-empty string")
+            elif not isinstance(optional, bool):
+                problems.append(f"output {path!r}: 'optional' must be true or false, got {optional!r}")
+            elif extra:
+                problems.append(f"output {path!r}: unknown key(s) {', '.join(extra)} (only path, optional)")
+            else:
+                entries.append((path, optional))
+        else:
+            problems.append(f"output {o!r} is neither a path string nor a {{path, optional}} mapping")
+    return (entries, problems)
+
+
 def parse_recipe_min(text: str) -> dict:
     """Parse the recipe subset the kit template emits:
 
@@ -192,9 +353,10 @@ def parse_recipe_min(text: str) -> dict:
             j += 1
         return ("\n".join(parts).strip(), j)
 
-    def read_list(start: int, base_indent: int) -> tuple[list[str], int]:
-        """Consume a block sequence of scalars."""
-        items: list[str] = []
+    def read_list(start: int, base_indent: int, maps: bool = False) -> tuple[list, int]:
+        """Consume a block sequence of scalars. With `maps` (a phase's `output`), an item may also be
+        a mapping, block (`- path: x` then `  optional: true`) or flow (`- {path: x, optional: true}`)."""
+        items: list = []
         j = start
         while j < n:
             raw = _strip_comment(lines[j])
@@ -209,7 +371,29 @@ def parse_recipe_min(text: str) -> dict:
                 raise RecipeParseError(
                     f"line {j + 1}: expected a '- ' list item, got: {s[:60]!r}"
                 )
-            items.append(_unquote(s[2:]))
+            body = s[2:].strip()
+            if maps and body.startswith("{"):
+                items.append(_flow(body, j + 1))
+                j += 1
+                continue
+            if maps and _MAP_KEY.match(body):
+                entry: dict = {}
+                m = _MAP_KEY.match(body)
+                entry[m.group(2)] = _scalar(body[m.end(0) - len(m.group(3)):])
+                j += 1
+                while j < n:
+                    raw2 = _strip_comment(lines[j])
+                    if not raw2.strip():
+                        j += 1
+                        continue
+                    m = _MAP_KEY.match(raw2.strip())
+                    if indent_of(raw2) <= ind or not m:
+                        break
+                    entry[m.group(2)] = _scalar(raw2.strip()[m.end(0) - len(m.group(3)):])
+                    j += 1
+                items.append(entry)
+                continue
+            items.append(_unquote(body))
             j += 1
         return (items, j)
 
@@ -279,8 +463,13 @@ def parse_recipe_min(text: str) -> dict:
                     cur[k2] = []
                     i += 1
                     continue
+                if v2.startswith("["):
+                    # an inline flow list (`output: ["a", {"path": "b", "optional": true}]`)
+                    cur[k2] = _flow(v2, i + 1)
+                    i += 1
+                    continue
                 if v2 == "":
-                    items, i = read_list(i + 1, ind2)
+                    items, i = read_list(i + 1, ind2, maps=(k2 == "output"))
                     cur[k2] = items
                     continue
                 cur[k2] = _unquote(v2)
@@ -2547,6 +2736,7 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
             continue
 
         seen_names: set[str] = set()
+        uses_object_form = False
         produced: set[str] = set()  # outputs of all PRECEDING phases
         all_outputs: set[str] = set()
 
@@ -2570,8 +2760,11 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
             if not str(ph.get("goal", "")).strip():
                 rep.fail("recipe", "R-06", f"{label}: 'goal' is required and non-empty")
 
-            outputs = ph.get("output") or []
-            if not isinstance(outputs, list) or not outputs:
+            # An output is a path string (required) or {path, optional: true} (the run may skip it).
+            entries, problems = phase_outputs(ph.get("output"))
+            for problem in problems:
+                rep.fail("recipe", "R-07", f"{label}: {problem}")
+            if not entries and not problems:
                 # astro's schema: output.min(1). A phase with no output can
                 # never be validated as complete by the recipe executor.
                 rep.fail(
@@ -2579,7 +2772,15 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
                     f"{label}: must declare at least one 'output' "
                     "(astro validates phase completion by output existence)",
                 )
-                outputs = []
+            elif entries and all(opt for _, opt in entries):
+                rep.fail(
+                    "recipe", "R-07",
+                    f"{label}: every output is optional — at least one must be REQUIRED, "
+                    "or astro cannot tell the phase completed",
+                )
+            outputs = [path for path, _ in entries]
+            if any(isinstance(o, dict) for o in (ph.get("output") or []) if isinstance(ph.get("output"), list)):
+                uses_object_form = True
 
             inputs = ph.get("input") or []
             if not isinstance(inputs, list):
@@ -2589,6 +2790,11 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
             for out in outputs:
                 if escapes_root(str(out)):
                     rep.fail("recipe", "R-09", f"{label}: output {out!r} escapes the work dir")
+                elif _WILDCARD.search(str(out)):
+                    rep.warn(
+                        "recipe", "R-09",
+                        f"{label}: output {out!r} has a glob character — Halo reads output paths literally",
+                    )
             for inp in inputs:
                 if escapes_root(str(inp)):
                     rep.fail("recipe", "R-09", f"{label}: input {inp!r} escapes the work dir")
@@ -2611,6 +2817,12 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
             produced.update(str(o) for o in outputs)
             all_outputs.update(str(o) for o in outputs)
 
+        if uses_object_form:
+            rep.warn(
+                "recipe", "R-07",
+                f"{rel}: uses the {{path, optional}} output form, which needs Halo 0.8.3 or later — "
+                "an older Halo cannot parse this recipe",
+            )
         rep.ok(
             "recipe", "R-04",
             f"{rel}: {len(phases)} phase(s) well-formed "
