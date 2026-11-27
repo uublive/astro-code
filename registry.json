@@ -996,6 +996,15 @@
       "claimed_at": "2026-11-22T22:36:36.747Z",
       "status": "active",
       "feature_branch": "feature/m16-59-resource-safe-verify"
+    },
+    {
+      "type": "fix",
+      "id": "2026-11-27-kit-test-r-11-fails-a-recipe-whose",
+      "name": "kit_test R-11 fails a recipe whose artifact only an optional phase output produces (optional outputs not understood)",
+      "owner": "matteo.alvazzi@gmail.com",
+      "branch": "fix/kit-optional-outputs",
+      "claimed_at": "2026-11-27T06:55:47.120Z",
+      "status": "active"
     }
   ]
 }
