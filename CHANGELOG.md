@@ -2,6 +2,10 @@
 
 Release notes in full live on the [GitHub releases page](https://github.com/uublive/astro-code/releases).
 
+## v0.61.1
+
+- Kits: any number of `kit.json` artifacts may carry the `email_attachment` tag (it was at most one); Halo 0.8.3 attaches each by its literal path. Each tagged path must be literal (no glob, no placeholder such as `{month}`, `<x>` or `$X`) and no two may share a path (`validate_manifest.py` M-02, `kit_test` R-12). Kits carry their own `tools/`, so take the new copies to use it
+
 ## v0.61.0
 
 - Kits: a recipe phase output may be marked optional, `{path: <path>, optional: true}`, beside the plain path string (required). `kit_test` R-11 counts a declared artifact as produced when any phase lists it, required or optional; R-07 needs at least one REQUIRED output per phase and refuses a malformed entry (only `path` and `optional` are allowed); R-09 and R-10 read both forms, and R-09 warns on a glob character (paths are literal). The Tier 2 local run reports a missing optional output as skipped and counts only a regular file as produced. **The object form needs Halo 0.8.3 or later**: an older Halo cannot parse the recipe, and `kit_test` warns when a recipe uses it. `kit_test`'s builtin recipe parser (used without PyYAML) reads the object form both ways: a block mapping item and an inline flow list such as `output: ["_report/run_log.json", {"path": "_report/change_set.json", "optional": true}]`. Existing kits carry their own `tools/kit_test.py`, so take the new copy to use the form
