@@ -262,6 +262,12 @@
       "title": "kit_test R-11 fails a recipe whose artifact only an optional phase output produces (optional outputs not understood)",
       "status": "verified",
       "opened_at": "2026-11-27T06:55:45.316Z"
+    },
+    {
+      "id": "2026-11-27-kit-tests-allow-only-one-artifact",
+      "title": "kit tests allow only one artifact tagged email_attachment; Halo 0.8.3 attaches every tagged artifact",
+      "status": "verified",
+      "opened_at": "2026-11-27T15:53:23.290Z"
     }
   ]
 }

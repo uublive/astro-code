@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/matteoalvazzi/AstroKit/main/schemas/kit-manifest.v4.schema.json",
   "title": "AstroKitManifestV4",
-  "description": "AstroKit kit.json manifest schema, version 4. Supersedes v3. Adds outputs.artifacts[] as closed objects {path: string, tags?: [email_attachment]} with at-most-one email_attachment enforced post-parse in validate_manifest.py. Top-level object is open (additionalProperties not constrained). Inner artifact objects are closed (additionalProperties: false). v3 retained through the next release cycle — see schemas/kit-manifest.v3.schema.json.",
+  "description": "AstroKit kit.json manifest schema, version 4. Supersedes v3. Adds outputs.artifacts[] as closed objects {path: string, tags?: [email_attachment]} with the email_attachment invariant (each tagged path literal and unique; any number tagged) enforced post-parse in validate_manifest.py. Top-level object is open (additionalProperties not constrained). Inner artifact objects are closed (additionalProperties: false). v3 retained through the next release cycle — see schemas/kit-manifest.v3.schema.json.",
   "type": "object",
   "required": ["manifest_version"],
   "$defs": {
@@ -226,7 +226,7 @@
         },
         "artifacts": {
           "type": "array",
-          "description": "Ordered list of output artifact objects. Each item is a closed object with required path and optional tags. The email_attachment tag marks the single artifact Astro attaches to email replies. At most one artifact per kit may carry this tag — enforced post-parse by validate_manifest.py (not expressible in JSON Schema without awkward gymnastics).",
+          "description": "Ordered list of output artifact objects. Each item is a closed object with required path and optional tags. The email_attachment tag marks an artifact Astro attaches to email replies; any number may carry it (Halo 0.8.3+ attaches each by literal path). Each tagged path must be literal (no glob, no placeholder) and unique — enforced post-parse by validate_manifest.py.",
           "items": {
             "type": "object",
             "required": ["path"],
@@ -239,7 +239,7 @@
               },
               "tags": {
                 "type": "array",
-                "description": "Optional semantic tags. Closed to email_attachment in v4. At most one artifact per kit may carry this tag.",
+                "description": "Optional semantic tags. Closed to email_attachment in v4. Any number of artifacts may carry this tag, each with a literal, unique path.",
                 "items": {
                   "type": "string",
                   "enum": ["email_attachment"]

@@ -70,9 +70,9 @@ The scaffold source of truth is `$(ac path templates)/kit/` — referred to as
      `"^1.1.0"`, and the `## Data sources` section of `src/CLAUDE.md` mapping each
      recipe phase to the named query it runs; no sources → delete that section.
    Interview (`AskUserQuestion`, kept short) ONLY for what genuinely can't be
-   derived: anything still ambiguous after steps 1–2, and **which single
-   deliverable (0-or-1) is the `email_attachment`** — the kit contract never
-   allows more than one.
+   derived: anything still ambiguous after steps 1–2, and **which deliverables
+   (none, one or several) are the `email_attachment`s** — each tagged artifact needs a
+   literal, unique path (no glob, no placeholder).
 
 4. **Prefer wrap over reimplement.** If the source is redistributable and can be
    pinned as a tool dependency, vendor it as a `requires.tools[]` entry plus a thin

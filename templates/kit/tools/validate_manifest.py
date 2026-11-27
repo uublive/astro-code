@@ -385,30 +385,46 @@ def check_sources(manifest: dict) -> list:
 # ---------------------------------------------------------------------------
 
 
+# A path Halo can attach is literal: no glob, no placeholder ({x}, {{x}}, <x>, $X, ${X}).
+_NOT_LITERAL = re.compile(r"[*?\[\]{}<>$]")
+
+
 def check_email_attachment_invariant(kit_id: str, artifacts: list[dict]) -> list:
-    """Post-parse cross-artifact invariant: at most one artifact per kit may carry
-    the email_attachment tag. JSON Schema cannot express this without awkward
-    if/then/else or contains/maxContains gymnastics (D-05). Enforced here.
+    """Post-parse cross-artifact invariant for the email_attachment tag. Halo 0.8.3 attaches EVERY tagged
+    artifact by its literal path, so 0..N artifacts may carry the tag (it was at most one before); each
+    tagged path must be literal (no glob, no placeholder) and no two tagged artifacts may share a path.
 
     Returns a list of Error objects (empty = invariant satisfied).
-    Error message format matches spec R-AK-02 exactly.
     """
-    tagged_indices = [
-        i for i, a in enumerate(artifacts)
-        if "email_attachment" in a.get("tags", [])
-    ]
-    if len(tagged_indices) > 1:
-        return [
-            Error(
-                path="outputs.artifacts",
+    errors = []
+    seen: dict[str, int] = {}
+    for i, a in enumerate(artifacts):
+        if "email_attachment" not in (a.get("tags") or []):
+            continue
+        path = a.get("path")
+        if not isinstance(path, str):
+            continue  # the schema already refuses a non-string path
+        if _NOT_LITERAL.search(path):
+            errors.append(Error(
+                path=f"outputs.artifacts[{i}].path",
                 rule="email-attachment-invariant",
                 reason=(
-                    f'kit "{kit_id}" declares email_attachment on artifacts '
-                    f'{tagged_indices} — only one permitted'
+                    f'kit "{kit_id}" tags {path!r} as email_attachment, but Halo attaches by literal '
+                    "path: no glob, no placeholder"
                 ),
-            )
-        ]
-    return []
+            ))
+        if path in seen:
+            errors.append(Error(
+                path=f"outputs.artifacts[{i}].path",
+                rule="email-attachment-invariant",
+                reason=(
+                    f'kit "{kit_id}" tags {path!r} as email_attachment more than once '
+                    f"(artifacts {seen[path]} and {i})"
+                ),
+            ))
+        else:
+            seen[path] = i
+    return errors
 
 
 def _check_email_attachment_invariant_for_manifest(
