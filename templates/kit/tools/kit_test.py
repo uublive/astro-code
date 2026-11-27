@@ -2864,11 +2864,28 @@ def check_recipe(root: Path, manifest: dict | None, rep: Report) -> None:
                     a for a in artifacts
                     if isinstance(a, dict) and "email_attachment" in (a.get("tags") or [])
                 ]
-                if len(tagged) > 1:
-                    rep.fail(
-                        "recipe", "R-12",
-                        f"{len(tagged)} artifacts carry 'email_attachment' — at most ONE may",
-                    )
+                # Halo 0.8.3 attaches EVERY tagged artifact by its literal path, so 0..N may carry the tag;
+                # each tagged path must be literal (no glob, no placeholder) and appear once.
+                seen_tagged: set[str] = set()
+                bad_tag = False
+                for a in tagged:
+                    tpath = str(a.get("path") or "")
+                    if re.search(r"[*?\[\]{}<>$]", tpath):
+                        bad_tag = True
+                        rep.fail(
+                            "recipe", "R-12",
+                            f"email_attachment artifact {tpath!r} is not a literal path (no glob, no "
+                            "placeholder) — Halo attaches by literal path",
+                        )
+                    if tpath in seen_tagged:
+                        bad_tag = True
+                        rep.fail(
+                            "recipe", "R-12",
+                            f"email_attachment artifact {tpath!r} is tagged more than once",
+                        )
+                    seen_tagged.add(tpath)
+                if tagged and not bad_tag:
+                    rep.ok("recipe", "R-12", f"{len(tagged)} email_attachment artifact(s), each a literal, unique path")
 
 
 def check_examples(root: Path, rep: Report) -> None:
